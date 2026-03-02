@@ -1,0 +1,54 @@
+# Spiral Pool — Grafana Alert Notification Policies
+# ==================================================
+# Routes Grafana alerts to the appropriate contact points based on severity.
+#
+# Routing logic:
+#   - Critical alerts → Discord AND Telegram (both channels)
+#   - Warning alerts  → Discord only (reduce Telegram noise)
+#   - Info alerts     → Discord only
+#
+# Group behavior:
+#   - Alerts are grouped by category (hashrate, workers, system, blocks, etc.)
+#   - Initial wait: 30s (collect related alerts before first notification)
+#   - Group interval: 5m (batch updates within the same group)
+#   - Repeat interval: 4h (re-notify if still firing after 4 hours)
+#
+# NOTE: These Grafana alerts are supplementary to the Go Sentinel and Python
+# Spiral Sentinel which handle primary alert delivery independently. Operators
+# running both systems will receive duplicate notifications for overlapping
+# alert conditions. This is intentional — defense in depth.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: spiral-discord
+    group_by:
+      - category
+      - alertname
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      # Critical alerts → both Discord and Telegram
+      - receiver: spiral-telegram
+        continue: true
+        matchers:
+          - severity = critical
+        group_wait: 0s
+        repeat_interval: 1h
+
+      # Critical alerts also go to Discord (continue: true above sends to Telegram,
+      # then falls through to the default receiver which is Discord)
+
+      # Warning alerts → Discord only (default receiver)
+      - receiver: spiral-discord
+        matchers:
+          - severity = warning
+        repeat_interval: 4h
+
+      # Info alerts → Discord only (default receiver)
+      - receiver: spiral-discord
+        matchers:
+          - severity = info
+        repeat_interval: 12h

@@ -1,0 +1,51 @@
+{
+  "name": "Chrome Warfare",
+  "id": "chrome-warfare",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Industrial war-torn aesthetic with chrome steel and red targeting HUD",
+  "category": "Industrial",
+  "colors": {
+    "bg-primary": "#080808",
+    "bg-secondary": "#0e0e10",
+    "bg-card": "#161618",
+    "bg-card-hover": "#1e1e22",
+    "neon-blue": "#4a90d9",
+    "neon-cyan": "#6cb4ee",
+    "neon-purple": "#8866bb",
+    "neon-pink": "#cc2233",
+    "neon-orange": "#cc4400",
+    "neon-yellow": "#ddaa22",
+    "neon-green": "#44aa44",
+    "neon-red": "#cc2233",
+    "text-primary": "#c0c0c8",
+    "text-secondary": "#808090",
+    "text-muted": "#484858",
+    "status-online": "#44aa44",
+    "status-offline": "#cc2233",
+    "status-warning": "#cc4400",
+    "border-primary": "rgba(204, 34, 51, 0.15)",
+    "border-accent": "rgba(192, 192, 200, 0.12)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #cc2233 0%, #661122 100%)",
+    "secondary": "linear-gradient(135deg, #c0c0c8 0%, #606068 100%)",
+    "accent": "linear-gradient(135deg, #cc4400 0%, #662200 100%)",
+    "card": "linear-gradient(180deg, rgba(22, 22, 24, 0.97) 0%, rgba(8, 8, 8, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Quantico', sans-serif",
+    "body": "'Chakra Petch', sans-serif",
+    "mono": "'Source Code Pro', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.3,
+    "animationSpeed": 1.0,
+    "borderRadius": "2px",
+    "useGlitchEffect": true,
+    "useParticles": false,
+    "useScanLines": true,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Chrome Warfare - Industrial HUD */\n@import url('https://fonts.googleapis.com/css2?family=Quantico:wght@400;700&family=Chakra+Petch:wght@300;400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap');\n\n/* Industrial grid overlay */\n.cyber-grid {\n  background:\n    linear-gradient(rgba(204, 34, 51, 0.02) 1px, transparent 1px),\n    linear-gradient(90deg, rgba(204, 34, 51, 0.02) 1px, transparent 1px);\n  background-size: 50px 50px;\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 500px 350px at 50% 5%, rgba(204, 34, 51, 0.06), transparent),\n    radial-gradient(ellipse 400px 300px at 80% 80%, rgba(204, 68, 0, 0.03), transparent);\n}\n\n/* Red scanner line */\n.scan-line {\n  background: linear-gradient(\n    to bottom,\n    transparent 0%,\n    rgba(204, 34, 51, 0.05) 50%,\n    transparent 100%\n  );\n  animation: scanLines 5s linear infinite;\n}\n\n/* Chrome-bordered cards with red accent */\n.stat-card {\n  border: 1px solid rgba(192, 192, 200, 0.12);\n  border-left: 3px solid #cc2233;\n  border-radius: 2px;\n  position: relative;\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #cc2233, #cc4400, #ddaa22);\n  height: 2px;\n}\n\n/* Chrome corner brackets */\n.stat-card::after {\n  content: '';\n  position: absolute;\n  bottom: 0;\n  left: 0;\n  width: 14px;\n  height: 14px;\n  border-bottom: 2px solid rgba(192, 192, 200, 0.25);\n  border-left: 2px solid rgba(192, 192, 200, 0.25);\n  pointer-events: none;\n}\n\n.miner-card,\n.health-card,\n.lifetime-card {\n  border: 1px solid rgba(192, 192, 200, 0.1);\n  border-radius: 2px;\n}\n\n.miner-card {\n  border-left: 3px solid rgba(204, 34, 51, 0.5);\n}\n\n/* Red targeting glow on hover */\n.stat-card:hover {\n  border-color: rgba(204, 34, 51, 0.4);\n  box-shadow:\n    0 0 15px rgba(204, 34, 51, 0.15),\n    0 0 30px rgba(204, 34, 51, 0.05);\n}\n\n.miner-card:hover {\n  border-color: rgba(192, 192, 200, 0.25);\n  box-shadow:\n    0 0 12px rgba(204, 34, 51, 0.1),\n    0 1px 0 rgba(192, 192, 200, 0.08);\n}\n\n/* Stat values — red HUD glow */\n.stat-value {\n  text-shadow: 0 0 10px rgba(204, 34, 51, 0.5), 0 0 20px rgba(204, 34, 51, 0.15);\n  letter-spacing: 1px;\n}\n\n/* Offline miners — critical red */\n.miner-status-dot.offline {\n  box-shadow: 0 0 8px rgba(204, 34, 51, 0.7), 0 0 16px rgba(204, 34, 51, 0.3);\n}\n\n.miner-card.offline {\n  border-left-color: #cc2233;\n}\n\n/* Section headers — red underline */\n.section-header h2 {\n  border-bottom: 2px solid rgba(204, 34, 51, 0.25);\n  padding-bottom: 0.5rem;\n  letter-spacing: 3px;\n  text-transform: uppercase;\n}\n\n/* Celebration — molten amber burst */\n.celebration-title {\n  color: #ddaa22 !important;\n  text-shadow: 0 0 25px rgba(221, 170, 34, 0.5), 0 0 50px rgba(204, 68, 0, 0.3) !important;\n}\n\n.celebration-icon {\n  filter: hue-rotate(-10deg) brightness(1.2) saturate(1.3);\n}\n\n/* Industrial logo */\n.logo {\n  text-shadow: 0 0 15px rgba(204, 34, 51, 0.4);\n  letter-spacing: 5px;\n  text-transform: uppercase;\n}\n\n/* Alert badges — amber */\n.badge {\n  border-color: rgba(204, 68, 0, 0.35);\n  letter-spacing: 1px;\n}\n\n/* Scrollbar — chrome with red accent */\n::-webkit-scrollbar-thumb {\n  background: rgba(204, 34, 51, 0.3);\n  border-radius: 2px;\n}\n\n::-webkit-scrollbar-thumb:hover {\n  background: rgba(204, 34, 51, 0.5);\n}"
+}

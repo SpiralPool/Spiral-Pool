@@ -1,0 +1,26 @@
+# Spiral Pool — Grafana Datasource Provisioning
+# ==============================================
+# Configures Prometheus as the default datasource for all pool alerts and dashboards.
+#
+# IMPORTANT: This requires a running Prometheus server that scrapes the Spiral Stratum
+# metrics endpoint (default: http://spiralpool-stratum:9100/metrics).
+#
+# For Docker deployments, add a Prometheus service to docker-compose.yml or point
+# PROMETHEUS_URL to an external Prometheus instance.
+#
+# For native installs (install.sh), ensure Prometheus is installed and configured
+# with a scrape target for the stratum server's metrics port.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST

@@ -1,0 +1,38 @@
+# Fractal Bitcoin Node Service (AuxPoW - merge-mined with Bitcoin)
+# This is a template - actual paths are set during installation
+#
+# IMPORTANT: Fractal Bitcoin uses the standard bitcoind binary, symlinked to fractald
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{FBTC_DIR}} - Fractal Bitcoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Fractal Bitcoin Daemon
+Documentation=https://fractalbitcoin.io
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{FBTC_DIR}}/bin/fractald -daemon -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc
+ExecStop={{FBTC_DIR}}/bin/fractal-cli -conf={{INSTALL_DIR}}/fbtc/fractal.conf stop
+PIDFile={{INSTALL_DIR}}/fbtc/fractald.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Some blockchain daemons crash with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target

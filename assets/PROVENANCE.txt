@@ -1,0 +1,121 @@
+================================================================================
+Spiral Pool v1.0 - Asset Provenance
+================================================================================
+
+This file documents the origin and licensing status of all visual assets
+included in the Spiral Pool distribution.
+
+================================================================================
+IMAGES
+================================================================================
+
+1. logo.png
+   Description: Spiral Pool project logo
+   Origin: AI-generated using Google Gemini
+   Created: 2026
+   License: Released under BSD-3-Clause as part of Spiral Pool
+   Rights: Spiral Pool Contributors retain all rights
+   Notes: Original creation for this project, not derived from any existing work
+
+
+2. Spiral Sentinel.jpg
+   Description: Spiral Sentinel monitoring system artwork
+   Origin: AI-generated using Google Gemini
+   Created: 2026
+   License: Released under BSD-3-Clause as part of Spiral Pool
+   Rights: Spiral Pool Contributors retain all rights
+   Notes: Original creation for the Sentinel monitoring component
+
+================================================================================
+FONTS (Referenced via Google Fonts CDN)
+================================================================================
+
+The dashboard references the following fonts loaded from Google Fonts:
+
+1. Orbitron
+   Designer: Matt McInerney
+   License: SIL Open Font License 1.1 (OFL-1.1)
+   URL: https://fonts.google.com/specimen/Orbitron
+
+2. Rajdhani
+   Designer: Indian Type Foundry
+   License: SIL Open Font License 1.1 (OFL-1.1)
+   URL: https://fonts.google.com/specimen/Rajdhani
+
+3. Share Tech Mono
+   Designer: Carrois Apostrophe
+   License: SIL Open Font License 1.1 (OFL-1.1)
+   URL: https://fonts.google.com/specimen/Share+Tech+Mono
+
+Note: These fonts are loaded dynamically from Google's CDN and are not
+distributed with Spiral Pool. The OFL-1.1 license permits free use in
+any project without additional attribution requirements in the software
+itself (attribution is required only when redistributing the font files).
+
+================================================================================
+THIRD-PARTY ASSETS
+================================================================================
+
+The only visual asset included is `icon.svg`, a first-party SVG file containing a
+Unicode pickaxe emoji (U+26CF). It was created by Spiral Pool Contributors and
+contains no third-party artwork, logos, or copyrighted imagery. No other images,
+icons, or visual assets from third parties are included in this distribution.
+All other visual elements are either:
+- Dynamically loaded from external CDNs (fonts)
+- Generated programmatically (CSS gradients, effects)
+
+================================================================================
+AI-GENERATED CONTENT DISCLOSURE
+================================================================================
+
+The following assets were created with AI assistance:
+
+- All image files in this directory (logo.png, Spiral Sentinel.jpg)
+- Generated using Google Gemini during the development process
+- The prompts and creative direction were provided by the project maintainers
+- All generated content is released under the project's BSD-3-Clause license
+
+Per Google's Gemini terms of service, users retain rights to outputs generated
+using Gemini for their projects.
+
+================================================================================
+AI-GENERATED CONTENT - LEGAL DISCLAIMER
+================================================================================
+
+IMPORTANT NOTICE REGARDING AI-GENERATED ASSETS:
+
+1. INTELLECTUAL PROPERTY UNCERTAINTY: The legal status of intellectual property
+   rights in AI-generated content is evolving and varies by jurisdiction. The
+   authors make NO WARRANTY regarding the copyright status of AI-generated
+   assets included in this distribution.
+
+2. NO INFRINGEMENT WARRANTY: While AI-generated assets are believed to be
+   original works, the authors CANNOT GUARANTEE that such assets do not
+   inadvertently resemble or infringe upon existing copyrighted works.
+
+3. USER ASSUMPTION OF RISK: Users who redistribute, modify, or create
+   derivative works from AI-generated assets do so AT THEIR OWN RISK and
+   are solely responsible for any intellectual property claims that may arise.
+
+4. INDEMNIFICATION: By using the AI-generated assets in this distribution,
+   you agree to indemnify and hold harmless the authors from any claims,
+   damages, or liabilities arising from your use of such assets.
+
+5. ALTERNATIVE ASSETS: Users with concerns about AI-generated content may
+   replace these assets with their own original or licensed alternatives.
+   The software functionality does not depend on specific visual assets.
+
+6. JURISDICTION VARIANCE: AI content laws differ by country. Users are
+   responsible for determining the legal status of AI-generated content
+   in their jurisdiction.
+
+THE AUTHORS EXPRESSLY DISCLAIM ALL LIABILITY FOR IP CLAIMS RELATED TO
+AI-GENERATED ASSETS. USE AT YOUR OWN RISK.
+
+================================================================================
+Last Updated: 2026-03-01
+Spiral Pool Version: 1.0.0
+Origin: Canada
+================================================================================
+
+Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️

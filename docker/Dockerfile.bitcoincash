@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                 BITCOIN CASH NODE - DOCKER IMAGE                           ║
+# ║                                                                            ║
+# ║   Separate container for Bitcoin Cash Node (BCHN)                          ║
+# ║   For multi-coin mining support                                            ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Bitcoin Cash Node for Spiral Pool"
+LABEL version="29.0.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG BCHN_VERSION=29.0.0
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create bitcoincash user
+RUN useradd -r -m -s /bin/bash bitcoincash \
+    && mkdir -p /home/bitcoincash/.bitcoin \
+    && chown -R bitcoincash:bitcoincash /home/bitcoincash
+
+# Download and install Bitcoin Cash Node
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then BCH_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then BCH_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v${BCHN_VERSION}/bitcoin-cash-node-${BCHN_VERSION}-${BCH_ARCH}.tar.gz" \
+    && tar -xzf "bitcoin-cash-node-${BCHN_VERSION}-${BCH_ARCH}.tar.gz" \
+    && cp "bitcoin-cash-node-${BCHN_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+# BCHN expects bitcoin.conf (not bitcoincash.conf) — it is a Bitcoin fork\n\
+if [ -f /config/bitcoincash.conf.template ]; then\n\
+    envsubst < /config/bitcoincash.conf.template > /home/bitcoincash/.bitcoin/bitcoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R bitcoincash:bitcoincash /home/bitcoincash/.bitcoin\n\
+\n\
+# Start Bitcoin Cash daemon\n\
+exec gosu bitcoincash bitcoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports (different from BTC to avoid conflicts)
+# P2P
+EXPOSE 8433
+# RPC
+EXPOSE 8432
+# ZMQ
+EXPOSE 28432
+
+# Data volume
+VOLUME ["/home/bitcoincash/.bitcoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,725 @@
+# Spiral Pool v1.0 Configuration
+# Multi-coin support with node failover
+# Supports SHA256d coins: BTC, BCH, DGB, BC2 (Bitcoin II), NMC (Namecoin - merge-mineable with BTC)
+# Supports Scrypt coins: LTC, DOGE, DGB-SCRYPT, PEP, CAT
+#
+# NOTE: This is a TEMPLATE. All "CHANGE_ME" passwords are replaced automatically
+# by install.sh with randomly generated values during installation.
+# If editing manually, replace ALL "CHANGE_ME" values with strong passwords.
+#
+# AUTOMATIC MINER ROUTING (Spiral Router):
+# All miners connect to the SAME port. The pool automatically detects miner type
+# from the user-agent string during mining.subscribe and sets appropriate difficulty:
+#
+#   Lottery (ESP32 Miner):            0.001   (target: 60s shares)
+#   Low (BitAxe Ultra, NMAxe):        500     (target: 10s shares)
+#   Mid (NerdQAxe, BitAxe Hex):       4000    (target: 5s shares)
+#   High (Antminer S9, older gen):    13000   (target: 4s shares)
+#   Pro (Antminer S19+, S21):         50000   (target: 2s shares)
+#
+# Difficulty auto-adjusts based on actual hashrate to maintain target share times.
+# No need for separate low-diff ports - one port handles everything!
+#
+version: 1
+
+# Global settings (apply to all coins)
+global:
+  log_level: info        # debug, info, warn, error
+  log_format: json       # json, text
+  metrics_port: 9100     # Prometheus metrics
+  api_port: 4000         # REST API
+  api_enabled: true
+
+  # Spiral Sentinel — internal pool health monitoring
+  # Monitors WAL stuck entries, node health, hashrate/connection drops, disk space.
+  # Complementary to the external Python Spiral Sentinel (miner hardware monitoring).
+  sentinel:
+    enabled: true
+    check_interval: 60s          # How often to run checks
+    wal_stuck_threshold: 10m     # Alert if WAL entry pending longer than this
+    block_drought_hours: 0       # Alert after N hours with no blocks (0 = disabled)
+    disconnect_drop_percent: 30  # Alert if connections drop by this % in one interval
+    hashrate_drop_percent: 30    # Alert if hashrate drops by this % in one interval
+    wal_disk_space_warning_mb: 500  # Early warning (100MB is fail-fast)
+    wal_max_files: 60            # Alert if WAL file count exceeds this
+    false_rejection_threshold: 0.10  # Alert if false rejection rate exceeds 10%
+    retry_rate_threshold: 5      # Alert if block retries exceed 5/hour
+    alert_cooldown: 15m          # Same alert type+coin won't fire within this period
+    payment_stall_checks: 5      # Checks without progress before payment stall alert
+    goroutine_limit: 10000       # Absolute goroutine count warning threshold
+    node_health_threshold: 0.5   # Per-node health score warning level (0.0-1.0)
+    ha_flap_window: 10m          # Window for HA role flap detection
+    ha_flap_threshold: 3         # Max role changes in window before CRITICAL alert
+    orphan_rate_threshold: 0.20  # Orphan rate warning (0.20 = 20%, needs 10+ blocks)
+    chain_tip_stall_minutes: 30  # Alert if daemon block height unchanged for N minutes
+    min_peer_count: 3            # Alert if daemon peer count drops below this
+    maturity_stall_hours: 6      # Alert if a found block stays pending for N hours
+    # webhooks:                  # Uncomment and configure to enable push alerts
+    #   - url: "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN"
+    #   - url: "https://api.telegram.org/botYOUR_BOT_TOKEN/sendMessage"
+    #     chat_id: "YOUR_CHAT_ID"
+
+# Shared database (tables isolated by pool_id)
+database:
+  host: localhost
+  port: 5432
+  user: spiralstratum
+  password: "CHANGE_ME"
+  database: spiralstratum
+  maxConnections: 1000  # High limit to handle burst share submissions
+  batching:
+    size: 1000
+    interval: 5s
+
+# Coin pool configurations
+coins:
+  # DigiByte Pool (SHA256d)
+  - symbol: DGB
+    pool_id: dgb_mainnet
+    enabled: false  # User must explicitly enable their chosen coin(s)
+    address: "DYourDigiByteAddressHere"
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 3333              # Single port - miner type auto-detected from user-agent
+      difficulty:
+        initial: 5000         # Fallback for unknown miners (overridden by auto-routing)
+        varDiff:
+          enabled: true
+          minDiff: 0.0001     # Very low for ESP32 miners (~50 KH/s)
+          maxDiff: 1000000000000  # 1 trillion - supports S21 (200 TH/s) on BTC
+          # targetTime: auto-derived from blockTime (BlockTime/4, capped 2-30s)
+          # For DGB (15s blocks): ~3.75s target -> multiple shares per block
+          # Override if needed, otherwise leave commented for auto-detection
+          # targetTime: 4     # Seconds between shares (auto-derived if omitted)
+          retargetTime: 60    # Adjust every 60 seconds
+          variancePercent: 30
+          # blockTime: 15     # Optional: Override block time (auto-detected from coin)
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10  # More forgiving for lottery miners
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720  # 0x1FFFE000
+      job_rebroadcast: 30s
+
+    # Multiple nodes for failover
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 14022
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 0  # Lowest = preferred
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28532"
+
+      - id: backup-1
+        host: 192.168.1.100
+        port: 14022
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 1
+        weight: 1
+        zmq:
+          enabled: false  # ZMQ only on primary
+
+      - id: backup-2
+        host: 192.168.1.101
+        port: 14022
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 2
+        weight: 1
+
+    payments:
+      enabled: false  # SOLO mining - rewards go directly to coinbase address
+      interval: 600s
+      minimum_payment: 10.0
+      scheme: SOLO
+
+  # Bitcoin Pool (SHA256d)
+  - symbol: BTC
+    pool_id: btc_mainnet
+    enabled: false  # Enable when ready
+    address: "bc1qyourbitcoinaddress..."
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 4333  # BTC Stratum V1 port
+      difficulty:
+        initial: 5000           # Suitable for NerdQAxe++ (~5 TH/s), vardiff will adjust
+        varDiff:
+          enabled: true
+          minDiff: 0.001        # Support tiny miners (ESP32)
+          maxDiff: 100000000    # Support large ASICs (S19/S21)
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 55s  # BTC blocks are 10 minutes
+
+    nodes:
+      # Primary node
+      - id: primary
+        host: bitcoin-node.local
+        port: 8332
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://bitcoin-node.local:28332"
+
+      # Backup node for failover
+      - id: backup
+        host: bitcoin-backup.local
+        port: 8332
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 1
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Bitcoin Cash Pool (SHA256d)
+  - symbol: BCH
+    pool_id: bch_mainnet
+    enabled: false  # Enable when ready
+    address: "bitcoincash:qyourbitcoincashaddress..."  # CashAddr format
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 5333  # BCH Stratum V1 port
+      difficulty:
+        initial: 5000           # Suitable for NerdQAxe++ (~5 TH/s), vardiff will adjust
+        varDiff:
+          enabled: true
+          minDiff: 0.001        # Support tiny miners (ESP32)
+          maxDiff: 100000000    # Support large ASICs (S19/S21)
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 55s
+
+    nodes:
+      # Primary BCH node
+      - id: primary
+        host: bch-node.local
+        port: 8432
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://bch-node.local:28432"
+
+      # Backup BCH node
+      - id: backup
+        host: bch-backup.local
+        port: 8432
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 1
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Bitcoin II Pool (SHA256d)
+  # ╔═══════════════════════════════════════════════════════════════════════════╗
+  # ║  ⚠️  CRITICAL WARNING: BC2/BTC ADDRESS COLLISION RISK                     ║
+  # ║                                                                           ║
+  # ║  Bitcoin II uses IDENTICAL address formats to Bitcoin:                    ║
+  # ║  - Same P2PKH prefix (addresses starting with '1')                        ║
+  # ║  - Same P2SH prefix (addresses starting with '3')                         ║
+  # ║  - Same Bech32 HRP (addresses starting with 'bc1')                        ║
+  # ║                                                                           ║
+  # ║  A Bitcoin address will APPEAR valid for BC2, but rewards sent to a       ║
+  # ║  BTC address on the BC2 network will be PERMANENTLY LOST!                 ║
+  # ║                                                                           ║
+  # ║  ALWAYS generate addresses using Bitcoin II Core wallet, NOT Bitcoin Core ║
+  # ╚═══════════════════════════════════════════════════════════════════════════╝
+  - symbol: BC2
+    pool_id: bc2_mainnet
+    enabled: false  # Enable when ready
+    address: "bc1qyourbitcoiniiadress..."  # MUST be generated by Bitcoin II Core (NOT Bitcoin!)
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 6333              # BC2 stratum port
+      difficulty:
+        initial: 5000         # Suitable for NerdQAxe++ (~5 TH/s), vardiff will adjust
+        varDiff:
+          enabled: true
+          minDiff: 0.001      # Support tiny miners (ESP32)
+          maxDiff: 100000000  # High ceiling for ASICs
+          targetTime: 10      # 10 seconds between shares
+          retargetTime: 120   # Adjust every 2 minutes
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720       # 0x1FFFE000
+      job_rebroadcast: 55s    # BC2 blocks are 10 minutes
+
+    nodes:
+      # Primary BC2 node
+      - id: primary
+        host: 127.0.0.1
+        port: 8339            # BC2 RPC port
+        user: spiralbc2
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28338"  # BC2 ZMQ port
+
+      # Backup BC2 node (optional)
+      - id: backup
+        host: bc2-backup.local
+        port: 8339
+        user: spiralbc2
+        password: "CHANGE_ME"
+        priority: 1
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Namecoin Pool (SHA256d) - Merge-mineable with Bitcoin
+  # The first fork of Bitcoin (2011), pioneering merged mining (AuxPoW)
+  # AuxPoW enabled at block 19,200 - can be merge-mined with Bitcoin
+  - symbol: NMC
+    pool_id: nmc_mainnet
+    enabled: false  # Enable when ready
+    address: "nc1qyournamecoinaddress..."  # Bech32 format (nc1q...)
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 14335             # NMC stratum port
+      difficulty:
+        initial: 5000         # Suitable for NerdQAxe++ (~5 TH/s), vardiff will adjust
+        varDiff:
+          enabled: true
+          minDiff: 0.001      # Support tiny miners (ESP32)
+          maxDiff: 100000000  # Support large ASICs (S19/S21)
+          targetTime: 10      # 10 seconds between shares
+          retargetTime: 120   # Adjust every 2 minutes
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720       # 0x1FFFE000
+      job_rebroadcast: 55s    # NMC blocks are ~10 minutes
+
+    nodes:
+      # Primary NMC node
+      - id: primary
+        host: 127.0.0.1
+        port: 8336            # Namecoin RPC port
+        user: spiralnmc
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28336"  # NMC ZMQ port
+
+      # Backup NMC node (optional)
+      - id: backup
+        host: nmc-backup.local
+        port: 8336
+        user: spiralnmc
+        password: "CHANGE_ME"
+        priority: 1
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SCRYPT COINS
+  # Note: Scrypt mining is ~1000x slower than SHA-256d at the same power
+  # Initial difficulty should be much lower than SHA-256d coins
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Litecoin Pool (Scrypt)
+  - symbol: LTC
+    pool_id: ltc_mainnet
+    algorithm: scrypt
+    enabled: false  # Enable when ready
+    address: "ltc1qyourlitecoinaddress..."
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 7333
+      difficulty:
+        initial: 1              # Much lower than SHA-256d
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 100000
+          targetTime: 15        # 15 seconds between shares
+          retargetTime: 60
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 30s
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 9332
+        user: spiralltc
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28933"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Dogecoin Pool (Scrypt)
+  - symbol: DOGE
+    pool_id: doge_mainnet
+    algorithm: scrypt
+    enabled: false  # Enable when ready
+    address: "DYourDogeAddress..."
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 8335
+      difficulty:
+        initial: 1
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 100000
+          targetTime: 10        # 10 seconds between shares (DOGE has 1 min blocks)
+          retargetTime: 60
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 15s
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 22555
+        user: spiraldoge
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28555"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # DigiByte-Scrypt Pool (uses same DGB node, different stratum port)
+  - symbol: DGB-SCRYPT
+    pool_id: dgb_scrypt_mainnet
+    algorithm: scrypt
+    enabled: false  # Enable when ready
+    address: "DYourDigiByteAddressHere"  # Same as DGB SHA-256d
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 3336              # Different port from DGB SHA-256d (3333)
+      difficulty:
+        initial: 1
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 10000
+          targetTime: 15
+          retargetTime: 60
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 5s
+
+    # Uses same DGB node as SHA-256d
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 14022           # Same as DGB SHA-256d
+        user: rpcuser
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28532"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # PepeCoin Pool (Scrypt) - Merge-mineable with Litecoin
+  # The original Pepe-themed memecoin (2016)
+  - symbol: PEP
+    pool_id: pep_mainnet
+    algorithm: scrypt
+    enabled: false  # Enable when ready
+    address: "PYourPepeCoinAddress..."
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 10335
+      difficulty:
+        initial: 1
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 100000
+          targetTime: 10        # 10 seconds between shares (60-sec block time)
+          retargetTime: 60
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 15s
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 33873           # PepeCoin RPC port
+        user: spiralpep
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: false  # PepeCoin v1.1.0 compiled without ZMQ — daemon crashes if zmq options present
+          endpoint: "tcp://127.0.0.1:28873"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Catcoin Pool (Scrypt) - Standalone (NO AuxPoW/merge-mining)
+  # The first cat-themed meme coin (December 2013), response to Dogecoin
+  - symbol: CAT
+    pool_id: cat_mainnet
+    algorithm: scrypt
+    enabled: false  # Enable when ready
+    address: "9YourCatcoinAddress..."       # P2PKH format (version byte 21, starts with 9)
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 12335
+      difficulty:
+        initial: 1
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 100000
+          targetTime: 30        # 30 seconds between shares (10-min block time like Bitcoin)
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 10
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 120s   # Longer rebroadcast for 10-min blocks
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 9932            # Catcoin RPC port
+        user: spiralcat
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28932"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXTERNAL ACCESS CONFIGURATION
+# Enables external miners (hashrate marketplaces, etc.) to connect to your pool
+# Configure via: spiralctl external setup
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# IMPORTANT: External access is managed separately via spiralctl external
+# commands. This section shows the available configuration options but
+# actual values are stored in /etc/spiralpool/external.yaml
+#
+# external:
+#   enabled: false
+#   mode: "tunnel"  # or "port-forward"
+#
+#   # Port Forward Mode - requires router configuration
+#   portForward:
+#     publicHost: "mypool.duckdns.org"
+#     publicPort: 3333
+#     localPort: 3333
+#
+#   # Cloudflare Tunnel Mode - no router config needed
+#   tunnel:
+#     name: "spiralpool-stratum"
+#     configPath: "/etc/spiralpool/cloudflared/config.yml"
+#     credentialsPath: "/etc/spiralpool/cloudflared/credentials.json"
+#     hostname: "stratum.mydomain.com"
+#     binaryPath: "/usr/local/bin/cloudflared"
+#
+#   # Security hardening when external access is enabled
+#   security:
+#     hardenOnEnable: true          # Auto-apply stricter limits
+#     requireTLS: false             # Force TLS for external connections
+#     maxConnectionsPerIP: 50       # Override when external enabled
+#     sharesPerSecond: 50           # Override when external enabled
+#
+# To configure external access, use:
+#   spiralctl external setup       # Interactive wizard
+#   spiralctl external enable      # Enable external access
+#   spiralctl external disable     # Disable external access
+#   spiralctl external status      # Show current status
+#   spiralctl external test        # Test connectivity
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECURITY & RATE LIMITING
+# These settings apply to the stratum server for DDoS/abuse protection
+# Most are DISABLED by default for hashrate marketplace compatibility
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Add to any coin's stratum: section to enable security features:
+#
+#   rateLimiting:
+#     enabled: true                    # Master enable for rate limiting
+#
+#     # IP-based limits (disabled by default for marketplace compatibility)
+#     # Set to 0 to disable, or positive number to enable
+#     #
+#     # IMPORTANT: connectionsPerIP defaults to 0 (unlimited) because
+#     # hashrate rental services (mining marketplaces) connect
+#     # from dynamic IP addresses that operators cannot predict in advance.
+#     # Enabling IP limits would break compatibility with rented hashpower.
+#     # This is a deliberate architectural decision, not a security weakness.
+#     connectionsPerIP: 0              # Max connections per IP (0 = unlimited)
+#     connectionsPerMinute: 0          # Max new connections per IP per minute
+#     sharesPerSecond: 0               # Max shares per second per connection
+#     workersPerIP: 0                  # Max unique worker names per IP
+#
+#     # Per-connection limits (enabled by default)
+#     preAuthTimeout: 10s              # Must authorize within this time
+#     preAuthMessageLimit: 20          # Max messages before authorization
+#
+#     # Ban settings
+#     banThreshold: 10                 # Violations before auto-ban
+#     banDuration: 30m                 # Auto-ban duration
+#     banPersistencePath: "/spiralpool/data/bans.json"  # Bans persist across restarts
+#
+#     # Whitelisted IPs (never rate-limited or banned)
+#     whitelistIPs:
+#       - "127.0.0.1"
+#       - "192.168.1.0/24"
+#
+# For private pools (no rented hashpower), consider enabling these limits:
+#   connectionsPerIP: 100
+#   sharesPerSecond: 50
+#   workersPerIP: 100
+#
+# For rented hashpower, keep all IP-based limits at 0 (disabled)

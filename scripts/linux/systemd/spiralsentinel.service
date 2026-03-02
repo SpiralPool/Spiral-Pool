@@ -1,0 +1,76 @@
+# Spiral Sentinel Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Spiral Sentinel - Mining Monitor
+Documentation=https://github.com/SpiralPool/Spiral-Pool
+After=network-online.target spiralstratum.service
+# Prevent restart loops: max 5 restarts in 10 minutes
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{POOL_USER}}
+Group={{POOL_USER}}
+WorkingDirectory={{INSTALL_DIR}}
+# -u flag ensures unbuffered stdout/stderr for real-time logging in journalctl
+ExecStart=/usr/bin/python3 -u {{INSTALL_DIR}}/bin/SpiralSentinel.py
+
+# === ENVIRONMENT ===
+# Explicitly set HOME so Python's Path.home() resolves correctly under ProtectHome=yes
+Environment="HOME=/home/{{POOL_USER}}"
+# Force unbuffered Python output so logs appear in journalctl immediately
+Environment="PYTHONUNBUFFERED=1"
+# Tell sentinel where to find data files (miners.json, etc.)
+Environment="SPIRALPOOL_INSTALL_DIR={{INSTALL_DIR}}"
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# === SECURITY HARDENING ===
+# Filesystem protection
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RuntimeDirectory=spiralpool
+RuntimeDirectoryPreserve=yes
+ReadWritePaths={{INSTALL_DIR}} /home/{{POOL_USER}}/.spiralsentinel /run/spiralpool
+
+# Privilege restrictions
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+
+# Network restrictions (AF_INET6 kept for dual-stack compat; IPv6 disabled at OS level)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# System call filtering
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+
+# Memory protection
+# NOTE: MemoryDenyWriteExecute omitted — Python C extensions may use mmap with W+X
+LockPersonality=yes
+
+# Misc hardening
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

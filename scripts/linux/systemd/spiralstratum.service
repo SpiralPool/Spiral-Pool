@@ -1,0 +1,91 @@
+# Spiral Pool Stratum Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+#   {{DAEMON_SERVICE}} - Node daemon service (digibyted, bitcoind, or bitcoind-bch)
+#   {{WANTS_DEPS}} - Additional service dependencies
+
+[Unit]
+Description=Spiral Pool Stratum Server
+Documentation=https://github.com/SpiralPool/Spiral-Pool
+After=network-online.target postgresql.service {{DAEMON_SERVICE}}.service {{WANTS_DEPS}}
+Requires=postgresql.service
+Wants={{DAEMON_SERVICE}}.service {{WANTS_DEPS}}
+# Prevent restart loops: max 5 restarts in 10 minutes
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{POOL_USER}}
+Group={{POOL_USER}}
+WorkingDirectory={{INSTALL_DIR}}
+
+# Wait for blockchain node RPC to be ready (up to 30 minutes)
+# This prevents boot loops when the node is still starting after reboot
+ExecStartPre={{INSTALL_DIR}}/bin/wait-for-node.sh {{INSTALL_DIR}}/config/config.yaml 1800
+
+ExecStart={{INSTALL_DIR}}/bin/spiralstratum -config {{INSTALL_DIR}}/config/config.yaml
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65535
+
+# === SECURITY HARDENING ===
+# Filesystem protection
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RuntimeDirectory=spiralpool
+RuntimeDirectoryPreserve=yes
+ReadWritePaths={{INSTALL_DIR}} /run/spiralpool
+
+# Privilege restrictions
+NoNewPrivileges=yes
+# CAP_NET_ADMIN: ip addr add/del, ip link add/del/set, ip neigh flush (VIP management)
+# CAP_NET_RAW: arping -D (split-brain detection), arping -U (gratuitous ARP)
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+
+# Network restrictions (AF_INET6 kept for Go dual-stack compat; IPv6 disabled at OS level)
+# AF_NETLINK: ip command uses netlink sockets to talk to kernel (VIP add/del, macvlan, neigh flush)
+# AF_PACKET: arping uses raw ARP frames for split-brain detection and gratuitous ARP
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK AF_PACKET
+
+# System call filtering
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Allow msync for ZMQ memory-mapped I/O (used for high-performance messaging)
+SystemCallFilter=msync
+SystemCallFilter=~@privileged
+
+# Memory protection
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Misc hardening
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+PrivateDevices=yes
+
+# Allow longer startup time for ExecStartPre (node wait script)
+TimeoutStartSec=1900
+
+# Graceful shutdown timeout — SIGKILL after this if stratum hasn't exited.
+# CRITICAL: Must be >= 120s to allow block submission to complete before SIGKILL.
+# Block submission can take up to 90 seconds (5 retries with exponential backoff).
+# WAL recovery replays in-flight shares, but a partially-submitted block is lost.
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

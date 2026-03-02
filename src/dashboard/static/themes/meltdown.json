@@ -1,0 +1,51 @@
+{
+  "name": "Meltdown",
+  "id": "meltdown",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Post-apocalyptic aesthetic with radiation green and rusted metal",
+  "category": "Industrial",
+  "colors": {
+    "bg-primary": "#0e0d0a",
+    "bg-secondary": "#1a1710",
+    "bg-card": "#1e1b14",
+    "bg-card-hover": "#2a2518",
+    "neon-blue": "#8b9a3c",
+    "neon-cyan": "#39ff14",
+    "neon-purple": "#c8a951",
+    "neon-pink": "#cc5500",
+    "neon-orange": "#cc5500",
+    "neon-yellow": "#c8a951",
+    "neon-green": "#39ff14",
+    "neon-red": "#b22222",
+    "text-primary": "#c4b998",
+    "text-secondary": "#8a7e65",
+    "text-muted": "#5c5040",
+    "status-online": "#39ff14",
+    "status-offline": "#b22222",
+    "status-warning": "#cc5500",
+    "border-primary": "rgba(57, 255, 20, 0.15)",
+    "border-accent": "rgba(200, 169, 81, 0.2)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #39ff14 0%, #1a6b0a 100%)",
+    "secondary": "linear-gradient(135deg, #cc5500 0%, #6b2d00 100%)",
+    "accent": "linear-gradient(135deg, #c8a951 0%, #6b5a2a 100%)",
+    "card": "linear-gradient(180deg, rgba(30, 27, 20, 0.97) 0%, rgba(14, 13, 10, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Special Elite', serif",
+    "body": "'Courier Prime', monospace",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.25,
+    "animationSpeed": 0.8,
+    "borderRadius": "4px",
+    "useGlitchEffect": true,
+    "useParticles": true,
+    "useScanLines": true,
+    "useNeonGlow": false
+  },
+  "customCSS": "/* Meltdown - Post-Apocalyptic Mining Terminal */\n@import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Fira+Code:wght@400;500&display=swap');\n\n/* Irradiated ambient background */\n.cyber-grid {\n  background:\n    repeating-linear-gradient(\n      0deg,\n      transparent,\n      transparent 3px,\n      rgba(57, 255, 20, 0.015) 3px,\n      rgba(57, 255, 20, 0.015) 6px\n    );\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 600px 400px at 20% 15%, rgba(57, 255, 20, 0.04), transparent),\n    radial-gradient(ellipse 400px 300px at 80% 80%, rgba(204, 85, 0, 0.03), transparent);\n}\n\n/* Radiation scan line */\n.scan-line {\n  background: linear-gradient(\n    to bottom,\n    transparent 0%,\n    rgba(57, 255, 20, 0.04) 50%,\n    transparent 100%\n  );\n  animation: scanLines 6s linear infinite;\n}\n\n/* Corroded/rusted card borders */\n.stat-card,\n.miner-card,\n.health-card,\n.lifetime-card {\n  border: 1px dashed rgba(200, 169, 81, 0.25);\n  border-radius: 4px;\n  position: relative;\n}\n\n/* Radiation strip on stat cards */\n.stat-card::before {\n  background: linear-gradient(90deg, #39ff14, #c8a951, #cc5500);\n  height: 2px;\n  opacity: 0.7;\n}\n\n/* Geiger counter glow on hover */\n.stat-card:hover,\n.miner-card:hover {\n  border-color: rgba(57, 255, 20, 0.35);\n  box-shadow:\n    0 0 12px rgba(57, 255, 20, 0.15),\n    inset 0 0 15px rgba(57, 255, 20, 0.03);\n}\n\n/* Stat values — radiation green glow */\n.stat-value {\n  text-shadow: 0 0 10px rgba(57, 255, 20, 0.4);\n}\n\n/* Celebration styling */\n.celebration-title {\n  color: #39ff14 !important;\n  text-shadow: 0 0 25px rgba(57, 255, 20, 0.6), 0 0 50px rgba(57, 255, 20, 0.3) !important;\n}\n\n.celebration-icon {\n  filter: hue-rotate(85deg) brightness(1.2);\n}\n\n/* Irradiated logo treatment */\n.logo {\n  text-shadow: 0 0 15px rgba(57, 255, 20, 0.3);\n  letter-spacing: 3px;\n}\n\n/* Dust particle styling */\n.cyber-particles {\n  opacity: 0.3;\n}\n\n/* Section headers — rusted accent */\n.section-header h2 {\n  border-bottom: 1px solid rgba(200, 169, 81, 0.2);\n  padding-bottom: 0.5rem;\n}\n\n/* Alert badges — warning orange */\n.badge {\n  border-color: rgba(204, 85, 0, 0.4);\n}\n\n/* Scrollbar — corroded colors */\n::-webkit-scrollbar-thumb {\n  background: rgba(200, 169, 81, 0.3);\n}\n\n::-webkit-scrollbar-thumb:hover {\n  background: rgba(200, 169, 81, 0.5);\n}"
+}

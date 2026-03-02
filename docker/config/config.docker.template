@@ -1,0 +1,95 @@
+# Spiral Stratum Docker Configuration Template
+# Environment variables are substituted at container startup via envsubst
+# Defaults are set in stratum-entrypoint.sh before envsubst runs
+#
+# IMPORTANT: YAML structure must match Go struct hierarchy in config.go.
+# Top-level keys: pool, stratum, daemon, database, api, metrics, logging, sentinel
+#
+# NOTE: Docker supports V1 single-coin solo mining only.
+# For full features (V2 Enhanced Stratum, multi-coin, merge mining),
+# use native installation: sudo ./install.sh
+# V1 Stratum with TLS (stratum+ssl://) IS supported in Docker.
+
+logging:
+  level: info
+  output: stdout
+
+stratum:
+  listen: "0.0.0.0:${STRATUM_PORT}"
+  # NOTE: listenV2 is not used in Docker (V1 config mode). V2 Enhanced Stratum
+  # requires native installation with V2 multi-coin config format.
+  tls:
+    enabled: true
+    listenTLS: "0.0.0.0:${STRATUM_PORT_TLS}"
+    certFile: "${TLS_CERT_FILE}"
+    keyFile: "${TLS_KEY_FILE}"
+    minVersion: "1.2"
+  connection:
+    maxConnections: 10000
+    timeout: "5m"
+  banning:
+    enabled: true
+    invalidSharesThreshold: 5
+    banDuration: "1h"
+  difficulty:
+    varDiff:
+      enabled: true
+      minDiff: 0.001
+      maxDiff: 10000000
+      targetTime: 4
+      retargetTime: 60
+      variancePercent: 30
+
+daemon:
+  host: "${DAEMON_HOST}"
+  port: ${DAEMON_RPC_PORT}
+  user: "${DAEMON_RPC_USER}"
+  password: "${DAEMON_RPC_PASSWORD}"
+  zmq:
+    enabled: ${DAEMON_ZMQ_ENABLED}
+    endpoint: "tcp://${DAEMON_HOST}:${DAEMON_ZMQ_PORT}"
+    reconnectInitial: "5s"
+    reconnectMax: "120s"
+    reconnectFactor: 2.0
+
+database:
+  host: "${DB_HOST}"
+  port: ${DB_PORT}
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  database: "${DB_NAME}"
+  sslMode: "disable"
+
+pool:
+  coin: "${POOL_COIN}"
+  id: "${POOL_ID}"
+  address: "${POOL_ADDRESS}"
+  coinbaseText: "${COINBASE_TEXT}"
+
+api:
+  enabled: true
+  listen: "0.0.0.0:4000"
+  adminApiKey: "${ADMIN_API_KEY}"
+
+metrics:
+  enabled: true
+  listen: "0.0.0.0:9100"
+  authToken: "${SPIRAL_METRICS_TOKEN}"
+
+sentinel:
+  enabled: true
+  check_interval: "60s"
+
+# Redis deduplication (HA mode only — disabled by default)
+# When running with docker-compose.ha.yml, these are overridden via env vars.
+# NOTE: envsubst does NOT support ${VAR:-default} syntax — use plain ${VAR}.
+# Defaults are set in stratum-entrypoint.sh before envsubst runs.
+redis:
+  dedup:
+    enabled: ${REDIS_DEDUP_ENABLED}
+    addr: "${REDIS_DEDUP_ADDR}"
+    password: "${REDIS_DEDUP_PASSWORD}"
+
+# Merge mining is NOT supported in Docker mode.
+# For merge mining (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP),
+# use native installation: sudo ./install.sh

@@ -1,0 +1,36 @@
+# PepeCoin Node Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{PEP_DIR}} - PepeCoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=PepeCoin Core Daemon
+Documentation=https://pepecoin.org
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{PEP_DIR}}/bin/pepecoind -daemon -conf={{INSTALL_DIR}}/pep/pepecoin.conf -datadir={{INSTALL_DIR}}/pep
+ExecStop={{PEP_DIR}}/bin/pepecoin-cli -conf={{INSTALL_DIR}}/pep/pepecoin.conf stop
+PIDFile={{INSTALL_DIR}}/pep/pepecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# PepeCoin (old Bitcoin Core base) crashes with SIGABRT
+# under modern systemd hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target

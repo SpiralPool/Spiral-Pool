@@ -1,0 +1,51 @@
+{
+  "name": "Rainbow Unicorn",
+  "id": "rainbow-unicorn",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Absurdly fun theme with rainbow gradients and sparkle",
+  "category": "Fun",
+  "colors": {
+    "bg-primary": "#1a1028",
+    "bg-secondary": "#221438",
+    "bg-card": "#2a1844",
+    "bg-card-hover": "#341e52",
+    "neon-blue": "#66aaff",
+    "neon-cyan": "#55eedd",
+    "neon-purple": "#cc66ff",
+    "neon-pink": "#ff66aa",
+    "neon-orange": "#ff9944",
+    "neon-yellow": "#ffdd44",
+    "neon-green": "#66ff88",
+    "neon-red": "#ff5566",
+    "text-primary": "#f0e8ff",
+    "text-secondary": "#b8a0d8",
+    "text-muted": "#705898",
+    "status-online": "#66ff88",
+    "status-offline": "#ff5566",
+    "status-warning": "#ffdd44",
+    "border-primary": "rgba(204, 102, 255, 0.2)",
+    "border-accent": "rgba(255, 102, 170, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #ff66aa 0%, #cc66ff 50%, #66aaff 100%)",
+    "secondary": "linear-gradient(135deg, #66ff88 0%, #55eedd 50%, #66aaff 100%)",
+    "accent": "linear-gradient(135deg, #ffdd44 0%, #ff9944 50%, #ff66aa 100%)",
+    "card": "linear-gradient(180deg, rgba(42, 24, 68, 0.95) 0%, rgba(34, 20, 56, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Fredoka', sans-serif",
+    "body": "'Nunito', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.35,
+    "animationSpeed": 1.2,
+    "borderRadius": "16px",
+    "useGlitchEffect": false,
+    "useParticles": true,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Rainbow Unicorn - Maximum Fun */\n@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 20% 10%, rgba(255, 102, 170, 0.1), transparent),\n    radial-gradient(ellipse 500px 350px at 50% 50%, rgba(204, 102, 255, 0.08), transparent),\n    radial-gradient(ellipse 600px 400px at 80% 90%, rgba(102, 170, 255, 0.06), transparent);\n  animation: rainbowShift 10s ease-in-out infinite;\n}\n\n@keyframes rainbowShift {\n  0%, 100% { filter: hue-rotate(0deg); }\n  50% { filter: hue-rotate(30deg); }\n}\n\n.stat-card {\n  border: 1px solid rgba(204, 102, 255, 0.18);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #ff66aa, #cc66ff, #66aaff, #55eedd, #66ff88);\n  height: 3px;\n}\n\n.stat-card:hover {\n  border-color: rgba(255, 102, 170, 0.35);\n  box-shadow: \n    0 4px 25px rgba(204, 102, 255, 0.15),\n    0 0 40px rgba(255, 102, 170, 0.08);\n}\n\n.stat-value {\n  text-shadow: 0 0 20px currentColor;\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #ff66aa, #cc66ff, #66aaff, #66ff88);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(204, 102, 255, 0.1);\n}\n\n.miner-card:hover {\n  border-color: rgba(255, 102, 170, 0.25);\n}\n\n.logo {\n  background: linear-gradient(135deg, #ff66aa, #cc66ff, #66aaff);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n}"
+}

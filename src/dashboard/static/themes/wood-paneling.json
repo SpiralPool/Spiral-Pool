@@ -1,0 +1,51 @@
+{
+  "name": "Wood Paneling",
+  "id": "wood-paneling",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Warm rustic wood tones with amber accents",
+  "category": "Nature",
+  "colors": {
+    "bg-primary": "#1c1510",
+    "bg-secondary": "#261e16",
+    "bg-card": "#302418",
+    "bg-card-hover": "#3d2e1f",
+    "neon-blue": "#b08860",
+    "neon-cyan": "#c49a6c",
+    "neon-purple": "#a07850",
+    "neon-pink": "#cc9966",
+    "neon-orange": "#e8a040",
+    "neon-yellow": "#d4a850",
+    "neon-green": "#8db070",
+    "neon-red": "#c06050",
+    "text-primary": "#e8d8c4",
+    "text-secondary": "#bea88c",
+    "text-muted": "#7a6450",
+    "status-online": "#8db070",
+    "status-offline": "#c06050",
+    "status-warning": "#d4a850",
+    "border-primary": "rgba(176, 136, 96, 0.2)",
+    "border-accent": "rgba(196, 154, 108, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #b08860 0%, #8a6840 100%)",
+    "secondary": "linear-gradient(135deg, #c49a6c 0%, #a07850 100%)",
+    "accent": "linear-gradient(135deg, #e8a040 0%, #c08030 100%)",
+    "card": "linear-gradient(180deg, rgba(48, 36, 24, 0.95) 0%, rgba(38, 30, 22, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Playfair Display', serif",
+    "body": "'Lato', sans-serif",
+    "mono": "'Source Code Pro', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.1,
+    "animationSpeed": 0.7,
+    "borderRadius": "8px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": false
+  },
+  "customCSS": "/* Wood Paneling - Warm Rustic */\n@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;700&family=Source+Code+Pro&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 30% 10%, rgba(176, 136, 96, 0.08), transparent),\n    radial-gradient(ellipse 500px 350px at 70% 90%, rgba(232, 160, 64, 0.05), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(176, 136, 96, 0.2);\n  background: rgba(48, 36, 24, 0.9);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #b08860, #c49a6c, #e8a040);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(196, 154, 108, 0.35);\n  box-shadow: 0 4px 20px rgba(176, 136, 96, 0.12);\n}\n\n.stat-value {\n  text-shadow: none;\n}\n\n.celebration-title {\n  color: #e8a040 !important;\n  text-shadow: 0 0 20px rgba(232, 160, 64, 0.4);\n}\n\n.miner-card, .health-card, .lifetime-card {\n  background: rgba(48, 36, 24, 0.7);\n  border: 1px solid rgba(176, 136, 96, 0.12);\n}\n\n.miner-card:hover {\n  border-color: rgba(196, 154, 108, 0.25);\n}"
+}

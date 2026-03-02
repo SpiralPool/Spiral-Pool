@@ -1,0 +1,2491 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Settings - Spiral Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="setup-page">
+    <!-- Animated background -->
+    <div class="cyber-grid"></div>
+    <div class="scan-line"></div>
+
+    <div class="setup-container">
+        <!-- Header -->
+        <header class="setup-header">
+            <a href="/" style="text-decoration: none;">
+                <h1 class="glitch" data-text="Settings">Settings</h1>
+            </a>
+            <span class="version">Spiral Dashboard</span>
+        </header>
+
+        <!-- Navigation -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <a href="/" class="btn-back" style="color: var(--neon-cyan); text-decoration: none; font-family: var(--font-mono);">
+                ← Back to Dashboard
+            </a>
+        </div>
+
+        <!-- Auto-Discovery Section -->
+        <div class="config-section cyber-card" style="border-color: var(--neon-purple);">
+            <h3 class="section-title" style="color: var(--neon-purple);">
+                <span class="title-icon">🔍</span>
+                Auto-Discovery
+            </h3>
+            <p class="section-desc">Automatically scan your network to find mining devices</p>
+            <p class="section-note" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+                <span style="color: var(--neon-yellow);">Note:</span> Scan may take up to 2 minutes to ensure all devices are detected, including slower-responding miners.
+            </p>
+
+            <div class="discovery-controls" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                    <label for="scanSubnet">Subnet to Scan</label>
+                    <input type="text" id="scanSubnet" class="cyber-input" placeholder="Auto-detect">
+                </div>
+                <button type="button" id="scanBtn" class="cyber-btn" style="margin-top: 1.5rem; padding: 0.75rem 1.5rem;" onclick="startScan()">
+                    <span id="scanBtnText">🔍 Scan Network</span>
+                </button>
+            </div>
+
+            <div id="scan-progress" class="scan-progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Scanning...</div>
+            </div>
+
+            <div id="discovered-devices" class="discovered-list hidden">
+                <h4 style="color: var(--neon-green); margin-bottom: 0.75rem;">Discovered Devices</h4>
+                <div id="discovered-list-content"></div>
+                <button type="button" class="cyber-btn" style="margin-top: 1rem; background: var(--neon-green); color: #000;" onclick="addSelectedDevices()">
+                    Add Selected Devices
+                </button>
+            </div>
+        </div>
+
+        <!-- Basic Settings -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚙</span>
+                Basic Settings
+            </h3>
+            <div class="form-group">
+                <label for="dashboardTitle">Dashboard Title</label>
+                <input type="text" id="dashboardTitle" class="cyber-input" value="{{ config.dashboard_title or 'Spiral Pool Dashboard' }}">
+            </div>
+            <div class="form-group">
+                <label for="refreshInterval">Auto-Refresh Interval (seconds)</label>
+                <input type="number" id="refreshInterval" class="cyber-input" value="{{ config.refresh_interval or 30 }}" min="10" max="300">
+            </div>
+        </div>
+
+        <!-- Pool Mode & Coins Section -->
+        <div class="config-section cyber-card" style="border-color: var(--neon-cyan);">
+            <h3 class="section-title" style="color: var(--neon-cyan);">
+                <span class="title-icon">⛏</span>
+                Pool Mode & Coins
+            </h3>
+            <p class="section-desc">Current mining configuration. Changing modes requires a stratum restart.</p>
+
+            <!-- Current Mode Display -->
+            <div class="current-mode-display" id="current-mode-display">
+                <div class="mode-badge-container">
+                    <span class="mode-badge" id="current-mode-badge">Loading...</span>
+                    <span class="coins-badge" id="current-coins-badge"></span>
+                </div>
+            </div>
+
+            <!-- Mode Selector -->
+            <div class="pool-mode-selector" id="pool-mode-selector">
+                <div class="mode-option" id="mode-solo" onclick="selectPoolMode('solo')">
+                    <div class="mode-icon">🎯</div>
+                    <div class="mode-info">
+                        <div class="mode-title">Solo Mode</div>
+                        <div class="mode-desc">Mine a single cryptocurrency</div>
+                    </div>
+                    <div class="mode-check">✓</div>
+                </div>
+                <div class="mode-option" id="mode-multi" onclick="selectPoolMode('multi')">
+                    <div class="mode-icon">🌐</div>
+                    <div class="mode-info">
+                        <div class="mode-title">Multi-Coin Mode</div>
+                        <div class="mode-desc">Mine 2+ coins simultaneously</div>
+                    </div>
+                    <div class="mode-check">✓</div>
+                </div>
+            </div>
+
+            <!-- Coin Selection Grid -->
+            <div class="coin-selection" id="coin-selection">
+                <h4 class="coin-selection-title" id="coin-selection-title">Select Coins</h4>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">SHA-256d Coins</p>
+                <!-- Alphabetically ordered by symbol -->
+                <div class="coin-grid">
+                    <div class="coin-option" id="coin-BC2" data-coin="BC2" onclick="toggleCoin('BC2')">
+                        <div class="coin-icon">🔵</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Bitcoin II</div>
+                            <div class="coin-symbol">BC2</div>
+                            <div class="coin-port">Port: 6333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-BCH" data-coin="BCH" onclick="toggleCoin('BCH')">
+                        <div class="coin-icon">🟢</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Bitcoin Cash</div>
+                            <div class="coin-symbol">BCH</div>
+                            <div class="coin-port">Port: 5333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-BTC" data-coin="BTC" onclick="toggleCoin('BTC')">
+                        <div class="coin-icon">🟠</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Bitcoin</div>
+                            <div class="coin-symbol">BTC</div>
+                            <div class="coin-port">Port: 4333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-DGB" data-coin="DGB" onclick="toggleCoin('DGB')">
+                        <div class="coin-icon">💎</div>
+                        <div class="coin-info">
+                            <div class="coin-name">DigiByte</div>
+                            <div class="coin-symbol">DGB</div>
+                            <div class="coin-port">Port: 3333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <!-- BTC Merge Mining Aux Chains (hidden until BTC selected) -->
+                    <div class="merge-mining-group" id="merge-group-BTC" style="display: none;">
+                        <p class="merge-label">🔗 Merge-mine with BTC</p>
+                        <div class="coin-grid merge-grid">
+                            <div class="coin-option merge-aux" id="coin-FBTC" data-coin="FBTC" data-merge-parent="BTC" onclick="toggleCoin('FBTC')">
+                                <div class="coin-icon">🔶</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">Fractal Bitcoin</div>
+                                    <div class="coin-symbol">FBTC</div>
+                                    <div class="coin-port">Aux chain (BTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                            <div class="coin-option merge-aux" id="coin-NMC" data-coin="NMC" data-merge-parent="BTC" onclick="toggleCoin('NMC')">
+                                <div class="coin-icon">📛</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">Namecoin</div>
+                                    <div class="coin-symbol">NMC</div>
+                                    <div class="coin-port">Aux chain (BTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                            <div class="coin-option merge-aux" id="coin-SYS" data-coin="SYS" data-merge-parent="BTC" onclick="toggleCoin('SYS')">
+                                <div class="coin-icon">⚙️</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">Syscoin</div>
+                                    <div class="coin-symbol">SYS</div>
+                                    <div class="coin-port">Merge-mine only (BTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                            <div class="coin-option merge-aux" id="coin-XMY" data-coin="XMY" data-merge-parent="BTC" onclick="toggleCoin('XMY')">
+                                <div class="coin-icon">🌀</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">Myriad</div>
+                                    <div class="coin-symbol">XMY</div>
+                                    <div class="coin-port">Merge-mine only (BTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); margin: 1rem 0; font-size: 0.9rem;">Scrypt Coins</p>
+                <!-- Alphabetically ordered by symbol -->
+                <div class="coin-grid">
+                    <div class="coin-option" id="coin-CAT" data-coin="CAT" onclick="toggleCoin('CAT')">
+                        <div class="coin-icon">🐱</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Catcoin</div>
+                            <div class="coin-symbol">CAT</div>
+                            <div class="coin-port">Port: 12335</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-DGB-SCRYPT" data-coin="DGB-SCRYPT" onclick="toggleCoin('DGB-SCRYPT')">
+                        <div class="coin-icon">💎</div>
+                        <div class="coin-info">
+                            <div class="coin-name">DigiByte (Scrypt)</div>
+                            <div class="coin-symbol">DGB-SCRYPT</div>
+                            <div class="coin-port">Port: 3336</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-LTC" data-coin="LTC" onclick="toggleCoin('LTC')">
+                        <div class="coin-icon">⚪</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Litecoin</div>
+                            <div class="coin-symbol">LTC</div>
+                            <div class="coin-port">Port: 7333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <!-- LTC Merge Mining Aux Chains (hidden until LTC selected) -->
+                    <div class="merge-mining-group" id="merge-group-LTC" style="display: none;">
+                        <p class="merge-label">🔗 Merge-mine with LTC</p>
+                        <div class="coin-grid merge-grid">
+                            <div class="coin-option merge-aux" id="coin-DOGE" data-coin="DOGE" data-merge-parent="LTC" onclick="toggleCoin('DOGE')">
+                                <div class="coin-icon">🐕</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">Dogecoin</div>
+                                    <div class="coin-symbol">DOGE</div>
+                                    <div class="coin-port">Aux chain (LTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                            <div class="coin-option merge-aux" id="coin-PEP" data-coin="PEP" data-merge-parent="LTC" onclick="toggleCoin('PEP')">
+                                <div class="coin-icon">🐸</div>
+                                <div class="coin-info">
+                                    <div class="coin-name">PepeCoin</div>
+                                    <div class="coin-symbol">PEP</div>
+                                    <div class="coin-port">Aux chain (LTC)</div>
+                                </div>
+                                <div class="coin-check">✓</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="coin-validation" id="coin-validation"></div>
+            </div>
+
+            <!-- Wallet Addresses for Selected Coins -->
+            <div class="wallet-addresses" id="wallet-addresses" style="display: none;">
+                <h4>Wallet Addresses</h4>
+                <div id="wallet-inputs"></div>
+            </div>
+
+            <!-- Mode Change Warning -->
+            <div class="mode-change-warning" id="mode-change-warning" style="display: none;">
+                <div class="warning-icon">⚠️</div>
+                <div class="warning-text">
+                    <strong>Mode Change Detected</strong>
+                    <p id="warning-message">Changing pool mode will require a stratum restart.</p>
+                </div>
+            </div>
+
+            <!-- Apply Mode Change Button -->
+            <div class="mode-actions" id="mode-actions" style="display: none;">
+                <button type="button" class="cyber-btn mode-apply-btn" onclick="applyModeChange()">
+                    Apply Mode Change
+                </button>
+                <button type="button" class="cyber-btn mode-cancel-btn" onclick="cancelModeChange()">
+                    Cancel
+                </button>
+            </div>
+        </div>
+
+        <!-- Stratum Connection Info -->
+        <div class="config-section cyber-card" style="border-color: var(--neon-orange);">
+            <h3 class="section-title" style="color: var(--neon-orange);">
+                <span class="title-icon">🔌</span>
+                Stratum Connection Info
+            </h3>
+            <p class="section-desc">How to connect your miners to the pool. Each coin has three stratum ports:</p>
+
+            <div style="margin: 1rem 0; font-family: var(--font-mono); font-size: 0.85rem;">
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1rem; align-items: center;">
+                    <span style="color: var(--neon-green); font-weight: 600;">V1 (TCP)</span>
+                    <span style="color: var(--text-secondary);">Standard stratum — works with all miners</span>
+                    <span style="color: var(--neon-cyan); font-weight: 600;">V2 (Binary)</span>
+                    <span style="color: var(--text-secondary);">Stratum V2 encrypted protocol — V2-compatible miners</span>
+                    <span style="color: var(--neon-purple); font-weight: 600;">TLS (SSL)</span>
+                    <span style="color: var(--text-secondary);">Encrypted V1 stratum — industrial ASICs only (see note below)</span>
+                </div>
+            </div>
+
+            <div style="background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.3); border-radius: var(--border-radius); padding: 1rem; margin-top: 1rem;">
+                <p style="color: var(--neon-orange); font-weight: 600; margin-bottom: 0.5rem;">TLS Compatibility Notice</p>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+                    TLS stratum ports use a <strong>self-signed certificate</strong> (required for private IP pools). This works with
+                    industrial ASICs (Antminer, Whatsminer, Avalon, BraiinsOS) which skip certificate verification.
+                </p>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0;">
+                    <span style="color: var(--neon-red);">ESP32-based miners</span> (BitAxe, NerdQAxe, NMaxe, QAxe, Lucky Miner, Jingle Miner, Zyber)
+                    <strong>cannot use TLS ports</strong> — their mbedTLS firmware strictly verifies certificates and will reject self-signed certs.
+                    Use the standard <strong>V1 (TCP)</strong> port instead and disable "Encrypted connection (TLS)" in your device settings.
+                </p>
+            </div>
+        </div>
+
+        <!-- AxeOS/NMAXE Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔷</span>
+                AxeOS / NMAXE Devices
+            </h3>
+            <p class="section-desc">BitAxe and similar devices running AxeOS firmware</p>
+
+            <div id="axeos-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('axeos')">
+                <span class="btn-icon">+</span> Add AxeOS Device
+            </button>
+        </div>
+
+        <!-- Avalon Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔶</span>
+                Avalon ASIC Devices
+            </h3>
+            <p class="section-desc">Avalon ASIC miners using CGMiner API protocol</p>
+
+            <div id="avalon-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('avalon')">
+                <span class="btn-icon">+</span> Add Avalon Device
+            </button>
+        </div>
+
+        <!-- Antminer Devices (SHA-256d) -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⛏️</span>
+                Antminer Devices (SHA-256)
+            </h3>
+            <p class="section-desc">Bitmain Antminer S-series (S9, S17, S19, S21, etc.) using CGMiner API</p>
+
+            <div id="antminer-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('antminer')">
+                <span class="btn-icon">+</span> Add Antminer Device
+            </button>
+        </div>
+
+        <!-- Antminer Scrypt Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐕</span>
+                Antminer Scrypt Devices
+            </h3>
+            <p class="section-desc">Bitmain Antminer L-series (L3+, L7, L9) for LTC/DOGE using CGMiner API</p>
+
+            <div id="antminer_scrypt-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('antminer_scrypt')">
+                <span class="btn-icon">+</span> Add Antminer Scrypt Device
+            </button>
+        </div>
+
+        <!-- Whatsminer Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔧</span>
+                Whatsminer Devices
+            </h3>
+            <p class="section-desc">MicroBT Whatsminer M-series (M30S, M50, M60, etc.) using CGMiner API</p>
+
+            <div id="whatsminer-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('whatsminer')">
+                <span class="btn-icon">+</span> Add Whatsminer Device
+            </button>
+        </div>
+
+        <!-- Innosilicon Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">💎</span>
+                Innosilicon Devices
+            </h3>
+            <p class="section-desc">Innosilicon T-series miners using CGMiner API</p>
+
+            <div id="innosilicon-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('innosilicon')">
+                <span class="btn-icon">+</span> Add Innosilicon Device
+            </button>
+        </div>
+
+        <!-- Goldshell Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🥇</span>
+                Goldshell Devices
+            </h3>
+            <p class="section-desc">Goldshell Scrypt miners (Mini DOGE, LT5, LT6) using HTTP API (port 80)</p>
+
+            <div id="goldshell-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('goldshell')">
+                <span class="btn-icon">+</span> Add Goldshell Device
+            </button>
+        </div>
+
+        <!-- Hammer Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔨</span>
+                Hammer Miner Devices
+            </h3>
+            <p class="section-desc">PlebSource Hammer Miner Scrypt devices</p>
+
+            <div id="hammer-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('hammer')">
+                <span class="btn-icon">+</span> Add Hammer Miner Device
+            </button>
+        </div>
+
+        <!-- FutureBit Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🚀</span>
+                FutureBit Devices
+            </h3>
+            <p class="section-desc">FutureBit Apollo and Moonlander devices using CGMiner API</p>
+
+            <div id="futurebit-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('futurebit')">
+                <span class="btn-icon">+</span> Add FutureBit Device
+            </button>
+        </div>
+
+        <!-- Canaan AvalonMiner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🏔️</span>
+                Canaan AvalonMiner Devices
+            </h3>
+            <p class="section-desc">Canaan AvalonMiner A12/A13/A14/A15/A16 series using CGMiner API</p>
+
+            <div id="canaan-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('canaan')">
+                <span class="btn-icon">+</span> Add Canaan AvalonMiner Device
+            </button>
+        </div>
+
+        <!-- Ebang/Ebit Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚡</span>
+                Ebang / Ebit Devices
+            </h3>
+            <p class="section-desc">Ebang Ebit E9/E10/E11/E12/E12+ series using CGMiner API</p>
+
+            <div id="ebang-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('ebang')">
+                <span class="btn-icon">+</span> Add Ebang Device
+            </button>
+        </div>
+
+        <!-- GekkoScience Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🦎</span>
+                GekkoScience Devices
+            </h3>
+            <p class="section-desc">GekkoScience Compac F, NewPac, R606 USB miners using CGMiner API</p>
+
+            <div id="gekkoscience-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('gekkoscience')">
+                <span class="btn-icon">+</span> Add GekkoScience Device
+            </button>
+        </div>
+
+        <!-- iPollo Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐔</span>
+                iPollo Devices
+            </h3>
+            <p class="section-desc">iPollo V1, V1 Mini, G1 series using CGMiner API</p>
+
+            <div id="ipollo-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('ipollo')">
+                <span class="btn-icon">+</span> Add iPollo Device
+            </button>
+        </div>
+
+        <!-- ePIC BlockMiner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🎮</span>
+                ePIC BlockMiner Devices
+            </h3>
+            <p class="section-desc">ePIC BlockMiner series using CGMiner API</p>
+
+            <div id="epic-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('epic')">
+                <span class="btn-icon">+</span> Add ePIC BlockMiner Device
+            </button>
+        </div>
+
+        <!-- Elphapex Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐘</span>
+                Elphapex Devices
+            </h3>
+            <p class="section-desc">Elphapex DG1, DG Home Scrypt miners using CGMiner API</p>
+
+            <div id="elphapex-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('elphapex')">
+                <span class="btn-icon">+</span> Add Elphapex Device
+            </button>
+        </div>
+
+        <!-- NerdQAxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🤓</span>
+                NerdQAxe / NerdAxe / NerdOctaxe Devices
+            </h3>
+            <p class="section-desc">NerdQAxe++, NerdAxe, NerdOctaxe Gamma running AxeOS firmware</p>
+
+            <div id="nerdqaxe-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('nerdqaxe')">
+                <span class="btn-icon">+</span> Add NerdQAxe Device
+            </button>
+        </div>
+
+        <!-- NMaxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔷</span>
+                NMaxe Devices
+            </h3>
+            <p class="section-desc">NMaxe low-power AxeOS devices (~500 GH/s @ 15W)</p>
+
+            <div id="nmaxe-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('nmaxe')">
+                <span class="btn-icon">+</span> Add NMaxe Device
+            </button>
+        </div>
+
+        <!-- QAxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">4️⃣</span>
+                QAxe / QAxe+ Devices
+            </h3>
+            <p class="section-desc">QAxe quad-ASIC (~2 TH/s) and QAxe+ enhanced cooling running AxeOS firmware</p>
+
+            <div id="qaxe-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('qaxe')">
+                <span class="btn-icon">+</span> Add QAxe Device
+            </button>
+        </div>
+
+        <!-- QAxe+ Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">➕</span>
+                QAxe+ Devices
+            </h3>
+            <p class="section-desc">QAxe+ enhanced cooling variant running AxeOS firmware</p>
+
+            <div id="qaxeplus-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('qaxeplus')">
+                <span class="btn-icon">+</span> Add QAxe+ Device
+            </button>
+        </div>
+
+        <!-- Lucky Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🍀</span>
+                Lucky Miner Devices
+            </h3>
+            <p class="section-desc">Lucky Miner LV06/LV07/LV08 running AxeOS firmware</p>
+
+            <div id="luckyminer-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('luckyminer')">
+                <span class="btn-icon">+</span> Add Lucky Miner Device
+            </button>
+        </div>
+
+        <!-- Jingle Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔔</span>
+                Jingle Miner Devices
+            </h3>
+            <p class="section-desc">Jingle Miner BTC Solo Pro/Lite running AxeOS firmware</p>
+
+            <div id="jingleminer-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('jingleminer')">
+                <span class="btn-icon">+</span> Add Jingle Miner Device
+            </button>
+        </div>
+
+        <!-- Zyber Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚙️</span>
+                Zyber Devices
+            </h3>
+            <p class="section-desc">Zyber 8G/8GP/8S (TinyChipHub) running AxeOS firmware</p>
+
+            <div id="zyber-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('zyber')">
+                <span class="btn-icon">+</span> Add Zyber Device
+            </button>
+        </div>
+
+        <!-- ESP32 Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">📡</span>
+                ESP32 Miner Devices
+            </h3>
+            <p class="section-desc">ESP32 miners (detected via stratum worker connections)</p>
+
+            <div id="esp32miner-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('esp32miner')">
+                <span class="btn-icon">+</span> Add ESP32 Miner Device
+            </button>
+        </div>
+
+        <!-- BraiinsOS/BOS+ Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🧠</span>
+                BraiinsOS / BOS+ Devices
+            </h3>
+            <p class="section-desc">Antminers (S9, S17, S19, S21) running BraiinsOS/BOS+ custom firmware (REST API)</p>
+
+            <div id="braiins-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('braiins')">
+                <span class="btn-icon">+</span> Add BraiinsOS Device
+            </button>
+        </div>
+
+        <!-- Vnish Firmware Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔥</span>
+                Vnish Firmware Devices
+            </h3>
+            <p class="section-desc">Antminers running Vnish custom firmware (REST API on port 80 + CGMiner RPC on 4028)</p>
+
+            <div id="vnish-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('vnish')">
+                <span class="btn-icon">+</span> Add Vnish Device
+            </button>
+        </div>
+
+        <!-- LuxOS Firmware Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">💡</span>
+                LuxOS Firmware Devices
+            </h3>
+            <p class="section-desc">Antminers running LuxOS custom firmware (CGMiner API on port 4028)</p>
+
+            <div id="luxos-devices" class="device-list">
+                <!-- Device entries will be loaded here -->
+            </div>
+
+            <button type="button" class="btn-add-device" onclick="addDevice('luxos')">
+                <span class="btn-icon">+</span> Add LuxOS Device
+            </button>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons" style="gap: 1rem;">
+            <button type="button" class="cyber-btn" style="background: var(--gradient-purple);" onclick="saveConfiguration()">
+                <span class="btn-text">Save Configuration</span>
+            </button>
+        </div>
+
+        <!-- Status Message -->
+        <div id="status-message" class="status-message hidden"></div>
+    </div>
+
+    <!-- Mode Switch Confirmation Modal -->
+    <div class="confirm-modal-overlay" id="mode-switch-modal">
+        <div class="confirm-modal">
+            <h3 id="modal-title">Switch Pool Mode</h3>
+            <p id="modal-description">Please select which option to proceed with.</p>
+            <div class="confirm-coin-list" id="modal-coin-list">
+                <!-- Options populated dynamically -->
+            </div>
+            <div class="wallet-section" id="modal-wallet-section" style="display: none;">
+                <h4 style="color: var(--text-secondary); margin-bottom: 0.75rem;">Wallet Addresses</h4>
+                <div id="modal-wallet-inputs"></div>
+            </div>
+            <div class="confirm-modal-actions">
+                <button type="button" class="cyber-btn mode-cancel-btn" onclick="closeModeModal()">Cancel</button>
+                <button type="button" class="cyber-btn mode-apply-btn" id="modal-confirm-btn" onclick="confirmModeSwitch()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Current configuration
+        let currentConfig = {};
+        let deviceCounters = {
+            axeos: 0,
+            avalon: 0,
+            antminer: 0,
+            antminer_scrypt: 0,
+            whatsminer: 0,
+            innosilicon: 0,
+            goldshell: 0,
+            hammer: 0,
+            futurebit: 0
+        };
+
+        // Pool mode state
+        let originalMode = 'solo';
+        let originalCoins = [];
+        let currentPoolMode = 'solo';
+        let selectedCoins = [];
+        let pendingModeSwitch = null;
+        let coinWallets = {};
+
+        // Alphabetically ordered by symbol
+        const COIN_INFO = {
+            // SHA-256d solo coins
+            'BC2': { name: 'Bitcoin II', icon: '🔵', port: 6333, algo: 'sha256d' },
+            'BCH': { name: 'Bitcoin Cash', icon: '🟢', port: 5333, algo: 'sha256d' },
+            'BTC': { name: 'Bitcoin', icon: '🟠', port: 4333, algo: 'sha256d' },
+            'DGB': { name: 'DigiByte', icon: '💎', port: 3333, algo: 'sha256d' },
+            // SHA-256d merge-mineable (BTC parent)
+            'FBTC': { name: 'Fractal Bitcoin', icon: '🔶', port: 18335, algo: 'sha256d', mergeParent: 'BTC' },
+            'NMC': { name: 'Namecoin', icon: '📛', port: 14335, algo: 'sha256d', mergeParent: 'BTC' },
+            'SYS': { name: 'Syscoin', icon: '⚙️', port: 15335, algo: 'sha256d', mergeParent: 'BTC', mergeOnly: true },
+            'XMY': { name: 'Myriad', icon: '🌀', port: 17335, algo: 'sha256d', mergeParent: 'BTC', mergeOnly: true },
+            // Scrypt solo coins
+            'CAT': { name: 'Catcoin', icon: '🐱', port: 12335, algo: 'scrypt' },
+            'DGB-SCRYPT': { name: 'DigiByte (Scrypt)', icon: '💎', port: 3336, algo: 'scrypt' },
+            // Scrypt merge-mineable (LTC parent)
+            'DOGE': { name: 'Dogecoin', icon: '🐕', port: 8335, algo: 'scrypt', mergeParent: 'LTC' },
+            'LTC': { name: 'Litecoin', icon: '⚪', port: 7333, algo: 'scrypt' },
+            'PEP': { name: 'PepeCoin', icon: '🐸', port: 10335, algo: 'scrypt', mergeParent: 'LTC' }
+        };
+
+        // Merge mining parent → aux chain relationships
+        const MERGE_CHAINS = {
+            'BTC': ['NMC', 'FBTC', 'SYS', 'XMY'],
+            'LTC': ['DOGE', 'PEP']
+        };
+
+        // Load existing configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                currentConfig = await response.json();
+                populateDevices();
+                await loadServerMode();
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        // Load current server mode from stratum
+        async function loadServerMode() {
+            try {
+                const response = await fetch('/api/config/server-mode');
+                const data = await response.json();
+
+                if (data.detected_mode) {
+                    originalMode = data.detected_mode;
+                    currentPoolMode = data.detected_mode;
+                    originalCoins = data.detected_coins || [];
+                    selectedCoins = [...originalCoins];
+
+                    // Merge mining: add aux chains to selected coins
+                    if (data.detected_mode === 'merge' && data.merge_mining && data.merge_mining.aux_chains) {
+                        data.merge_mining.aux_chains.forEach(aux => {
+                            if (typeof aux === 'string' && COIN_INFO[aux] && !selectedCoins.includes(aux)) {
+                                selectedCoins.push(aux);
+                            }
+                        });
+                        originalCoins = [...selectedCoins];
+                    }
+
+                    // Show merge mining groups if parent chains are selected
+                    updateMergeGroups();
+
+                    // Load wallet addresses from config
+                    if (data.coins_config) {
+                        data.coins_config.forEach(c => {
+                            if (c.symbol && c.wallet_address) {
+                                coinWallets[c.symbol] = c.wallet_address;
+                            }
+                        });
+                    }
+
+                    updateModeDisplay();
+                    updateModeSelector();
+                    updateCoinSelection();
+                }
+            } catch (e) {
+                console.error('Failed to load server mode:', e);
+                // Unable to load config - show error instead of defaulting
+                showError("Unable to load pool configuration. Please check server connection.");
+                console.error('Failed to fetch pool mode configuration');
+            }
+        }
+
+        // Update the current mode display badge
+        function updateModeDisplay() {
+            const badge = document.getElementById('current-mode-badge');
+            const coinsBadge = document.getElementById('current-coins-badge');
+
+            // Determine display mode — if any parent chain is selected with aux chains, it's merge mining
+            const hasMerge = Object.keys(MERGE_CHAINS).some(parent =>
+                selectedCoins.includes(parent) && MERGE_CHAINS[parent].some(aux => selectedCoins.includes(aux))
+            );
+            const displayMode = hasMerge ? 'Merge Mining' : currentPoolMode === 'multi' ? 'Multi-Coin' : 'Solo';
+            badge.textContent = displayMode;
+            badge.className = 'mode-badge ' + currentPoolMode;
+
+            if (selectedCoins.length > 0) {
+                coinsBadge.textContent = selectedCoins.join(' + ');
+            } else {
+                coinsBadge.textContent = '';
+            }
+        }
+
+        // Update mode selector UI
+        function updateModeSelector() {
+            document.getElementById('mode-solo').classList.toggle('selected', currentPoolMode === 'solo');
+            document.getElementById('mode-multi').classList.toggle('selected', currentPoolMode === 'multi');
+
+            // Update title
+            const title = document.getElementById('coin-selection-title');
+            if (currentPoolMode === 'merge') {
+                title.textContent = 'Parent + Auxiliary Chains (merge mining)';
+            } else if (currentPoolMode === 'solo') {
+                title.textContent = 'Select Your Coin';
+            } else {
+                title.textContent = 'Select Coins (2 or more)';
+            }
+        }
+
+        // Update coin selection UI
+        function updateCoinSelection() {
+            Object.keys(COIN_INFO).forEach(coin => {
+                const el = document.getElementById('coin-' + coin);
+                if (el) {
+                    el.classList.toggle('selected', selectedCoins.includes(coin));
+                }
+            });
+
+            validateCoinSelection();
+            updateWalletInputs();
+            checkForChanges();
+        }
+
+        // Select pool mode
+        function selectPoolMode(mode) {
+            const previousMode = currentPoolMode;
+            currentPoolMode = mode;
+
+            if (mode === 'solo' && selectedCoins.length > 1) {
+                // Switching from multi to solo - need to choose which coin to keep
+                showMultiToSoloModal();
+                return;
+            }
+
+            if (mode === 'multi' && selectedCoins.length < 2) {
+                // Switching from solo to multi - need to add coins
+                showSoloToMultiModal();
+                return;
+            }
+
+            updateModeSelector();
+            updateCoinSelection();
+        }
+
+        // Toggle coin selection
+        function toggleCoin(coin) {
+            if (currentPoolMode === 'solo') {
+                // Solo mode: only one coin allowed, clear merge children of old selection
+                const oldCoin = selectedCoins[0];
+                selectedCoins = [coin];
+                // If deselecting a parent chain, remove its aux chains
+                if (oldCoin && MERGE_CHAINS[oldCoin]) {
+                    MERGE_CHAINS[oldCoin].forEach(aux => {
+                        const idx = selectedCoins.indexOf(aux);
+                        if (idx >= 0) selectedCoins.splice(idx, 1);
+                    });
+                }
+            } else {
+                // Multi mode: toggle coin
+                const idx = selectedCoins.indexOf(coin);
+                if (idx >= 0) {
+                    // If removing a parent chain, also remove its aux chains
+                    if (MERGE_CHAINS[coin]) {
+                        MERGE_CHAINS[coin].forEach(aux => {
+                            const auxIdx = selectedCoins.indexOf(aux);
+                            if (auxIdx >= 0) selectedCoins.splice(auxIdx, 1);
+                        });
+                        // Re-find index after splices
+                        const newIdx = selectedCoins.indexOf(coin);
+                        if (newIdx >= 0) selectedCoins.splice(newIdx, 1);
+                    } else {
+                        // Prevent removing parent chain's last aux if... just remove it
+                        selectedCoins.splice(idx, 1);
+                    }
+                } else {
+                    selectedCoins.push(coin);
+                }
+            }
+
+            updateMergeGroups();
+            updateCoinSelection();
+        }
+
+        // Show/hide merge mining groups based on selected parent chains
+        function updateMergeGroups() {
+            Object.keys(MERGE_CHAINS).forEach(parent => {
+                const group = document.getElementById('merge-group-' + parent);
+                if (group) {
+                    group.style.display = selectedCoins.includes(parent) ? '' : 'none';
+                }
+            });
+        }
+
+        // Validate coin selection
+        function validateCoinSelection() {
+            const validation = document.getElementById('coin-validation');
+
+            if (currentPoolMode === 'solo') {
+                if (selectedCoins.length !== 1) {
+                    validation.textContent = 'Please select exactly one coin for Solo Mode.';
+                    validation.className = 'coin-validation error';
+                    validation.style.display = 'block';
+                    return false;
+                }
+            } else {
+                if (selectedCoins.length < 2) {
+                    validation.textContent = 'Multi-Coin Mode requires at least 2 coins.';
+                    validation.className = 'coin-validation error';
+                    validation.style.display = 'block';
+                    return false;
+                }
+            }
+
+            validation.textContent = 'Configuration valid';
+            validation.className = 'coin-validation valid';
+            validation.style.display = 'block';
+            return true;
+        }
+
+        // Update wallet input fields
+        function updateWalletInputs() {
+            const container = document.getElementById('wallet-inputs');
+            const section = document.getElementById('wallet-addresses');
+
+            if (selectedCoins.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = 'block';
+            container.innerHTML = '';
+
+            selectedCoins.forEach(coin => {
+                const div = document.createElement('div');
+                div.className = 'wallet-input-group';
+
+                const label = document.createElement('span');
+                label.className = 'wallet-label ' + coin;
+                label.textContent = coin;
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'cyber-input wallet-input';
+                input.id = 'wallet-' + coin;
+                input.placeholder = `${COIN_INFO[coin].name} wallet address`;
+                input.value = coinWallets[coin] || '';
+                input.onchange = () => {
+                    coinWallets[coin] = input.value.trim();
+                    checkForChanges();
+                };
+
+                div.appendChild(label);
+                div.appendChild(input);
+                container.appendChild(div);
+            });
+        }
+
+        // Check if there are pending changes
+        function checkForChanges() {
+            const modeChanged = currentPoolMode !== originalMode;
+            // Clone arrays before sorting to avoid mutating the originals
+            const coinsChanged = JSON.stringify([...selectedCoins].sort()) !== JSON.stringify([...originalCoins].sort());
+
+            const warning = document.getElementById('mode-change-warning');
+            const actions = document.getElementById('mode-actions');
+            const warningMsg = document.getElementById('warning-message');
+
+            if (modeChanged || coinsChanged) {
+                warning.style.display = 'flex';
+                actions.style.display = 'flex';
+
+                if (modeChanged) {
+                    warningMsg.textContent = `Switching from ${originalMode} to ${currentPoolMode} mode. This will restart the stratum server.`;
+                } else {
+                    warningMsg.textContent = `Coin selection changed. This will restart the stratum server.`;
+                }
+            } else {
+                warning.style.display = 'none';
+                actions.style.display = 'none';
+            }
+        }
+
+        // Show modal for multi-to-solo switch
+        function showMultiToSoloModal() {
+            const modal = document.getElementById('mode-switch-modal');
+            const title = document.getElementById('modal-title');
+            const desc = document.getElementById('modal-description');
+            const coinList = document.getElementById('modal-coin-list');
+            const walletSection = document.getElementById('modal-wallet-section');
+
+            title.textContent = 'Switch to Solo Mode';
+            desc.textContent = 'You are switching from Multi-Coin to Solo Mode. Please select which coin to keep mining:';
+            walletSection.style.display = 'none';
+
+            coinList.innerHTML = '';
+            selectedCoins.forEach(coin => {
+                const div = document.createElement('div');
+                div.className = 'confirm-coin-option';
+                div.dataset.coin = coin;
+                div.onclick = () => selectModalCoin(coin);
+                div.innerHTML = `
+                    <span style="font-size: 1.5rem;">${COIN_INFO[coin].icon}</span>
+                    <span style="flex: 1;">
+                        <strong>${COIN_INFO[coin].name}</strong>
+                        <span style="color: var(--text-muted); margin-left: 0.5rem;">${coin}</span>
+                    </span>
+                    <span style="color: var(--text-muted);">Port ${COIN_INFO[coin].port}</span>
+                `;
+                coinList.appendChild(div);
+            });
+
+            pendingModeSwitch = { type: 'multi-to-solo', keepCoin: null };
+            modal.classList.add('open');
+        }
+
+        // Show modal for solo-to-multi switch
+        function showSoloToMultiModal() {
+            const modal = document.getElementById('mode-switch-modal');
+            const title = document.getElementById('modal-title');
+            const desc = document.getElementById('modal-description');
+            const coinList = document.getElementById('modal-coin-list');
+            const walletSection = document.getElementById('modal-wallet-section');
+            const walletInputs = document.getElementById('modal-wallet-inputs');
+
+            title.textContent = 'Switch to Multi-Coin Mode';
+            desc.textContent = `You are currently mining ${selectedCoins[0] || 'Unknown'}. Select additional coins to enable Multi-Coin Mode:`;
+
+            coinList.innerHTML = '';
+            const availableCoins = Object.keys(COIN_INFO).filter(c => !selectedCoins.includes(c));
+
+            availableCoins.forEach(coin => {
+                const div = document.createElement('div');
+                div.className = 'confirm-coin-option';
+                div.dataset.coin = coin;
+                div.onclick = () => toggleModalCoin(coin);
+                div.innerHTML = `
+                    <span style="font-size: 1.5rem;">${COIN_INFO[coin].icon}</span>
+                    <span style="flex: 1;">
+                        <strong>${COIN_INFO[coin].name}</strong>
+                        <span style="color: var(--text-muted); margin-left: 0.5rem;">${coin}</span>
+                    </span>
+                    <span style="color: var(--text-muted);">Port ${COIN_INFO[coin].port}</span>
+                `;
+                coinList.appendChild(div);
+            });
+
+            // Show wallet section for new coins
+            walletSection.style.display = 'block';
+            walletInputs.innerHTML = '';
+
+            availableCoins.forEach(coin => {
+                const div = document.createElement('div');
+                div.className = 'wallet-input-group';
+                div.id = 'modal-wallet-group-' + coin;
+                div.style.display = 'none';  // Hidden until coin selected
+
+                const label = document.createElement('span');
+                label.className = 'wallet-label ' + coin;
+                label.textContent = coin;
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'cyber-input wallet-input';
+                input.id = 'modal-wallet-' + coin;
+                input.placeholder = `${COIN_INFO[coin].name} wallet address`;
+
+                div.appendChild(label);
+                div.appendChild(input);
+                walletInputs.appendChild(div);
+            });
+
+            pendingModeSwitch = { type: 'solo-to-multi', addCoins: [] };
+            modal.classList.add('open');
+        }
+
+        // Select coin in modal (for multi-to-solo)
+        function selectModalCoin(coin) {
+            document.querySelectorAll('#modal-coin-list .confirm-coin-option').forEach(el => {
+                el.classList.toggle('selected', el.dataset.coin === coin);
+            });
+            pendingModeSwitch.keepCoin = coin;
+        }
+
+        // Toggle coin in modal (for solo-to-multi)
+        function toggleModalCoin(coin) {
+            const el = document.querySelector(`#modal-coin-list .confirm-coin-option[data-coin="${coin}"]`);
+            const walletGroup = document.getElementById('modal-wallet-group-' + coin);
+
+            if (pendingModeSwitch.addCoins.includes(coin)) {
+                pendingModeSwitch.addCoins = pendingModeSwitch.addCoins.filter(c => c !== coin);
+                el.classList.remove('selected');
+                if (walletGroup) walletGroup.style.display = 'none';
+            } else {
+                pendingModeSwitch.addCoins.push(coin);
+                el.classList.add('selected');
+                if (walletGroup) walletGroup.style.display = 'flex';
+            }
+        }
+
+        // Close mode switch modal
+        function closeModeModal() {
+            document.getElementById('mode-switch-modal').classList.remove('open');
+            pendingModeSwitch = null;
+            // Revert to original mode
+            currentPoolMode = originalMode;
+            updateModeSelector();
+        }
+
+        // Confirm mode switch
+        function confirmModeSwitch() {
+            if (!pendingModeSwitch) return;
+
+            if (pendingModeSwitch.type === 'multi-to-solo') {
+                if (!pendingModeSwitch.keepCoin) {
+                    showGlobalStatus('error', 'Please select a coin to keep');
+                    return;
+                }
+                selectedCoins = [pendingModeSwitch.keepCoin];
+                currentPoolMode = 'solo';
+            } else if (pendingModeSwitch.type === 'solo-to-multi') {
+                if (pendingModeSwitch.addCoins.length === 0) {
+                    showGlobalStatus('error', 'Please select at least one coin to add');
+                    return;
+                }
+
+                // Validate wallet addresses for new coins
+                for (const coin of pendingModeSwitch.addCoins) {
+                    const input = document.getElementById('modal-wallet-' + coin);
+                    if (!input || !input.value.trim()) {
+                        showGlobalStatus('error', `Please enter a wallet address for ${coin}`);
+                        return;
+                    }
+                    coinWallets[coin] = input.value.trim();
+                }
+
+                selectedCoins = [...selectedCoins, ...pendingModeSwitch.addCoins];
+                currentPoolMode = 'multi';
+            }
+
+            closeModeModal();
+            updateModeDisplay();
+            updateModeSelector();
+            updateCoinSelection();
+        }
+
+        // Cancel mode change
+        function cancelModeChange() {
+            currentPoolMode = originalMode;
+            selectedCoins = [...originalCoins];
+            updateModeDisplay();
+            updateModeSelector();
+            updateCoinSelection();
+        }
+
+        // Apply mode change
+        async function applyModeChange() {
+            // Validate
+            if (!validateCoinSelection()) {
+                showGlobalStatus('error', 'Please fix coin selection before applying');
+                return;
+            }
+
+            // Validate wallet addresses
+            for (const coin of selectedCoins) {
+                const wallet = coinWallets[coin] || document.getElementById('wallet-' + coin)?.value?.trim();
+                if (!wallet) {
+                    showGlobalStatus('error', `Please enter a wallet address for ${coin}`);
+                    return;
+                }
+                coinWallets[coin] = wallet;
+            }
+
+            // Build coin config
+            const coins = selectedCoins.map(symbol => ({
+                symbol: symbol,
+                wallet_address: coinWallets[symbol] || ''
+            }));
+
+            try {
+                showGlobalStatus('info', 'Applying mode change...');
+
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pool_mode: currentPoolMode,
+                        multi_coin_enabled: currentPoolMode === 'multi',
+                        coins: coins
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    originalMode = currentPoolMode;
+                    originalCoins = [...selectedCoins];
+
+                    if (result.requires_restart) {
+                        showGlobalStatus('success', 'Mode changed! Stratum server will restart...');
+                        // Optionally trigger restart
+                        setTimeout(async () => {
+                            try {
+                                await fetch('/api/stratum/restart', { method: 'POST' });
+                            } catch (e) {
+                                console.log('Restart triggered');
+                            }
+                        }, 1000);
+                    } else {
+                        showGlobalStatus('success', 'Configuration saved successfully!');
+                    }
+
+                    checkForChanges();
+                } else {
+                    showGlobalStatus('error', result.error || 'Failed to save configuration');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Error: ${e.message}`);
+            }
+        }
+
+        // Populate device fields from config
+        function populateDevices() {
+            const devices = currentConfig.devices || {};
+
+            // All supported device types
+            const allTypes = [
+                'axeos', 'nmaxe', 'nerdqaxe', 'qaxe', 'qaxeplus',
+                'luckyminer', 'jingleminer', 'zyber', 'esp32miner',
+                'avalon', 'antminer', 'antminer_scrypt', 'whatsminer',
+                'innosilicon', 'goldshell', 'hammer', 'futurebit',
+                'canaan', 'ebang', 'gekkoscience', 'ipollo', 'epic', 'elphapex',
+                'braiins', 'vnish', 'luxos'
+            ];
+
+            // Clear existing
+            allTypes.forEach(type => {
+                const container = document.getElementById(`${type}-devices`);
+                if (container) {
+                    container.innerHTML = '';
+                    deviceCounters[type] = 0;
+                }
+            });
+
+            // Load devices for each type from config
+            allTypes.forEach(type => {
+                (devices[type] || []).forEach(device => {
+                    addDevice(type, device);
+                });
+            });
+        }
+
+        // Escape strings for safe insertion into HTML attributes
+        function escapeAttr(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                      .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Add a new device entry
+        function addDevice(type, existingData = null) {
+            deviceCounters[type]++;
+            const container = document.getElementById(`${type}-devices`);
+            if (!container) {
+                console.error(`Container not found for device type: ${type}`);
+                return;
+            }
+            const deviceNum = deviceCounters[type];
+
+            const deviceEntry = document.createElement('div');
+            deviceEntry.className = 'device-entry visible';
+            deviceEntry.id = `${type}-device-${deviceNum}`;
+
+            // Devices that need a port field (CGMiner API, Goldshell HTTP, custom firmware)
+            const portTypes = [
+                'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon',
+                'futurebit', 'goldshell', 'hammer', 'canaan', 'ebang', 'gekkoscience',
+                'ipollo', 'epic', 'elphapex', 'luxos', 'vnish'
+            ];
+            let portField = '';
+            if (portTypes.includes(type)) {
+                const defaultPort = (type === 'goldshell' || type === 'vnish') ? 80 : 4028;
+                const portValue = existingData?.port || defaultPort;
+                portField = `
+                    <div class="form-group port-group">
+                        <label>Port</label>
+                        <input type="number" class="cyber-input port-input" placeholder="${defaultPort}" value="${portValue}">
+                    </div>
+                `;
+            }
+
+            const nameValue = escapeAttr(existingData?.name || '');
+            const ipValue = escapeAttr(existingData?.ip || '');
+
+            deviceEntry.innerHTML = `
+                <div class="device-fields">
+                    <div class="form-group name-group">
+                        <label>Device Name</label>
+                        <input type="text" class="cyber-input name-input" placeholder="${getPlaceholderName(type, deviceNum)}" value="${nameValue}">
+                    </div>
+                    <div class="form-group url-group">
+                        <label>Device URL / IP</label>
+                        <input type="text" class="cyber-input url-input" placeholder="192.168.1.100" value="${ipValue}">
+                    </div>
+                    ${portField}
+                </div>
+                <div class="device-actions">
+                    <button type="button" class="btn-test" onclick="testDevice('${type}', ${deviceNum})" title="Test Connection">
+                        <span class="test-icon">⚡</span>
+                    </button>
+                    <button type="button" class="btn-remove" onclick="removeDevice('${type}', ${deviceNum})" title="Remove Device">
+                        <span class="remove-icon">×</span>
+                    </button>
+                </div>
+                <div class="device-status"></div>
+            `;
+
+            container.appendChild(deviceEntry);
+        }
+
+        function getPlaceholderName(type, num) {
+            // Return just the device class name without numbering
+            const names = {
+                axeos: 'AxeOS',
+                nmaxe: 'NMaxe',
+                nerdqaxe: 'NerdQAxe',
+                qaxe: 'QAxe',
+                qaxeplus: 'QAxe+',
+                luckyminer: 'Lucky Miner',
+                jingleminer: 'Jingle Miner',
+                zyber: 'Zyber',
+                esp32miner: 'ESP32 Miner',
+                avalon: 'Avalon',
+                antminer: 'Antminer',
+                antminer_scrypt: 'Antminer L-Series',
+                whatsminer: 'Whatsminer',
+                innosilicon: 'Innosilicon',
+                goldshell: 'Goldshell',
+                hammer: 'Hammer Miner',
+                futurebit: 'FutureBit',
+                canaan: 'AvalonMiner',
+                ebang: 'Ebang Ebit',
+                gekkoscience: 'GekkoScience',
+                ipollo: 'iPollo',
+                epic: 'ePIC BlockMiner',
+                elphapex: 'Elphapex',
+                braiins: 'BraiinsOS',
+                vnish: 'Vnish',
+                luxos: 'LuxOS'
+            };
+            return names[type] || type;
+        }
+
+        // Remove a device entry
+        function removeDevice(type, num) {
+            const entry = document.getElementById(`${type}-device-${num}`);
+            if (entry) {
+                entry.classList.add('removing');
+                setTimeout(() => entry.remove(), 300);
+            }
+        }
+
+        // Test device connection
+        async function testDevice(type, num) {
+            const entry = document.getElementById(`${type}-device-${num}`);
+            const urlInput = entry.querySelector('.url-input');
+            const statusDiv = entry.querySelector('.device-status');
+            const testBtn = entry.querySelector('.btn-test');
+
+            let ip = urlInput.value.trim();
+            if (!ip) {
+                showStatus(statusDiv, 'error', 'Please enter a device URL');
+                return;
+            }
+
+            ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+
+            let port = 4028;
+            const portInput = entry.querySelector('.port-input');
+            if (portInput) {
+                port = parseInt(portInput.value) || 4028;
+            }
+
+            testBtn.classList.add('testing');
+            showStatus(statusDiv, 'testing', 'Testing connection...');
+
+            try {
+                const response = await fetch('/api/device/test', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({type, ip, port})
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const data = result.data;
+                    let info = `✓ Online - ${data.hashrate_ghs?.toFixed(2) || 0} GH/s`;
+                    if (data.temps?.chip) {
+                        info += ` | ${data.temps.chip}°C`;
+                    }
+                    showStatus(statusDiv, 'success', info);
+                } else {
+                    showStatus(statusDiv, 'error', `✗ ${result.data?.error || 'Connection failed'}`);
+                }
+            } catch (e) {
+                showStatus(statusDiv, 'error', `✗ ${e.message}`);
+            }
+
+            testBtn.classList.remove('testing');
+        }
+
+        function showStatus(element, type, message) {
+            element.className = `device-status ${type} visible`;
+            element.textContent = message;
+        }
+
+        // Save configuration
+        async function saveConfiguration() {
+            const config = {
+                dashboard_title: document.getElementById('dashboardTitle').value,
+                refresh_interval: parseInt(document.getElementById('refreshInterval').value) || 30,
+                devices: {
+                    axeos: [], nmaxe: [], nerdqaxe: [], qaxe: [], qaxeplus: [],
+                    luckyminer: [], jingleminer: [], zyber: [], esp32miner: [],
+                    avalon: [], antminer: [], antminer_scrypt: [], whatsminer: [],
+                    innosilicon: [], goldshell: [], hammer: [], futurebit: [],
+                    canaan: [], ebang: [], gekkoscience: [], ipollo: [], epic: [], elphapex: [],
+                    braiins: [], vnish: [], luxos: []
+                }
+            };
+
+            // Helper function to collect devices from a container
+            function collectDevices(type, usePort = false, defaultPort = 4028) {
+                const container = document.getElementById(`${type}-devices`);
+                if (!container) return;
+
+                container.querySelectorAll('.device-entry').forEach(entry => {
+                    const name = entry.querySelector('.name-input').value.trim();
+                    let ip = entry.querySelector('.url-input').value.trim();
+
+                    if (ip) {
+                        // Strip protocol, path, and port from IP
+                        ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                        const device = {
+                            name: name || ip,
+                            ip: ip
+                        };
+
+                        if (usePort) {
+                            const portInput = entry.querySelector('.port-input');
+                            device.port = parseInt(portInput?.value) || defaultPort;
+                        }
+
+                        config.devices[type].push(device);
+                    }
+                });
+            }
+
+            // Collect devices from all containers
+            // AxeOS HTTP devices (no port needed)
+            collectDevices('axeos', false);
+            collectDevices('nmaxe', false);
+            collectDevices('nerdqaxe', false);
+            collectDevices('qaxe', false);
+            collectDevices('qaxeplus', false);
+            collectDevices('luckyminer', false);
+            collectDevices('jingleminer', false);
+            collectDevices('zyber', false);
+            collectDevices('esp32miner', false);
+            // BraiinsOS (HTTP REST API, no port config needed - uses port 80)
+            collectDevices('braiins', false);
+
+            // CGMiner-based devices (port needed, default 4028)
+            collectDevices('avalon', true, 4028);
+            collectDevices('antminer', true, 4028);
+            collectDevices('antminer_scrypt', true, 4028);
+            collectDevices('whatsminer', true, 4028);
+            collectDevices('innosilicon', true, 4028);
+            collectDevices('futurebit', true, 4028);
+            collectDevices('hammer', true, 4028);
+            collectDevices('canaan', true, 4028);
+            collectDevices('ebang', true, 4028);
+            collectDevices('gekkoscience', true, 4028);
+            collectDevices('ipollo', true, 4028);
+            collectDevices('epic', true, 4028);
+            collectDevices('elphapex', true, 4028);
+            collectDevices('luxos', true, 4028);
+            // Vnish uses port 80 (web API) + CGMiner on 4028
+            collectDevices('vnish', true, 80);
+            // Goldshell uses HTTP API on port 80
+            collectDevices('goldshell', true, 80);
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showGlobalStatus('success', 'Configuration saved successfully!');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    showGlobalStatus('error', 'Failed to save configuration');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Error: ${e.message}`);
+            }
+        }
+
+        function showGlobalStatus(type, message) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.className = `status-message ${type}`;
+            statusEl.textContent = message;
+            statusEl.classList.remove('hidden');
+
+            if (type !== 'success') {
+                setTimeout(() => statusEl.classList.add('hidden'), 5000);
+            }
+        }
+
+        // ============================================
+        // AUTO-DISCOVERY FUNCTIONS
+        // ============================================
+
+        let scanPollInterval = null;
+        let discoveredMiners = [];
+        let pollErrorCount = 0;
+        let pollStartTime = 0;
+        let scanGeneration = 0;  // Track scan generation to ignore stale poll responses
+        const MAX_POLL_ERRORS = 5;
+        const MAX_POLL_DURATION = 120000; // 2 minutes max
+
+        // Helper to stop polling and restore button
+        function stopScanPolling() {
+            if (scanPollInterval) {
+                clearInterval(scanPollInterval);
+                scanPollInterval = null;
+            }
+            pollErrorCount = 0;
+        }
+
+        function restoreScanButton() {
+            const btn = document.getElementById('scanBtn');
+            const btnText = document.getElementById('scanBtnText');
+            if (btn) btn.disabled = false;
+            if (btnText) btnText.textContent = '🔍 Scan Network';
+        }
+
+        // Auto-detect subnet on load
+        async function loadSubnet() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch('/api/scan/subnet', { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) return;
+                const data = await response.json();
+                document.getElementById('scanSubnet').placeholder = data.subnet || 'Auto-detect';
+            } catch (e) {
+                console.error('Failed to detect subnet:', e.name === 'AbortError' ? 'timeout' : e.message);
+            }
+        }
+
+        // Start network scan
+        async function startScan() {
+            const btn = document.getElementById('scanBtn');
+            const btnText = document.getElementById('scanBtnText');
+            const progressDiv = document.getElementById('scan-progress');
+            const discoveredDiv = document.getElementById('discovered-devices');
+
+            // Prevent clicks while already scanning
+            if (btn.disabled) {
+                return;
+            }
+
+            // Disable button FIRST to prevent double-clicks
+            btn.disabled = true;
+
+            // Prevent double-click: clear any existing poll interval
+            stopScanPolling();
+            scanGeneration++;  // Increment generation to invalidate any stale poll callbacks
+
+            const subnet = document.getElementById('scanSubnet').value.trim() || null;
+            btnText.textContent = '⏳ Scanning...';
+            progressDiv.classList.remove('hidden');
+            discoveredDiv.classList.add('hidden');
+
+            try {
+                // Add timeout to fetch
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+                const response = await fetch('/api/scan/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: JSON.stringify({subnet}),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                const result = await response.json();
+
+                // Check for HTTP-level errors (401, 403, etc.)
+                if (!response.ok) {
+                    // If scan already in progress, join the existing scan by polling
+                    if (result.error && result.error.includes('already in progress')) {
+                        showGlobalStatus('info', 'Joining existing scan...');
+                        // MUST use startPollWithGeneration to set expectedPollGeneration correctly
+                        // otherwise all polls will be ignored as "stale" due to generation mismatch
+                        startPollWithGeneration();
+                        return;
+                    }
+                    throw new Error(result.error || result.message || `HTTP ${response.status}`);
+                }
+
+                if (result.success) {
+                    // Start polling for progress with generation tracking
+                    startPollWithGeneration();
+                } else {
+                    // If scan already in progress, join the existing scan
+                    if (result.error && result.error.includes('already in progress')) {
+                        showGlobalStatus('info', 'Joining existing scan...');
+                        startPollWithGeneration();
+                    } else {
+                        showGlobalStatus('error', result.error || 'Failed to start scan');
+                        restoreScanButton();
+                        progressDiv.classList.add('hidden');
+                    }
+                }
+            } catch (e) {
+                const errorMsg = e.name === 'AbortError'
+                    ? 'Request timeout - server not responding'
+                    : e.message;
+                showGlobalStatus('error', `Scan error: ${errorMsg}`);
+                restoreScanButton();
+                progressDiv.classList.add('hidden');
+            }
+        }
+
+        // Expected generation for current poll (set by startPollWithGeneration)
+        let expectedPollGeneration = 0;
+
+        // Start polling with generation tracking
+        function startPollWithGeneration() {
+            pollStartTime = Date.now();
+            pollErrorCount = 0;
+            expectedPollGeneration = scanGeneration;  // Capture current generation
+            scanPollInterval = setInterval(pollScanProgress, 500);
+        }
+
+        // Poll scan progress
+        async function pollScanProgress() {
+            // Ignore stale poll callbacks from previous scans
+            if (expectedPollGeneration !== scanGeneration) {
+                console.log('[SCAN] Ignoring stale poll callback (gen mismatch)');
+                return;
+            }
+
+            try {
+                // Check for max poll duration
+                if (Date.now() - pollStartTime > MAX_POLL_DURATION) {
+                    console.error('[SCAN] Polling timeout - scan taking too long');
+                    if (expectedPollGeneration === scanGeneration) {
+                        stopScanPolling();
+                        restoreScanButton();
+                        showGlobalStatus('error', 'Scan timeout - try again');
+                        document.getElementById('scan-progress').classList.add('hidden');
+                    }
+                    return;
+                }
+
+                const response = await fetch('/api/scan/status', { credentials: 'same-origin' });
+
+                // Check generation again after async fetch
+                if (expectedPollGeneration !== scanGeneration) {
+                    console.log('[SCAN] Ignoring stale poll response (gen mismatch after fetch)');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Status check failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+                pollErrorCount = 0; // Reset on success
+
+                const progressFill = document.getElementById('progress-fill');
+                const progressText = document.getElementById('progress-text');
+
+                if (data.total > 0) {
+                    const pct = Math.round((data.scanned / data.total) * 100);
+                    progressFill.style.width = pct + '%';
+                    // Defensive null check - data.found may be undefined during initialization
+                    const foundCount = (data.found && Array.isArray(data.found)) ? data.found.length : 0;
+                    const elapsed = data.elapsed_formatted || '';
+                    const phase = data.phase_msg || '';
+
+                    // Show detailed progress with elapsed time
+                    if (phase && phase.includes('Retry')) {
+                        progressText.textContent = `${phase} - Found ${foundCount} miner(s) (${elapsed})`;
+                    } else if (data.scanned >= data.total) {
+                        progressText.textContent = `Finalizing scan... Found ${foundCount} miner(s) (${elapsed})`;
+                    } else {
+                        progressText.textContent = `Scanning ${data.scanned}/${data.total} hosts - Found ${foundCount} miner(s) (${elapsed})`;
+                    }
+                }
+
+                if (!data.running) {
+                    // Final generation check before completing
+                    if (expectedPollGeneration === scanGeneration) {
+                        stopScanPolling();
+                        scanComplete(data);
+                    }
+                }
+            } catch (e) {
+                console.error('[SCAN] Poll error:', e);
+                pollErrorCount++;
+
+                if (pollErrorCount >= MAX_POLL_ERRORS && expectedPollGeneration === scanGeneration) {
+                    console.error('[SCAN] Too many poll errors, stopping');
+                    stopScanPolling();
+                    restoreScanButton();
+                    showGlobalStatus('error', 'Connection lost - try again');
+                    document.getElementById('scan-progress').classList.add('hidden');
+                }
+            }
+        }
+
+        // Scan complete
+        function scanComplete(data) {
+            console.log('[SCAN] scanComplete called with data:', JSON.stringify({
+                running: data.running,
+                scanned: data.scanned,
+                total: data.total,
+                foundCount: data.found ? data.found.length : 'undefined',
+                phase: data.phase,
+                error: data.error
+            }));
+
+            const btn = document.getElementById('scanBtn');
+            const btnText = document.getElementById('scanBtnText');
+            const progressDiv = document.getElementById('scan-progress');
+            const discoveredDiv = document.getElementById('discovered-devices');
+            const listContent = document.getElementById('discovered-list-content');
+
+            btn.disabled = false;
+            btnText.textContent = '🔍 Scan Network';
+            progressDiv.classList.add('hidden');
+
+            // Defensive: ensure data.found is an array
+            discoveredMiners = (data.found && Array.isArray(data.found)) ? data.found : [];
+            console.log('[SCAN] discoveredMiners count:', discoveredMiners.length);
+
+            // Show error if scan had issues
+            if (data.error) {
+                showGlobalStatus('error', `Scan error: ${data.error}`);
+                console.error('[SCAN] Scan error:', data.error);
+                return;
+            }
+
+            if (discoveredMiners.length === 0) {
+                showGlobalStatus('error', 'No mining devices found on the network');
+                console.log('[SCAN] Scan completed but found no miners. Scanned:', data.scanned, 'hosts');
+                return;
+            }
+
+            // Show discovered devices using safe DOM manipulation
+            listContent.innerHTML = '';
+            discoveredMiners.forEach((miner, idx) => {
+                // Sanitize and validate all miner data
+                const validTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'hammer', 'futurebit', 'unknown'];
+                const minerType = validTypes.includes(miner.type) ? miner.type : 'unknown';
+                const minerName = String(miner.name || miner.ip || 'Unknown').slice(0, 64);
+                const minerModel = String(miner.model || minerType).slice(0, 32);
+                const minerIp = String(miner.ip || 'N/A').slice(0, 15);
+                const hashrateStr = (miner.hashrate && typeof miner.hashrate === 'number')
+                    ? ` • ${miner.hashrate.toFixed(2)} GH/s`
+                    : '';
+
+                // Create elements safely using DOM methods (prevents XSS)
+                const deviceDiv = document.createElement('div');
+                deviceDiv.className = 'discovered-device';
+                deviceDiv.style.cssText = 'display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 0.5rem;';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `miner-${idx}`;
+                checkbox.checked = true;
+                checkbox.style.cssText = 'width: 20px; height: 20px; accent-color: var(--neon-green);';
+
+                const infoDiv = document.createElement('div');
+                infoDiv.style.flex = '1';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.style.cssText = 'font-family: var(--font-display); color: var(--text-primary);';
+                nameDiv.textContent = minerName;  // textContent is safe
+
+                const detailsDiv = document.createElement('div');
+                detailsDiv.style.cssText = 'font-size: 0.85rem; color: var(--text-muted);';
+                detailsDiv.textContent = `${minerModel} • ${minerIp}${hashrateStr}`;
+
+                infoDiv.appendChild(nameDiv);
+                infoDiv.appendChild(detailsDiv);
+
+                const typeDiv = document.createElement('div');
+                typeDiv.style.cssText = `font-family: var(--font-mono); padding: 0.25rem 0.5rem; background: ${getTypeColor(minerType)}; border-radius: 4px; font-size: 0.8rem;`;
+                typeDiv.textContent = minerType.toUpperCase();
+
+                deviceDiv.appendChild(checkbox);
+                deviceDiv.appendChild(infoDiv);
+                deviceDiv.appendChild(typeDiv);
+                listContent.appendChild(deviceDiv);
+            });
+
+            discoveredDiv.classList.remove('hidden');
+            showGlobalStatus('success', `Found ${discoveredMiners.length} mining device(s)!`);
+            console.log('[SCAN] Discovered devices div shown with', discoveredMiners.length, 'miners');
+        }
+
+        function getTypeColor(type) {
+            switch(type) {
+                case 'axeos': return 'rgba(0, 212, 255, 0.2)';
+                case 'nmaxe': return 'rgba(168, 85, 247, 0.2)';
+                case 'avalon': return 'rgba(255, 107, 53, 0.2)';
+                default: return 'rgba(100, 100, 100, 0.2)';
+            }
+        }
+
+        // Add selected devices to configuration
+        async function addSelectedDevices() {
+            const devicesToAdd = [];
+
+            // Default watts by miner type
+            const defaultWatts = {
+                nmaxe: 15, esp32miner: 2, gekkoscience: 5, hammer: 25,
+                luckyminer: 50, axeos: 80, nerdqaxe: 80, qaxe: 80,
+                qaxeplus: 100, jingleminer: 100, zyber: 100, avalon: 140,
+                futurebit: 200, ipollo: 2000, goldshell: 2300, ebang: 2800,
+                canaan: 3000, epic: 3000, elphapex: 3000, antminer: 3250,
+                antminer_scrypt: 3250, braiins: 3250, vnish: 3250, luxos: 3250,
+                whatsminer: 3400, innosilicon: 3500
+            };
+            // Devices that need port config (CGMiner API, Goldshell HTTP, custom firmware)
+            const cgminerTypes = [
+                'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon',
+                'futurebit', 'goldshell', 'hammer', 'canaan', 'ebang', 'gekkoscience',
+                'ipollo', 'epic', 'elphapex', 'luxos', 'vnish'
+            ];
+
+            discoveredMiners.forEach((miner, idx) => {
+                const checkbox = document.getElementById(`miner-${idx}`);
+                if (checkbox && checkbox.checked) {
+                    // Determine correct port: goldshell uses HTTP port 80, others use CGMiner port 4028
+                    let port = undefined;
+                    if (cgminerTypes.includes(miner.type)) {
+                        port = (miner.type === 'goldshell' || miner.type === 'vnish') ? 80 : 4028;
+                    }
+                    devicesToAdd.push({
+                        type: miner.type,
+                        name: miner.name || miner.ip,
+                        ip: miner.ip,
+                        watts: defaultWatts[miner.type] || 100,
+                        port: port
+                    });
+                }
+            });
+
+            if (devicesToAdd.length === 0) {
+                showGlobalStatus('error', 'No devices selected');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/devices/add-discovered', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({devices: devicesToAdd})
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showGlobalStatus('success', `Added ${devicesToAdd.length} device(s)!`);
+                    // Reload config to show new devices
+                    currentConfig = result.config;
+                    populateDevices();
+                    document.getElementById('discovered-devices').classList.add('hidden');
+                } else {
+                    showGlobalStatus('error', result.error || 'Failed to add devices');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Error: ${e.message}`);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadConfig();
+            loadSubnet();
+        });
+    </script>
+
+    <style>
+        /* Auto-discovery styles */
+        .scan-progress {
+            margin-top: 1rem;
+        }
+
+        .scan-progress.hidden {
+            display: none;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple));
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .progress-text {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .discovered-list.hidden {
+            display: none;
+        }
+
+        .discovered-list {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 8px;
+        }
+
+        /* Pool Mode & Coins Styles */
+        .current-mode-display {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+
+        .mode-badge-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .mode-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-family: var(--font-display);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .mode-badge.solo {
+            background: rgba(0, 212, 255, 0.2);
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+
+        .mode-badge.multi {
+            background: rgba(168, 85, 247, 0.2);
+            border: 1px solid var(--neon-purple);
+            color: var(--neon-purple);
+        }
+
+        .coins-badge {
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .pool-mode-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .mode-option {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-option:hover {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+
+        .mode-option.selected {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: var(--neon-cyan);
+        }
+
+        .mode-icon {
+            font-size: 2rem;
+        }
+
+        .mode-info {
+            flex: 1;
+        }
+
+        .mode-title {
+            font-family: var(--font-display);
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .mode-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .mode-check {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--text-muted);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: transparent;
+            transition: all 0.3s ease;
+        }
+
+        .mode-option.selected .mode-check {
+            background: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            color: #000;
+        }
+
+        .coin-selection {
+            margin-bottom: 1.5rem;
+        }
+
+        .coin-selection-title {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-family: var(--font-display);
+        }
+
+        .coin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .merge-mining-group {
+            grid-column: 1 / -1;
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(0, 212, 255, 0.03);
+            border-left: 3px solid rgba(0, 212, 255, 0.3);
+            border-radius: 0 8px 8px 0;
+        }
+
+        .merge-label {
+            color: var(--neon-cyan);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            margin-bottom: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+
+        .merge-grid {
+            gap: 0.75rem !important;
+        }
+
+        .coin-option.merge-aux {
+            border-left: 2px solid rgba(0, 212, 255, 0.2);
+        }
+
+        .coin-option.merge-aux.selected {
+            border-color: var(--neon-green);
+            border-left-color: var(--neon-cyan);
+        }
+
+        .coin-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .coin-option:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .coin-option.selected {
+            background: rgba(74, 222, 128, 0.15);
+            border-color: var(--neon-green);
+        }
+
+        .coin-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .coin-icon {
+            font-size: 1.5rem;
+        }
+
+        .coin-info {
+            flex: 1;
+        }
+
+        .coin-name {
+            font-family: var(--font-display);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .coin-symbol {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--neon-cyan);
+        }
+
+        .coin-port {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .coin-check {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--text-muted);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: transparent;
+            transition: all 0.3s ease;
+        }
+
+        .coin-option.selected .coin-check {
+            background: var(--neon-green);
+            border-color: var(--neon-green);
+            color: #000;
+        }
+
+        .coin-validation {
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .coin-validation.error {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--neon-red);
+        }
+
+        .coin-validation.valid {
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: var(--neon-green);
+        }
+
+        .wallet-addresses {
+            margin-bottom: 1.5rem;
+        }
+
+        .wallet-addresses h4 {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-family: var(--font-display);
+        }
+
+        .wallet-input-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .wallet-label {
+            min-width: 80px;
+            font-family: var(--font-display);
+            font-weight: 600;
+        }
+
+        /* Alphabetically ordered by symbol */
+        .wallet-label.BCH { color: #8dc351; }
+        .wallet-label.BTC { color: #f7931a; }
+        .wallet-label.DGB { color: #00c8ff; }
+
+        .wallet-input {
+            flex: 1;
+        }
+
+        .mode-change-warning {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(251, 146, 60, 0.1);
+            border: 1px solid rgba(251, 146, 60, 0.3);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .warning-icon {
+            font-size: 1.5rem;
+        }
+
+        .warning-text strong {
+            color: var(--neon-orange);
+        }
+
+        .warning-text p {
+            margin: 0.5rem 0 0 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .mode-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .mode-apply-btn {
+            background: linear-gradient(135deg, var(--neon-green), #22c55e);
+            color: #000;
+            font-weight: 600;
+        }
+
+        .mode-cancel-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--text-muted);
+        }
+
+        /* Confirmation Modal */
+        .confirm-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .confirm-modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .confirm-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--neon-cyan);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.3);
+        }
+
+        .confirm-modal h3 {
+            color: var(--neon-cyan);
+            font-family: var(--font-display);
+            margin-bottom: 1rem;
+        }
+
+        .confirm-modal p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+
+        .confirm-coin-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .confirm-coin-option {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .confirm-coin-option:hover {
+            border-color: var(--neon-cyan);
+        }
+
+        .confirm-coin-option.selected {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: var(--neon-cyan);
+        }
+
+        .confirm-modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        @media (max-width: 768px) {
+            .pool-mode-selector {
+                flex-direction: column;
+            }
+        }
+    </style>
+</body>
+</html>

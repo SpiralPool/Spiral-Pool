@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    SYSCOIN CORE - DOCKER IMAGE                            ║
+# ║                                                                            ║
+# ║   Separate container for Syscoin Core node (SHA-256d mining)               ║
+# ║   Merge-mining only with Bitcoin as parent chain (cannot solo mine)         ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Syscoin Core Node for Spiral Pool"
+LABEL version="5.0.5"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG SYSCOIN_VERSION=5.0.5
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create syscoin user
+RUN useradd -r -m -s /bin/bash syscoin \
+    && mkdir -p /home/syscoin/.syscoin \
+    && chown -R syscoin:syscoin /home/syscoin
+
+# Download and install Syscoin Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then SYS_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then SYS_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/syscoin/syscoin/releases/download/v${SYSCOIN_VERSION}/syscoin-${SYSCOIN_VERSION}-${SYS_ARCH}.tar.gz" \
+    && tar -xzf "syscoin-${SYSCOIN_VERSION}-${SYS_ARCH}.tar.gz" \
+    && cp "syscoin-${SYSCOIN_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/syscoin.conf.template ]; then\n\
+    envsubst < /config/syscoin.conf.template > /home/syscoin/.syscoin/syscoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R syscoin:syscoin /home/syscoin/.syscoin\n\
+\n\
+# Start Syscoin daemon\n\
+exec gosu syscoin syscoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 8369
+# RPC
+EXPOSE 8370
+# ZMQ
+EXPOSE 28370
+
+# Data volume
+VOLUME ["/home/syscoin/.syscoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

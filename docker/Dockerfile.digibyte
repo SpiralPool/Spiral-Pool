@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    DIGIBYTE NODE - DOCKER IMAGE                            ║
+# ║                                                                            ║
+# ║   Separate container for DigiByte Core node                                ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="DigiByte Core Node for Spiral Pool"
+LABEL version="8.26.2"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG DIGIBYTE_VERSION=8.26.2
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create digibyte user
+RUN useradd -r -m -s /bin/bash digibyte \
+    && mkdir -p /home/digibyte/.digibyte \
+    && chown -R digibyte:digibyte /home/digibyte
+
+# Download and install DigiByte Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then DGB_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then DGB_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/DigiByte-Core/digibyte/releases/download/v${DIGIBYTE_VERSION}/digibyte-${DIGIBYTE_VERSION}-${DGB_ARCH}.tar.gz" \
+    && tar -xzf "digibyte-${DIGIBYTE_VERSION}-${DGB_ARCH}.tar.gz" \
+    && cp "digibyte-${DIGIBYTE_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+# Config is mounted from host by docker-compose
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/digibyte.conf.template ]; then\n\
+    envsubst < /config/digibyte.conf.template > /home/digibyte/.digibyte/digibyte.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R digibyte:digibyte /home/digibyte/.digibyte\n\
+\n\
+# Start DigiByte daemon\n\
+exec gosu digibyte digibyted -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 12024
+# RPC
+EXPOSE 14022
+# ZMQ
+EXPOSE 28532
+
+# Data volume
+VOLUME ["/home/digibyte/.digibyte"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

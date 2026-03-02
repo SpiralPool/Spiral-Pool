@@ -1,0 +1,91 @@
+# ============================================================================
+#                              SPIRAL POOL
+#                            .dockerignore
+# ============================================================================
+# Excludes files from Docker build context to reduce image size
+# and prevent sensitive data from being baked into layers.
+
+# Git
+.git
+.gitignore
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/
+
+# Sensitive configuration
+.env
+.env.local
+.env.*.local
+config.yaml
+config.yml
+spiralpool-credentials.txt
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Logs and databases
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Blockchain data (never include in build)
+.digibyte/
+blocks/
+chainstate/
+wallet.dat
+
+# Backups and archives
+backups/
+*.bak
+*.backup
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build artifacts
+bin/
+dist/
+build/
+out/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+env/
+venv/
+.venv/
+
+# Test artifacts
+coverage.out
+coverage.html
+*.cover
+.coverage
+htmlcov/
+
+# Documentation builds
+site/
+docs/_build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp

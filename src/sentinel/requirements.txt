@@ -1,0 +1,4 @@
+# Spiral Sentinel Dependencies
+# Pinned to exact versions for reproducible builds
+requests==2.32.5
+slixmpp==1.8.5

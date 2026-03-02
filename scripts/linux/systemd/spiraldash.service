@@ -1,0 +1,96 @@
+# Spiral Pool Dashboard Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+#   {{DASHBOARD_PORT}} - Dashboard port (default: 1618)
+#   {{METRICS_TOKEN}} - Prometheus metrics auth token
+
+[Unit]
+Description=Spiral Pool Dashboard
+Documentation=https://github.com/SpiralPool/Spiral-Pool
+After=network-online.target spiralstratum.service
+# R-11 FIX: Increased from 300s to 600s (match sentinel).
+# Dashboard depends on stratum, which can take 5+ minutes after cold boot.
+# 300s was too aggressive — dashboard hit restart limit before stratum was ready.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{POOL_USER}}
+Group={{POOL_USER}}
+WorkingDirectory={{INSTALL_DIR}}/dashboard
+
+# Single worker required: scan progress uses in-memory state that cannot be shared across processes
+# 4 threads handle concurrent requests (polls, page loads, API calls) within the single process
+ExecStart={{INSTALL_DIR}}/dashboard/venv/bin/gunicorn --bind 0.0.0.0:{{DASHBOARD_PORT}} --workers 1 --threads 4 --timeout 120 dashboard:app
+
+# === INSTALLATION PATHS ===
+# Tell dashboard where to find data files (miners.json, etc.)
+Environment="SPIRALPOOL_INSTALL_DIR={{INSTALL_DIR}}"
+
+# === POOL API & METRICS ===
+# Metrics auth token for Prometheus /metrics endpoint on Spiral Stratum
+Environment="SPIRAL_METRICS_TOKEN={{METRICS_TOKEN}}"
+
+# === DASHBOARD AUTHENTICATION ===
+# Dashboard requires authentication by default (set password on first access)
+Environment="DASHBOARD_AUTH_ENABLED=true"
+Environment="DASHBOARD_SESSION_LIFETIME=24"
+# Optional: Set API key for programmatic access (uncomment and set your own key)
+# Environment="DASHBOARD_API_KEY=your-secure-api-key-here"
+# Optional: Set allowed CORS origins (empty = same-origin only, most secure)
+# Environment="DASHBOARD_CORS_ORIGINS="
+
+# === SELF-HEALING / AUTO-RESTART ===
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# === SECURITY HARDENING ===
+# Filesystem protection
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{INSTALL_DIR}}/dashboard {{INSTALL_DIR}}/config {{INSTALL_DIR}}/data /home/{{POOL_USER}}/.spiralpool
+
+# Privilege restrictions
+# NoNewPrivileges must be 'no' — dashboard uses sudo systemctl restart/stop
+# for service control via web UI (sudoers rules in /etc/sudoers.d/spiralpool-dashboard)
+NoNewPrivileges=no
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+
+# Network restrictions (AF_INET6 kept for dual-stack compat; IPv6 disabled at OS level)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# System call filtering
+# NOTE: SystemCallFilter is deliberately OMITTED here. Using SystemCallFilter
+# implicitly forces NoNewPrivileges=yes (systemd requirement for seccomp filters).
+# This dashboard needs NoNewPrivileges=no because it uses sudo for service control
+# via web UI (sudoers rules in /etc/sudoers.d/spiralpool-dashboard).
+SystemCallArchitectures=native
+
+# Memory protection
+# NOTE: MemoryDenyWriteExecute omitted — Python/gunicorn may use mmap with W+X
+# for C extension loading. Safe because NoNewPrivileges=no already implies reduced
+# memory protection guarantees.
+LockPersonality=yes
+
+# Misc hardening
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

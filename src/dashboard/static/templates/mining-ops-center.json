@@ -1,0 +1,85 @@
+{
+  "name": "Mining Operations Center",
+  "id": "mining-ops-center",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Professional operations dashboard focused on system health, uptime, and miner management",
+  "preview": "ops-center-preview.png",
+  "layout": {
+    "statsRow": true,
+    "chartsRow": true,
+    "lifetimeSection": false,
+    "healthSection": true,
+    "minersSection": true
+  },
+  "components": {
+    "stats": {
+      "hashrate": true,
+      "power": true,
+      "shares": true,
+      "blocks": true,
+      "difficulty": false,
+      "miners": true
+    },
+    "charts": {
+      "hashrateHistory": true,
+      "earningsCalculator": false
+    },
+    "lifetime": {
+      "totalShares": false,
+      "blocksFound": false,
+      "bestShare": false,
+      "uptime": true
+    },
+    "health": {
+      "pool": true,
+      "node": true,
+      "expanded": true
+    },
+    "miners": {
+      "showAll": true,
+      "showActions": true,
+      "showTemperature": true,
+      "showPower": true,
+      "showBestDiff": false,
+      "showUptime": true,
+      "showBlocksFound": false,
+      "compactMode": false,
+      "sortBy": "status",
+      "groupByType": true
+    },
+    "header": {
+      "showLogo": true,
+      "showStatus": true,
+      "showRefresh": true,
+      "showSettings": true
+    },
+    "footer": {
+      "showSlogan": false,
+      "showVersion": true,
+      "showRefreshCountdown": true
+    }
+  },
+  "customization": {
+    "gridColumns": "auto",
+    "statsPerRow": 5,
+    "minersPerRow": 2,
+    "showFooterSlogan": false,
+    "refreshInterval": 15,
+    "animationsEnabled": true,
+    "prioritizeHealth": true
+  },
+  "emphasis": {
+    "primary": ["miners", "power"],
+    "secondary": ["hashrate", "shares"],
+    "muted": ["difficulty"]
+  },
+  "alerts": {
+    "showTemperatureWarnings": true,
+    "showOfflineMiners": true,
+    "showRejectRateWarnings": true,
+    "temperatureThreshold": 70,
+    "rejectRateThreshold": 5
+  },
+  "customCSS": ".health-section { order: -1; margin-bottom: 2rem; }\n.health-grid { grid-template-columns: 1fr 1fr; }\n.health-stats-grid { grid-template-columns: repeat(6, 1fr); }\n.miners-grid { grid-template-columns: repeat(2, 1fr); }\n.stat-card.temp { display: none; }"
+}

@@ -1,0 +1,77 @@
+# Spiral Stratum Configuration
+# Docker Container Configuration Template
+#
+# IMPORTANT: YAML structure must match Go struct hierarchy in config.go.
+
+logging:
+  level: "info"
+  output: "stdout"
+  file: "/spiralpool/logs/stratum.log"
+
+stratum:
+  listen: "0.0.0.0:3333"
+  listenV2: "0.0.0.0:3334"
+  connection:
+    maxConnections: 10000
+    timeout: "5m"
+  banning:
+    enabled: true
+    invalidSharesThreshold: 5
+    banDuration: "1h"
+  difficulty:
+    varDiff:
+      enabled: true
+      minDiff: 0.001
+      maxDiff: 10000000
+      targetTime: 4       # 4 sec/share = 15 shares/min
+      retargetTime: 60    # Adjust every 60 seconds
+      variancePercent: 30
+
+daemon:
+  host: "127.0.0.1"
+  port: 14022
+  user: "${RPC_USER}"
+  password: "${RPC_PASSWORD}"
+  zmq:
+    enabled: true
+    endpoint: "tcp://127.0.0.1:${ZMQ_PORT}"
+    reconnectInitial: "5s"
+    reconnectMax: "120s"
+    reconnectFactor: 2.0
+
+database:
+  host: "127.0.0.1"
+  port: 5432
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  database: "${DB_NAME}"
+  sslMode: "disable"
+  maxConnections: 200
+  batching:
+    size: 1000
+    interval: 3s
+
+pool:
+  id: "dgb_sha256"
+  address: "${POOL_ADDRESS}"
+  coinbaseText: "${COINBASE_TEXT}"
+
+api:
+  enabled: true
+  listen: "0.0.0.0:4000"
+
+metrics:
+  enabled: true
+  listen: "0.0.0.0:9100"
+
+sentinel:
+  enabled: true
+  check_interval: "60s"
+  wal_stuck_threshold: "10m"
+  alert_cooldown: "15m"
+  payment_stall_checks: 5
+  goroutine_limit: 10000
+  node_health_threshold: 0.5
+  orphan_rate_threshold: 0.20
+  # webhooks:
+  #   - url: "https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN"

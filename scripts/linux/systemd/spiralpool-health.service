@@ -1,0 +1,60 @@
+# Spiral Pool Health Monitor Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Spiral Pool Health Monitor
+Documentation=https://github.com/SpiralPool/Spiral-Pool
+# Start after network and node daemon, but NOT after stratum
+# (health monitor is responsible for starting stratum when blockchain is synced)
+After=network-online.target postgresql.service
+Wants=postgresql.service
+# Prevent restart loops: max 5 restarts in 10 minutes
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{INSTALL_DIR}}/bin/health-monitor.sh
+
+# === SELF-HEALING / AUTO-RESTART ===
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# === SECURITY HARDENING ===
+# Filesystem protection
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{INSTALL_DIR}}
+
+# Privilege restrictions
+# NOTE: NoNewPrivileges must be 'no' — health monitor uses sudo for self-healing
+# (sudo systemctl stop/start to restart failed services)
+NoNewPrivileges=no
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+# Network restrictions (AF_INET6 kept for dual-stack compat; IPv6 disabled at OS level)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Memory protection
+LockPersonality=yes
+
+# Misc hardening
+RestrictRealtime=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    CATCOIN CORE - DOCKER IMAGE                             ║
+# ║                                                                            ║
+# ║   Separate container for Catcoin Core node (Scrypt mining)                 ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Catcoin Core Node for Spiral Pool"
+LABEL version="2.1.1"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG CATCOIN_VERSION=2.1.1
+
+# Install dependencies (includes unzip for Catcoin ZIP release format)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    libboost-all-dev \
+    libevent-dev \
+    libdb5.3++-dev \
+    gosu \
+    gettext-base \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create catcoin user
+RUN useradd -r -m -s /bin/bash catcoin \
+    && mkdir -p /home/catcoin/.catcoin \
+    && chown -R catcoin:catcoin /home/catcoin
+
+# Download and install Catcoin Core (uses ZIP format, different filenames per arch)
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then CAT_FILE="Catcoin-Linux"; \
+       elif [ "$ARCH" = "arm64" ]; then CAT_FILE="Catcoin-AArch"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/CatcoinCore/catcoincore/releases/download/v${CATCOIN_VERSION}/${CAT_FILE}.zip" \
+    && unzip -q "${CAT_FILE}.zip" \
+    && cp "${CAT_FILE}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/catcoin.conf.template ]; then\n\
+    envsubst < /config/catcoin.conf.template > /home/catcoin/.catcoin/catcoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R catcoin:catcoin /home/catcoin/.catcoin\n\
+\n\
+# Start Catcoin daemon\n\
+exec gosu catcoin catcoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 9933
+# RPC
+EXPOSE 9932
+# ZMQ
+EXPOSE 28932
+
+# Data volume
+VOLUME ["/home/catcoin/.catcoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

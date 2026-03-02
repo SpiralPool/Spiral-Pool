@@ -1,0 +1,1046 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║           SPIRAL POOL - DOCKER COMPOSE (SINGLE-COIN V1)                   ║
+# ║                                                                            ║
+# ║   Solo mining in Docker containers — one coin per deployment              ║
+# ║                                                                            ║
+# ║   SUPPORTED COINS (solo mining, one coin per deployment):                  ║
+# ║   - SHA-256d: DigiByte, Bitcoin, Bitcoin Cash, Bitcoin II,               ║
+# ║               Namecoin, Syscoin*, Myriadcoin, Fractal Bitcoin             ║
+# ║               (* Syscoin = merge-mining only, requires BTC parent)       ║
+# ║   - Scrypt:   Litecoin, Dogecoin, DigiByte-Scrypt, PepeCoin, Catcoin    ║
+# ║                                                                            ║
+# ║   STRATUM PROTOCOL:                                                       ║
+# ║   V1 Stratum (plain + TLS encrypted). Miners connect via:               ║
+# ║   - stratum+tcp://  (plain, standard port)                                ║
+# ║   - stratum+ssl://  (TLS encrypted, TLS port)                            ║
+# ║                                                                            ║
+# ║   DOCKER LIMITATIONS:                                                     ║
+# ║   Docker supports V1 single-coin solo mining only. The following          ║
+# ║   features require native installation via install.sh:                    ║
+# ║   - V2 Enhanced Stratum (SV2 binary protocol with Noise encryption)      ║
+# ║   - Multi-coin mining (13 coins simultaneously)                           ║
+# ║   - Merge mining (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE,      ║
+# ║     LTC+PEP)                                                              ║
+# ║   Run: sudo ./install.sh  on a bare-metal Linux server for full           ║
+# ║   feature support.                                                         ║
+# ║                                                                            ║
+# ║   NETWORKING: bridge (container isolation with port mapping)              ║
+# ║   IPv4 only — IPv6 is not supported.                                    ║
+# ║                                                                            ║
+# ║   Spiral Pool Contributors                                                ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+#
+# USAGE WITH PROFILES:
+#   # SHA-256d coins
+#   docker compose --profile dgb up -d        # DigiByte
+#   docker compose --profile btc up -d        # Bitcoin
+#   docker compose --profile bch up -d        # Bitcoin Cash
+#   docker compose --profile bc2 up -d        # Bitcoin II
+#   docker compose --profile nmc up -d        # Namecoin
+#   docker compose --profile xmy up -d        # Myriadcoin
+#   docker compose --profile fbtc up -d       # Fractal Bitcoin
+#   # Scrypt coins
+#   docker compose --profile ltc up -d        # Litecoin
+#   docker compose --profile doge up -d       # Dogecoin
+#   docker compose --profile dgb-scrypt up -d # DigiByte-Scrypt (uses DGB node)
+#   docker compose --profile pep up -d        # PepeCoin
+#   docker compose --profile cat up -d        # Catcoin
+#
+#   docker compose --profile <profile> logs -f    # View logs
+#   docker compose --profile <profile> down       # Stop all services
+#   docker compose --profile <profile> ps         # Check status
+#
+# NOTE: Run one profile at a time. Each deployment mines a single coin.
+# For multi-coin mining, use native installation: sudo ./install.sh
+#
+# PORT ALLOCATION (V1 / TLS — V2 requires native install.sh):
+#   SHA-256d:                        V1      TLS     RPC     P2P
+#     DGB:                           3333    3335    14022   12024
+#     BTC:                           4333    4335    8332    8333
+#     BCH:                           5333    5335    8432    8433
+#     BC2:                           6333    6335    8339    8338
+#     NMC:                           14335   14337   8336    8334
+#     SYS:                           15335   15337   8370    8369
+#     XMY:                           17335   17337   10889   10888
+#     FBTC:                          18335   18337   8340    8341
+#   Scrypt:
+#     LTC:                           7333    7335    9332    9333
+#     DOGE:                          8335    8342    22555   22556
+#     DGB-SCRYPT:                    3336    3338    (uses DGB node)
+#     PEP:                           10335   10337   33873   33874
+#     CAT:                           12335   12337   9932    9933
+#   Shared: API 4000, Dashboard 1618, PostgreSQL 5432, Prometheus 9090, Grafana 3000
+
+# Default logging limits — prevents unbounded log growth filling disk.
+# Override per-service if needed. Docker default (json-file, no limit) is unsafe
+# for long-running mining pool deployments.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "3"
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SHA-256d COIN NODES
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # DigiByte (DGB) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  digibyte:
+    profiles: ["dgb", "dgb-scrypt", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.digibyte
+    container_name: spiralpool-digibyte
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "12024:12024"   # P2P
+      - "127.0.0.1:14022:14022"   # RPC — localhost only
+    environment:
+      - RPC_USER=${DGB_RPC_USER:-spiraldgb}
+      - RPC_PASSWORD=${DGB_RPC_PASSWORD:?DGB_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28532
+    volumes:
+      - ${DGB_DATA_DIR:-digibyte-data}:/home/digibyte/.digibyte
+      - ./config/digibyte.conf.template:/config/digibyte.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 12G
+        reservations:
+          memory: 4G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      # Prevents password exposure via 'docker inspect' and /proc/*/cmdline
+      test: ["CMD", "digibyte-cli", "-conf=/home/digibyte/.digibyte/digibyte.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Bitcoin (BTC) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  bitcoin:
+    profiles: ["btc", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bitcoin
+    container_name: spiralpool-bitcoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8333:8333"     # P2P
+      - "127.0.0.1:8332:8332"     # RPC — localhost only
+    environment:
+      - RPC_USER=${BTC_RPC_USER:-spiralbtc}
+      - RPC_PASSWORD=${BTC_RPC_PASSWORD:?BTC_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28332
+    volumes:
+      - ${BTC_DATA_DIR:-bitcoin-data}:/home/bitcoin/.bitcoin
+      - ./config/bitcoin.conf.template:/config/bitcoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 12G
+        reservations:
+          memory: 4G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "bitcoin-cli", "-conf=/home/bitcoin/.bitcoin/bitcoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # Bitcoin Cash (BCH) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  bitcoincash:
+    profiles: ["bch", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bitcoincash
+    container_name: spiralpool-bitcoincash
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8433:8433"     # P2P
+      - "127.0.0.1:8432:8432"     # RPC — localhost only
+    environment:
+      - RPC_USER=${BCH_RPC_USER:-spiralbch}
+      - RPC_PASSWORD=${BCH_RPC_PASSWORD:?BCH_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28432
+    volumes:
+      - ${BCH_DATA_DIR:-bitcoincash-data}:/home/bitcoincash/.bitcoin
+      - ./config/bitcoincash.conf.template:/config/bitcoincash.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 10G
+        reservations:
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "bitcoin-cli", "-conf=/home/bitcoincash/.bitcoin/bitcoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # Bitcoin II (BC2) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  bitcoinii:
+    profiles: ["bc2", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bitcoinii
+    container_name: spiralpool-bitcoinii
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8338:8338"     # P2P
+      - "127.0.0.1:8339:8339"     # RPC — localhost only
+    environment:
+      - RPC_USER=${BC2_RPC_USER:-spiralbc2}
+      - RPC_PASSWORD=${BC2_RPC_PASSWORD:?BC2_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28338
+    volumes:
+      - ${BC2_DATA_DIR:-bitcoinii-data}:/home/bitcoinii/.bitcoinii
+      - ./config/bitcoinii.conf.template:/config/bitcoinii.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "bitcoinii-cli", "-conf=/home/bitcoinii/.bitcoinii/bitcoinii.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Namecoin (NMC) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  namecoin:
+    profiles: ["nmc"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.namecoin
+    container_name: spiralpool-namecoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8334:8334"     # P2P
+      - "127.0.0.1:8336:8336"     # RPC — localhost only
+    environment:
+      - RPC_USER=${NMC_RPC_USER:-spiralnmc}
+      - RPC_PASSWORD=${NMC_RPC_PASSWORD:?NMC_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28336
+    volumes:
+      - ${NMC_DATA_DIR:-namecoin-data}:/home/namecoin/.namecoin
+      - ./config/namecoin.conf.template:/config/namecoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "namecoin-cli", "-conf=/home/namecoin/.namecoin/namecoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Myriadcoin (XMY) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  myriadcoin:
+    profiles: ["xmy"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.myriadcoin
+    container_name: spiralpool-myriadcoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "10888:10888"   # P2P
+      - "127.0.0.1:10889:10889"   # RPC — localhost only
+    environment:
+      - RPC_USER=${XMY_RPC_USER:-spiralxmy}
+      - RPC_PASSWORD=${XMY_RPC_PASSWORD:?XMY_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28889
+    volumes:
+      - ${XMY_DATA_DIR:-myriadcoin-data}:/home/myriadcoin/.myriadcoin
+      - ./config/myriadcoin.conf.template:/config/myriadcoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "myriadcoin-cli", "-conf=/home/myriadcoin/.myriadcoin/myriadcoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Fractal Bitcoin (FBTC) - SHA-256d
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  # NOTE: Fractal uses Bitcoin Core binaries aliased as fractald/fractal-cli
+  fractalbitcoin:
+    profiles: ["fbtc"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.fractalbitcoin
+    container_name: spiralpool-fractalbitcoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8341:8341"     # P2P
+      - "127.0.0.1:8340:8340"     # RPC — localhost only
+    environment:
+      - RPC_USER=${FBTC_RPC_USER:-spiralfbtc}
+      - RPC_PASSWORD=${FBTC_RPC_PASSWORD:?FBTC_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28340
+    volumes:
+      - ${FBTC_DATA_DIR:-fractalbitcoin-data}:/home/fractal/.fractal
+      - ./config/fractal.conf.template:/config/fractal.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "fractal-cli", "-conf=/home/fractal/.fractal/bitcoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Syscoin (SYS) - SHA-256d (merge-mining only, requires BTC parent)
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  # NOTE: SYS cannot be solo mined — it is always merge-mined with BTC.
+  # The "sys" profile should only be used in combination with "btc".
+  syscoin:
+    profiles: ["sys"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.syscoin
+    container_name: spiralpool-syscoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "8369:8369"     # P2P
+      - "127.0.0.1:8370:8370"     # RPC — localhost only
+    environment:
+      - RPC_USER=${SYS_RPC_USER:-spiralsys}
+      - RPC_PASSWORD=${SYS_RPC_PASSWORD:?SYS_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28370
+    volumes:
+      - ${SYS_DATA_DIR:-syscoin-data}:/home/syscoin/.syscoin
+      - ./config/syscoin.conf.template:/config/syscoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "syscoin-cli", "-conf=/home/syscoin/.syscoin/syscoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SCRYPT COIN NODES
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Litecoin (LTC) - Scrypt
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  litecoin:
+    profiles: ["ltc", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.litecoin
+    container_name: spiralpool-litecoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "9333:9333"     # P2P
+      - "127.0.0.1:9332:9332"     # RPC — localhost only
+    environment:
+      - RPC_USER=${LTC_RPC_USER:-spiralltc}
+      - RPC_PASSWORD=${LTC_RPC_PASSWORD:?LTC_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28933
+    volumes:
+      - ${LTC_DATA_DIR:-litecoin-data}:/home/litecoin/.litecoin
+      - ./config/litecoin.conf.template:/config/litecoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "litecoin-cli", "-conf=/home/litecoin/.litecoin/litecoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  # Dogecoin (DOGE) - Scrypt
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  dogecoin:
+    profiles: ["doge", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dogecoin
+    container_name: spiralpool-dogecoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "22556:22556"   # P2P
+      - "127.0.0.1:22555:22555"   # RPC — localhost only
+    environment:
+      - RPC_USER=${DOGE_RPC_USER:-spiraldoge}
+      - RPC_PASSWORD=${DOGE_RPC_PASSWORD:?DOGE_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28555
+    volumes:
+      - ${DOGE_DATA_DIR:-dogecoin-data}:/home/dogecoin/.dogecoin
+      - ./config/dogecoin.conf.template:/config/dogecoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "dogecoin-cli", "-conf=/home/dogecoin/.dogecoin/dogecoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  # PepeCoin (PEP) - Scrypt
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  pepecoin:
+    profiles: ["pep"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.pepecoin
+    container_name: spiralpool-pepecoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "33874:33874"   # P2P
+      - "127.0.0.1:33873:33873"   # RPC — localhost only
+    environment:
+      - RPC_USER=${PEP_RPC_USER:-spiralpep}
+      - RPC_PASSWORD=${PEP_RPC_PASSWORD:?PEP_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28873
+    volumes:
+      - ${PEP_DATA_DIR:-pepecoin-data}:/home/pepecoin/.pepecoin
+      - ./config/pepecoin.conf.template:/config/pepecoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "pepecoin-cli", "-conf=/home/pepecoin/.pepecoin/pepecoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Catcoin (CAT) - Scrypt
+  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
+  catcoin:
+    profiles: ["cat"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.catcoin
+    container_name: spiralpool-catcoin
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "9933:9933"     # P2P
+      - "127.0.0.1:9932:9932"     # RPC — localhost only
+    environment:
+      - RPC_USER=${CAT_RPC_USER:-spiralcat}
+      - RPC_PASSWORD=${CAT_RPC_PASSWORD:?CAT_RPC_PASSWORD must be set}
+      - ZMQ_PORT=28932
+    volumes:
+      - ${CAT_DATA_DIR:-catcoin-data}:/home/catcoin/.catcoin
+      - ./config/catcoin.conf.template:/config/catcoin.conf.template:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      # AUDIT FIX (CR-2): Read credentials from config file instead of CLI args
+      test: ["CMD", "catcoin-cli", "-conf=/home/catcoin/.catcoin/catcoin.conf", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # POSTGRESQL DATABASE (Shared across all coins)
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTE: no-new-privileges NOT set - official postgres image uses gosu
+  postgres:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: postgres:18-alpine
+    container_name: spiralpool-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "127.0.0.1:5433:5432"  # Localhost only — stratum uses Docker network
+    environment:
+      - POSTGRES_USER=${DB_USER:-spiralstratum}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - POSTGRES_DB=${DB_NAME:-spiralstratum}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-spiralstratum} -d ${DB_NAME:-spiralstratum}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SPIRAL STRATUM (POOL SERVER)
+  # ═══════════════════════════════════════════════════════════════════════════
+  stratum:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: spiralpool-stratum
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - spiralpool
+    ports:
+      # Stratum ports (V1 plain + TLS only — V2 not available in Docker)
+      # NOTE: Port assignments are fixed per coin. Miners MUST specify the correct
+      # port for their chosen coin. V2 Enhanced Stratum requires native install.sh.
+      # SHA-256d Stratum ports (V1 / TLS)
+      - "3333:3333"     # DGB Stratum V1
+      - "3335:3335"     # DGB Stratum TLS
+      - "4333:4333"     # BTC Stratum V1
+      - "4335:4335"     # BTC Stratum TLS
+      - "5333:5333"     # BCH Stratum V1
+      - "5335:5335"     # BCH Stratum TLS
+      - "6333:6333"     # BC2 Stratum V1
+      - "6335:6335"     # BC2 Stratum TLS
+      # Scrypt Stratum ports (V1 / TLS)
+      - "7333:7333"     # LTC Stratum V1
+      - "7335:7335"     # LTC Stratum TLS
+      - "8335:8335"     # DOGE Stratum V1
+      - "8342:8342"     # DOGE Stratum TLS
+      - "3336:3336"     # DGB-SCRYPT Stratum V1
+      - "3338:3338"     # DGB-SCRYPT Stratum TLS
+      - "10335:10335"   # PEP Stratum V1
+      - "10337:10337"   # PEP Stratum TLS
+      - "12335:12335"   # CAT Stratum V1
+      - "12337:12337"   # CAT Stratum TLS
+      # Merge-minable Stratum ports (V1 / TLS)
+      - "14335:14335"   # NMC Stratum V1
+      - "14337:14337"   # NMC Stratum TLS
+      - "17335:17335"   # XMY Stratum V1
+      - "17337:17337"   # XMY Stratum TLS
+      - "15335:15335"   # SYS Stratum V1
+      - "15337:15337"   # SYS Stratum TLS
+      - "18335:18335"   # FBTC Stratum V1
+      - "18337:18337"   # FBTC Stratum TLS
+      # API
+      - "4000:4000"     # Pool API
+      - "9100:9100"     # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # All daemon services listed with required: false — only the selected
+      # coin's daemon will actually be running (single-coin Docker mode)
+      digibyte:
+        condition: service_healthy
+        required: false
+      bitcoin:
+        condition: service_healthy
+        required: false
+      bitcoincash:
+        condition: service_healthy
+        required: false
+      bitcoinii:
+        condition: service_healthy
+        required: false
+      namecoin:
+        condition: service_healthy
+        required: false
+      myriadcoin:
+        condition: service_healthy
+        required: false
+      fractalbitcoin:
+        condition: service_healthy
+        required: false
+      syscoin:
+        condition: service_healthy
+        required: false
+      litecoin:
+        condition: service_healthy
+        required: false
+      dogecoin:
+        condition: service_healthy
+        required: false
+      pepecoin:
+        condition: service_healthy
+        required: false
+      catcoin:
+        condition: service_healthy
+        required: false
+    environment:
+      # RPC credentials (SHA-256d coins) — coin-specific vars used by entrypoint auto-detection
+      - DGB_RPC_USER=${DGB_RPC_USER:-spiraldgb}
+      - DGB_RPC_PASSWORD=${DGB_RPC_PASSWORD:-}
+      - BTC_RPC_USER=${BTC_RPC_USER:-spiralbtc}
+      - BTC_RPC_PASSWORD=${BTC_RPC_PASSWORD:-}
+      - BCH_RPC_USER=${BCH_RPC_USER:-spiralbch}
+      - BCH_RPC_PASSWORD=${BCH_RPC_PASSWORD:-}
+      - BC2_RPC_USER=${BC2_RPC_USER:-spiralbc2}
+      - BC2_RPC_PASSWORD=${BC2_RPC_PASSWORD:-}
+      - NMC_RPC_USER=${NMC_RPC_USER:-spiralnmc}
+      - NMC_RPC_PASSWORD=${NMC_RPC_PASSWORD:-}
+      - XMY_RPC_USER=${XMY_RPC_USER:-spiralxmy}
+      - XMY_RPC_PASSWORD=${XMY_RPC_PASSWORD:-}
+      - SYS_RPC_USER=${SYS_RPC_USER:-spiralsys}
+      - SYS_RPC_PASSWORD=${SYS_RPC_PASSWORD:-}
+      - FBTC_RPC_USER=${FBTC_RPC_USER:-spiralfbtc}
+      - FBTC_RPC_PASSWORD=${FBTC_RPC_PASSWORD:-}
+      # RPC credentials (Scrypt coins)
+      - LTC_RPC_USER=${LTC_RPC_USER:-spiralltc}
+      - LTC_RPC_PASSWORD=${LTC_RPC_PASSWORD:-}
+      - DOGE_RPC_USER=${DOGE_RPC_USER:-spiraldoge}
+      - DOGE_RPC_PASSWORD=${DOGE_RPC_PASSWORD:-}
+      - PEP_RPC_USER=${PEP_RPC_USER:-spiralpep}
+      - PEP_RPC_PASSWORD=${PEP_RPC_PASSWORD:-}
+      - CAT_RPC_USER=${CAT_RPC_USER:-spiralcat}
+      - CAT_RPC_PASSWORD=${CAT_RPC_PASSWORD:-}
+      # Database
+      - DB_USER=${DB_USER:-spiralstratum}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-spiralstratum}
+      - DB_HOST=postgres
+      # Branding
+      - COINBASE_TEXT=${COINBASE_TEXT:-Mined by Spiral Pool}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - SPIRAL_METRICS_TOKEN=${SPIRAL_METRICS_TOKEN:-}
+      # Config template variables (used by stratum-entrypoint.sh)
+      - POOL_COIN=${POOL_COIN:?POOL_COIN must be set in .env}
+      - POOL_ID=${POOL_ID:?POOL_ID must be set in .env}
+      - POOL_ADDRESS=${POOL_ADDRESS:?POOL_ADDRESS must be set in .env}
+      # Daemon connection — auto-detected by entrypoint from POOL_COIN + coin RPC vars.
+      # Set these only to override auto-detection (e.g., remote daemon).
+      - DAEMON_HOST=${DAEMON_HOST:-}
+      - DAEMON_RPC_PORT=${DAEMON_RPC_PORT:-}
+      - DAEMON_RPC_USER=${DAEMON_RPC_USER:-}
+      - DAEMON_RPC_PASSWORD=${DAEMON_RPC_PASSWORD:-}
+      - DAEMON_ZMQ_PORT=${DAEMON_ZMQ_PORT:-}
+      - STRATUM_PORT=${STRATUM_PORT:-}
+      - STRATUM_PORT_TLS=${STRATUM_PORT_TLS:-}
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-/spiralpool/tls/stratum.crt}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-/spiralpool/tls/stratum.key}
+    volumes:
+      - stratum-logs:/spiralpool/logs
+      - shared-data:/spiralpool/data
+      - ./config/config.docker.template:/spiralpool/config/config.docker.template:ro
+      - ./tls:/spiralpool/tls:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/pools"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SPIRAL DASHBOARD
+  # ═══════════════════════════════════════════════════════════════════════════
+  dashboard:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: spiralpool-dashboard
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - spiralpool
+    ports:
+      - "1618:1618"     # Dashboard UI
+    depends_on:
+      stratum:
+        condition: service_healthy
+    environment:
+      - POOL_API_URL=http://stratum:4000
+      # Dashboard Authentication (v1.0)
+      - DASHBOARD_AUTH_ENABLED=${DASHBOARD_AUTH_ENABLED:-true}
+      - DASHBOARD_SESSION_LIFETIME=${DASHBOARD_SESSION_LIFETIME:-24}
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}
+      - DASHBOARD_CORS_ORIGINS=${DASHBOARD_CORS_ORIGINS:-}
+      - SPIRAL_ADMIN_API_KEY=${ADMIN_API_KEY:-}
+    volumes:
+      - dashboard-config:/spiralpool/dashboard/data
+      - dashboard-auth:/app/data
+      - shared-data:/spiralpool/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1618/api/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SPIRAL SENTINEL (MONITORING & ALERTS)
+  # ═══════════════════════════════════════════════════════════════════════════
+  sentinel:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sentinel
+    container_name: spiralpool-sentinel
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - spiralpool
+    depends_on:
+      stratum:
+        condition: service_healthy
+    environment:
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - XMPP_JID=${XMPP_JID:-}
+      - XMPP_PASSWORD=${XMPP_PASSWORD:-}
+      - XMPP_RECIPIENT=${XMPP_RECIPIENT:-}
+      - POOL_API_URL=http://stratum:4000
+      - SPIRAL_ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      # Wallet addresses for monitoring (all coins)
+      - DGB_WALLET_ADDRESS=${DGB_POOL_ADDRESS:-}
+      - BTC_WALLET_ADDRESS=${BTC_POOL_ADDRESS:-}
+      - BCH_WALLET_ADDRESS=${BCH_POOL_ADDRESS:-}
+      - BC2_WALLET_ADDRESS=${BC2_POOL_ADDRESS:-}
+      - LTC_WALLET_ADDRESS=${LTC_POOL_ADDRESS:-}
+      - DOGE_WALLET_ADDRESS=${DOGE_POOL_ADDRESS:-}
+      - NMC_WALLET_ADDRESS=${NMC_POOL_ADDRESS:-}
+      - SYS_WALLET_ADDRESS=${SYS_POOL_ADDRESS:-}
+      - XMY_WALLET_ADDRESS=${XMY_POOL_ADDRESS:-}
+      - FBTC_WALLET_ADDRESS=${FBTC_POOL_ADDRESS:-}
+      - PEP_WALLET_ADDRESS=${PEP_POOL_ADDRESS:-}
+      - CAT_WALLET_ADDRESS=${CAT_POOL_ADDRESS:-}
+      - EXPECTED_FLEET_THS=${EXPECTED_FLEET_THS:-22}
+      - ALERT_THEME=${ALERT_THEME:-cyberpunk}
+    volumes:
+      - sentinel-config:/home/spiraluser/.spiralsentinel
+      - shared-data:/spiralpool/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          memory: 128M
+    healthcheck:
+      # Check sentinel's own process is alive (not stratum's endpoint — sentinel
+      # must stay "healthy" even when stratum is down, since that's exactly when
+      # sentinel needs to fire alerts)
+      test: ["CMD", "python3", "-c", "import os, signal; os.kill(1, 0)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROMETHEUS (METRICS COLLECTION)
+  # ═══════════════════════════════════════════════════════════════════════════
+  prometheus:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: prom/prometheus:v2.51.0
+    container_name: spiralpool-prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - spiralpool
+    ports:
+      - "127.0.0.1:9090:9090"  # Localhost only — no unauthenticated admin API exposure
+    depends_on:
+      stratum:
+        condition: service_healthy
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+      - shared-data:/spiralpool/data:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # GRAFANA (DASHBOARDS & ALERTING)
+  # ═══════════════════════════════════════════════════════════════════════════
+  grafana:
+    profiles: ["dgb", "btc", "bch", "bc2", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: grafana/grafana-oss:10.4.2
+    container_name: spiralpool-grafana
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - spiralpool
+    ports:
+      - "127.0.0.1:3000:3000"  # Localhost only — front with reverse proxy for external access
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set - run generate-secrets.sh}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_ALERTING_ENABLED=false
+      # Notification credentials (used by provisioned contact points)
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning/datasources/:/etc/grafana/provisioning/datasources/:ro
+      - ./config/grafana/provisioning/alerting/:/etc/grafana/provisioning/alerting/:ro
+      - ./config/grafana/provisioning/dashboards/:/etc/grafana/provisioning/dashboards/:ro
+      - ./config/grafana/dashboards/:/var/lib/grafana/dashboards/spiralpool/:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NETWORKS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  spiralpool:
+    name: spiralpool-network
+    driver: bridge
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+volumes:
+  # SHA-256d coin data volumes
+  digibyte-data:
+    name: spiralpool-digibyte-data
+  bitcoin-data:
+    name: spiralpool-bitcoin-data
+  bitcoincash-data:
+    name: spiralpool-bitcoincash-data
+  bitcoinii-data:
+    name: spiralpool-bitcoinii-data
+  namecoin-data:
+    name: spiralpool-namecoin-data
+  myriadcoin-data:
+    name: spiralpool-myriadcoin-data
+  fractalbitcoin-data:
+    name: spiralpool-fractalbitcoin-data
+  syscoin-data:
+    name: spiralpool-syscoin-data
+  # Scrypt coin data volumes
+  litecoin-data:
+    name: spiralpool-litecoin-data
+  dogecoin-data:
+    name: spiralpool-dogecoin-data
+  pepecoin-data:
+    name: spiralpool-pepecoin-data
+  catcoin-data:
+    name: spiralpool-catcoin-data
+  # Shared service volumes
+  postgres-data:
+    name: spiralpool-postgres-data
+  stratum-logs:
+    name: spiralpool-stratum-logs
+  dashboard-config:
+    name: spiralpool-dashboard-config
+  dashboard-auth:
+    name: spiralpool-dashboard-auth
+  sentinel-config:
+    name: spiralpool-sentinel-config
+  shared-data:
+    name: spiralpool-shared-data
+  # Monitoring volumes
+  prometheus-data:
+    name: spiralpool-prometheus-data
+  grafana-data:
+    name: spiralpool-grafana-data

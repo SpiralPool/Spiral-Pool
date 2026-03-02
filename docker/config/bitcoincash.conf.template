@@ -1,0 +1,106 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# BITCOIN CASH NODE (BCHN) - SPIRAL POOL CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Optimized for fast initial blockchain sync and reliable mining operations
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NETWORK SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+chain=main
+listen=1
+port=8433
+
+# Maximum peer connections (higher = faster sync, more bandwidth)
+maxconnections=125
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RPC CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+server=1
+rpcuser=${RPC_USER}
+rpcpassword=${RPC_PASSWORD}
+rpcallowip=127.0.0.1
+rpcallowip=172.17.0.0/16
+rpcallowip=10.0.0.0/8
+rpcallowip=192.168.0.0/16
+rpcbind=0.0.0.0
+rpcport=8432
+
+# RPC work queue for mining (increase for high hashrate)
+rpcworkqueue=128
+rpcthreads=8
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZMQ BLOCK NOTIFICATIONS (for instant job updates)
+# ═══════════════════════════════════════════════════════════════════════════════
+zmqpubhashblock=tcp://0.0.0.0:28432
+zmqpubrawtx=tcp://0.0.0.0:28432
+zmqpubrawblock=tcp://0.0.0.0:28432
+
+# High water mark for ZMQ (prevents message drops under load)
+zmqpubhashblockhwm=1000
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERFORMANCE TUNING - OPTIMIZED FOR FAST SYNC
+# ═══════════════════════════════════════════════════════════════════════════════
+# Database cache size in MB (higher = faster sync, more RAM)
+# BCH blockchain is smaller than BTC, 2048MB is usually sufficient
+# Requires ~2-4GB RAM depending on setting
+dbcache=2048
+
+# Signature cache size (higher = faster validation)
+maxsigcachesize=250
+
+# Script verification threads (0 = auto-detect CPU cores)
+par=0
+
+# UTXO cache - increase for faster UTXO lookups
+maxmempool=300
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WALLET (required for solo mining)
+# ═══════════════════════════════════════════════════════════════════════════════
+disablewallet=0
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOGGING
+# ═══════════════════════════════════════════════════════════════════════════════
+printtoconsole=1
+# Reduce log verbosity during sync
+debug=0
+logtimestamps=1
+shrinkdebugfile=1
+debuglogfile=debug.log
+maxdebugfilesize=50
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STORAGE (Full node - no pruning for mining)
+# ═══════════════════════════════════════════════════════════════════════════════
+prune=0
+txindex=1
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DNS SEEDS AND BOOTSTRAP NODES (verified against BCHN chainparams.cpp)
+# ═══════════════════════════════════════════════════════════════════════════════
+dnsseed=1
+addnode=seed.flowee.cash
+addnode=seed-bch.bitcoinforks.org
+addnode=btccash-seeder.bitcoinunlimited.info
+addnode=seed.bchd.cash
+addnode=seed.bch.loping.net
+addnode=dnsseed.electroncash.de
+addnode=bchseed.c3-soft.com
+addnode=bch.bitjson.com
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MINING SPECIFIC
+# ═══════════════════════════════════════════════════════════════════════════════
+# Block size limit for mining (BCH has larger blocks)
+blockmaxsize=32000000
+excessiveblocksize=32000000
+
+# Accept large blocks from peers
+excessiveacceptdepth=12
+
+# Minimum relay fee
+minrelaytxfee=0.00001

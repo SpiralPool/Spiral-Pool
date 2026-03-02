@@ -1,0 +1,386 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║           SPIRAL POOL - HIGH AVAILABILITY DOCKER COMPOSE                   ║
+# ║                                                                            ║
+# ║   PostgreSQL HA with Patroni + etcd for automatic failover                 ║
+# ║                                                                            ║
+# ║   USAGE:                                                                   ║
+# ║     docker compose -f docker-compose.yml -f docker-compose.ha.yml \        ║
+# ║       --profile dgb --profile ha up -d                                     ║
+# ║                                                                            ║
+# ║   ARCHITECTURE:                                                            ║
+# ║     etcd1, etcd2, etcd3  - Distributed consensus (leader election)         ║
+# ║     patroni1, patroni2   - PostgreSQL nodes with automatic failover        ║
+# ║     haproxy              - Connection routing to current leader            ║
+# ║                                                                            ║
+# ║   POOL BEHAVIOR:                                                           ║
+# ║     - Pool connects to HAProxy on port 5432                                ║
+# ║     - HAProxy routes to Patroni leader                                     ║
+# ║     - Pool's pg_is_in_recovery() check remains authoritative               ║
+# ║     - On leader failure: Patroni promotes replica within ~30s              ║
+# ║     - Pool retries and finds new leader automatically                      ║
+# ║                                                                            ║
+# ║   IMPORTANT: This overlay REPLACES the standalone postgres service         ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "3"
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ETCD CLUSTER (Distributed Consensus for Leader Election)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  etcd1:
+    profiles: ["ha"]
+    image: quay.io/coreos/etcd:v3.5.11
+    container_name: spiralpool-etcd1
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    environment:
+      - ETCD_NAME=etcd1
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd1:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd1:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
+    volumes:
+      - etcd1-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcd2:
+    profiles: ["ha"]
+    image: quay.io/coreos/etcd:v3.5.11
+    container_name: spiralpool-etcd2
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    environment:
+      - ETCD_NAME=etcd2
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd2:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd2:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
+    volumes:
+      - etcd2-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcd3:
+    profiles: ["ha"]
+    image: quay.io/coreos/etcd:v3.5.11
+    container_name: spiralpool-etcd3
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    environment:
+      - ETCD_NAME=etcd3
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd3:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
+    volumes:
+      - etcd3-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PATRONI POSTGRESQL NODES (Primary + Replica with automatic failover)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  patroni1:
+    profiles: ["ha"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.patroni
+    container_name: spiralpool-patroni1
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    environment:
+      - PATRONI_NAME=patroni1
+      - PATRONI_HOST=patroni1
+      - ETCD_HOST=etcd1
+      - ETCD_HOST2=etcd2
+      - ETCD_HOST3=etcd3
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - REPLICATION_PASSWORD=${REPLICATION_PASSWORD:?REPLICATION_PASSWORD must be set - run generate-secrets.sh}
+      - REWIND_PASSWORD=${REWIND_PASSWORD:?REWIND_PASSWORD must be set - run generate-secrets.sh}
+      - PATRONI_REST_PASSWORD=${PATRONI_REST_PASSWORD:?PATRONI_REST_PASSWORD must be set - run generate-secrets.sh}
+      - DB_USER=${DB_USER:-spiralstratum}
+      - DB_NAME=${DB_NAME:-spiralstratum}
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - patroni1-data:/var/lib/postgresql/data
+      - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    shm_size: 256mb
+
+  patroni2:
+    profiles: ["ha"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.patroni
+    container_name: spiralpool-patroni2
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    environment:
+      - PATRONI_NAME=patroni2
+      - PATRONI_HOST=patroni2
+      - ETCD_HOST=etcd1
+      - ETCD_HOST2=etcd2
+      - ETCD_HOST3=etcd3
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - REPLICATION_PASSWORD=${REPLICATION_PASSWORD:?REPLICATION_PASSWORD must be set - run generate-secrets.sh}
+      - REWIND_PASSWORD=${REWIND_PASSWORD:?REWIND_PASSWORD must be set - run generate-secrets.sh}
+      - PATRONI_REST_PASSWORD=${PATRONI_REST_PASSWORD:?PATRONI_REST_PASSWORD must be set - run generate-secrets.sh}
+      - DB_USER=${DB_USER:-spiralstratum}
+      - DB_NAME=${DB_NAME:-spiralstratum}
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - patroni2-data:/var/lib/postgresql/data
+      - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          memory: 1G
+    shm_size: 256mb
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # HAPROXY (Connection Routing to Current Leader)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  haproxy:
+    profiles: ["ha"]
+    image: haproxy:2.9-alpine
+    container_name: spiralpool-haproxy
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    ports:
+      - "127.0.0.1:5432:5432"  # PostgreSQL (routes to leader) — localhost only
+      - "127.0.0.1:5433:5433"  # PostgreSQL read replicas — localhost only
+      # NOTE: HAProxy stats on port 7000 is intentionally NOT exposed to host.
+      # Access via: docker exec spiralpool-haproxy wget -qO- http://localhost:7000/
+      # This prevents unauthenticated stats access from external networks.
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      patroni1:
+        condition: service_healthy
+      patroni2:
+        condition: service_healthy
+    healthcheck:
+      # Check HAProxy stats page is reachable (proves HAProxy is running, not just config valid)
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7000/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # REDIS (HA cross-node share/block deduplication)
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Provides cross-node deduplication for block submissions and shares.
+  # The pool gracefully falls back to local in-memory dedup if Redis is down.
+  # All keys use TTLs, so volatile-ttl evicts the oldest expiring key first.
+  #
+  # No authentication by default — Redis is only accessible within the Docker
+  # bridge network (not exposed to host). For password protection, set
+  # REDIS_PASSWORD in .env and uncomment the requirepass line below.
+
+  redis:
+    profiles: ["ha"]
+    image: redis:7-alpine
+    container_name: spiralpool-redis
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - spiralpool
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy volatile-ttl
+      --save ""
+      --appendonly yes
+      --appendfsync everysec
+      --bind 0.0.0.0
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set - run generate-secrets.sh}
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          memory: 64M
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set - run generate-secrets.sh}
+    # R-6 FIX: Persist Redis data for dedup key survival across restarts
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # SECURITY: Use REDISCLI_AUTH instead of -a (prevents password leak in ps/proc)
+      # $$REDIS_PASSWORD double-dollar escapes compose substitution → reads container env at runtime
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OVERRIDE: Disable standalone postgres (replaced by Patroni + HAProxy)
+  # ═══════════════════════════════════════════════════════════════════════════
+  # The standalone postgres from docker-compose.yml must be disabled in HA mode
+  # because haproxy binds to the same host port (5432). Without this override,
+  # both containers try to bind host:5432 and one fails.
+  #
+  # OVERRIDE: Disable standalone postgres in HA mode.
+  # HAProxy binds host:5432, so standalone postgres must not start.
+  # We replace the image with a no-op (alpine sleep), remove all port mappings
+  # by rebinding to a harmless high port, and disable restart.
+
+  postgres:
+    image: alpine:3.20
+    entrypoint: ["echo", "Disabled in HA mode - using Patroni instead"]
+    command: []
+    ports:
+      - "54399:5432"
+    volumes: []
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OVERRIDE: Stratum environment for HA
+  # ═══════════════════════════════════════════════════════════════════════════
+  # - DB_HOST: routes database traffic through haproxy → patroni leader
+  # - Redis dedup: enables cross-node share/block deduplication
+  # - depends_on: waits for haproxy and redis; marks postgres as non-required
+  #   since it is disabled by the profile override above
+  #
+  # NOTE: Do NOT add profiles here — Docker Compose replaces (not merges)
+  # the profiles list, which would break coin profile activation.
+
+  stratum:
+    environment:
+      - DB_HOST=haproxy
+      - REDIS_DEDUP_ENABLED=true
+      - REDIS_DEDUP_ADDR=redis:6379
+      - REDIS_DEDUP_PASSWORD=${REDIS_PASSWORD}
+    # NOTE: Docker Compose REPLACES (not merges) depends_on in overlay files.
+    # All coin daemons must be listed here to preserve soft ordering from base compose.
+    depends_on:
+      postgres:
+        condition: service_started
+        required: false
+      haproxy:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      digibyte:
+        condition: service_healthy
+        required: false
+      bitcoin:
+        condition: service_healthy
+        required: false
+      bitcoincash:
+        condition: service_healthy
+        required: false
+      bitcoinii:
+        condition: service_healthy
+        required: false
+      namecoin:
+        condition: service_healthy
+        required: false
+      syscoin:
+        condition: service_healthy
+        required: false
+      myriadcoin:
+        condition: service_healthy
+        required: false
+      fractalbitcoin:
+        condition: service_healthy
+        required: false
+      litecoin:
+        condition: service_healthy
+        required: false
+      dogecoin:
+        condition: service_healthy
+        required: false
+      pepecoin:
+        condition: service_healthy
+        required: false
+      catcoin:
+        condition: service_healthy
+        required: false
+
+volumes:
+  etcd1-data:
+    name: spiralpool-etcd1-data
+  etcd2-data:
+    name: spiralpool-etcd2-data
+  etcd3-data:
+    name: spiralpool-etcd3-data
+  patroni1-data:
+    name: spiralpool-patroni1-data
+  patroni2-data:
+    name: spiralpool-patroni2-data
+  redis-data:
+    name: spiralpool-redis-data

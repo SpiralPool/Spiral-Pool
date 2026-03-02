@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║           SPIRAL POOL - PATRONI POSTGRESQL HA IMAGE                        ║
+# ║                                                                            ║
+# ║   PostgreSQL 18 with Patroni for automatic failover                        ║
+# ║                                                                            ║
+# ║   Features:                                                                ║
+# ║   - Automatic leader election via etcd                                     ║
+# ║   - Automatic replica promotion                                            ║
+# ║   - Health endpoint at :8008/health                                        ║
+# ║   - Synchronous replication support                                        ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM postgres:18-bookworm
+
+LABEL maintainer="Spiral Miner"
+LABEL description="PostgreSQL 18 with Patroni HA for Spiral Pool"
+
+# Install Patroni and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-psycopg2 \
+    python3-etcd \
+    curl \
+    jq \
+    gettext-base \
+    && pip3 install --break-system-packages --no-cache-dir \
+    patroni[etcd3] \
+    python-etcd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create patroni user and directories
+RUN mkdir -p /etc/patroni /var/run/postgresql \
+    && chown -R postgres:postgres /etc/patroni /var/run/postgresql
+
+# Copy configuration template
+COPY docker/config/patroni.yml.template /etc/patroni/patroni.yml.template
+
+# Copy entrypoint and post-bootstrap scripts
+COPY docker/scripts/patroni-entrypoint.sh /usr/local/bin/patroni-entrypoint.sh
+COPY docker/scripts/patroni-post-bootstrap.sh /usr/local/bin/patroni-post-bootstrap.sh
+RUN chmod +x /usr/local/bin/patroni-entrypoint.sh /usr/local/bin/patroni-post-bootstrap.sh
+
+# Patroni REST API port
+EXPOSE 8008
+# PostgreSQL port
+EXPOSE 5432
+
+USER postgres
+
+# Health check via Patroni REST API
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:8008/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/patroni-entrypoint.sh"]

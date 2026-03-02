@@ -1,0 +1,36 @@
+# Myriadcoin Node Service (AuxPoW - merge-mined with Bitcoin)
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{XMY_DIR}} - Myriadcoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Myriadcoin Core Daemon
+Documentation=https://myriadcoin.org
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{XMY_DIR}}/bin/myriadcoind -daemon -conf={{INSTALL_DIR}}/xmy/myriadcoin.conf -datadir={{INSTALL_DIR}}/xmy
+ExecStop={{XMY_DIR}}/bin/myriadcoin-cli -conf={{INSTALL_DIR}}/xmy/myriadcoin.conf stop
+PIDFile={{INSTALL_DIR}}/xmy/myriadcoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Some blockchain daemons crash with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target

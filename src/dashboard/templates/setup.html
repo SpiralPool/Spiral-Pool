@@ -1,0 +1,2867 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Spiral Dashboard - Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="setup-page">
+    <!-- Animated background -->
+    <div class="cyber-grid"></div>
+
+    <div class="setup-container">
+        <!-- Header -->
+        <header class="setup-header">
+            <h1 class="glitch" data-text="Spiral Dashboard">Spiral Dashboard</h1>
+        </header>
+
+        <!-- Welcome Card -->
+        <div class="welcome-card cyber-card">
+            <h2 class="neon-text">Welcome to Spiral Dashboard!</h2>
+            <p class="slogan">One dashboard. All your hashpower.</p>
+            <p>This appears to be your first time running the application. Please configure the initial settings below.</p>
+        </div>
+
+        <!-- Import Miners Modal (shown if miners.json has miners) -->
+        <div id="import-modal-overlay" class="import-modal-overlay">
+            <div class="import-modal">
+                <div class="import-modal-header">
+                    <div class="import-modal-icon">📥</div>
+                    <div class="import-modal-title">Miners Found!</div>
+                    <div class="import-modal-subtitle">We found miners from your installation scan</div>
+                </div>
+                <div class="import-modal-body">
+                    <div class="import-modal-stats">
+                        <div class="import-stat">
+                            <div id="import-modal-count" class="import-stat-value">0</div>
+                            <div class="import-stat-label">Miners Available</div>
+                        </div>
+                    </div>
+                    <div class="import-modal-note">
+                        These miners were discovered during installation.<br>
+                        Would you like to import them now?
+                    </div>
+                </div>
+                <div class="import-modal-actions">
+                    <button type="button" class="import-modal-btn primary" onclick="acceptImportPrompt()">
+                        Yes, Import Miners
+                    </button>
+                    <button type="button" class="import-modal-btn secondary" onclick="dismissImportPrompt()">
+                        No, Scan Manually
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Basic Settings -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚙</span>
+                Basic Settings
+            </h3>
+            <div class="form-group">
+                <label for="dashboardTitle">Dashboard Title</label>
+                <input type="text" id="dashboardTitle" class="cyber-input" value="{{ config.dashboard_title or 'My Solo Pool' }}" placeholder="My Solo Pool">
+                <span class="input-hint">The title that will appear at the top of your dashboard</span>
+            </div>
+
+            <!-- Expected Farm Hashrate -->
+            <div class="form-group hashrate-group">
+                <label for="expectedHashrate">Expected Farm Hashrate (TH/s)</label>
+                <div class="hashrate-input-wrapper">
+                    <input type="number" id="expectedHashrate" class="cyber-input" value="100" min="0" max="100000" step="0.1" placeholder="100">
+                    <span class="hashrate-unit">TH/s</span>
+                </div>
+                <span class="input-hint">Approximate total hashrate of ALL your miners combined. Used for expected hashrate reporting and alerts.</span>
+
+                <div class="hashrate-unsure-option">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="hashrateUnsure" onchange="toggleHashrateUnsure()">
+                        <span class="checkmark"></span>
+                        <span class="checkbox-label">I'm not sure / Skip this setting</span>
+                    </label>
+                    <div class="unsure-hint" id="unsureHint">
+                        <span class="warning-icon">⚠️</span>
+                        <span>If you're unsure of your total hashrate, that's okay! We'll disable expected hashrate features. This means hashrate drop alerts and some reporting features won't work, but everything else will function normally. You can always update this later in Settings.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pool Mode Selection -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⛏</span>
+                Pool Mode & Coin Selection
+            </h3>
+            <p class="section-desc">Choose whether to mine a single coin (Solo Mode), multiple coins simultaneously (Multi-Coin Mode), or a parent chain with auxiliary chains (Merge Mining).</p>
+
+            <div class="pool-mode-selector">
+                <div class="mode-option" id="mode-solo" onclick="selectPoolMode('solo')">
+                    <div class="mode-icon">🎯</div>
+                    <div class="mode-info">
+                        <div class="mode-title">Solo Mode</div>
+                        <div class="mode-desc">Mine a single cryptocurrency</div>
+                    </div>
+                    <div class="mode-check">✓</div>
+                </div>
+                <div class="mode-option" id="mode-multi" onclick="selectPoolMode('multi')">
+                    <div class="mode-icon">🌐</div>
+                    <div class="mode-info">
+                        <div class="mode-title">Multi-Coin Mode</div>
+                        <div class="mode-desc">Mine 2 or more coins simultaneously</div>
+                    </div>
+                    <div class="mode-check">✓</div>
+                </div>
+                <div class="mode-option" id="mode-merge" onclick="selectPoolMode('merge')">
+                    <div class="mode-icon">⛓️</div>
+                    <div class="mode-info">
+                        <div class="mode-title">Merge Mining</div>
+                        <div class="mode-desc">Parent chain + auxiliary chains (AuxPoW)</div>
+                    </div>
+                    <div class="mode-check">✓</div>
+                </div>
+            </div>
+
+            <!-- Coin Selection -->
+            <div class="coin-selection" id="coin-selection">
+                <h4 class="coin-selection-title" id="coin-selection-title">Select Your Coin</h4>
+
+                <!-- SHA-256d Coins -->
+                <div class="algo-section">
+                    <div class="algo-header">SHA-256d Algorithm</div>
+                    <div class="coin-grid">
+                        <!-- Alphabetically ordered by symbol -->
+                        <div class="coin-option" id="coin-bc2" data-coin="BC2" onclick="toggleCoin('BC2')">
+                            <div class="coin-icon">🔵</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Bitcoin II</div>
+                                <div class="coin-symbol">BC2</div>
+                                <div class="coin-algo">SHA256d</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-bch" data-coin="BCH" onclick="toggleCoin('BCH')">
+                            <div class="coin-icon">🟢</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Bitcoin Cash</div>
+                                <div class="coin-symbol">BCH</div>
+                                <div class="coin-algo">SHA256d</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-btc" data-coin="BTC" onclick="toggleCoin('BTC')">
+                            <div class="coin-icon">🟠</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Bitcoin</div>
+                                <div class="coin-symbol">BTC</div>
+                                <div class="coin-algo">SHA256d</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-dgb" data-coin="DGB" onclick="toggleCoin('DGB')">
+                            <div class="coin-icon">💎</div>
+                            <div class="coin-info">
+                                <div class="coin-name">DigiByte</div>
+                                <div class="coin-symbol">DGB</div>
+                                <div class="coin-algo">SHA256d (1/5 of network)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-fbtc" data-coin="FBTC" onclick="toggleCoin('FBTC')">
+                            <div class="coin-icon">🔶</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Fractal Bitcoin</div>
+                                <div class="coin-symbol">FBTC</div>
+                                <div class="coin-algo">SHA256d (merge-mine w/ BTC)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-nmc" data-coin="NMC" onclick="toggleCoin('NMC')">
+                            <div class="coin-icon">🔷</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Namecoin</div>
+                                <div class="coin-symbol">NMC</div>
+                                <div class="coin-algo">SHA256d (merge-mine w/ BTC)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <!-- SYS: merge-mining only (hidden by default, shown when merge mining detected) -->
+                        <div class="coin-option" id="coin-sys" data-coin="SYS" onclick="toggleCoin('SYS')" style="display: none;">
+                            <div class="coin-icon">🔴</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Syscoin</div>
+                                <div class="coin-symbol">SYS</div>
+                                <div class="coin-algo">SHA256d (merge-mine w/ BTC)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <!-- XMY: merge-mining only (hidden by default, shown when merge mining detected) -->
+                        <div class="coin-option" id="coin-xmy" data-coin="XMY" onclick="toggleCoin('XMY')" style="display: none;">
+                            <div class="coin-icon">⭐</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Myriad</div>
+                                <div class="coin-symbol">XMY</div>
+                                <div class="coin-algo">SHA256d (merge-mine w/ BTC)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scrypt Coins -->
+                <div class="algo-section">
+                    <div class="algo-header">Scrypt Algorithm</div>
+                    <div class="coin-grid">
+                        <!-- Alphabetically ordered by symbol -->
+                        <div class="coin-option" id="coin-cat" data-coin="CAT" onclick="toggleCoin('CAT')">
+                            <div class="coin-icon">🐱</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Catcoin</div>
+                                <div class="coin-symbol">CAT</div>
+                                <div class="coin-algo">Scrypt</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-dgb-scrypt" data-coin="DGB-SCRYPT" onclick="toggleCoin('DGB-SCRYPT')">
+                            <div class="coin-icon">💎</div>
+                            <div class="coin-info">
+                                <div class="coin-name">DigiByte</div>
+                                <div class="coin-symbol">DGB-Scrypt</div>
+                                <div class="coin-algo">Scrypt (1/5 of network)</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-doge" data-coin="DOGE" onclick="toggleCoin('DOGE')">
+                            <div class="coin-icon">🐕</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Dogecoin</div>
+                                <div class="coin-symbol">DOGE</div>
+                                <div class="coin-algo">Scrypt</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-ltc" data-coin="LTC" onclick="toggleCoin('LTC')">
+                            <div class="coin-icon">⚪</div>
+                            <div class="coin-info">
+                                <div class="coin-name">Litecoin</div>
+                                <div class="coin-symbol">LTC</div>
+                                <div class="coin-algo">Scrypt</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                        <div class="coin-option" id="coin-pep" data-coin="PEP" onclick="toggleCoin('PEP')">
+                            <div class="coin-icon">🐸</div>
+                            <div class="coin-info">
+                                <div class="coin-name">PepeCoin</div>
+                                <div class="coin-symbol">PEP</div>
+                                <div class="coin-algo">Scrypt</div>
+                            </div>
+                            <div class="coin-check">✓</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="coin-validation" id="coin-validation"></div>
+            </div>
+
+            <!-- Wallet Addresses -->
+            <div class="wallet-addresses" id="wallet-addresses">
+                <h4>Wallet Addresses</h4>
+                <div id="wallet-inputs">
+                    <!-- Wallet inputs will be dynamically added based on coin selection -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Scanner Section -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">📡</span>
+                Auto-Discover Miners
+            </h3>
+            <p class="section-desc">Scan your local network to automatically find mining devices. This will detect AxeOS, BitAxe, NMaxe, and Avalon miners.</p>
+
+            <div class="scan-controls">
+                <div class="scan-subnet-info">
+                    <span class="subnet-label">Network:</span>
+                    <span id="detected-subnet" class="subnet-value">Detecting...</span>
+                </div>
+                <button type="button" id="scan-btn" class="btn-scan" onclick="startNetworkScan()">
+                    <span class="scan-icon">📡</span>
+                    <span class="scan-text">Scan Network</span>
+                </button>
+                <button type="button" id="import-sentinel-btn" class="btn-import" onclick="importFromSentinel()">
+                    <span class="scan-icon">📥</span>
+                    <span class="scan-text">Import from Scanner DB</span>
+                </button>
+            </div>
+
+            <!-- Import Status -->
+            <div id="import-status" class="import-status hidden">
+                <span id="import-message"></span>
+            </div>
+
+            <!-- Scan Progress -->
+            <div id="scan-progress" class="scan-progress hidden">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="scan-status">Scanning...</span>
+                    <span id="scan-count">0 / 254</span>
+                </div>
+                <div class="scan-details">
+                    <span id="scan-current-ip" class="scan-current-ip"></span>
+                    <span id="scan-elapsed" class="scan-elapsed"></span>
+                </div>
+                <div id="scan-phase" class="scan-phase"></div>
+            </div>
+
+            <!-- Discovered Devices -->
+            <div id="discovered-devices" class="discovered-devices hidden">
+                <h4>Discovered Devices</h4>
+                <div id="discovered-list" class="discovered-list">
+                    <!-- Discovered devices will appear here -->
+                </div>
+                <button type="button" class="btn-add-all" onclick="addAllDiscovered()">
+                    <span class="btn-icon">+</span> Add All Selected Devices
+                </button>
+            </div>
+        </div>
+
+        <!-- AxeOS HTTP API Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔷</span>
+                ASIC Miners - AxeOS
+            </h3>
+            <p class="section-desc">BitAxe, NMaxe, NerdQAxe, QAxe, Hammer, Goldshell, and ESP32 Miner devices. Auto-detected via HTTP API (port 80).</p>
+
+            <div id="axeos-devices" class="device-list">
+                <!-- Device entries will be added here -->
+            </div>
+
+            <div class="add-device-row">
+                <button type="button" class="btn-add-device" onclick="addDevice('axeos')">
+                    <span class="btn-icon">+</span> Add AxeOS Device
+                </button>
+                <button type="button" class="btn-add-device btn-esp32miner" onclick="addDeviceWithData('esp32miner', {})">
+                    <span class="btn-icon">+</span> Add ESP32 Miner (Manual)
+                </button>
+            </div>
+            <p class="section-note">💡 <strong>ESP32 Miner V2:</strong> Has no HTTP API and cannot be auto-detected. Use "Add ESP32 Miner" to manually enter its IP. Sentinel will show these as 🎰 <em>Online (Stratum)</em> — monitored via pool stratum connections instead of direct HTTP polling.</p>
+        </div>
+
+        <!-- CGMiner API ASIC Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔶</span>
+                ASIC Miners (CGMiner API)
+            </h3>
+            <p class="section-desc">Add your ASIC miners below. Supports Antminer, Whatsminer, Avalon, Innosilicon, Ebang, and FutureBit. Uses CGMiner API (port 4028).</p>
+
+            <div id="avalon-devices" class="device-list">
+                <!-- Device entries will be added here -->
+            </div>
+
+            <div class="add-device-row">
+                <button type="button" class="btn-add-device" onclick="addDevice('avalon')">
+                    <span class="btn-icon">+</span> Add ASIC Miner
+                </button>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button type="button" class="btn-primary cyber-btn" onclick="saveConfiguration()">
+                <span class="btn-glow"></span>
+                <span class="btn-text">Create Configuration</span>
+            </button>
+        </div>
+
+        <!-- Status Message -->
+        <div id="status-message" class="status-message hidden"></div>
+    </div>
+
+    <style>
+        /* Network Scanner Styles */
+        .scan-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0, 212, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .scan-subnet-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .subnet-label {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .subnet-value {
+            font-family: var(--font-mono);
+            color: var(--neon-cyan);
+        }
+
+        .btn-scan {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(168, 85, 247, 0.2));
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            border-radius: 8px;
+            color: var(--neon-cyan);
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-scan:hover {
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.3), rgba(168, 85, 247, 0.3));
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn-scan.scanning {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .btn-scan:disabled,
+        .btn-scan[disabled] {
+            pointer-events: none;
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-scan.scanning .scan-icon {
+            animation: pulse 1s ease infinite;
+        }
+
+        .btn-import {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2));
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            border-radius: 8px;
+            color: #22c55e;
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-import:hover {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(16, 185, 129, 0.3));
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn-import:disabled {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .import-status {
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .import-status.success {
+            background: rgba(34, 197, 94, 0.1);
+            border-color: rgba(34, 197, 94, 0.4);
+            color: #22c55e;
+        }
+
+        .import-status.info {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.4);
+            color: #60a5fa;
+        }
+
+        .import-status.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
+        }
+
+        .import-status.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .scan-progress {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .scan-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .scan-current-ip {
+            font-family: var(--font-mono);
+            color: var(--neon-cyan);
+            animation: pulse 1s ease infinite;
+        }
+
+        .scan-elapsed {
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+        }
+
+        .scan-phase {
+            font-size: 0.85rem;
+            color: var(--neon-purple);
+            margin-top: 0.25rem;
+        }
+
+        .discovered-devices {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 8px;
+        }
+
+        .discovered-devices h4 {
+            color: var(--neon-green);
+            font-family: var(--font-display);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+
+        .discovered-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .discovered-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .discovered-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--neon-cyan);
+            cursor: pointer;
+        }
+
+        .discovered-info {
+            flex: 1;
+        }
+
+        .discovered-name {
+            font-family: var(--font-display);
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .discovered-details {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .discovered-type {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .discovered-type.axeos { background: rgba(0, 212, 255, 0.2); color: var(--neon-cyan); }
+        .discovered-type.nmaxe { background: rgba(255, 215, 0, 0.2); color: var(--neon-yellow); }
+        .discovered-type.avalon { background: rgba(255, 107, 53, 0.2); color: var(--neon-orange); }
+
+        .btn-add-all {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(0, 255, 136, 0.15);
+            border: 1px solid rgba(0, 255, 136, 0.4);
+            border-radius: 8px;
+            color: var(--neon-green);
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-add-all:hover {
+            background: rgba(0, 255, 136, 0.25);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .btn-add-all:disabled,
+        .btn-add-all[disabled] {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .no-devices-found {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .hidden { display: none !important; }
+
+        /* Hashrate Input Styles */
+        .hashrate-group {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .hashrate-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .hashrate-input-wrapper input {
+            flex: 1;
+            max-width: 200px;
+        }
+
+        .hashrate-unit {
+            font-family: var(--font-mono);
+            color: var(--neon-cyan);
+            font-size: 1rem;
+            padding: 0.5rem;
+        }
+
+        .hashrate-unsure-option {
+            margin-top: 1rem;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--neon-cyan);
+            cursor: pointer;
+        }
+
+        .checkbox-label {
+            color: var(--text-secondary);
+        }
+
+        .unsure-hint {
+            display: none;
+            margin-top: 0.75rem;
+            padding: 1rem;
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .unsure-hint.visible {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+
+        .unsure-hint .warning-icon {
+            flex-shrink: 0;
+            font-size: 1.2rem;
+        }
+
+        .hashrate-input-wrapper.disabled input {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .hashrate-input-wrapper.disabled .hashrate-unit {
+            opacity: 0.5;
+        }
+
+        /* Pool Mode Selector Styles */
+        .pool-mode-selector {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .mode-option {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.25rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(0, 212, 255, 0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .mode-option:hover {
+            border-color: rgba(0, 212, 255, 0.5);
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .mode-option.selected {
+            border-color: var(--neon-cyan);
+            background: rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .mode-icon {
+            font-size: 2rem;
+        }
+
+        .mode-info {
+            flex: 1;
+        }
+
+        .mode-title {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .mode-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .mode-check {
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: transparent;
+            transition: all 0.2s ease;
+        }
+
+        .mode-option.selected .mode-check {
+            background: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            color: var(--bg-darker);
+        }
+
+        /* Coin Selection Styles */
+        .coin-selection {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .coin-selection-title {
+            font-family: var(--font-display);
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+
+        .algo-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .algo-header {
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            color: var(--neon-cyan);
+            margin-bottom: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            background: rgba(0, 212, 255, 0.08);
+            border-left: 3px solid var(--neon-cyan);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .coin-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        @media (max-width: 1024px) {
+            .coin-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .coin-grid {
+                grid-template-columns: 1fr;
+            }
+            .pool-mode-selector {
+                flex-direction: column;
+            }
+        }
+
+        .coin-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.25rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(0, 212, 255, 0.15);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .coin-option:hover {
+            border-color: rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .coin-option.selected {
+            border-color: var(--neon-green);
+            background: rgba(0, 255, 136, 0.1);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
+        }
+
+        .coin-option.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .coin-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .coin-info {
+            text-align: center;
+        }
+
+        .coin-name {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+
+        .coin-symbol {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--neon-cyan);
+            margin-top: 0.25rem;
+        }
+
+        .coin-algo {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .coin-check {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            width: 22px;
+            height: 22px;
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: transparent;
+            transition: all 0.2s ease;
+        }
+
+        .coin-option.selected .coin-check {
+            background: var(--neon-green);
+            border-color: var(--neon-green);
+            color: var(--bg-darker);
+        }
+
+        .coin-validation {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .coin-validation.error {
+            display: block;
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            color: #ff6b6b;
+        }
+
+        .coin-validation.info {
+            display: block;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            color: var(--neon-cyan);
+        }
+
+        /* Wallet Addresses */
+        .wallet-addresses {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .wallet-addresses h4 {
+            font-family: var(--font-display);
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+
+        .wallet-input-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+            padding: 0.75rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        .wallet-coin-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--neon-cyan);
+            min-width: 80px;
+        }
+
+        .wallet-input-group input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 6px;
+            padding: 0.6rem 0.75rem;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+
+        .wallet-input-group input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .wallet-input-group input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Import Prompt Modal */
+        .import-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .import-modal-overlay.visible {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .import-modal {
+            background: var(--bg-darker);
+            border: 2px solid var(--neon-cyan);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .import-modal-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .import-modal-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .import-modal-title {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--neon-cyan);
+            margin-bottom: 0.5rem;
+        }
+
+        .import-modal-subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .import-modal-body {
+            background: rgba(0, 212, 255, 0.05);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .import-modal-stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .import-stat {
+            text-align: center;
+        }
+
+        .import-stat-value {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            color: var(--neon-green);
+        }
+
+        .import-stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .import-modal-note {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .import-modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .import-modal-btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-family: var(--font-display);
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+
+        .import-modal-btn.primary {
+            background: var(--neon-green);
+            color: var(--bg-darker);
+        }
+
+        .import-modal-btn.primary:hover {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .import-modal-btn.secondary {
+            background: transparent;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            color: var(--text-secondary);
+        }
+
+        .import-modal-btn.secondary:hover {
+            border-color: var(--neon-cyan);
+            color: var(--text-primary);
+        }
+
+        /* Add Device Row with Dropdown */
+        .add-device-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .device-type-select {
+            padding: 0.6rem 1rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 160px;
+        }
+
+        .device-type-select:hover {
+            border-color: var(--neon-cyan);
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .device-type-select:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .device-type-select option {
+            background: var(--bg-darker);
+            color: var(--text-primary);
+            padding: 0.5rem;
+        }
+
+        .section-note {
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 193, 7, 0.08);
+            border: 1px solid rgba(255, 193, 7, 0.25);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .section-note strong {
+            color: #fbbf24;
+        }
+
+        .btn-add-device {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1rem;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.15), rgba(0, 212, 255, 0.15));
+            border: 1px solid rgba(0, 255, 136, 0.4);
+            border-radius: 6px;
+            color: var(--neon-green);
+            font-family: var(--font-display);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-add-device:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.25), rgba(0, 212, 255, 0.25));
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn-add-device.btn-esp32miner {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            color: #fbbf24;
+        }
+
+        .btn-add-device.btn-esp32miner:hover {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.25), rgba(255, 152, 0, 0.25));
+            box-shadow: 0 0 15px rgba(255, 193, 7, 0.2);
+        }
+    </style>
+
+    <script>
+        // Pool mode state
+        let currentPoolMode = 'solo';  // 'solo' or 'multi'
+        let selectedCoins = [];   // Start empty - user must select coin(s)
+        let hashrateDisabled = false;  // Track if user skipped hashrate setting
+
+        // Toggle hashrate "unsure" checkbox
+        function toggleHashrateUnsure() {
+            const checkbox = document.getElementById('hashrateUnsure');
+            const inputWrapper = document.querySelector('.hashrate-input-wrapper');
+            const hint = document.getElementById('unsureHint');
+            const input = document.getElementById('expectedHashrate');
+
+            hashrateDisabled = checkbox.checked;
+
+            if (hashrateDisabled) {
+                inputWrapper.classList.add('disabled');
+                hint.classList.add('visible');
+                input.value = '';  // Clear the value when disabled
+            } else {
+                inputWrapper.classList.remove('disabled');
+                hint.classList.remove('visible');
+                if (!input.value) {
+                    input.value = '100';  // Reset to default
+                }
+            }
+        }
+
+        // Get expected hashrate value (null if disabled, otherwise the numeric value)
+        function getExpectedHashrate() {
+            if (hashrateDisabled) {
+                return null;  // User chose to skip/disable
+            }
+            const input = document.getElementById('expectedHashrate');
+            const value = parseFloat(input.value);
+            if (isNaN(value) || value <= 0) {
+                return null;  // Invalid value treated as disabled
+            }
+            return value;
+        }
+
+        // Confirm hashrate setting with user before saving
+        async function confirmHashrate(expectedHashrate) {
+            return new Promise((resolve) => {
+                let message;
+                if (expectedHashrate === null) {
+                    message = "You've chosen to skip the expected hashrate setting.\n\n" +
+                              "This means hashrate drop alerts and some reporting features will be disabled.\n\n" +
+                              "Is this correct?";
+                } else {
+                    message = `You've set your expected farm hashrate to ${expectedHashrate} TH/s.\n\n` +
+                              "This is the TOTAL combined hashrate of ALL your miners.\n\n" +
+                              "Is this correct?";
+                }
+
+                if (confirm(message)) {
+                    resolve(true);
+                } else {
+                    // Scroll to hashrate input so user can adjust
+                    document.getElementById('expectedHashrate').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    resolve(false);
+                }
+            });
+        }
+
+        const coinInfo = {
+            // SHA-256d coins (alphabetically ordered)
+            'BC2': { icon: '🔵', name: 'Bitcoin II', placeholder: 'bc1q... or 1... (BC2 chain)' },
+            'BCH': { icon: '🟢', name: 'Bitcoin Cash', placeholder: 'bitcoincash:q...' },
+            'BTC': { icon: '🟠', name: 'Bitcoin', placeholder: 'bc1q... or 1...' },
+            'FBTC': { icon: '🔶', name: 'Fractal Bitcoin', placeholder: 'bc1q... or 1... (FBTC chain)' },
+            'NMC': { icon: '🔷', name: 'Namecoin', placeholder: 'N... or nc1q...' },
+            'SYS': { icon: '🔴', name: 'Syscoin (merge-mine only)', placeholder: 'sys1q...', mergeOnly: true },
+            'XMY': { icon: '⭐', name: 'Myriad (merge-mine only)', placeholder: 'M... (Myriad address)', mergeOnly: true },
+            // Scrypt coins (alphabetically ordered)
+            'CAT': { icon: '🐱', name: 'Catcoin', placeholder: '9...' },
+            'DGB': { icon: '💎', name: 'DigiByte', placeholder: 'DAddress...' },
+            'DGB-SCRYPT': { icon: '💎', name: 'DigiByte (Scrypt)', placeholder: 'DAddress...' },
+            'DOGE': { icon: '🐕', name: 'Dogecoin', placeholder: 'D...' },
+            'LTC': { icon: '⚪', name: 'Litecoin', placeholder: 'ltc1q... or L...' },
+            'PEP': { icon: '🐸', name: 'PepeCoin', placeholder: 'P...' }
+        };
+
+        // Select pool mode (solo, multi, or merge)
+        function selectPoolMode(mode) {
+            currentPoolMode = mode;
+
+            // Update UI
+            document.getElementById('mode-solo').classList.toggle('selected', mode === 'solo');
+            document.getElementById('mode-multi').classList.toggle('selected', mode === 'multi');
+            document.getElementById('mode-merge').classList.toggle('selected', mode === 'merge');
+
+            // Update coin selection title
+            const title = document.getElementById('coin-selection-title');
+            if (mode === 'solo') {
+                title.textContent = 'Select Your Coin (choose one)';
+                // In solo mode, only allow one coin - keep the first selected
+                if (selectedCoins.length > 1) {
+                    selectedCoins = [selectedCoins[0]];
+                }
+            } else if (mode === 'merge') {
+                title.textContent = 'Parent + Auxiliary Chains (detected from pool)';
+            } else {
+                title.textContent = 'Select Coins (choose 2 or more)';
+            }
+
+            updateCoinSelectionUI();
+            updateWalletInputs();
+            validateCoinSelection();
+        }
+
+        // Toggle coin selection
+        function toggleCoin(coin) {
+            if (currentPoolMode === 'solo') {
+                // Solo mode: only one coin allowed
+                selectedCoins = [coin];
+            } else {
+                // Multi mode: toggle coin in selection
+                const index = selectedCoins.indexOf(coin);
+                if (index > -1) {
+                    // Don't allow deselecting if it would leave less than 0 coins
+                    selectedCoins.splice(index, 1);
+                } else {
+                    selectedCoins.push(coin);
+                }
+            }
+
+            updateCoinSelectionUI();
+            updateWalletInputs();
+            validateCoinSelection();
+        }
+
+        // Update coin selection UI
+        function updateCoinSelectionUI() {
+            // All supported coins including SYS (shown only in merge mining mode)
+            const allCoins = ['BC2', 'BCH', 'BTC', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+            allCoins.forEach(coin => {
+                const el = document.getElementById(`coin-${coin.toLowerCase()}`);
+                if (el) {
+                    el.classList.toggle('selected', selectedCoins.includes(coin));
+                }
+            });
+        }
+
+        // Validate coin selection
+        function validateCoinSelection() {
+            const validation = document.getElementById('coin-validation');
+
+            if (currentPoolMode === 'solo') {
+                if (selectedCoins.length !== 1) {
+                    validation.className = 'coin-validation error';
+                    validation.textContent = 'Please select exactly one coin for Solo Mode.';
+                    return false;
+                }
+            } else if (currentPoolMode === 'merge') {
+                if (selectedCoins.length < 2) {
+                    validation.className = 'coin-validation error';
+                    validation.textContent = 'Merge Mining requires a parent chain + at least one auxiliary chain.';
+                    return false;
+                }
+            } else {
+                if (selectedCoins.length < 2) {
+                    validation.className = 'coin-validation error';
+                    validation.textContent = 'Multi-Coin Mode requires at least 2 coins. Please select more coins.';
+                    return false;
+                }
+            }
+
+            validation.className = 'coin-validation';
+            validation.textContent = '';
+            return true;
+        }
+
+        // Update wallet address inputs based on selected coins
+        // Uses safe DOM manipulation to prevent XSS
+        function updateWalletInputs() {
+            const container = document.getElementById('wallet-inputs');
+            container.innerHTML = '';
+
+            // All supported coins including SYS (SYS only appears when merge mining is active)
+            const validCoins = ['BC2', 'BCH', 'BTC', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+
+            selectedCoins.forEach(coin => {
+                // Validate coin is in whitelist
+                if (!validCoins.includes(coin)) return;
+
+                const info = coinInfo[coin];
+                if (!info) return;
+
+                // Create elements safely using DOM methods (not innerHTML)
+                const div = document.createElement('div');
+                div.className = 'wallet-input-group';
+
+                const badge = document.createElement('div');
+                badge.className = 'wallet-coin-badge';
+
+                const iconSpan = document.createElement('span');
+                iconSpan.textContent = info.icon;  // Safe: textContent escapes HTML
+
+                const coinSpan = document.createElement('span');
+                coinSpan.textContent = coin;  // Safe: textContent escapes HTML
+
+                badge.appendChild(iconSpan);
+                badge.appendChild(coinSpan);
+
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `wallet-${coin.toLowerCase()}`;
+                input.className = 'cyber-input';
+                input.placeholder = info.placeholder;
+                input.autocomplete = 'off';
+
+                div.appendChild(badge);
+                div.appendChild(input);
+                container.appendChild(div);
+            });
+        }
+
+        // Device counters
+        let deviceCounters = {
+            axeos: 0,
+            avalon: 0
+        };
+
+        // Discovered devices storage
+        let discoveredDevices = [];
+        let scanPollInterval = null;  // Track poll interval to prevent duplicates
+        let scanGeneration = 0;  // Track scan generation to ignore stale poll responses
+
+        // Fetch subnet info on load
+        async function fetchSubnet() {
+            try {
+                const response = await fetch('/api/scan/subnet');
+                const data = await response.json();
+                document.getElementById('detected-subnet').textContent = data.subnet;
+            } catch (e) {
+                document.getElementById('detected-subnet').textContent = 'Unable to detect';
+            }
+        }
+
+        // Start network scan
+        async function startNetworkScan() {
+            const scanBtn = document.getElementById('scan-btn');
+            const progressDiv = document.getElementById('scan-progress');
+            const discoveredDiv = document.getElementById('discovered-devices');
+
+            // SAFETY: Ensure required DOM elements exist before proceeding
+            if (!scanBtn || !progressDiv || !discoveredDiv) {
+                console.error('[SCAN] Required DOM elements not found - cannot start scan');
+                return;
+            }
+
+            // Track poll errors and start time for timeout
+            let pollErrorCount = 0;
+            let pollStartTime = Date.now();
+            const MAX_POLL_ERRORS = 5;
+            const MAX_POLL_DURATION = 120000; // 2 minutes max
+
+            // Helper to restore button state
+            function restoreScanButton() {
+                scanBtn.disabled = false;
+                scanBtn.classList.remove('scanning');
+                scanBtn.querySelector('.scan-text').textContent = 'Scan Network';
+            }
+
+            // Helper to stop polling
+            function stopPolling() {
+                if (scanPollInterval) {
+                    clearInterval(scanPollInterval);
+                    scanPollInterval = null;
+                }
+            }
+
+            // Unified polling function to avoid code duplication
+            function startPolling() {
+                pollStartTime = Date.now();
+                pollErrorCount = 0;
+                let pollInProgress = false;  // Prevent overlapping fetch requests
+                // Capture current generation to detect stale responses
+                const myGeneration = scanGeneration;
+
+                scanPollInterval = setInterval(async () => {
+                    // Ignore stale poll callbacks from previous scans
+                    if (myGeneration !== scanGeneration) {
+                        console.log('[SCAN] Ignoring stale poll callback (gen mismatch)');
+                        return;
+                    }
+
+                    // Prevent overlapping fetch requests
+                    if (pollInProgress) {
+                        console.log('[SCAN] Poll already in progress, skipping');
+                        return;
+                    }
+                    pollInProgress = true;
+
+                    try {
+                        // Check for max poll duration
+                        if (Date.now() - pollStartTime > MAX_POLL_DURATION) {
+                            console.error('[SCAN] Polling timeout - scan taking too long');
+                            if (myGeneration === scanGeneration) {
+                                stopPolling();
+                                restoreScanButton();
+                                document.getElementById('scan-status').textContent = 'Scan timeout - try again';
+                            }
+                            pollInProgress = false;
+                            return;
+                        }
+
+                        const statusResp = await fetch('/api/scan/status', {
+                            credentials: 'same-origin'
+                        });
+
+                        // Check generation again after async fetch (scan may have restarted while waiting)
+                        if (myGeneration !== scanGeneration) {
+                            console.log('[SCAN] Ignoring stale poll response (gen mismatch after fetch)');
+                            return;
+                        }
+
+                        if (!statusResp.ok) {
+                            throw new Error(`Status check failed: ${statusResp.status}`);
+                        }
+
+                        const status = await statusResp.json();
+                        pollErrorCount = 0; // Reset on success
+
+                        // Update progress bar
+                        const percent = status.total > 0 ? (status.scanned / status.total) * 100 : 0;
+                        document.getElementById('progress-fill').style.width = `${percent}%`;
+                        document.getElementById('scan-count').textContent = `${status.scanned} / ${status.total}`;
+
+                        // Update current IP being scanned
+                        const currentIpEl = document.getElementById('scan-current-ip');
+                        if (status.current_ip) {
+                            currentIpEl.textContent = `Checking: ${status.current_ip}`;
+                        }
+
+                        // Update elapsed time
+                        const elapsedEl = document.getElementById('scan-elapsed');
+                        if (status.elapsed_formatted) {
+                            elapsedEl.textContent = `Elapsed: ${status.elapsed_formatted}`;
+                        }
+
+                        // Update phase message
+                        const phaseEl = document.getElementById('scan-phase');
+                        if (status.phase_msg) {
+                            phaseEl.textContent = status.phase_msg;
+                        }
+
+                        // Update status text
+                        if (status.found && status.found.length > 0) {
+                            document.getElementById('scan-status').textContent = `Found ${status.found.length} device(s)...`;
+                        } else if (status.phase) {
+                            const phaseLabels = {
+                                'initializing': 'Initializing...',
+                                'scanning': 'Scanning network...',
+                                'checking_sentinel': 'Checking database...',
+                                'complete': 'Complete',
+                                'error': 'Error'
+                            };
+                            document.getElementById('scan-status').textContent = phaseLabels[status.phase] || 'Scanning...';
+                        }
+
+                        // Check if done
+                        if (!status.running) {
+                            // Final generation check before completing
+                            if (myGeneration === scanGeneration) {
+                                stopPolling();
+                                restoreScanButton();
+                                if (currentIpEl) currentIpEl.textContent = '';
+
+                                if (status.found && status.found.length > 0) {
+                                    discoveredDevices = status.found;
+                                    showDiscoveredDevices(status.found);
+                                    document.getElementById('scan-status').textContent = status.phase_msg || `Found ${status.found.length} device(s)`;
+                                } else {
+                                    document.getElementById('scan-status').textContent = status.phase_msg || 'No devices found';
+                                    setTimeout(() => progressDiv.classList.add('hidden'), 3000);
+                                }
+                            }
+                        }
+                        pollInProgress = false;
+                    } catch (pollError) {
+                        console.error('[SCAN] Poll error:', pollError);
+                        pollErrorCount++;
+
+                        if (pollErrorCount >= MAX_POLL_ERRORS && myGeneration === scanGeneration) {
+                            console.error('[SCAN] Too many poll errors, stopping');
+                            stopPolling();
+                            restoreScanButton();
+                            document.getElementById('scan-status').textContent = 'Connection lost - try again';
+                        }
+                        pollInProgress = false;
+                    }
+                }, 500);
+            }
+
+            // Prevent double-clicks: disable button and clear any existing poll
+            stopPolling();
+            scanGeneration++;  // Increment generation to invalidate any stale poll callbacks
+            scanBtn.disabled = true;
+            scanBtn.classList.add('scanning');
+            scanBtn.querySelector('.scan-text').textContent = 'Scanning...';
+            progressDiv.classList.remove('hidden');
+            discoveredDiv.classList.add('hidden');
+            discoveredDevices = [];
+
+            try {
+                // Start the scan with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+                const startResp = await fetch('/api/scan/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: JSON.stringify({}),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                // Check response status
+                if (!startResp.ok) {
+                    let errorMsg = `Server error (${startResp.status})`;
+                    try {
+                        const errorData = await startResp.json();
+                        errorMsg = errorData.error || errorData.message || errorMsg;
+                        // If scan already in progress, start polling
+                        if (errorMsg.includes('already in progress')) {
+                            throw new Error(errorMsg);
+                        }
+                    } catch (parseErr) {
+                        if (parseErr.message.includes('already in progress')) throw parseErr;
+                    }
+                    restoreScanButton();
+                    document.getElementById('scan-status').textContent = `Error: ${errorMsg}`;
+                    return;
+                }
+
+                const startResult = await startResp.json();
+
+                if (!startResult.success) {
+                    throw new Error(startResult.error || 'Failed to start scan');
+                }
+
+                // Start polling for progress
+                startPolling();
+
+            } catch (e) {
+                console.error('[SCAN] Start error:', e);
+
+                // If error is "Scan already in progress", start polling the existing scan
+                if (e.message && e.message.includes('already in progress')) {
+                    document.getElementById('scan-status').textContent = 'Resuming scan...';
+                    progressDiv.classList.remove('hidden');
+                    stopPolling();  // Clear any existing interval to prevent leak
+                    startPolling();
+                } else if (e.name === 'AbortError') {
+                    restoreScanButton();
+                    document.getElementById('scan-status').textContent = 'Request timeout - server not responding';
+                } else {
+                    restoreScanButton();
+                    document.getElementById('scan-status').textContent = `Error: ${e.message || 'Failed to start scan'}`;
+                }
+            }
+        }
+
+        // Import miners from spiralpool-scan database (sentinel)
+        async function importFromSentinel() {
+            const btn = document.getElementById('import-sentinel-btn');
+            const statusDiv = document.getElementById('import-status');
+            const messageEl = document.getElementById('import-message');
+
+            // Helper to restore button state
+            function restoreButton() {
+                if (btn) {
+                    btn.disabled = false;
+                    const scanText = btn.querySelector('.scan-text');
+                    if (scanText) scanText.textContent = 'Import from Scanner DB';
+                }
+            }
+
+            // Helper to show status message
+            function showStatus(msg, type) {
+                console.log(`[IMPORT] ${type}: ${msg}`);
+                if (statusDiv && messageEl) {
+                    statusDiv.classList.remove('hidden');
+                    messageEl.textContent = msg;
+                    statusDiv.className = `import-status ${type}`;
+                    // Make sure it's visible by scrolling into view
+                    statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    // Fallback: use alert if status elements not found
+                    console.warn('[IMPORT] Status elements not found, using alert');
+                    if (type === 'error') {
+                        alert('Import Error: ' + msg);
+                    }
+                }
+            }
+
+            // Safely update button if it exists
+            if (btn) {
+                btn.disabled = true;
+                const scanText = btn.querySelector('.scan-text');
+                if (scanText) scanText.textContent = 'Importing...';
+            }
+            showStatus('Checking for saved miners...', '');
+
+            try {
+                // Add timeout to prevent hanging forever
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+                const response = await fetch('/api/miners/import-from-sentinel', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                // Check response status before parsing JSON
+                if (!response.ok) {
+                    // Try to get error message from response
+                    let errorMsg = `Server error (${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || errorData.message || errorMsg;
+                    } catch {
+                        // Response wasn't JSON, use status text
+                        errorMsg = `${response.status}: ${response.statusText || 'Request failed'}`;
+                    }
+                    restoreButton();
+                    showStatus(`Error: ${errorMsg}`, 'error');
+                    return { success: false, error: errorMsg };
+                }
+
+                const data = await response.json();
+                restoreButton();
+
+                if (data.success) {
+                    if (data.imported > 0) {
+                        const msg = `✓ Imported ${data.imported} miner(s)` +
+                            (data.skipped > 0 ? `, ${data.skipped} already existed` : '');
+                        showStatus(msg, 'success');
+                        // Reload the page to show the imported miners
+                        setTimeout(() => location.reload(), 1500);
+                        return { success: true, imported: data.imported };
+                    } else if (data.skipped > 0) {
+                        const msg = `All ${data.skipped} miners already configured`;
+                        showStatus(msg, 'info');
+                        return { success: true, imported: 0, skipped: data.skipped };
+                    } else {
+                        const msg = 'No miners found in scanner database. Run spiralpool-scan first.';
+                        showStatus(msg, 'warning');
+                        return { success: false, error: msg };
+                    }
+                } else {
+                    const msg = data.error || 'Unknown error';
+                    showStatus(`Error: ${msg}`, 'error');
+                    return { success: false, error: msg };
+                }
+
+            } catch (e) {
+                console.error('[IMPORT] Exception:', e);
+                restoreButton();
+                // Handle abort (timeout) specifically
+                const errorMsg = e.name === 'AbortError'
+                    ? 'Request timed out. Server may be busy - try again.'
+                    : (e.message || 'Unknown error');
+                showStatus(`Error: ${errorMsg}`, 'error');
+                return { success: false, error: errorMsg };
+            } finally {
+                // Hide status after 5 seconds (but not if page is reloading)
+                if (statusDiv) {
+                    setTimeout(() => statusDiv.classList.add('hidden'), 5000);
+                }
+            }
+        }
+
+        // Get list of IPs already configured in the device sections
+        function getConfiguredIPs() {
+            const configuredIPs = new Set();
+
+            // Check axeos devices
+            document.querySelectorAll('#axeos-devices .device-entry .url-input').forEach(input => {
+                const ip = input.value.trim().replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                if (ip) configuredIPs.add(ip);
+            });
+
+            // Check avalon devices
+            document.querySelectorAll('#avalon-devices .device-entry .url-input').forEach(input => {
+                const ip = input.value.trim().replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                if (ip) configuredIPs.add(ip);
+            });
+
+            return configuredIPs;
+        }
+
+        // Show discovered devices
+        // Uses safe DOM manipulation to prevent XSS from malicious device responses
+        function showDiscoveredDevices(devices) {
+            console.log('[SCAN] showDiscoveredDevices called with', devices.length, 'devices:', devices);
+
+            const discoveredDiv = document.getElementById('discovered-devices');
+            const listDiv = document.getElementById('discovered-list');
+
+            // Whitelist of valid device types
+            const validTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'hammer', 'futurebit'];
+
+            // Get already configured IPs to filter out duplicates
+            const configuredIPs = getConfiguredIPs();
+            console.log('[SCAN] Already configured IPs:', Array.from(configuredIPs));
+
+            discoveredDiv.classList.remove('hidden');
+            listDiv.innerHTML = '';
+
+            // Filter out devices that are already configured
+            const newDevices = devices.filter(device => {
+                const deviceIP = device.ip ? device.ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0] : '';
+                const isConfigured = configuredIPs.has(deviceIP);
+                console.log(`[SCAN] Device ${device.ip} -> IP ${deviceIP}, configured: ${isConfigured}`);
+                return deviceIP && !isConfigured;
+            });
+            console.log('[SCAN] After filtering:', newDevices.length, 'new devices');
+
+            // Update discoveredDevices to only contain new devices
+            discoveredDevices = newDevices;
+
+            if (newDevices.length === 0) {
+                // All devices already configured
+                const noNewDiv = document.createElement('div');
+                noNewDiv.className = 'no-devices-found';
+                noNewDiv.textContent = devices.length > 0
+                    ? `All ${devices.length} discovered device(s) are already configured.`
+                    : 'No devices found on the network.';
+                listDiv.appendChild(noNewDiv);
+                return;
+            }
+
+            newDevices.forEach((device, index) => {
+                // Validate device type
+                const deviceType = validTypes.includes(device.type) ? device.type : 'unknown';
+
+                // Create elements safely using DOM methods (not innerHTML)
+                const item = document.createElement('div');
+                item.className = 'discovered-item';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `discovered-${index}`;
+                checkbox.checked = true;
+                checkbox.dataset.index = index;
+
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'discovered-info';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'discovered-name';
+                nameDiv.textContent = device.name || device.ip || 'Unknown';  // Safe: textContent escapes HTML
+
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'discovered-details';
+                const hashrateStr = device.hashrate ? ` | ${(device.hashrate / 1000).toFixed(2)} TH/s` : '';
+                detailsDiv.textContent = `${device.ip || 'N/A'} | ${device.model || 'Unknown'}${hashrateStr}`;
+
+                infoDiv.appendChild(nameDiv);
+                infoDiv.appendChild(detailsDiv);
+
+                const typeSpan = document.createElement('span');
+                typeSpan.className = `discovered-type ${deviceType}`;
+                typeSpan.textContent = deviceType;  // Safe: textContent escapes HTML
+
+                item.appendChild(checkbox);
+                item.appendChild(infoDiv);
+                item.appendChild(typeSpan);
+                listDiv.appendChild(item);
+            });
+        }
+
+        // Add all discovered devices
+        function addAllDiscovered() {
+            const checkboxes = document.querySelectorAll('#discovered-list input[type="checkbox"]:checked');
+
+            if (checkboxes.length === 0) {
+                showGlobalStatus('error', 'No devices selected');
+                return;
+            }
+
+            // Clear existing device lists — scan results replace old config
+            // (ESP32/stratum-only miners must be re-added via CLI since they can't be discovered by scan)
+            document.getElementById('axeos-devices').innerHTML = '';
+            document.getElementById('avalon-devices').innerHTML = '';
+            deviceCounters.axeos = 0;
+            deviceCounters.avalon = 0;
+
+            checkboxes.forEach(checkbox => {
+                const index = parseInt(checkbox.dataset.index);
+                const device = discoveredDevices[index];
+
+                if (device) {
+                    // Add to appropriate device list
+                    // CGMiner-based devices need port 4028
+                    const cgminerTypes = ['avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit'];
+                    addDeviceWithData(device.type, {
+                        name: device.name || device.ip,
+                        ip: device.ip,
+                        port: cgminerTypes.includes(device.type) ? 4028 : undefined
+                    });
+                }
+            });
+
+            // Hide discovered section
+            document.getElementById('discovered-devices').classList.add('hidden');
+            document.getElementById('scan-progress').classList.add('hidden');
+
+            showGlobalStatus('success', `Replaced device config with ${checkboxes.length} discovered device(s)`);
+        }
+
+        // Helper function to create device entry DOM structure safely
+        // Whitelist of valid device types
+        // Comprehensive list of ALL supported device types
+        // - axeos/nmaxe/nerdqaxe/qaxe/esp32miner/hammer/goldshell map to axeos UI section (HTTP API)
+        // - avalon/antminer/whatsminer/innosilicon/futurebit/canaan/ebang map to avalon UI section (CGMiner API)
+        const VALID_DEVICE_TYPES = [
+            // AxeOS HTTP API devices (port 80)
+            'axeos', 'nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell',
+            // CGMiner API devices (port 4028)
+            'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'
+        ];
+
+        function createDeviceEntry(type, deviceNum, data = {}, originalType = null) {
+            // Validate type against whitelist
+            if (!VALID_DEVICE_TYPES.includes(type)) {
+                console.error('Invalid device type:', type);
+                return null;
+            }
+
+            const deviceEntry = document.createElement('div');
+            deviceEntry.className = data.name ? 'device-entry visible' : 'device-entry';
+            deviceEntry.id = `${type}-device-${deviceNum}`;
+            // Store original device type for proper saving (nmaxe, nerdqaxe, etc.)
+            // This ensures NerdQAxe++ gets saved with 80W, NMaxe with 15W
+            deviceEntry.dataset.deviceType = originalType || type;
+
+            // Device fields container
+            const fieldsDiv = document.createElement('div');
+            fieldsDiv.className = 'device-fields';
+
+            // Name group
+            const nameGroup = document.createElement('div');
+            nameGroup.className = 'form-group name-group';
+            const nameLabel = document.createElement('label');
+            nameLabel.textContent = 'Device Name';
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'cyber-input name-input';
+            nameInput.placeholder = getPlaceholderName(type, deviceNum);
+            if (data.name) nameInput.value = data.name;  // Safe: value attribute is not HTML
+            nameGroup.appendChild(nameLabel);
+            nameGroup.appendChild(nameInput);
+            fieldsDiv.appendChild(nameGroup);
+
+            // URL group
+            const urlGroup = document.createElement('div');
+            urlGroup.className = 'form-group url-group';
+            const urlLabel = document.createElement('label');
+            urlLabel.textContent = 'Device URL / IP';
+            const urlInput = document.createElement('input');
+            urlInput.type = 'text';
+            urlInput.className = 'cyber-input url-input';
+            urlInput.placeholder = '192.168.1.100';
+            if (data.ip) urlInput.value = data.ip;  // Safe: value attribute is not HTML
+            urlGroup.appendChild(urlLabel);
+            urlGroup.appendChild(urlInput);
+            fieldsDiv.appendChild(urlGroup);
+
+            // Port group (Avalon only)
+            if (type === 'avalon') {
+                const portGroup = document.createElement('div');
+                portGroup.className = 'form-group port-group';
+                const portLabel = document.createElement('label');
+                portLabel.textContent = 'Port';
+                const portInput = document.createElement('input');
+                portInput.type = 'number';
+                portInput.className = 'cyber-input port-input';
+                portInput.placeholder = '4028';
+                portInput.value = data.port || 4028;
+                portGroup.appendChild(portLabel);
+                portGroup.appendChild(portInput);
+                fieldsDiv.appendChild(portGroup);
+            }
+
+            deviceEntry.appendChild(fieldsDiv);
+
+            // Actions
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'device-actions';
+
+            const testBtn = document.createElement('button');
+            testBtn.type = 'button';
+            testBtn.className = 'btn-test';
+            testBtn.title = 'Test Connection';
+            testBtn.onclick = () => testDevice(type, deviceNum);
+            const testIcon = document.createElement('span');
+            testIcon.className = 'test-icon';
+            testIcon.textContent = '⚡';
+            testBtn.appendChild(testIcon);
+            actionsDiv.appendChild(testBtn);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn-remove';
+            removeBtn.title = 'Remove Device';
+            removeBtn.onclick = () => removeDevice(type, deviceNum);
+            const removeIcon = document.createElement('span');
+            removeIcon.className = 'remove-icon';
+            removeIcon.textContent = '×';
+            removeBtn.appendChild(removeIcon);
+            actionsDiv.appendChild(removeBtn);
+
+            deviceEntry.appendChild(actionsDiv);
+
+            // Status
+            const statusDiv = document.createElement('div');
+            statusDiv.className = data.name ? 'device-status success visible' : 'device-status';
+            if (data.name) statusDiv.textContent = '✓ Auto-discovered';
+            deviceEntry.appendChild(statusDiv);
+
+            return deviceEntry;
+        }
+
+        // Add device with pre-filled data (from scan)
+        function addDeviceWithData(type, data) {
+            if (!VALID_DEVICE_TYPES.includes(type)) return;
+
+            // DUPLICATE CHECK: Prevent adding the same IP twice
+            if (data.ip) {
+                const normalizedIp = data.ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                const configuredIPs = getConfiguredIPs();
+                if (configuredIPs.has(normalizedIp)) {
+                    console.log(`[SETUP] Skipping duplicate IP: ${normalizedIp}`);
+                    return;  // Already exists, don't add again
+                }
+            }
+
+            // Map device types to UI sections:
+            // - AxeOS HTTP API devices (no port needed) -> axeos section
+            // - CGMiner API devices (port needed) -> avalon section
+            const axeosTypes = ['nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell'];
+            const avalonTypes = ['antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'];
+
+            let sectionType;
+            if (axeosTypes.includes(type)) {
+                sectionType = 'axeos';
+            } else if (avalonTypes.includes(type)) {
+                sectionType = 'avalon';
+                // Ensure port is set for CGMiner devices
+                if (!data.port) {
+                    data.port = 4028;
+                }
+            } else {
+                sectionType = type;
+            }
+
+            deviceCounters[sectionType]++;
+            const container = document.getElementById(`${sectionType}-devices`);
+            const deviceNum = deviceCounters[sectionType];
+
+            // Pass original type so it can be stored and used when saving
+            const deviceEntry = createDeviceEntry(sectionType, deviceNum, data, type);
+            if (deviceEntry) {
+                container.appendChild(deviceEntry);
+                // Animate entry for manual adds (when no data.name, visible class isn't set)
+                if (!data.name) {
+                    setTimeout(() => deviceEntry.classList.add('visible'), 10);
+                }
+            }
+        }
+
+        // Add a new device entry (manual add button)
+        function addDevice(type) {
+            if (!VALID_DEVICE_TYPES.includes(type)) return;
+
+            deviceCounters[type]++;
+            const container = document.getElementById(`${type}-devices`);
+            const deviceNum = deviceCounters[type];
+
+            const deviceEntry = createDeviceEntry(type, deviceNum);
+            if (deviceEntry) {
+                container.appendChild(deviceEntry);
+                // Animate entry
+                setTimeout(() => deviceEntry.classList.add('visible'), 10);
+            }
+        }
+
+        // Add device from dropdown selector (for specific device types like ESP32 Miner)
+        function addDeviceFromSelect(selectElement, sectionType) {
+            const deviceType = selectElement.value;
+            if (!deviceType || !VALID_DEVICE_TYPES.includes(deviceType)) {
+                selectElement.value = '';  // Reset dropdown
+                return;
+            }
+
+            // Add device with the specific type, displayed in the appropriate section
+            addDeviceWithData(deviceType, {});
+
+            // Reset dropdown to placeholder
+            selectElement.value = '';
+        }
+
+        function getPlaceholderName(type, num) {
+            // Return just the device class name without numbering
+            const names = {
+                axeos: 'AxeOS',
+                nmaxe: 'NMaxe',
+                avalon: 'Avalon'
+            };
+            return names[type] || type;
+        }
+
+        // Remove a device entry
+        function removeDevice(type, num) {
+            const entry = document.getElementById(`${type}-device-${num}`);
+            if (entry) {
+                entry.classList.add('removing');
+                setTimeout(() => entry.remove(), 300);
+            }
+        }
+
+        // Test device connection
+        async function testDevice(sectionType, num) {
+            const entry = document.getElementById(`${sectionType}-device-${num}`);
+            const urlInput = entry.querySelector('.url-input');
+            const statusDiv = entry.querySelector('.device-status');
+            const testBtn = entry.querySelector('.btn-test');
+
+            let ip = urlInput.value.trim();
+            if (!ip) {
+                showStatus(statusDiv, 'error', 'Please enter a device URL');
+                return;
+            }
+
+            // Extract IP from URL if needed
+            ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+
+            // Use the actual device type (nmaxe, goldshell, etc.), not section type (axeos, avalon)
+            // This ensures the backend uses the correct fetch function for each device
+            const deviceType = entry.dataset.deviceType || sectionType;
+
+            let port = 4028;
+            if (sectionType === 'avalon') {
+                const portInput = entry.querySelector('.port-input');
+                port = parseInt(portInput.value) || 4028;
+            }
+
+            testBtn.classList.add('testing');
+            showStatus(statusDiv, 'testing', 'Testing connection...');
+
+            try {
+                const response = await fetch('/api/device/test', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({type: deviceType, ip, port})
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const data = result.data;
+                    let info = `✓ Online - ${data.hashrate_ghs?.toFixed(2) || 0} GH/s`;
+                    if (data.temps?.chip) {
+                        info += ` | ${data.temps.chip}°C`;
+                    }
+                    showStatus(statusDiv, 'success', info);
+                } else {
+                    showStatus(statusDiv, 'error', `✗ ${result.data?.error || 'Connection failed'}`);
+                }
+            } catch (e) {
+                showStatus(statusDiv, 'error', `✗ ${e.message}`);
+            }
+
+            testBtn.classList.remove('testing');
+        }
+
+        function showStatus(element, type, message) {
+            element.className = `device-status ${type}`;
+            element.textContent = message;
+            element.classList.add('visible');
+        }
+
+        // Save configuration
+        async function saveConfiguration() {
+            // Validate coin selection first
+            if (!validateCoinSelection()) {
+                showGlobalStatus('error', 'Please fix coin selection before saving.');
+                return;
+            }
+
+            // Validate wallet addresses
+            const walletAddresses = {};
+            let walletError = false;
+            selectedCoins.forEach(coin => {
+                const input = document.getElementById(`wallet-${coin.toLowerCase()}`);
+                const address = input ? input.value.trim() : '';
+                if (!address) {
+                    walletError = true;
+                    showGlobalStatus('error', `Please enter a wallet address for ${coin}`);
+                }
+                walletAddresses[coin] = address;
+            });
+            if (walletError) return;
+
+            // Get expected hashrate (null if disabled/skipped)
+            const expectedHashrate = getExpectedHashrate();
+
+            // Confirm hashrate with user before saving
+            if (!await confirmHashrate(expectedHashrate)) {
+                return;  // User cancelled or wants to change
+            }
+
+            const config = {
+                dashboard_title: document.getElementById('dashboardTitle').value,
+                pool_mode: currentPoolMode,
+                multi_coin_enabled: currentPoolMode === 'multi',
+                expected_fleet_ths: expectedHashrate,  // null means disabled
+                coins: selectedCoins.map(coin => ({
+                    symbol: coin,
+                    enabled: true,
+                    wallet_address: walletAddresses[coin]
+                })),
+                devices: {
+                    axeos: [],
+                    nmaxe: [],
+                    nerdqaxe: [],
+                    avalon: [],
+                    antminer: [],
+                    antminer_scrypt: [],
+                    whatsminer: [],
+                    innosilicon: [],
+                    goldshell: [],
+                    hammer: [],
+                    futurebit: []
+                }
+            };
+
+            // Collect AxeOS/NMaxe/NerdQAxe devices (they share the same UI section)
+            // Use data-device-type attribute to save to correct category
+            document.querySelectorAll('#axeos-devices .device-entry').forEach(entry => {
+                const name = entry.querySelector('.name-input').value.trim();
+                let ip = entry.querySelector('.url-input').value.trim();
+                // Get the original device type (nmaxe, nerdqaxe, or axeos)
+                const deviceType = entry.dataset.deviceType || 'axeos';
+
+                if (ip) {
+                    // Normalize IP: strip protocol, path, and port (consistent with other parsing)
+                    ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                    // Save to the correct device category
+                    // This ensures NerdQAxe++ gets 80W default, NMaxe gets 15W
+                    if (!config.devices[deviceType]) {
+                        config.devices[deviceType] = [];
+                    }
+                    config.devices[deviceType].push({
+                        name: name || ip,
+                        ip: ip
+                    });
+                }
+            });
+
+            // Collect Avalon/Antminer/Whatsminer/Innosilicon devices (CGMiner API, share same UI section)
+            // Use data-device-type attribute to save to correct category
+            document.querySelectorAll('#avalon-devices .device-entry').forEach(entry => {
+                const name = entry.querySelector('.name-input').value.trim();
+                let ip = entry.querySelector('.url-input').value.trim();
+                const port = parseInt(entry.querySelector('.port-input').value) || 4028;
+                // Get the original device type (avalon, antminer, whatsminer, or innosilicon)
+                const deviceType = entry.dataset.deviceType || 'avalon';
+
+                if (ip) {
+                    ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+                    // Save to the correct device category
+                    if (!config.devices[deviceType]) {
+                        config.devices[deviceType] = [];
+                    }
+                    config.devices[deviceType].push({
+                        name: name || ip,
+                        ip: ip,
+                        port: port
+                    });
+                }
+            });
+
+            // Check if at least one device is configured
+            const totalDevices = config.devices.axeos.length +
+                                config.devices.nmaxe.length +
+                                config.devices.nerdqaxe.length +
+                                config.devices.avalon.length +
+                                config.devices.antminer.length +
+                                config.devices.antminer_scrypt.length +
+                                config.devices.whatsminer.length +
+                                config.devices.innosilicon.length +
+                                config.devices.goldshell.length +
+                                config.devices.hammer.length +
+                                config.devices.futurebit.length;
+
+            if (totalDevices === 0) {
+                showGlobalStatus('error', 'Please add at least one mining device');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show restart prompt for pool mode changes
+                    if (result.requires_restart) {
+                        showRestartPrompt();
+                    } else {
+                        showGlobalStatus('success', 'Configuration saved! Redirecting to dashboard...');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1500);
+                    }
+                } else {
+                    showGlobalStatus('error', result.error || 'Failed to save configuration');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Error: ${e.message}`);
+            }
+        }
+
+        function showGlobalStatus(type, message) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.className = `status-message ${type}`;
+            statusEl.textContent = message;
+            statusEl.classList.remove('hidden');
+
+            // Auto-hide all messages after appropriate delay
+            const delay = type === 'error' ? 8000 : 4000;
+            setTimeout(() => statusEl.classList.add('hidden'), delay);
+        }
+
+        // Show restart prompt modal
+        // SECURITY: Uses safe DOM methods instead of innerHTML to prevent XSS
+        function showRestartPrompt() {
+            const modal = document.createElement('div');
+            modal.className = 'restart-modal-overlay';
+
+            // Create modal content using safe DOM methods
+            const modalContent = document.createElement('div');
+            modalContent.className = 'restart-modal';
+
+            const icon = document.createElement('div');
+            icon.className = 'restart-icon';
+            icon.textContent = '⚡';
+
+            const title = document.createElement('h2');
+            title.textContent = 'Configuration Saved!';
+
+            const desc = document.createElement('p');
+            desc.textContent = 'Your pool mode and coin selection have been updated.';
+
+            const warning = document.createElement('p');
+            warning.className = 'restart-warning';
+            const strong = document.createElement('strong');
+            strong.textContent = 'Important:';
+            warning.appendChild(strong);
+            warning.appendChild(document.createTextNode(' The pool services need to restart for these changes to take effect.'));
+
+            const actions = document.createElement('div');
+            actions.className = 'restart-actions';
+
+            const restartBtn = document.createElement('button');
+            restartBtn.className = 'btn-restart';
+            restartBtn.textContent = '🔄 Restart Services Now';
+            restartBtn.onclick = restartServices;
+
+            const laterBtn = document.createElement('button');
+            laterBtn.className = 'btn-later';
+            laterBtn.textContent = 'Later (Manual Restart Required)';
+            laterBtn.onclick = closeRestartModal;
+
+            actions.appendChild(restartBtn);
+            actions.appendChild(laterBtn);
+
+            const hint = document.createElement('div');
+            hint.className = 'restart-hint';
+            hint.appendChild(document.createTextNode('To restart manually, run: '));
+            const code = document.createElement('code');
+            code.textContent = 'sudo systemctl restart spiralstratum spiralsentinel';
+            hint.appendChild(code);
+
+            modalContent.appendChild(icon);
+            modalContent.appendChild(title);
+            modalContent.appendChild(desc);
+            modalContent.appendChild(warning);
+            modalContent.appendChild(actions);
+            modalContent.appendChild(hint);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            // Add modal styles
+            const style = document.createElement('style');
+            style.textContent = `
+                .restart-modal-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.85);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 9999;
+                    animation: fadeIn 0.3s ease;
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                .restart-modal {
+                    background: #0a0e17;
+                    border: 2px solid var(--neon-cyan);
+                    border-radius: 16px;
+                    padding: 2rem;
+                    max-width: 500px;
+                    text-align: center;
+                    box-shadow: 0 0 40px rgba(0, 212, 255, 0.3);
+                }
+                .restart-icon {
+                    font-size: 3rem;
+                    margin-bottom: 1rem;
+                }
+                .restart-modal h2 {
+                    font-family: var(--font-display);
+                    color: var(--neon-green);
+                    margin-bottom: 1rem;
+                }
+                .restart-modal p {
+                    color: var(--text-secondary);
+                    margin-bottom: 0.75rem;
+                }
+                .restart-warning {
+                    background: rgba(255, 215, 0, 0.1);
+                    border: 1px solid rgba(255, 215, 0, 0.3);
+                    border-radius: 8px;
+                    padding: 0.75rem;
+                    color: var(--neon-yellow) !important;
+                    margin: 1rem 0;
+                }
+                .restart-actions {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.75rem;
+                    margin-top: 1.5rem;
+                }
+                .btn-restart {
+                    padding: 0.875rem 1.5rem;
+                    background: linear-gradient(135deg, rgba(0, 255, 136, 0.2), rgba(0, 212, 255, 0.2));
+                    border: 2px solid var(--neon-green);
+                    border-radius: 8px;
+                    color: var(--neon-green);
+                    font-family: var(--font-display);
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .btn-restart:hover {
+                    background: linear-gradient(135deg, rgba(0, 255, 136, 0.3), rgba(0, 212, 255, 0.3));
+                    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+                }
+                .btn-later {
+                    padding: 0.75rem 1.5rem;
+                    background: transparent;
+                    border: 1px solid rgba(0, 212, 255, 0.3);
+                    border-radius: 8px;
+                    color: var(--text-secondary);
+                    font-family: var(--font-display);
+                    font-size: 0.9rem;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                .btn-later:hover {
+                    border-color: rgba(0, 212, 255, 0.5);
+                    color: var(--text-primary);
+                }
+                .restart-hint {
+                    margin-top: 1.5rem;
+                    font-size: 0.8rem;
+                    color: var(--text-muted);
+                }
+                .restart-hint code {
+                    background: rgba(0, 0, 0, 0.3);
+                    padding: 0.25rem 0.5rem;
+                    border-radius: 4px;
+                    font-family: var(--font-mono);
+                    color: var(--neon-cyan);
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Restart services via API
+        async function restartServices() {
+            const btn = document.querySelector('.btn-restart');
+            btn.textContent = '⏳ Restarting...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/services/restart', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    btn.textContent = '✓ Restarted!';
+                    btn.style.borderColor = 'var(--neon-green)';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    btn.textContent = '⚠️ Manual restart required';
+                    btn.style.borderColor = 'var(--neon-yellow)';
+                }
+            } catch (e) {
+                btn.textContent = '⚠️ Manual restart required';
+                btn.style.borderColor = 'var(--neon-yellow)';
+            }
+        }
+
+        // Close restart modal and go to dashboard
+        function closeRestartModal() {
+            const modal = document.querySelector('.restart-modal-overlay');
+            if (modal) modal.remove();
+            window.location.href = '/';
+        }
+
+        // Detect server mode and initialize
+        async function detectAndInitializeMode() {
+            // SECURITY: Whitelist of valid coin symbols to prevent XSS via malicious API response (alphabetical order)
+            const VALID_COINS = ['BC2', 'BCH', 'BTC', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+            const VALID_MODES = ['solo', 'multi', 'merge'];
+
+            try {
+                const response = await fetch('/api/config/server-mode');
+                const data = await response.json();
+
+                if (data.success && data.detected_mode) {
+                    // SECURITY: Validate mode against whitelist
+                    const mode = VALID_MODES.includes(data.detected_mode) ? data.detected_mode : 'solo';
+                    selectPoolMode(mode);
+
+                    // Build list of all active coins (parent + aux chains for merge mining)
+                    let allActiveCoins = [];
+
+                    // Parent/direct coins from detected_coins
+                    if (data.detected_coins && Array.isArray(data.detected_coins)) {
+                        allActiveCoins = data.detected_coins.filter(coin =>
+                            typeof coin === 'string' && VALID_COINS.includes(coin.toUpperCase())
+                        ).map(c => c.toUpperCase());
+                    }
+
+                    // Merge mining: add aux chains to active coins list
+                    if (mode === 'merge' && data.merge_mining && data.merge_mining.aux_chains) {
+                        const auxChains = data.merge_mining.aux_chains.filter(c =>
+                            typeof c === 'string' && VALID_COINS.includes(c.toUpperCase())
+                        ).map(c => c.toUpperCase());
+                        auxChains.forEach(aux => {
+                            if (!allActiveCoins.includes(aux)) {
+                                allActiveCoins.push(aux);
+                            }
+                        });
+                    }
+
+                    if (allActiveCoins.length > 0) {
+                        // Clear default selection and use detected coins instead
+                        selectedCoins = [];
+
+                        // Hide all coin options that are NOT running on the pool
+                        // Only show coins the stratum server is actually mining (parent + aux)
+                        document.querySelectorAll('.coin-option[data-coin]').forEach(coinEl => {
+                            const coinSymbol = coinEl.getAttribute('data-coin');
+                            if (allActiveCoins.includes(coinSymbol)) {
+                                coinEl.style.display = '';
+                                coinEl.classList.add('selected');
+                                if (!selectedCoins.includes(coinSymbol)) {
+                                    selectedCoins.push(coinSymbol);
+                                }
+                            } else {
+                                coinEl.style.display = 'none';
+                            }
+                        });
+
+                        // Hide algo section headers if no visible coins in that section
+                        document.querySelectorAll('.algo-section').forEach(section => {
+                            const visibleCoins = section.querySelectorAll('.coin-option[data-coin]:not([style*="display: none"])');
+                            section.style.display = visibleCoins.length > 0 ? '' : 'none';
+                        });
+
+                        // Lock mode selector to reflect reality — user can't change what the pool is running
+                        const modeSelector = document.querySelector('.pool-mode-selector');
+                        if (modeSelector) {
+                            modeSelector.style.pointerEvents = 'none';
+                            modeSelector.style.opacity = '0.7';
+                        }
+
+                        updateCoinSelectionUI();
+                        updateWalletInputs();
+                    }
+
+                    // Show detection status (using textContent for safe output)
+                    const statusDiv = document.getElementById('import-status');
+                    const messageEl = document.getElementById('import-message');
+                    if (statusDiv && messageEl) {
+                        let modeLabel, coinsLabel;
+                        if (mode === 'merge' && data.merge_mining) {
+                            modeLabel = 'Merge Mining';
+                            // Show "BTC + NMC, FBTC, SYS" format
+                            const parentCoin = data.merge_mining.parent_coin || allActiveCoins[0] || '?';
+                            const auxDisplay = (data.merge_mining.aux_chains || []).filter(c =>
+                                typeof c === 'string' && VALID_COINS.includes(c.toUpperCase())
+                            ).join(', ');
+                            coinsLabel = parentCoin + (auxDisplay ? ' + ' + auxDisplay : '');
+                        } else {
+                            modeLabel = mode === 'multi' ? 'Multi-Coin' : 'Solo';
+                            const validCoins = (data.detected_coins || []).filter(c =>
+                                typeof c === 'string' && VALID_COINS.includes(c.toUpperCase())
+                            );
+                            coinsLabel = validCoins.join(', ') || 'Unknown';
+                        }
+                        messageEl.textContent = `Detected: ${modeLabel} mode with ${coinsLabel}`;
+                        statusDiv.className = 'import-status info';
+                        statusDiv.classList.remove('hidden');
+                        setTimeout(() => statusDiv.classList.add('hidden'), 8000);
+                    }
+                } else {
+                    // Server not reachable or no pools — show all coins as fallback
+                    // so user can still manually configure
+                    selectPoolMode('solo');
+                }
+            } catch (e) {
+                console.log('Could not detect server mode, showing all coins as fallback:', e);
+                selectPoolMode('solo');
+            }
+            updateWalletInputs();
+        }
+
+        // Check for pre-scanned miners from install.sh
+        async function checkForExistingMiners() {
+            try {
+                // Add timeout to prevent hanging
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch('/api/miners/check-sentinel-db', {
+                    credentials: 'same-origin',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    console.log('[CHECK] Server returned', response.status);
+                    return;
+                }
+
+                const data = await response.json();
+                console.log('[CHECK] Miner check result:', data);
+                if (data.available && data.new_count > 0) {
+                    // Show the import prompt modal
+                    document.getElementById('import-modal-count').textContent = data.new_count;
+                    document.getElementById('import-modal-overlay').classList.add('visible');
+                    console.log('[CHECK] Showing import modal for', data.new_count, 'miners');
+                }
+            } catch (e) {
+                // Silent fail for auto-check, but log it
+                console.log('[CHECK] Could not check for existing miners:', e.name === 'AbortError' ? 'timeout' : e.message);
+            }
+        }
+
+        // User accepts import prompt
+        async function acceptImportPrompt() {
+            // Hide the modal first
+            document.getElementById('import-modal-overlay').classList.remove('visible');
+
+            // Show the import status area so user can see progress
+            const statusDiv = document.getElementById('import-status');
+            const messageEl = document.getElementById('import-message');
+            if (statusDiv && messageEl) {
+                statusDiv.classList.remove('hidden');
+                messageEl.textContent = 'Importing miners from scanner database...';
+                statusDiv.className = 'import-status';
+            }
+
+            // Trigger the import and handle result
+            try {
+                const result = await importFromSentinel();
+                console.log('[IMPORT] Modal import result:', result);
+                // importFromSentinel() handles the UI updates and page reload
+            } catch (e) {
+                console.error('[IMPORT] Modal import failed:', e);
+                if (statusDiv && messageEl) {
+                    statusDiv.classList.remove('hidden');
+                    messageEl.textContent = `Error: ${e.message || 'Import failed'}`;
+                    statusDiv.className = 'import-status error';
+                }
+            }
+        }
+
+        // User dismisses import prompt
+        function dismissImportPrompt() {
+            document.getElementById('import-modal-overlay').classList.remove('visible');
+        }
+
+        // Load existing devices from config into the device lists
+        async function loadExistingDevices() {
+            try {
+                const response = await fetch('/api/config', { credentials: 'same-origin' });
+                if (!response.ok) return;
+
+                const config = await response.json();
+                if (!config.devices) return;
+
+                console.log('[SETUP] Loading existing devices from config');
+
+                // Map device types to their UI section (comprehensive list)
+                // AxeOS HTTP API devices -> axeos section
+                // CGMiner API devices -> avalon section
+                const axeosTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell'];
+                const avalonTypes = ['avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'];
+
+                // Load AxeOS-type devices
+                for (const deviceType of axeosTypes) {
+                    const devices = config.devices[deviceType] || [];
+                    for (const device of devices) {
+                        if (device && device.ip) {
+                            deviceCounters.axeos++;
+                            const entry = createDeviceEntry('axeos', deviceCounters.axeos, {
+                                name: device.name || '',
+                                ip: device.ip
+                            }, deviceType);
+                            if (entry) {
+                                document.getElementById('axeos-devices').appendChild(entry);
+                                console.log(`[SETUP] Loaded ${deviceType} device: ${device.ip}`);
+                            }
+                        }
+                    }
+                }
+
+                // Load Avalon-type devices (CGMiner API)
+                for (const deviceType of avalonTypes) {
+                    const devices = config.devices[deviceType] || [];
+                    for (const device of devices) {
+                        if (device && device.ip) {
+                            deviceCounters.avalon++;
+                            const entry = createDeviceEntry('avalon', deviceCounters.avalon, {
+                                name: device.name || '',
+                                ip: device.ip,
+                                port: device.port || 4028
+                            }, deviceType);
+                            if (entry) {
+                                document.getElementById('avalon-devices').appendChild(entry);
+                                console.log(`[SETUP] Loaded ${deviceType} device: ${device.ip}`);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('[SETUP] Could not load existing devices:', e.message);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchSubnet();
+            // Detect server mode and initialize UI accordingly
+            detectAndInitializeMode();
+            // Load any existing devices from config
+            loadExistingDevices();
+            // Check if there are pre-scanned miners from installer
+            checkForExistingMiners();
+        });
+    </script>
+</body>
+</html>

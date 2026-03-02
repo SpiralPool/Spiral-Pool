@@ -1,0 +1,55 @@
+# DigiByte Core Configuration for Spiral Pool
+# This template is processed at container startup
+
+# Network
+server=1
+daemon=0
+printtoconsole=1
+txindex=1
+
+# RPC Configuration
+rpcuser=${RPC_USER}
+rpcpassword=${RPC_PASSWORD}
+rpcallowip=127.0.0.1
+rpcallowip=172.17.0.0/16
+rpcallowip=10.0.0.0/8
+rpcallowip=192.168.0.0/16
+rpcbind=0.0.0.0
+rpcport=14022
+
+# ZMQ for block notifications
+zmqpubhashblock=tcp://0.0.0.0:28532
+zmqpubrawtx=tcp://0.0.0.0:28532
+
+# Performance (optimized for fast sync)
+dbcache=8192
+maxconnections=125
+maxmempool=300
+par=0
+maxsigcachesize=250
+
+# RPC performance for mining
+rpcworkqueue=32
+rpcthreads=4
+
+# Logging (minimal during sync for better I/O performance)
+debug=0
+debugexclude=libevent
+debugexclude=leveldb
+shrinkdebugfile=1
+debuglogfile=debug.log
+maxdebugfilesize=50
+
+# Mining
+blockmaxsize=2000000
+blockmaxweight=8000000
+
+# DNS Seeds for faster peer discovery (from DigiByte Core chainparams.cpp)
+dnsseed=1
+addnode=seed.digibyte.io
+addnode=seed.digibyte.help
+addnode=seed.diginode.tools
+addnode=eu.digibyteseed.com
+addnode=seed.digibyte.link
+addnode=seed.quakeguy.com
+addnode=seed.aroundtheblock.app

@@ -1,0 +1,73 @@
+# Spiral Pool HA Role Watcher Service
+# This service monitors the HA cluster role and triggers service control
+#
+# IMPORTANT: This service runs on ALL nodes and is NOT HA-managed.
+# It detects role changes (e.g., BACKUP -> MASTER) and starts/stops
+# Sentinel and Dashboard accordingly.
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Spiral Pool HA Role Watcher
+Documentation=https://github.com/SpiralPool/Spiral-Pool
+After=network-online.target spiralstratum.service
+Wants=network-online.target
+
+# R-5 FIX: Removed ConditionPathExists={{INSTALL_DIR}}/config/ha-enabled
+# The file is created by spiralstratum AFTER startup, so checking it here causes
+# a race: watcher fails 5x before stratum creates the file → systemd gives up.
+# The ha-enabled check is now done inside ha-role-watcher.sh with graceful retry.
+
+[Service]
+Type=simple
+User={{POOL_USER}}
+Group={{POOL_USER}}
+WorkingDirectory={{INSTALL_DIR}}
+ExecStart={{INSTALL_DIR}}/scripts/ha-role-watcher.sh start
+
+# Environment
+Environment="SPIRALPOOL_INSTALL_DIR={{INSTALL_DIR}}"
+
+# Restart policy - always restart (this is critical for HA)
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+# NOTE: NoNewPrivileges is NOT set — this service calls ha-service-control.sh
+# which uses 'sudo systemctl start/stop'. NoNewPrivileges blocks setuid (sudo).
+# ProtectSystem=full (not strict) so sudo can write to /run/sudo/ts/
+PrivateTmp=yes
+ProtectSystem=full
+# ProtectHome=no: ha-failback.sh SSHs to peer nodes using /home/spiraluser/.ssh/id_ed25519.
+# ProtectHome=yes replaces /home with empty tmpfs, breaking SSH even with ReadWritePaths.
+ProtectHome=no
+RuntimeDirectory=spiralpool
+RuntimeDirectoryPreserve=yes
+# /etc/default needed: etcd-cluster-rejoin.sh (called during failback) writes
+# ETCD_INITIAL_CLUSTER_STATE to /etc/default/etcd. Without this, ProtectSystem=full
+# makes /etc read-only and sed -i fails silently, breaking automatic failback.
+ReadWritePaths={{INSTALL_DIR}} /run/spiralpool /home/{{POOL_USER}}/.ssh /etc/default
+
+# Kernel protection
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+# Network restrictions (AF_INET6 kept for dual-stack compat; IPv6 disabled at OS level)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Misc hardening
+RestrictRealtime=yes
+LockPersonality=yes
+PrivateDevices=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+{
+  "name": "Autumn Harvest",
+  "id": "autumn-harvest",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Rich amber, burnt orange, and golden foliage",
+  "category": "Seasonal",
+  "colors": {
+    "bg-primary": "#1a120b",
+    "bg-secondary": "#2d1f14",
+    "bg-card": "#3d2a1a",
+    "bg-card-hover": "#4d3822",
+    "neon-blue": "#d4a574",
+    "neon-cyan": "#e8c49a",
+    "neon-purple": "#9f7b5a",
+    "neon-pink": "#d4836a",
+    "neon-orange": "#ea580c",
+    "neon-yellow": "#d97706",
+    "neon-green": "#84cc16",
+    "neon-red": "#dc2626",
+    "text-primary": "#fef3c7",
+    "text-secondary": "#d6cfc4",
+    "text-muted": "#8b8178",
+    "status-online": "#84cc16",
+    "status-offline": "#dc2626",
+    "status-warning": "#d97706",
+    "border-primary": "rgba(234, 88, 12, 0.25)",
+    "border-accent": "rgba(217, 119, 6, 0.3)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #ea580c 0%, #d97706 100%)",
+    "secondary": "linear-gradient(135deg, #d4a574 0%, #e8c49a 100%)",
+    "accent": "linear-gradient(135deg, #84cc16 0%, #d97706 100%)",
+    "card": "linear-gradient(180deg, rgba(61, 42, 26, 0.9) 0%, rgba(45, 31, 20, 0.95) 100%)",
+    "foliage": "linear-gradient(180deg, #84cc16 0%, #d97706 33%, #ea580c 66%, #dc2626 100%)"
+  },
+  "fonts": {
+    "display": "'Playfair Display', serif",
+    "body": "'Lato', sans-serif",
+    "mono": "'IBM Plex Mono', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.3,
+    "animationSpeed": 1,
+    "borderRadius": "10px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Autumn Harvest - Forest Canopy Background */\n@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Lato:wght@300;400;700&family=IBM+Plex+Mono&display=swap');\n\n/* Static warm autumn gradient background */\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse at 15% 25%, rgba(234, 88, 12, 0.18) 0%, transparent 40%),\n    radial-gradient(ellipse at 85% 20%, rgba(217, 119, 6, 0.12) 0%, transparent 35%),\n    radial-gradient(ellipse at 50% 75%, rgba(132, 204, 22, 0.08) 0%, transparent 45%),\n    linear-gradient(180deg, rgba(132, 204, 22, 0.05) 0%, rgba(217, 119, 6, 0.08) 50%, rgba(234, 88, 12, 0.1) 100%);\n  animation: none;\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border-radius: 10px;\n  border: 1px solid rgba(234, 88, 12, 0.25);\n}\n\n.stat-card::before {\n  background: linear-gradient(135deg, #84cc16, #d97706, #ea580c, #dc2626);\n}\n\n.stat-card:hover {\n  box-shadow: 0 0 25px rgba(234, 88, 12, 0.25);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #84cc16, #d97706, #ea580c, #dc2626);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card { border-radius: 10px; }"
+}

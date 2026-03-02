@@ -1,0 +1,107 @@
+# Spiral Pool - Bitcoin II (BC2) Regtest Integration Test Config
+#
+# This config runs the pool against a local bitcoinIId in regtest mode.
+# Regtest = private local blockchain, difficulty 1, instant CPU mining.
+#
+# Purpose: End-to-end validation of the full block lifecycle:
+#   stratum subscribe/authorize -> getblocktemplate -> miner solves ->
+#   submitblock -> ZMQ hashblock notification -> DB insert -> status update
+#
+# Usage:
+#   1. Start bitcoinIId in regtest mode (see scripts/linux/regtest-bc2.sh)
+#   2. Start the pool:  ./spiralpool -config config-bc2-regtest.yaml
+#   3. Connect cpuminer: minerd -a sha256d -o stratum+tcp://127.0.0.1:16333 -u TEST.worker1 -p x
+#   4. Watch pool logs for block found/submitted messages
+#
+version: 2
+
+global:
+  log_level: debug        # Verbose for integration testing
+  log_format: text        # Human-readable during testing
+  metrics_port: 19100
+  api_port: 14000
+  api_enabled: true
+
+  sentinel:
+    enabled: true
+    check_interval: 30s
+    wal_stuck_threshold: 5m
+    block_drought_hours: 0        # Disabled — regtest blocks are on-demand
+    disconnect_drop_percent: 50
+    hashrate_drop_percent: 50
+    wal_disk_space_warning_mb: 500
+    wal_max_files: 60
+    false_rejection_threshold: 0.10
+    retry_rate_threshold: 5
+    alert_cooldown: 5m
+    payment_stall_checks: 5
+    goroutine_limit: 10000
+    node_health_threshold: 0.5
+    ha_flap_window: 10m
+    ha_flap_threshold: 3
+    orphan_rate_threshold: 0.50   # Higher tolerance for regtest
+    chain_tip_stall_minutes: 120  # Regtest blocks are manual — long stall OK
+    min_peer_count: -1            # Regtest has no peers — disable check (0 gets defaulted to 3)
+    maturity_stall_hours: 0       # Disabled for regtest
+
+database:
+  host: localhost
+  port: 5432
+  user: spiralstratum
+  password: "spiralstratum"       # Change if your local PG uses different creds
+  database: spiralstratum_regtest # Separate DB so regtest doesn't pollute mainnet data
+  maxConnections: 50
+  batching:
+    size: 100
+    interval: 2s
+
+coins:
+  - symbol: BC2
+    pool_id: bc2_regtest
+    enabled: true
+    address: "REGTEST_ADDRESS_PLACEHOLDER"  # Replace with: bitcoinII-cli -regtest getnewaddress "" bech32
+    coinbase_text: "Spiral Regtest"
+    skip_genesis_verify: true               # Regtest has different genesis hash than mainnet
+
+    stratum:
+      port: 16333
+      port_v2: 17337
+      difficulty:
+        initial: 0.01             # Low share diff for V2 Go test miner
+        varDiff:
+          enabled: false          # Fixed diff=1 for regtest (CPU mining, instant solves)
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: false            # Don't ban during testing
+        banDuration: 600s
+        invalidSharesThreshold: 100
+      connection:
+        timeout: 600s
+        maxConnections: 100
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 55s
+
+    nodes:
+      - id: regtest-primary
+        host: 127.0.0.1
+        port: 18449               # BC2 regtest RPC port
+        user: spiraltest
+        password: "spiraltest"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:29338"  # Custom ZMQ port for regtest
+
+    payments:
+      enabled: true               # Enable payment processor for maturity tracking (pending → confirmed)
+      scheme: SOLO                # Coinbase goes directly to pool address — no separate payout needed
+      interval: 30s               # Regtest: check every 30s (production auto-scales from blockTime)
+      blockMaturity: 3            # Regtest: minimal maturity for fast testing (production uses 100)

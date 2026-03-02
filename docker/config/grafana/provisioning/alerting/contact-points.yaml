@@ -1,0 +1,59 @@
+# Spiral Pool — Grafana Alert Contact Points
+# ============================================
+# Provisions Discord and Telegram notification channels for Grafana Unified Alerting.
+#
+# These contact points receive alerts from the Grafana alert rules defined in
+# spiralpool-alerts.yaml. They are a SUPPLEMENTARY layer — the Go Sentinel and
+# Python Spiral Sentinel handle primary alert delivery independently.
+#
+# Configuration:
+#   Set these environment variables (same ones used by Sentinel and install.sh):
+#     DISCORD_WEBHOOK_URL   — Discord webhook URL (https://discord.com/api/webhooks/...)
+#     TELEGRAM_BOT_TOKEN    — Telegram Bot API token from @BotFather
+#     TELEGRAM_CHAT_ID      — Telegram chat/group/channel ID
+#
+#   If a variable is not set, the corresponding contact point will be created but
+#   will fail silently on delivery (Grafana logs the error, does not crash).
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: spiral-discord
+    receivers:
+      - uid: spiral-discord-webhook
+        type: discord
+        disableResolveMessage: false
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          title: >-
+            {{ if eq .Status "firing" }}[{{ .CommonLabels.severity | toUpper }}]{{ else }}[RESOLVED]{{ end }}
+            {{ .CommonLabels.alertname }}
+          message: >-
+            {{ range .Alerts }}
+            **{{ .Labels.alertname }}** ({{ .Labels.severity }})
+            {{ .Annotations.summary }}
+            {{ .Annotations.description }}
+            {{ end }}
+          avatar_url: ""
+          use_discord_username: true
+
+  - orgId: 1
+    name: spiral-telegram
+    receivers:
+      - uid: spiral-telegram-bot
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: ${TELEGRAM_BOT_TOKEN}
+          chatid: ${TELEGRAM_CHAT_ID}
+          parse_mode: HTML
+          disable_web_page_preview: true
+          message: >-
+            {{ if eq .Status "firing" }}[!!!]{{ else }}[OK]{{ end }}
+            <b>{{ .CommonLabels.alertname }}</b>
+            {{ range .Alerts }}
+            <b>Severity:</b> {{ .Labels.severity }}
+            {{ .Annotations.summary }}
+            {{ .Annotations.description }}
+            {{ end }}

@@ -1,0 +1,910 @@
+================================================================================
+Spiral Pool v1.0 - Third-Party Licenses
+================================================================================
+
+This software incorporates or depends on the following third-party components.
+Each component is subject to its own license terms as noted below.
+
+================================================================================
+GO MODULE DEPENDENCIES (Direct)
+================================================================================
+
+1. github.com/jackc/pgx/v5 v5.7.2
+   Description: PostgreSQL driver and toolkit
+   License: MIT License
+   URL: https://github.com/jackc/pgx
+
+2. github.com/lib/pq v1.10.9
+   Description: Pure Go PostgreSQL driver
+   License: MIT License (with portions BSD-3-Clause)
+   URL: https://github.com/lib/pq
+
+3. github.com/go-zeromq/zmq4 v0.17.0
+   Description: Pure Go implementation of ZeroMQ (ØMQ) messaging protocol
+   License: BSD-3-Clause
+   URL: https://github.com/go-zeromq/zmq4
+   License Text: https://github.com/go-zeromq/zmq4/blob/main/LICENSE
+
+   This is a pure Go implementation with no C dependencies.
+   BSD-3-Clause is a permissive license compatible with commercial use.
+
+   Note: Transitively depends on goczmq/v4 (MPL-2.0, weak copyleft).
+   MPL-2.0 is file-level copyleft and compatible with BSD-3-Clause.
+
+4. github.com/go-zeromq/goczmq/v4 v4.2.2 (indirect)
+   Description: CGo bindings for ZeroMQ (transitive dependency of zmq4)
+   License: MPL-2.0 (Mozilla Public License 2.0)
+   URL: https://github.com/go-zeromq/goczmq
+   License Text: https://github.com/go-zeromq/goczmq/blob/master/LICENSE
+
+   MPL-2.0 is a weak copyleft license (file-level only).
+   Compatible with commercial use and BSD-3-Clause licensing.
+   No additional obligations for transitive dependencies.
+
+   M17 CLARIFICATION: goczmq is an indirect dependency pulled in via the Go
+   module system by go-zeromq/zmq4. Spiral Pool does not import, modify, or
+   directly reference any goczmq source files. MPL-2.0's file-level copyleft
+   applies only to modifications of MPL-licensed source files themselves — it
+   does not extend to separate Go source files in other modules that merely
+   depend on goczmq transitively. Spiral Pool's BSD-3-Clause source files are
+   not subject to MPL-2.0 obligations. See MPL-2.0 Section 1.10 ("Larger Work")
+   and Section 3.3 ("Distribution of a Larger Work").
+
+5. github.com/prometheus/client_golang v1.20.5
+   Description: Prometheus instrumentation library for Go
+   License: Apache License 2.0
+   URL: https://github.com/prometheus/client_golang
+
+6. github.com/redis/go-redis/v9 v9.17.2
+   Description: Redis client for Go
+   License: BSD-2-Clause License
+   URL: https://github.com/redis/go-redis
+
+7. go.uber.org/zap v1.27.0
+   Description: Structured logging library
+   License: MIT License
+   URL: https://github.com/uber-go/zap
+
+8. golang.org/x/crypto v0.46.0
+   Description: Go supplementary cryptography libraries
+   License: BSD-3-Clause License
+   URL: https://go.googlesource.com/crypto
+
+9. gopkg.in/yaml.v3 v3.0.1
+   Description: YAML support for Go
+   License: MIT License / Apache License 2.0 (dual-licensed)
+   URL: https://github.com/go-yaml/yaml
+
+================================================================================
+GO MODULE DEPENDENCIES (Indirect/Transitive)
+================================================================================
+
+10. github.com/beorn7/perks v1.0.1
+    License: MIT License
+
+11. github.com/cespare/xxhash/v2 v2.3.0
+    License: MIT License
+
+12. github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
+    License: MIT License
+
+13. github.com/jackc/pgpassfile v1.0.0
+    License: MIT License
+
+14. github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761
+    License: MIT License
+
+15. github.com/jackc/puddle/v2 v2.2.2
+    License: MIT License
+
+16. github.com/klauspost/compress v1.17.9
+    License: BSD-3-Clause (primary), Apache-2.0, MIT (subdirectory-specific)
+
+17. github.com/kylelemons/godebug v1.1.0
+    License: Apache License 2.0
+    URL: https://github.com/kylelemons/godebug
+
+18. github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+    License: BSD-3-Clause License
+
+19. github.com/prometheus/client_model v0.6.1
+    License: Apache License 2.0
+    Note: Direct dependency in go.mod (listed here for grouping with other Prometheus modules)
+
+20. github.com/prometheus/common v0.55.0
+    License: Apache License 2.0
+
+21. github.com/prometheus/procfs v0.15.1
+    License: Apache License 2.0
+
+22. go.uber.org/multierr v1.10.0
+    License: MIT License
+
+23. golang.org/x/sync v0.19.0
+    License: BSD-3-Clause License
+
+24. golang.org/x/sys v0.39.0
+    License: BSD-3-Clause License
+    Note: Direct dependency in go.mod (listed here for grouping with other golang.org/x modules)
+
+25. golang.org/x/text v0.32.0
+    License: BSD-3-Clause License
+
+26. google.golang.org/protobuf v1.34.2
+    License: BSD-3-Clause License
+
+================================================================================
+PYTHON DEPENDENCIES
+================================================================================
+
+27. Flask 3.1.2
+    Description: Web framework for Python
+    License: BSD-3-Clause License
+    URL: https://flask.palletsprojects.com/
+
+28. flask-socketio 5.6.0
+    Description: WebSocket support for Flask
+    License: MIT License
+    URL: https://github.com/miguelgrinberg/Flask-SocketIO
+
+29. flask-login 0.6.3
+    Description: User session management for Flask
+    License: MIT License
+    URL: https://github.com/maxcountryman/flask-login
+
+30. requests 2.32.5
+    Description: HTTP library for Python
+    License: Apache License 2.0
+    URL: https://github.com/psf/requests
+
+31. werkzeug 3.1.5
+    Description: WSGI utility library
+    License: BSD-3-Clause License
+    URL: https://palletsprojects.com/p/werkzeug/
+
+32. gunicorn 25.1.0
+    Description: WSGI HTTP Server
+    License: MIT License
+    URL: https://gunicorn.org/
+
+33. gevent 25.9.1
+    Description: Coroutine-based networking library
+    License: MIT License
+    URL: https://www.gevent.org/
+
+34. pyyaml 6.0.3
+    Description: YAML parser and emitter
+    License: MIT License
+    URL: https://github.com/yaml/pyyaml
+
+35. bcrypt 4.1.2
+    Description: Modern password hashing library
+    License: Apache License 2.0
+    URL: https://github.com/pyca/bcrypt
+
+36. slixmpp 1.8.5
+    Description: Asynchronous XMPP client library for Python
+    License: GPL-3.0 (GNU General Public License v3.0)
+    URL: https://codeberg.org/poezio/slixmpp
+    Usage: Optional XMPP/Jabber notifications in Spiral Sentinel
+
+    COPYLEFT NOTE: slixmpp is licensed under GPL-3.0. It is an OPTIONAL
+    dependency that is NOT distributed with Spiral Pool and is NOT installed
+    by default. Spiral Sentinel functions fully without it (XMPP notifications
+    are disabled when slixmpp is not installed). slixmpp is imported
+    conditionally at runtime via try/except and is NOT required for any core
+    pool functionality. The XMPP integration functions in SpiralSentinel.py
+    are self-contained and only execute when slixmpp is present.
+
+    GPL-3.0 ISOLATION: slixmpp is not bundled, vendored, or distributed as
+    part of this project. Users who choose to install slixmpp (via
+    `pip install slixmpp`) do so independently. When slixmpp is installed
+    and XMPP notifications are enabled, operators should be aware that
+    GPL-3.0 obligations may apply to the Sentinel process at runtime.
+
+    Spiral Pool's BSD-3-Clause stratum server, dashboard, and all other
+    components do NOT import or link against slixmpp. The stratum server
+    (Go binary) is entirely independent of slixmpp.
+
+38. patroni
+    Description: PostgreSQL high-availability clustering solution
+    License: MIT License
+    URL: https://github.com/zalando/patroni
+    Usage: Optional HA PostgreSQL management (install.sh, Dockerfile.patroni)
+
+39. python-etcd
+    Description: Python client for etcd key-value store
+    License: MIT License
+    URL: https://github.com/jplana/python-etcd
+    Usage: etcd backend for Patroni HA clustering
+
+40. psycopg2-binary
+    Description: PostgreSQL adapter for Python (pre-compiled binary)
+    License: LGPL-3.0
+    URL: https://github.com/psycopg/psycopg2
+    Usage: PostgreSQL connectivity for Patroni HA clustering
+
+    Note: LGPL-3.0 permits use of the library by non-GPL applications
+    without triggering copyleft obligations on the calling application,
+    provided the library is dynamically linked (which pip-installed
+    Python packages are). This is standard practice for database
+    adapter libraries. psycopg2-binary is NOT distributed with
+    Spiral Pool — it is installed via pip as a Patroni dependency.
+
+Note: Python packages listed above may install transitive dependencies (e.g.,
+urllib3, certifi, charset-normalizer, idna for requests). These are installed
+by pip at runtime and are NOT distributed with Spiral Pool. Each carries its
+own license terms — consult PyPI or the package's repository for details.
+
+================================================================================
+MINER DEVICE API INTEGRATIONS
+================================================================================
+
+This software integrates with mining hardware devices using their publicly
+documented APIs. These integrations are provided for user convenience to
+manage devices that the user owns and has authorization to access.
+
+IMPORTANT: These integrations use ONLY publicly documented APIs provided
+by the device manufacturers. No reverse engineering or proprietary
+protocols are used.
+
+A. AxeOS / ESP-Miner Based Devices
+   Devices: BitAxe (Ultra, Supra, Hex, Gamma, GT), NMAxe, NerdQAxe,
+            NerdOctaxe Gamma, Lucky Miner (LV06/LV07/LV08/LG07),
+            Jingle Miner (BTC Solo Lite/Pro), Zyber (8S/8G/8GP),
+            Hammer Miner, GekkoScience (Compac/NewPac/R606)
+   Protocol: HTTP REST API (Port 80)
+   Source: Open-source ESP-Miner firmware (GPL-3.0)
+   GitHub: https://github.com/skot/ESP-Miner
+   Documentation: Publicly available in firmware source code
+
+   Note: Spiral Pool communicates with these devices via standard HTTP REST
+   API calls only. No ESP-Miner source code is included, referenced, or
+   compiled into Spiral Pool. The API is a network interface, not a code
+   dependency. Some ESP32-based miners (NerdMiner, HAN SOLOminer, BitMaker,
+   SparkMiner) do not have an HTTP API; stats for such devices are obtained
+   from pool connections only.
+
+B. BraiinsOS (BOS+) Firmware
+   Devices: Antminers running BraiinsOS firmware
+   Protocol: HTTP REST API (Port 80, documented at /api/v1/)
+   Documentation: https://developer.braiins-os.com/
+   License: Proprietary firmware with publicly documented API
+
+C. Vnish Firmware
+   Devices: Antminers running Vnish custom firmware
+   Protocol: HTTP REST API (Port 80) + CGMiner RPC (Port 4028)
+   Documentation: https://vnish.group/en/faq-vnish-en/
+   License: Proprietary firmware with publicly documented API
+
+D. LuxOS Firmware
+   Devices: Antminers running LuxOS firmware
+   Protocol: TCP Socket API (Port 4028)
+   Documentation: https://docs.luxor.tech/firmware/api/intro
+   License: Proprietary firmware with publicly documented API
+   Python Package: luxos (MIT License)
+
+E. CGMiner API (Standard Mining Protocol)
+   Devices: Avalon, Canaan AvalonMiner, Antminer, Whatsminer, Innosilicon,
+            GekkoScience, iPollo, Ebang/Ebit, ePIC, FutureBit, Elphapex,
+            iBeLink, VolcMiner
+   Protocol: TCP Socket API (Port 4028)
+   Documentation: https://github.com/ckolivas/cgminer/blob/master/API-README
+   License: CGMiner is GPL-3.0 licensed; API protocol is open standard
+
+F. Goldshell Miners
+   Devices: Goldshell Mini DOGE series, LT5, LT6, LT Lite, DG Max, BYTE
+   Protocol: HTTP REST API (Port 80)
+   Documentation: Publicly accessible via device web interface
+
+G. ePIC Blockchain Miners
+   Devices: ePIC BlockMiner series
+   Protocol: HTTP REST API (Port 4028)
+   Documentation: https://epicblockchain.io/support/
+   GitHub: https://github.com/epicblockchain/epic-dashboard
+
+H. iPollo Miners
+   Devices: iPollo V1, V1 Mini, G1, etc.
+   Protocol: HTTP + CGMiner API (Port 4028)
+   Documentation: https://ipollo.com/pages/v1-server-setup-manual
+
+I. Whatsminer BTMiner API (MicroBT Proprietary)
+   Devices: Whatsminer M30S through M79 series
+   Protocol: CGMiner API (Port 4028) + proprietary BTMiner extensions
+   Documentation: Whatsminer API v2.0.3 (official documentation)
+   License: Proprietary firmware with publicly documented API
+
+J. Bitdeer / Sealminer
+   Devices: Sealminer A2, A2 Pro, A2 Hydro, A3, A3 Pro, A3 Hydro series
+   Protocol: Stratum protocol (user-agent detection only)
+   Documentation: N/A (user-agent classification only, no API integration)
+   Note: Spiral Pool classifies Sealminer devices by user-agent string only.
+   No direct device API integration is implemented.
+
+K. Auradine / Teraflux
+   Devices: Teraflux AT2880, AI3680, AH3880
+   Protocol: Stratum protocol (user-agent detection only)
+   Documentation: N/A (user-agent classification only, no API integration)
+   Note: Spiral Pool classifies Auradine devices by user-agent string only.
+   No direct device API integration is implemented.
+
+L. Elphapex Miners (Scrypt)
+   Devices: DG Home, DG1, DG1+, DG1 Lite, DG2, DG2+, DG2 Mini, DG Hydro
+   Protocol: CGMiner API (Port 4028) / Stratum user-agent detection
+   Documentation: Publicly documented CGMiner API
+
+M. VolcMiner (Scrypt)
+   Devices: D1 Mini, D1, D1 Pro, D1 Lite, D1 Hydro, D3
+   Protocol: Proprietary firmware with web GUI / Stratum user-agent detection
+   Documentation: Device web interface
+
+N. FluMiner (SHA-256d + Scrypt)
+   Devices: T3 (SHA-256d), L1, L1 Pro, L2, L3 (Scrypt)
+   Manufacturer: Flu Electronic Technology (Hong Kong) Co., Ltd.
+   Protocol: Proprietary firmware with web UI / Stratum user-agent detection
+   Documentation: Device web interface
+
+O. iBeLink (Scrypt)
+   Devices: BM-L3
+   Protocol: CGMiner API (Port 4028) / Stratum user-agent detection
+   Documentation: Device web interface
+
+P. User-Agent-Only Classifications (No API Integration)
+   The following devices are classified by user-agent string for difficulty
+   assignment purposes only. Spiral Pool does not connect to these devices
+   or use any device API:
+   - Lucky Miner (LV06, LV07, LV08, LG07)
+   - Jingle Miner (BTC Solo Lite, BTC Solo Pro)
+   - Hammer Miner / PlebSource (Doge Digger)
+   - HAN SOLOminer, BitMaker, SparkMiner (ESP32 variants)
+   - NiceHash, MiningRigRentals, Cudo Miner (hashrate rental services)
+   - Zergpool, Prohashing, Mining Dutch, Zpool, WoolyPooly,
+     HeroMiners, unMineable (mining pool proxies)
+
+MINER INTEGRATION DISCLAIMER:
+
+1. AUTHORIZATION REQUIRED: This software is designed to manage mining devices
+   that YOU OWN or have EXPLICIT AUTHORIZATION to access. Unauthorized access
+   to computer systems is illegal. You are solely responsible for ensuring
+   you have proper authorization to access any device you configure.
+
+2. NO REVERSE ENGINEERING: All device integrations use publicly documented
+   APIs provided by device manufacturers. No proprietary protocols have been
+   reverse engineered.
+
+3. DEVICE COMPATIBILITY: Device APIs may change between firmware versions.
+   The authors make no warranty that these integrations will work with all
+   firmware versions or all device models.
+
+4. USER EQUIPMENT: The authors accept no liability for any damage to mining
+   hardware, loss of mining revenue, or other damages arising from use of
+   these device integrations.
+
+5. THIRD-PARTY FIRMWARE: Some integrations (Vnish, LuxOS, BraiinsOS) are for
+   third-party firmware. The authors have no affiliation with these projects
+   and make no representations about their safety, security, or legality.
+
+6. USER-AGENT CLASSIFICATION: Many devices listed above are classified solely
+   by their Stratum user-agent string for automatic difficulty assignment.
+   This does not constitute an API integration, endorsement, or business
+   relationship with the device manufacturer. User-agent detection is standard
+   practice for mining pool software.
+
+7. HASHRATE RENTAL SERVICES: User-agent detection for NiceHash,
+   MiningRigRentals, and similar services enables proper initial difficulty
+   assignment. Spiral Pool has no business relationship with any hashrate
+   rental service. Users are solely responsible for any fees, costs, or
+   agreements with third-party services.
+
+================================================================================
+CDN-LOADED JAVASCRIPT LIBRARIES
+================================================================================
+
+61. Chart.js 4.5.1
+    Description: JavaScript charting library for HTML5 canvas
+    License: MIT License
+    URL: https://www.chartjs.org/
+    GitHub: https://github.com/chartjs/Chart.js
+    Copyright (c) 2014-2024 Chart.js Contributors
+
+    Loaded dynamically from jsDelivr CDN (cdn.jsdelivr.net/npm/chart.js@4.5.1) in the
+    Spiral Pool dashboard. Not bundled or distributed with Spiral Pool.
+
+62. SortableJS
+    Description: JavaScript library for reorderable drag-and-drop lists
+    License: MIT License
+    URL: https://sortablejs.github.io/Sortable/
+    GitHub: https://github.com/SortableJS/Sortable
+    Copyright (c) 2019 All contributors to Sortable
+
+    Loaded dynamically from jsDelivr CDN
+    (cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js) in the Spiral Pool
+    dashboard for draggable section reordering. Not bundled or distributed
+    with Spiral Pool.
+
+================================================================================
+DASHBOARD THEME COLOR PALETTES
+================================================================================
+
+The following dashboard themes use color palettes derived from community color
+scheme projects. All are licensed under MIT License. Only hex color values are
+derived; fonts, CSS, layout, and effects are original work by Spiral Pool.
+
+Full attribution details: src/dashboard/static/themes/THEME-LICENSES.txt
+
+57. Dracula Color Palette
+    Original Author: Zeno Rocha
+    License: MIT License
+    URL: https://github.com/dracula/dracula-theme
+    Copyright (c) 2013-present Dracula Theme
+
+58. Nord Color Palette
+    Original Author: Arctic Ice Studio (Sven Greb)
+    License: MIT License
+    URL: https://github.com/nordtheme/nord
+    Copyright (c) 2016-present Arctic Ice Studio
+
+59. Tokyo Night Color Palette
+    Original Author: enkia
+    License: MIT License
+    URL: https://github.com/enkia/tokyo-night-vscode-theme
+    Copyright (c) 2020 enkia
+
+60. Gruvbox Color Palette
+    Original Author: Pavel Pertsev (morhetz)
+    License: MIT License
+    URL: https://github.com/morhetz/gruvbox
+    Copyright (c) 2012-2023 Pavel Pertsev
+
+================================================================================
+PROTOCOL SPECIFICATIONS & STANDARDS
+================================================================================
+
+42. Stratum V2 Specification
+    Description: Cryptocurrency mining protocol specification
+    URL: https://github.com/stratum-mining/sv2-spec
+    License: Various (specification documents, reference implementations vary)
+    Usage: Protocol implementation reference
+
+43. Noise Protocol Framework
+    Description: Cryptographic framework for building protocols
+    URL: https://noiseprotocol.org/
+    License: Public Domain (specification)
+    Usage: Encryption protocol for Stratum V2
+
+================================================================================
+FONTS (Dashboard UI - Loaded via Google Fonts CDN)
+================================================================================
+
+44. Orbitron
+    Description: Geometric sans-serif display font
+    Designer: Matt McInerney
+    License: SIL Open Font License 1.1 (OFL-1.1)
+    URL: https://fonts.google.com/specimen/Orbitron
+    Usage: Dashboard headings and display text
+
+45. Rajdhani
+    Description: Open Latin semi-condensed typeface
+    Designer: Indian Type Foundry
+    License: SIL Open Font License 1.1 (OFL-1.1)
+    URL: https://fonts.google.com/specimen/Rajdhani
+    Usage: Dashboard body text
+
+46. Share Tech Mono
+    Description: Monospace font for technical displays
+    Designer: Carrois Apostrophe
+    License: SIL Open Font License 1.1 (OFL-1.1)
+    URL: https://fonts.google.com/specimen/Share+Tech+Mono
+    Usage: Dashboard monospace/code text
+
+Note: Fonts are loaded dynamically from Google Fonts CDN and are not
+distributed with Spiral Pool. OFL-1.1 permits free use without attribution
+in software (attribution required only when redistributing font files).
+
+ADDITIONAL THEME FONTS (Loaded via Google Fonts CDN by theme customCSS)
+
+The following fonts are loaded dynamically by individual theme JSON files
+via @import rules in their customCSS fields. Like the base fonts above,
+these are loaded from Google Fonts CDN and are not distributed with Spiral Pool.
+The same GDPR considerations documented in the Compliance Notes section apply.
+
+    Fira Code (OFL-1.1) - Matt McInerney et al. - https://fonts.google.com/specimen/Fira+Code
+    Fira Sans (OFL-1.1) - Carrois Apostrophe - https://fonts.google.com/specimen/Fira+Sans
+    Source Code Pro (OFL-1.1) - Paul D. Hunt / Adobe - https://fonts.google.com/specimen/Source+Code+Pro
+    Source Sans Pro (OFL-1.1) - Paul D. Hunt / Adobe - https://fonts.google.com/specimen/Source+Sans+3
+    IBM Plex Sans (OFL-1.1) - IBM Corp - https://fonts.google.com/specimen/IBM+Plex+Sans
+    IBM Plex Mono (OFL-1.1) - IBM Corp - https://fonts.google.com/specimen/IBM+Plex+Mono
+    Inter (OFL-1.1) - Rasmus Andersson - https://fonts.google.com/specimen/Inter
+    JetBrains Mono (OFL-1.1) - JetBrains - https://fonts.google.com/specimen/JetBrains+Mono
+    VT323 (OFL-1.1) - Peter Hull - https://fonts.google.com/specimen/VT323
+    Special Elite (Apache-2.0) - Astigmatic - https://fonts.google.com/specimen/Special+Elite
+    Courier Prime (OFL-1.1) - Alan Dague-Greene - https://fonts.google.com/specimen/Courier+Prime
+    Montserrat (OFL-1.1) - Julieta Ulanovsky - https://fonts.google.com/specimen/Montserrat
+    Open Sans (Apache-2.0) - Steve Matteson - https://fonts.google.com/specimen/Open+Sans
+    Roboto Mono (Apache-2.0) - Christian Robertson - https://fonts.google.com/specimen/Roboto+Mono
+    Poppins (OFL-1.1) - Indian Type Foundry - https://fonts.google.com/specimen/Poppins
+    Quicksand (OFL-1.1) - Andrew Paglinawan - https://fonts.google.com/specimen/Quicksand
+    Nunito (OFL-1.1) - Vernon Adams - https://fonts.google.com/specimen/Nunito
+    Fredoka (OFL-1.1) - Milena Brandao - https://fonts.google.com/specimen/Fredoka
+    Playfair Display (OFL-1.1) - Claus Eggers Sorensen - https://fonts.google.com/specimen/Playfair+Display
+    Lato (OFL-1.1) - Lukasz Dziedzic - https://fonts.google.com/specimen/Lato
+    Exo 2 (OFL-1.1) - Natanael Gama - https://fonts.google.com/specimen/Exo+2
+    Quantico (OFL-1.1) - Mat Desjardins - https://fonts.google.com/specimen/Quantico
+    Chakra Petch (OFL-1.1) - Cadson Demak - https://fonts.google.com/specimen/Chakra+Petch
+    Space Grotesk (OFL-1.1) - Florian Karsten - https://fonts.google.com/specimen/Space+Grotesk
+
+================================================================================
+SYSTEM DEPENDENCIES (Installed via Package Managers)
+================================================================================
+
+47. PostgreSQL
+    Description: Relational database system
+    License: PostgreSQL License (similar to BSD/MIT)
+    URL: https://www.postgresql.org/
+
+48. ZeroMQ (libzmq)
+    Description: High-performance asynchronous messaging library
+    License: MPL-2.0 (Mozilla Public License 2.0)
+    URL: https://zeromq.org/
+
+49. Go Programming Language
+    Description: Go compiler and standard library
+    License: BSD-3-Clause License
+    URL: https://go.dev/
+
+50a. Keepalived
+     Description: VRRP failover daemon for Linux
+     License: GPL-2.0
+     URL: https://www.keepalived.org/
+     Usage: VIP management for HA failover (install.sh, native deployment)
+
+     COPYLEFT NOTE: Keepalived is installed via apt-get and runs as an
+     independent system daemon. It communicates with Spiral Pool only via
+     VRRP state changes on the network interface. No keepalived source code
+     is linked, compiled into, or distributed with Spiral Pool. Running a
+     GPL-licensed daemon alongside BSD-licensed software does not create a
+     derivative work.
+
+50b. Tor
+     Description: Anonymity network and onion routing software
+     License: BSD-3-Clause License
+     URL: https://www.torproject.org/
+     Usage: Optional privacy routing for blockchain node connections (install.sh)
+
+50c. Supervisor (supervisord)
+     Description: Process control system for Unix-like operating systems
+     License: BSD-like (Supervisor License)
+     URL: http://supervisord.org/
+     Usage: Process management in Docker containers (docker/Dockerfile)
+
+50d. gosu
+     Description: Simple setuid+setgid+setgroups+exec utility
+     License: Apache License 2.0
+     URL: https://github.com/tianon/gosu
+     Usage: Privilege dropping in Docker coin containers (12 Dockerfiles)
+
+================================================================================
+BLOCKCHAIN NODES (Optional Runtime Dependencies)
+================================================================================
+
+50. Bitcoin Core / Bitcoin Knots
+    Description: Bitcoin reference implementation
+    License: MIT License
+    URL: https://bitcoincore.org/
+
+51. DigiByte Core
+    Description: DigiByte cryptocurrency node
+    License: MIT License
+    URL: https://digibyte.org/
+
+52. Bitcoin Cash Node (BCHN)
+    Description: Bitcoin Cash full node implementation
+    License: MIT License
+    URL: https://bitcoincashnode.org/
+
+53. Litecoin Core
+    Description: Litecoin cryptocurrency node
+    License: MIT License
+    URL: https://litecoin.org/
+
+54. Dogecoin Core
+    Description: Dogecoin cryptocurrency node
+    License: MIT License
+    URL: https://dogecoin.com/
+
+55. PepeCoin Core
+    Description: PepeCoin cryptocurrency node
+    License: MIT License
+    URL: https://pepecoin.org/
+
+56. Bitcoin II
+    Description: Bitcoin II cryptocurrency node
+    License: MIT License
+    URL: https://bitcoinii.org/
+
+57. Namecoin Core
+    Description: Namecoin cryptocurrency node
+    License: MIT License
+    URL: https://www.namecoin.org/
+
+58. Syscoin Core
+    Description: Syscoin cryptocurrency node
+    License: MIT License
+    URL: https://syscoin.org/
+
+59. Myriadcoin Core
+    Description: Myriadcoin cryptocurrency node (multi-algorithm)
+    License: MIT License
+    URL: https://myriadcoin.org/
+
+================================================================================
+DOCKER SERVICE CONTAINERS (Copyleft — Independent Services)
+================================================================================
+
+The following Docker images use copyleft licenses. They are deployed as
+independent, unmodified service containers communicating with Spiral Pool
+exclusively via standard network protocols (HTTP, TCP). No copyleft-licensed
+source code is linked, compiled into, or distributed with Spiral Pool.
+
+Running a copyleft-licensed program as a separate Docker container does NOT
+create a derivative work of the surrounding BSD-3-Clause project. See:
+- GPL FAQ: https://www.gnu.org/licenses/gpl-faq.en.html#MereAggregation
+- AGPL Section 13 (network interaction) applies only to modified versions
+
+A. Grafana OSS
+   Image: grafana/grafana-oss:10.4.2
+   License: AGPLv3 (GNU Affero General Public License v3.0)
+   URL: https://grafana.com/oss/grafana/
+   Usage: Optional monitoring dashboard (Docker deployments only)
+   Note: Used as-is, unmodified, as an independent service container.
+   Spiral Pool connects via HTTP API only. AGPL obligations do not
+   extend to Spiral Pool's BSD-3-Clause source code.
+
+   WARNING: If you modify Grafana's source code, AGPL Section 13
+   requires you to make your modified source code available to all
+   users who interact with it over a network. The configuration files
+   provided in docker/config/grafana/ are Grafana provisioning configs,
+   not modifications to Grafana's source code.
+
+B. HAProxy
+   Image: haproxy:2.9-alpine
+   License: GPLv2 (with OpenSSL linking exception)
+   URL: https://www.haproxy.org/
+   Usage: Optional load balancer (HA Docker deployments only)
+   Note: Used as-is, unmodified, as an independent service container.
+   Spiral Pool connects via TCP proxy only. GPL obligations do not
+   extend to Spiral Pool's BSD-3-Clause source code.
+
+C. Redis Server
+   Image: redis:7-alpine
+   License: BSD-3-Clause License (Redis 7.2.x and earlier)
+   URL: https://redis.io/
+   Usage: Optional caching and HA state store (Docker HA deployments only)
+   Note: Used as-is, unmodified, as an independent service container.
+   Spiral Pool connects via TCP (Redis protocol) only.
+
+D. etcd
+   Image: quay.io/coreos/etcd:v3.5.11
+   License: Apache License 2.0
+   URL: https://etcd.io/
+   Usage: Distributed consensus for Patroni HA clustering (Docker HA deployments)
+   Note: Used as-is, unmodified, as an independent service container.
+   Spiral Pool does not connect to etcd directly — Patroni uses it for
+   leader election.
+
+E. Prometheus Server
+   Image: prom/prometheus:v2.51.0
+   License: Apache License 2.0
+   URL: https://prometheus.io/
+   Usage: Optional metrics collection and storage (Docker deployments only)
+   Note: Used as-is, unmodified, as an independent service container.
+   Spiral Pool exposes metrics via HTTP; Prometheus scrapes them.
+
+================================================================================
+LICENSE TEXT SUMMARIES
+================================================================================
+
+MIT License:
+- Permits commercial use, modification, distribution
+- Requires copyright notice and license in distributions
+- No warranty provided
+- Full text: https://opensource.org/licenses/MIT
+
+BSD-3-Clause License:
+- Similar to MIT with additional advertising clause restrictions
+- Permits commercial use, modification, distribution
+- Requires copyright notice in distributions
+- Full text: https://opensource.org/licenses/BSD-3-Clause
+
+Apache License 2.0:
+- Permits commercial use, modification, distribution
+- Provides patent grant from contributors
+- Requires copyright notice and NOTICE file (if provided by upstream)
+- Full text: https://www.apache.org/licenses/LICENSE-2.0
+
+BSD-3-Clause (3-Clause BSD License):
+- Highly permissive license
+- Allows commercial and proprietary use
+- Requires copyright notice preservation
+- Full text: https://opensource.org/licenses/BSD-3-Clause
+
+MPL-2.0 (Mozilla Public License 2.0):
+- Weak copyleft (file-level, not project-level)
+- Allows combination with proprietary code
+- Modified MPL files must remain MPL, but surrounding code can be any license
+- Compatible with BSD, MIT, Apache, and commercial licenses
+- Full text: https://www.mozilla.org/en-US/MPL/2.0/
+
+SIL Open Font License 1.1 (OFL-1.1):
+- Permissive license designed for fonts
+- Allows free use, modification, and redistribution
+- Modified versions must use different names (Reserved Font Names)
+- No attribution required in software using the fonts
+- Attribution required only when redistributing font files
+- Full text: https://scripts.sil.org/OFL
+
+GPL-3.0 (GNU General Public License v3.0):
+- Strong copyleft license
+- Derivative works must also be licensed under GPL-3.0
+- Source code must be made available when distributing binaries
+- Applies to slixmpp (optional XMPP dependency, not linked by default)
+- Full text: https://www.gnu.org/licenses/gpl-3.0.html
+
+LGPL-3.0 (GNU Lesser General Public License v3.0):
+- Weak copyleft license for libraries
+- Applications that merely link against LGPL libraries are NOT derivative works
+- Modified LGPL library code must remain LGPL, but calling code can be any license
+- Applies to psycopg2-binary (PostgreSQL adapter with linking exception)
+- Full text: https://www.gnu.org/licenses/lgpl-3.0.html
+
+================================================================================
+COMPLIANCE NOTES
+================================================================================
+
+1. Apache 2.0 Compliance:
+   - NOTICE file contents reproduced below as required by Apache 2.0 Section 4(d)
+   - Copyright notices preserved in go.mod and requirements.txt
+   - All Apache-2.0-licensed dependencies have been checked for NOTICE files:
+     * prometheus/client_golang: NOTICE file present (reproduced below)
+     * prometheus/common: No NOTICE file in repository
+     * prometheus/procfs: No NOTICE file in repository
+     * kylelemons/godebug: No NOTICE file in repository
+     * requests (Python): No NOTICE file in distribution
+     * bcrypt (Python): No NOTICE file in distribution
+
+   Prometheus client_golang NOTICE:
+   Prometheus instrumentation library for Go applications
+   Copyright 2012-2015 The Prometheus Authors
+
+   This product includes software developed at SoundCloud Ltd.
+   (http://soundcloud.com/).
+
+   The following components are included in this product:
+   - perks - a highly optimized percentile tracker
+     Copyright (C) 2013 Blake Mizerany
+   - Go support for Protocol Buffers
+     Copyright 2010 The Go Authors
+
+2. Attribution Requirements:
+   - All MIT, BSD, and Apache licenses require copyright notice preservation
+   - This THIRD_PARTY_LICENSES.txt file satisfies attribution requirements
+   - Individual package licenses available via URLs listed above
+
+3. For Distributors:
+   - Include this file (THIRD_PARTY_LICENSES.txt) in all distributions
+   - Include LICENSE file (BSD-3-Clause)
+   - All core dependencies use permissive licenses compatible with commercial use
+   - Optional dependencies (slixmpp GPL-3.0, psycopg2-binary LGPL-3.0) have
+     copyleft obligations documented in their respective entries above
+
+4. Clean-Room Development Attestation (GPL-3.0 Adjacent Integrations):
+   Spiral Pool implements Stratum V1 protocol compatibility with mining software
+   including cgminer and bfgminer, which are licensed under GPL-3.0. The Stratum
+   protocol implementation in Spiral Pool was developed using clean-room methodology:
+
+   - Protocol behavior was implemented from publicly available protocol
+     documentation, specifications, and interoperability testing
+   - No GPL-3.0 licensed source code from cgminer, bfgminer, or any other
+     GPL-licensed mining software was referenced, copied, or adapted
+   - The CGMiner API integration (for miner device monitoring) was implemented
+     solely from the publicly documented API specification
+     (https://github.com/ckolivas/cgminer/blob/master/API-README)
+   - All Spiral Pool source code is original work licensed under BSD-3-Clause
+
+   The Stratum V1 protocol is an open, de facto standard used across the mining
+   industry. Implementing a compatible server does not create a derivative work
+   of any particular client implementation.
+
+5. Google Fonts CDN — GDPR Considerations:
+   The Spiral Pool dashboard loads fonts (Orbitron, Rajdhani, Share Tech Mono)
+   dynamically from Google Fonts CDN (fonts.googleapis.com / fonts.gstatic.com).
+
+   GDPR NOTICE: Loading fonts from Google Fonts CDN causes end-user browsers
+   to make requests to Google servers, which transmits the user's IP address
+   to Google. The Regional Court of Munich (LG München, Case No. 3 O 17493/20,
+   January 20, 2022) ruled that dynamically loading Google Fonts without consent
+   can violate GDPR, as it transmits IP addresses to Google (a US company)
+   without adequate legal basis.
+
+   OPERATOR RECOMMENDATIONS:
+   - For GDPR-compliant deployments, consider self-hosting the font files
+     instead of loading from Google's CDN
+   - To self-host: download font files from fonts.google.com, serve from your
+     own infrastructure, and update CSS @import URLs accordingly
+   - If continuing to use Google Fonts CDN, implement a cookie/consent banner
+     for dashboard users informing them of the data transfer
+   - The font files themselves are licensed under SIL OFL 1.1, which permits
+     redistribution and self-hosting
+
+   Note: The fonts are used only in the web dashboard UI. Stratum mining
+   connections (the primary pool function) do not involve any font loading
+   or Google service connections.
+
+================================================================================
+PROTOCOL SPECIFICATIONS
+================================================================================
+
+55. Stratum V2 (SV2) Protocol Specification
+    Description: Binary mining protocol with Noise-based authenticated encryption
+    License: Open protocol specification (no license restrictions on implementations)
+    URL: https://github.com/stratum-mining/sv2-spec
+    Reference: https://stratumprotocol.org
+
+    Spiral Pool implements the SV2 Mining Protocol (Standard Channels) based on
+    the open SV2 specification. This is an independent implementation — no code
+    from the Stratum Reference Implementation (SRI) is used.
+
+56. github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
+    Description: secp256k1 elliptic curve cryptography (used for Noise NX handshake)
+    License: ISC License
+    URL: https://github.com/decred/dcrd
+    License Text: https://github.com/decred/dcrd/blob/master/LICENSE
+
+    Used for ECDH key exchange in the Noise NX authenticated encryption protocol
+    (Stratum V2 transport layer). ISC License is functionally identical to
+    BSD-2-Clause and fully compatible with BSD-3-Clause.
+
+================================================================================
+ACKNOWLEDGMENTS
+================================================================================
+
+The Stratum V2 protocol implementation in Spiral Pool was developed with
+reference to the following open-source projects:
+
+- Stratum Reference Implementation (SRI)
+  https://github.com/stratum-mining/stratum
+  License: MIT OR Apache-2.0
+
+  SRI served as a reference for understanding the SV2 wire format, message
+  types, and Noise NX handshake protocol. No SRI code is included in Spiral Pool.
+  Spiral Pool's SV2 implementation is written entirely in Go from scratch.
+
+- Noise Protocol Framework
+  https://noiseprotocol.org
+  Author: Trevor Perrin
+
+  The Noise NX handshake pattern used in SV2 is based on the Noise Protocol
+  Framework specification. Noise is an open protocol framework with no licensing
+  restrictions on implementations.
+
+================================================================================
+DISCLAIMER
+================================================================================
+
+This file lists dependencies to the best of our knowledge as of 2026-03-01.
+License information is provided for informational purposes. Users should
+verify license compliance for their specific use case.
+
+For authoritative license information, consult the original projects at
+the URLs provided above.
+
+The Spiral Pool authors accept no liability for license misidentification
+or changes to upstream licenses. Users are responsible for verifying
+compliance with all applicable licenses.
+
+================================================================================
+Last Updated: 2026-03-01
+Spiral Pool Version: 1.0.0
+================================================================================
+
+Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️

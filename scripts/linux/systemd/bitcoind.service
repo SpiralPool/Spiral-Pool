@@ -1,0 +1,36 @@
+# Bitcoin Core/Knots Node Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{BTC_DIR}} - Bitcoin binary directory
+#   {{BTC_DATA}} - Bitcoin data directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Bitcoin Core Daemon
+Documentation=https://bitcoin.org
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{BTC_DIR}}/bin/bitcoind -daemon -conf={{BTC_DATA}}/bitcoin.conf -datadir={{BTC_DATA}}
+ExecStop={{BTC_DIR}}/bin/bitcoin-cli -conf={{BTC_DATA}}/bitcoin.conf stop
+PIDFile={{BTC_DATA}}/bitcoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Some blockchain daemons crash with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target

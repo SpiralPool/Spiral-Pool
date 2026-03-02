@@ -1,0 +1,160 @@
+# Spiral Pool v1.0 - Regtest Configuration
+# Use this for LOCAL TESTING ONLY - never use in production!
+#
+# SECURITY WARNING: This file contains example credentials for testing purposes.
+# DO NOT use these credentials in any production or internet-facing deployment.
+# All passwords and credentials in this file are intentionally simple for testing.
+#
+# Quick Start:
+#   1. Start Bitcoin Knots in regtest: bitcoind -regtest -daemon -rpcuser=test -rpcpassword=test
+#   2. Generate blocks: bitcoin-cli -regtest generatetoaddress 101 $(bitcoin-cli -regtest getnewaddress)
+#   3. Run pool: ./spiralpool -config config/config.regtest.yaml
+#   4. Connect miner: cpuminer -a sha256d -o stratum+tcp://localhost:3333 -u test.worker -p x
+
+version: 1
+
+global:
+  log_level: debug      # Extra logging for testing
+  log_format: text      # Human-readable logs
+  metrics_port: 9100
+  api_port: 4000
+  api_enabled: true
+
+# Test database configuration (example credentials - DO NOT USE IN PRODUCTION)
+database:
+  host: localhost
+  port: 5432
+  user: spiralstratum
+  password: "testpassword"  # EXAMPLE ONLY - use strong password in production
+  database: spiralstratum_test
+  maxConnections: 5
+  batching:
+    size: 100
+    interval: 1s
+
+coins:
+  # Bitcoin Regtest
+  - symbol: BTC
+    pool_id: btc_regtest
+    enabled: true
+    address: "bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdku202"  # Regtest burn address
+    coinbase_text: "Spiral Regtest"
+
+    stratum:
+      port: 3333
+      difficulty:
+        initial: 0.001          # Very low for CPU mining
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 1000
+          targetTime: 4
+          retargetTime: 30
+          variancePercent: 30
+      banning:
+        enabled: false          # Disable banning for testing
+      connection:
+        timeout: 600s
+        maxConnections: 100
+        keepaliveInterval: 30s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 10s      # Fast rebroadcast for testing
+
+    nodes:
+      - id: local-regtest
+        host: 127.0.0.1
+        port: 18443             # Bitcoin regtest RPC port
+        user: test
+        password: test
+        priority: 0
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Bitcoin Cash Regtest (if you have BCHN installed)
+  - symbol: BCH
+    pool_id: bch_regtest
+    enabled: false              # Enable if you have BCH regtest running
+    address: "bchreg:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9e567jt"
+    coinbase_text: "Spiral BCH Regtest"
+
+    stratum:
+      port: 3334
+      difficulty:
+        initial: 0.001
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 1000
+          targetTime: 4
+          retargetTime: 30
+          variancePercent: 30
+      banning:
+        enabled: false
+      connection:
+        timeout: 600s
+        maxConnections: 100
+        keepaliveInterval: 30s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 10s
+
+    nodes:
+      - id: local-regtest
+        host: 127.0.0.1
+        port: 18443             # BCH regtest RPC port
+        user: test
+        password: test
+        priority: 0
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # DigiByte (no official regtest, use testnet or mock)
+  - symbol: DGB
+    pool_id: dgb_test
+    enabled: false              # Enable if you have DGB testnet
+    address: "dgb1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsxmwqt"
+    coinbase_text: "Spiral DGB Test"
+
+    stratum:
+      port: 3335
+      difficulty:
+        initial: 0.001
+        varDiff:
+          enabled: true
+          minDiff: 0.0001
+          maxDiff: 1000
+          targetTime: 4
+          retargetTime: 30
+          variancePercent: 30
+      banning:
+        enabled: false
+      connection:
+        timeout: 600s
+        maxConnections: 100
+        keepaliveInterval: 30s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 10s
+
+    nodes:
+      - id: local-testnet
+        host: 127.0.0.1
+        port: 14023             # DGB testnet RPC port
+        user: test
+        password: test
+        priority: 0
+        weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO

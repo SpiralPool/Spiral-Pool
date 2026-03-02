@@ -1,0 +1,51 @@
+{
+  "name": "Nord",
+  "id": "nord",
+  "author": "Spiral Pool (colors: Nord by Arctic Ice Studio, MIT)",
+  "version": "1.0.0",
+  "description": "Cool blue-gray palette with frost accents",
+  "category": "Editor",
+  "colors": {
+    "bg-primary": "#2e3440",
+    "bg-secondary": "#3b4252",
+    "bg-card": "#434c5e",
+    "bg-card-hover": "#4c566a",
+    "neon-blue": "#5e81ac",
+    "neon-cyan": "#88c0d0",
+    "neon-purple": "#b48ead",
+    "neon-pink": "#b48ead",
+    "neon-orange": "#d08770",
+    "neon-yellow": "#ebcb8b",
+    "neon-green": "#a3be8c",
+    "neon-red": "#bf616a",
+    "text-primary": "#eceff4",
+    "text-secondary": "#d8dee9",
+    "text-muted": "#4c566a",
+    "status-online": "#a3be8c",
+    "status-offline": "#bf616a",
+    "status-warning": "#ebcb8b",
+    "border-primary": "rgba(136, 192, 208, 0.2)",
+    "border-accent": "rgba(94, 129, 172, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #88c0d0 0%, #81a1c1 100%)",
+    "secondary": "linear-gradient(135deg, #5e81ac 0%, #b48ead 100%)",
+    "accent": "linear-gradient(135deg, #8fbcbb 0%, #88c0d0 100%)",
+    "card": "linear-gradient(180deg, rgba(67, 76, 94, 0.95) 0%, rgba(59, 66, 82, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Source Sans Pro', sans-serif",
+    "body": "'Source Sans Pro', sans-serif",
+    "mono": "'Source Code Pro', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.15,
+    "animationSpeed": 0.8,
+    "borderRadius": "8px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": false
+  },
+  "customCSS": "/* Nord Theme - Arctic Elegance */\n@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&family=Source+Code+Pro&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 30% 10%, rgba(136, 192, 208, 0.06), transparent),\n    radial-gradient(ellipse 500px 350px at 70% 90%, rgba(94, 129, 172, 0.04), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(136, 192, 208, 0.15);\n  background: rgba(67, 76, 94, 0.9);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #8fbcbb, #88c0d0, #81a1c1, #5e81ac);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(136, 192, 208, 0.3);\n  box-shadow: 0 4px 20px rgba(136, 192, 208, 0.1);\n}\n\n.stat-value {\n  text-shadow: none;\n}\n\n.celebration-title {\n  color: #88c0d0 !important;\n  text-shadow: 0 0 30px rgba(136, 192, 208, 0.4);\n}\n\n.miner-card, .health-card, .lifetime-card {\n  background: rgba(67, 76, 94, 0.7);\n  border: 1px solid rgba(136, 192, 208, 0.1);\n}\n\n.miner-card:hover {\n  border-color: rgba(163, 190, 140, 0.2);\n}"
+}

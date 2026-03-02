@@ -1,0 +1,23 @@
+# Spiral Pool — Prometheus Scrape Configuration
+# =============================================
+# Scrapes metrics from the Spiral Stratum pool server.
+#
+# The stratum server exposes Prometheus metrics on port 9100 at /metrics.
+# This config is mounted into the Prometheus container at /etc/prometheus/prometheus.yml.
+#
+# NOTE: All scrape targets use Docker service names (not container names)
+# because services are on the same Docker bridge network.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'spiralpool-stratum'
+    static_configs:
+      - targets: ['stratum:9100']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    # SECURITY: Bearer token auth for /metrics endpoint
+    # Token file is written by stratum entrypoint to shared volume
+    bearer_token_file: /spiralpool/data/.metrics_token

@@ -1,0 +1,579 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPIRAL POOL v1.0 - SINGLE COIN MANIFEST
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This file is the CANONICAL source for coin definitions.
+# All subsystems derive their coin data from this manifest.
+#
+# ARCHITECTURE:
+#   - Metadata (names, ports, display) → From this manifest
+#   - Consensus logic (hashing, serialization) → From Go code (immutable)
+#   - Validation → Manifest values cross-checked against Go at startup
+#
+# TO ADD A NEW COIN:
+#   1. Add entry to this file
+#   2. Add Go implementation in src/stratum/internal/coin/<symbol>.go
+#   3. Run validation: spiralctl config validate
+#   4. Commit both files together
+#
+# WARNING: Consensus-critical values (chain_id, version_bit, genesis_hash)
+#          are validated against Go constants at startup. Mismatches
+#          will cause the pool to REFUSE TO START (fail-fast).
+#
+# MINING SECTION SCHEMA:
+#   mining:
+#     stratum_port: <port>           # Stratum V1 port (miners connect here)
+#     stratum_v2_port: <port>        # Stratum V2 binary protocol (V1 + 1)
+#     stratum_tls_port: <port>       # Stratum TLS encrypted (V1 + 2)
+#     firewall_profiles:             # Windows Firewall network profiles
+#       - private                    # Home/work networks (recommended)
+#       - domain                     # Corporate domain networks
+#       - public                     # Public WiFi (NOT recommended for security)
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+schema_version: "1.0"
+
+# Global configuration
+global:
+  supported_algorithms:
+    - sha256d
+    - scrypt
+
+  # Default firewall profiles for Windows (can be overridden per-coin)
+  default_firewall_profiles:
+    - private
+    - domain
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COIN DEFINITIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+coins:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # SHA-256d COINS
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: BTC
+    name: Bitcoin
+    algorithm: sha256d
+    role: parent  # Can provide PoW for aux chains
+
+    network:
+      rpc_port: 8332
+      p2p_port: 8333
+      zmq_port: 28332
+
+    mining:
+      stratum_port: 4333
+      stratum_v2_port: 4334
+      stratum_tls_port: 4335
+      # firewall_profiles: uses global default (private, domain)
+
+    address:
+      p2pkh_version: 0x00  # '1' addresses
+      p2sh_version: 0x05   # '3' addresses
+      bech32_hrp: "bc"     # 'bc1' addresses
+
+    chain:
+      genesis_hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      can_be_parent: true
+      supported_aux_algorithms:
+        - sha256d
+
+    display:
+      full_name: "Bitcoin"
+      short_name: "BTC"
+      coingecko_id: "bitcoin"
+      explorer_url: "https://blockstream.info"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: BCH
+    name: Bitcoin Cash
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 8432
+      p2p_port: 8433
+      zmq_port: 28432
+
+    mining:
+      stratum_port: 5333
+      stratum_v2_port: 5334
+      stratum_tls_port: 5335
+
+    address:
+      p2pkh_version: 0x00
+      p2sh_version: 0x05
+      # BCH uses CashAddr format (not bech32), so no bech32_hrp
+      supports_cashaddr: true
+
+    chain:
+      genesis_hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: false
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Bitcoin Cash"
+      short_name: "BCH"
+      coingecko_id: "bitcoin-cash"
+      explorer_url: "https://blockchair.com/bitcoin-cash"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: DGB
+    name: DigiByte
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 14022
+      p2p_port: 12024
+      zmq_port: 28532
+
+    mining:
+      stratum_port: 3333
+      stratum_v2_port: 3334
+      stratum_tls_port: 3335
+
+    address:
+      p2pkh_version: 0x1e  # 'D' addresses
+      p2sh_version: 0x3f   # 'S' addresses
+      bech32_hrp: "dgb"
+
+    chain:
+      genesis_hash: "7497ea1b465eb39f1c8f507bc877078fe016d6fcb6dfad3a64c98dcc6e1e8496"
+      block_time: 15
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "DigiByte"
+      short_name: "DGB"
+      coingecko_id: "digibyte"
+      explorer_url: "https://digiexplorer.info"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: BC2
+    name: Bitcoin II
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 8339
+      p2p_port: 8338
+      zmq_port: 28338
+
+    mining:
+      stratum_port: 6333
+      stratum_v2_port: 6334
+      stratum_tls_port: 6335
+
+    # WARNING: BC2 uses same address format as BTC - collision risk!
+    address:
+      p2pkh_version: 0x00
+      p2sh_version: 0x05
+      bech32_hrp: "bc"
+      collision_warning: "Uses same format as BTC - verify wallet before use!"
+
+    chain:
+      genesis_hash: "0000000028f062b221c1a8a5cf0244b1627315f7aa5b775b931cfec46dc17ceb"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Bitcoin II"
+      short_name: "BC2"
+      coingecko_id: null
+      explorer_url: null
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # SHA-256d MERGE-MINEABLE COINS (AuxPoW with Bitcoin)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: NMC
+    name: Namecoin
+    algorithm: sha256d
+    role: aux
+
+    network:
+      rpc_port: 8336
+      p2p_port: 8334
+      zmq_port: 28336
+
+    mining:
+      stratum_port: 14335       # Standalone mining (when not merge-mining)
+      stratum_v2_port: 14336
+      stratum_tls_port: 14337
+      # Note: Typically mined via BTC parent chain (merge-mining)
+
+    address:
+      p2pkh_version: 0x34  # 'N' or 'M' addresses
+      p2sh_version: 0x0d   # '6' addresses
+      bech32_hrp: "nc"
+
+    chain:
+      genesis_hash: "000000000062b72c5e2ceb45fbc8587e807c155b0da735e6483dfba2f0a9c770"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 19200
+      chain_id: 1                 # CONSENSUS-CRITICAL
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: BTC
+
+    display:
+      full_name: "Namecoin"
+      short_name: "NMC"
+      coingecko_id: "namecoin"
+      explorer_url: "https://namecha.in"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: SYS
+    name: Syscoin
+    algorithm: sha256d
+    role: aux
+
+    network:
+      rpc_port: 8370
+      p2p_port: 8369
+      zmq_port: 28370
+
+    mining:
+      stratum_port: 15335
+      stratum_v2_port: 15336
+      stratum_tls_port: 15337
+
+    address:
+      p2pkh_version: 0x3f  # 'S' addresses
+      p2sh_version: 0x05
+      bech32_hrp: "sys"
+
+    chain:
+      genesis_hash: "0000022642db0346b6e01c2a397471f4f12e65d4f4251ec96c1f85367a61a7ab"
+      block_time: 150             # 2.5 min (changed at block 1,317,500 / Syscoin 4.3.0, Dec 2021)
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 0      # AuxPoW from genesis
+      chain_id: 16                # CONSENSUS-CRITICAL (0x10); old was 4096 (0x1000)
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: BTC
+
+    display:
+      full_name: "Syscoin"
+      short_name: "SYS"
+      coingecko_id: "syscoin"
+      explorer_url: "https://sys1.bcfn.ca"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: XMY
+    name: Myriad
+    algorithm: sha256d
+    role: aux
+
+    network:
+      rpc_port: 10889
+      p2p_port: 10888
+      zmq_port: 28889
+
+    mining:
+      stratum_port: 17335
+      stratum_v2_port: 17336
+      stratum_tls_port: 17337
+
+    address:
+      p2pkh_version: 0x32  # 'M' addresses
+      p2sh_version: 0x09   # '4' addresses
+      bech32_hrp: "my"
+
+    chain:
+      genesis_hash: "00000ffde4c020b5938441a0ea3d314bf619ead3c29a4e5fadf91cd22bcff6d4"
+      block_time: 60
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 1402000
+      chain_id: 90                # CONSENSUS-CRITICAL (0x005A)
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: BTC
+
+    display:
+      full_name: "Myriad"
+      short_name: "XMY"
+      coingecko_id: "myriad"
+      explorer_url: "https://myriadexplorer.com"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: FBTC
+    name: Fractal Bitcoin
+    algorithm: sha256d
+    role: aux
+
+    network:
+      # NOTE: Fractal defaults to same ports as BTC, but we use different ports
+      # to avoid conflicts when running alongside Bitcoin for merge mining
+      # Port 8334 = NMC P2P, 8335 = DOGE Stratum, so we use 8340/8341
+      rpc_port: 8340       # Unique port (8334-8339 are taken by NMC/DOGE/BC2)
+      p2p_port: 8341       # Unique port
+      zmq_port: 28340
+
+    mining:
+      stratum_port: 18335
+      stratum_v2_port: 18336
+      stratum_tls_port: 18337
+
+    # WARNING: FBTC uses same address format as BTC - verify wallet before use!
+    address:
+      p2pkh_version: 0x00  # '1' addresses (same as Bitcoin)
+      p2sh_version: 0x05   # '3' addresses (same as Bitcoin)
+      bech32_hrp: "bc"     # 'bc1' addresses (same as Bitcoin)
+      collision_warning: "Uses same format as BTC - verify wallet before use!"
+
+    chain:
+      # Fractal Bitcoin uses the SAME genesis block as Bitcoin (intentional design choice)
+      genesis_hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+      block_time: 30       # 30 second blocks (NOT 600 like Bitcoin!)
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 0      # AuxPoW from genesis
+      chain_id: 8228              # CONSENSUS-CRITICAL (0x2024)
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: BTC
+      # NOTE: Fractal uses "Cadence Mining" - 2 permissionless + 1 merged per 3 blocks
+
+    display:
+      full_name: "Fractal Bitcoin"
+      short_name: "FBTC"
+      coingecko_id: "fractal-bitcoin"
+      explorer_url: "https://mempool.fractalbitcoin.io"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # SCRYPT COINS
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: LTC
+    name: Litecoin
+    algorithm: scrypt
+    role: parent  # Can provide PoW for aux chains
+
+    network:
+      rpc_port: 9332
+      p2p_port: 9333
+      zmq_port: 28933
+
+    mining:
+      stratum_port: 7333
+      stratum_v2_port: 7334
+      stratum_tls_port: 7335
+
+    address:
+      p2pkh_version: 0x30  # 'L' addresses
+      p2sh_version: 0x32   # 'M' addresses
+      bech32_hrp: "ltc"
+
+    chain:
+      genesis_hash: "12a765e31ffd4059bada1e25190f6e98c99d9714d334efa41a195a7e7e04bfe2"
+      block_time: 150
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      can_be_parent: true
+      supported_aux_algorithms:
+        - scrypt
+
+    display:
+      full_name: "Litecoin"
+      short_name: "LTC"
+      coingecko_id: "litecoin"
+      explorer_url: "https://blockchair.com/litecoin"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: DOGE
+    name: Dogecoin
+    algorithm: scrypt
+    role: aux
+
+    network:
+      rpc_port: 22555
+      p2p_port: 22556
+      zmq_port: 28555
+
+    mining:
+      stratum_port: 8335
+      stratum_v2_port: 8337
+      stratum_tls_port: 8342
+
+    address:
+      p2pkh_version: 0x1e  # 'D' addresses
+      p2sh_version: 0x16   # '9' or 'A' addresses
+      bech32_hrp: "doge"
+
+    chain:
+      genesis_hash: "1a91e3dace36e2be3bf030a65679fe821aa1d6ef92e7c9902eb318182c355691"
+      block_time: 60
+      coinbase_maturity: 30
+      supports_segwit: false
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 371337
+      chain_id: 98                # CONSENSUS-CRITICAL (0x0062)
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: LTC
+
+    display:
+      full_name: "Dogecoin"
+      short_name: "DOGE"
+      coingecko_id: "dogecoin"
+      explorer_url: "https://dogechain.info"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: DGB-SCRYPT
+    name: DigiByte (Scrypt)
+    algorithm: scrypt
+    role: standalone
+
+    # Uses same node as DGB SHA256d
+    network:
+      rpc_port: 14022
+      p2p_port: 12024
+      zmq_port: 28532
+      shared_node: DGB
+
+    mining:
+      stratum_port: 3336
+      stratum_v2_port: 3337
+      stratum_tls_port: 3338
+
+    address:
+      p2pkh_version: 0x1e
+      p2sh_version: 0x3f
+      bech32_hrp: "dgb"
+
+    chain:
+      genesis_hash: "7497ea1b465eb39f1c8f507bc877078fe016d6fcb6dfad3a64c98dcc6e1e8496"
+      block_time: 15
+      coinbase_maturity: 100
+      supports_segwit: true
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "DigiByte (Scrypt)"
+      short_name: "DGB-S"
+      coingecko_id: "digibyte"
+      explorer_url: "https://digiexplorer.info"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: PEP
+    name: PepeCoin
+    algorithm: scrypt
+    role: aux
+
+    network:
+      rpc_port: 33873
+      p2p_port: 33874
+      zmq_port: 28873  # NOTE: PepeCoin v1.1.0 binary compiled without ZMQ — zmq disabled in config
+
+    mining:
+      stratum_port: 10335
+      stratum_v2_port: 10336
+      stratum_tls_port: 10337
+
+    address:
+      p2pkh_version: 0x37  # 55 decimal - 'P' addresses
+      p2sh_version: 0x55   # 85 decimal - P2SH addresses
+      bech32_hrp: "pep"
+
+    chain:
+      genesis_hash: "00008cae6a01358d774087e2daf3b2108252b0b5a440195ffec4fd38f9892272"
+      block_time: 60
+      coinbase_maturity: 30
+      supports_segwit: false
+      min_coinbase_script_len: 2
+
+    merge_mining:
+      supports_auxpow: true
+      auxpow_start_height: 0
+      chain_id: 63                # CONSENSUS-CRITICAL (0x003F)
+      version_bit: 0x00000100     # CONSENSUS-CRITICAL
+      parent_chain: LTC
+
+    display:
+      full_name: "PepeCoin"
+      short_name: "PEP"
+      coingecko_id: null
+      explorer_url: null
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: CAT
+    name: Catcoin
+    algorithm: scrypt
+    role: standalone
+
+    network:
+      rpc_port: 9932
+      p2p_port: 9933
+      zmq_port: 28932
+
+    mining:
+      stratum_port: 12335
+      stratum_v2_port: 12336
+      stratum_tls_port: 12337
+
+    address:
+      p2pkh_version: 0x15  # 21 decimal → '9' addresses (cats have 9 lives)
+      p2sh_version: 0x58
+      bech32_hrp: "cat"    # NOTE: SegWit DISABLED on mainnet (SegwitHeight=INT_MAX)
+
+    chain:
+      genesis_hash: "bc3b4ec43c4ebb2fef49e6240812549e61ffa623d9418608aa90eaad26c96296"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: false  # SegWit disabled on mainnet (SegwitHeight=INT_MAX)
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Catcoin"
+      short_name: "CAT"
+      coingecko_id: null
+      explorer_url: null
+

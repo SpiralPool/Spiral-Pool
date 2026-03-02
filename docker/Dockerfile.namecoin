@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    NAMECOIN CORE - DOCKER IMAGE                           ║
+# ║                                                                            ║
+# ║   Separate container for Namecoin Core node (SHA-256d mining)              ║
+# ║   Can be solo mined or merge-mined with Bitcoin as parent chain            ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Namecoin Core Node for Spiral Pool"
+LABEL version="28.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG NAMECOIN_VERSION=28.0
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create namecoin user
+RUN useradd -r -m -s /bin/bash namecoin \
+    && mkdir -p /home/namecoin/.namecoin \
+    && chown -R namecoin:namecoin /home/namecoin
+
+# Download and install Namecoin Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then NMC_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then NMC_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://www.namecoin.org/files/namecoin-core/namecoin-core-${NAMECOIN_VERSION}/namecoin-${NAMECOIN_VERSION}-${NMC_ARCH}.tar.gz" \
+    && tar -xzf "namecoin-${NAMECOIN_VERSION}-${NMC_ARCH}.tar.gz" \
+    && cp "namecoin-${NAMECOIN_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/namecoin.conf.template ]; then\n\
+    envsubst < /config/namecoin.conf.template > /home/namecoin/.namecoin/namecoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R namecoin:namecoin /home/namecoin/.namecoin\n\
+\n\
+# Start Namecoin daemon\n\
+exec gosu namecoin namecoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 8334
+# RPC
+EXPOSE 8336
+# ZMQ
+EXPOSE 28336
+
+# Data volume
+VOLUME ["/home/namecoin/.namecoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

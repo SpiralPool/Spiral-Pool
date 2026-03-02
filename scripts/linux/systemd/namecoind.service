@@ -1,0 +1,37 @@
+# Namecoin Node Service (AuxPoW - merge-mined with Bitcoin)
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{NMC_DIR}} - Namecoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Namecoin Core Daemon
+Documentation=https://www.namecoin.org
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{NMC_DIR}}/bin/namecoind -daemon -conf={{INSTALL_DIR}}/nmc/namecoin.conf -datadir={{INSTALL_DIR}}/nmc
+ExecStop={{NMC_DIR}}/bin/namecoin-cli -conf={{INSTALL_DIR}}/nmc/namecoin.conf stop
+PIDFile={{INSTALL_DIR}}/nmc/namecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Namecoin Core v28.0 crashes with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.) despite being
+# based on Bitcoin Core 28.0. Root cause under investigation.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+{
+  "name": "Summer Vibes",
+  "id": "summer-vibes",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Warm tropical sunset with ocean breeze energy",
+  "category": "Seasonal",
+  "colors": {
+    "bg-primary": "#0a1628",
+    "bg-secondary": "#112240",
+    "bg-card": "#1a365d",
+    "bg-card-hover": "#234876",
+    "neon-blue": "#00d4ff",
+    "neon-cyan": "#00e5cc",
+    "neon-purple": "#7c3aed",
+    "neon-pink": "#f472b6",
+    "neon-orange": "#ff8c42",
+    "neon-yellow": "#ffd93d",
+    "neon-green": "#10b981",
+    "neon-red": "#ef4444",
+    "text-primary": "#f1f5f9",
+    "text-secondary": "#a1a9b8",
+    "text-muted": "#6b7280",
+    "status-online": "#10b981",
+    "status-offline": "#ef4444",
+    "status-warning": "#ffd93d",
+    "border-primary": "rgba(0, 212, 255, 0.2)",
+    "border-accent": "rgba(255, 140, 66, 0.3)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #00d4ff 0%, #00e5cc 100%)",
+    "secondary": "linear-gradient(135deg, #ff8c42 0%, #ffd93d 100%)",
+    "accent": "linear-gradient(135deg, #f472b6 0%, #7c3aed 100%)",
+    "card": "linear-gradient(180deg, rgba(26, 54, 93, 0.9) 0%, rgba(17, 34, 64, 0.95) 100%)",
+    "sunset": "linear-gradient(180deg, #ff8c42 0%, #f472b6 50%, #7c3aed 100%)"
+  },
+  "fonts": {
+    "display": "'Poppins', sans-serif",
+    "body": "'Inter', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.25,
+    "animationSpeed": 1,
+    "borderRadius": "14px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Summer Vibes - Tropical Sunset Background */\n@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=Fira+Code&display=swap');\n\n/* Static sunset gradient background */\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse at 50% 120%, rgba(255, 140, 66, 0.25) 0%, transparent 50%),\n    radial-gradient(ellipse at 70% 100%, rgba(244, 114, 182, 0.15) 0%, transparent 40%),\n    linear-gradient(180deg, rgba(124, 58, 237, 0.05) 0%, rgba(244, 114, 182, 0.08) 50%, rgba(255, 140, 66, 0.12) 100%);\n  animation: none;\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border-radius: 14px;\n  border: 1px solid rgba(255, 140, 66, 0.2);\n}\n\n.stat-card::before {\n  background: linear-gradient(135deg, #ffd93d, #ff8c42, #f472b6);\n}\n\n.stat-card:hover {\n  box-shadow: 0 0 25px rgba(255, 140, 66, 0.2);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #ffd93d, #ff8c42, #f472b6);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card { border-radius: 14px; }"
+}

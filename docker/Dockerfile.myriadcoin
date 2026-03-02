@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    MYRIADCOIN CORE - DOCKER IMAGE                         ║
+# ║                                                                            ║
+# ║   Separate container for Myriadcoin Core node (SHA-256d mining)            ║
+# ║   Can be solo mined or merge-mined with Bitcoin as parent chain            ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Myriadcoin Core Node for Spiral Pool"
+LABEL version="0.18.1.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG MYRIAD_VERSION=0.18.1.0
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    libboost-all-dev \
+    libevent-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create myriadcoin user
+RUN useradd -r -m -s /bin/bash myriadcoin \
+    && mkdir -p /home/myriadcoin/.myriadcoin \
+    && chown -R myriadcoin:myriadcoin /home/myriadcoin
+
+# Download and install Myriadcoin Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+# NOTE: Myriad tarball uses inconsistent directory naming (e.g., 0.18.1.0 extracts
+# to myriadcoin-0.18.1/). Glob pattern handles any extracted directory name.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then XMY_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then XMY_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/myriadteam/myriadcoin/releases/download/v${MYRIAD_VERSION}/myriadcoin-${MYRIAD_VERSION}-${XMY_ARCH}.tar.gz" \
+    && tar -xzf "myriadcoin-${MYRIAD_VERSION}-${XMY_ARCH}.tar.gz" \
+    && cp myriadcoin-*/bin/* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/myriadcoin.conf.template ]; then\n\
+    envsubst < /config/myriadcoin.conf.template > /home/myriadcoin/.myriadcoin/myriadcoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R myriadcoin:myriadcoin /home/myriadcoin/.myriadcoin\n\
+\n\
+# Start Myriadcoin daemon\n\
+exec gosu myriadcoin myriadcoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 10888
+# RPC
+EXPOSE 10889
+# ZMQ
+EXPOSE 28889
+
+# Data volume
+VOLUME ["/home/myriadcoin/.myriadcoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

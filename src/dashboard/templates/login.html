@@ -1,0 +1,362 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Spiral Dashboard - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        .login-container {
+            max-width: 450px;
+            margin: 100px auto;
+            padding: 0 20px;
+        }
+
+        .login-card {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.1);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2rem;
+            color: #00d4ff;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .login-header p {
+            color: rgba(255, 255, 255, 0.6);
+            font-family: 'Rajdhani', sans-serif;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .form-group input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 6px;
+            padding: 12px 15px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 1rem;
+            color: #fff;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+        }
+
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .login-btn {
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            border: none;
+            border-radius: 6px;
+            padding: 14px 20px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #000;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .error-message {
+            background: rgba(255, 0, 85, 0.1);
+            border: 1px solid rgba(255, 0, 85, 0.3);
+            border-radius: 6px;
+            padding: 12px 15px;
+            color: #ff0055;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .setup-notice {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .setup-notice h3 {
+            color: #00ff88;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        .setup-notice p {
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .password-hint {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 4px;
+        }
+
+        .auth-disabled-notice {
+            background: rgba(255, 165, 0, 0.1);
+            border: 1px solid rgba(255, 165, 0, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .auth-disabled-notice p {
+            color: #ffa500;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .logo-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .logo-icon {
+            font-size: 4rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+        }
+
+        .footer-links {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .footer-links a {
+            color: rgba(255, 255, 255, 0.5);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer-links a:hover {
+            color: #00d4ff;
+        }
+
+        .lockout-timer {
+            background: rgba(255, 0, 85, 0.15);
+            border: 1px solid rgba(255, 0, 85, 0.4);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .lockout-timer .timer-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            animation: pulse 1s infinite;
+        }
+
+        .lockout-timer .timer-value {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 2rem;
+            color: #ff0055;
+            text-shadow: 0 0 15px rgba(255, 0, 85, 0.5);
+        }
+
+        .lockout-timer .timer-label {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 5px;
+        }
+
+        .login-btn:disabled {
+            background: linear-gradient(135deg, #444 0%, #333 100%);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .login-btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body class="setup-page">
+    <!-- Animated background -->
+    <div class="cyber-grid"></div>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="logo-container">
+                    <span class="logo-icon">🌀</span>
+                </div>
+                <h1>Spiral Dashboard</h1>
+                {% if first_time_setup %}
+                <p>Create your admin password</p>
+                {% else %}
+                <p>Enter your password to continue</p>
+                {% endif %}
+            </div>
+
+            {% if not auth_enabled %}
+            <div class="auth-disabled-notice">
+                <p>Warning: Authentication is disabled. Set DASHBOARD_AUTH_ENABLED=true for production.</p>
+            </div>
+            {% endif %}
+
+            {% if first_time_setup %}
+            <div class="setup-notice">
+                <h3>First Time Setup</h3>
+                <p>Create a secure admin password to protect your dashboard. This password will be required for all future logins.</p>
+            </div>
+            {% endif %}
+
+            {% if lockout_remaining is defined and lockout_remaining > 0 %}
+            <div class="lockout-timer" id="lockoutTimer">
+                <div class="timer-icon">🔒</div>
+                <div class="timer-value" id="lockoutCountdown">--:--</div>
+                <div class="timer-label">Time remaining until retry</div>
+            </div>
+            {% endif %}
+
+            {% if error %}
+            <div class="error-message">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form class="login-form" method="POST" action="{{ url_for('login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') | urlencode }}{% endif %}">
+                <div class="form-group">
+                    <label for="password">{% if first_time_setup %}New Password{% else %}Password{% endif %}</label>
+                    <input type="password" id="password" name="password" placeholder="Enter password" required autofocus>
+                    {% if first_time_setup %}
+                    <span class="password-hint">Minimum 8 characters</span>
+                    {% endif %}
+                </div>
+
+                {% if first_time_setup %}
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm password" required>
+                </div>
+                {% endif %}
+
+                <button type="submit" class="login-btn">
+                    {% if first_time_setup %}Create Password{% else %}Login{% endif %}
+                </button>
+            </form>
+
+            <div class="footer-links">
+                <a href="https://github.com/spiralpool" target="_blank">Spiral Pool Documentation</a>
+            </div>
+        </div>
+    </div>
+
+    {% if lockout_remaining is defined and lockout_remaining > 0 %}
+    <script>
+        (function() {
+            // Lockout countdown timer - security feature to prevent brute-force
+            let remainingSeconds = {{ lockout_remaining | default(0) }};
+            const countdownEl = document.getElementById('lockoutCountdown');
+            const timerEl = document.getElementById('lockoutTimer');
+            const submitBtn = document.querySelector('.login-btn');
+            const passwordInput = document.getElementById('password');
+
+            // Disable form while locked out
+            if (submitBtn) submitBtn.disabled = true;
+            if (passwordInput) passwordInput.disabled = true;
+
+            function formatTime(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            function updateCountdown() {
+                if (remainingSeconds <= 0) {
+                    // Lockout expired - enable form
+                    if (timerEl) timerEl.style.display = 'none';
+                    if (submitBtn) submitBtn.disabled = false;
+                    if (passwordInput) {
+                        passwordInput.disabled = false;
+                        passwordInput.focus();
+                    }
+                    // Clear error message
+                    const errorEl = document.querySelector('.error-message');
+                    if (errorEl) errorEl.textContent = 'You may try again now.';
+                    return;
+                }
+
+                if (countdownEl) countdownEl.textContent = formatTime(remainingSeconds);
+                remainingSeconds--;
+                setTimeout(updateCountdown, 1000);
+            }
+
+            // Start countdown
+            updateCountdown();
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>

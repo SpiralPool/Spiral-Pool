@@ -1,0 +1,130 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════════
+# spiralpool-add-coin - Add new cryptocurrency support to Spiral Pool
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This command automates adding new SHA256d or Scrypt coin support.
+# It fetches chain parameters from GitHub, queries CoinGecko for metadata,
+# and generates both Go implementation and manifest entries.
+#
+# USAGE:
+#   spiralpool-add-coin -s SYMBOL -g GITHUB_URL [OPTIONS]
+#
+# EXAMPLES:
+#   spiralpool-add-coin -s DOGE -g https://github.com/dogecoin/dogecoin
+#   spiralpool-add-coin -s LTC -g https://github.com/litecoin-project/litecoin --algorithm scrypt
+#   spiralpool-add-coin -s NEWCOIN --interactive
+#   spiralpool-add-coin -s NEWCOIN -g https://github.com/newcoin/newcoin --dry-run
+#
+# OPTIONS:
+#   -s, --symbol      Coin ticker symbol (required)
+#   -g, --github      GitHub repository URL (enables full automation)
+#   -a, --algorithm   Override algorithm detection (sha256d or scrypt)
+#   -n, --name        Override coin name
+#   -i, --interactive Enter interactive mode for manual data entry
+#   -j, --from-json   Load parameters from previously saved JSON file
+#   --dry-run         Preview output without writing files
+#   --force           Overwrite existing files without prompting
+#   -h, --help        Show this help message
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+set -e
+
+# Find the script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check if we're in the Spiral Pool directory or need to find it
+if [[ -f "$SCRIPT_DIR/add-coin.py" ]]; then
+    PYTHON_SCRIPT="$SCRIPT_DIR/add-coin.py"
+elif [[ -f "/spiralpool/pool/scripts/add-coin.py" ]]; then
+    PYTHON_SCRIPT="/spiralpool/pool/scripts/add-coin.py"
+elif [[ -f "./scripts/add-coin.py" ]]; then
+    PYTHON_SCRIPT="./scripts/add-coin.py"
+else
+    echo "Error: Cannot find add-coin.py script"
+    echo "Please run this command from the Spiral Pool directory or ensure it's installed."
+    exit 1
+fi
+
+# Check for Python 3
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python 3 is required but not installed."
+    echo "Install with: sudo apt install python3"
+    exit 1
+fi
+
+# Check for PyYAML (optional but recommended)
+if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "Warning: PyYAML not installed. Some features may be limited."
+    echo "Install with: pip3 install pyyaml"
+fi
+
+# Show help if no arguments
+if [[ $# -eq 0 ]]; then
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    echo "  spiralpool-add-coin - Add new cryptocurrency support to Spiral Pool"
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "USAGE:"
+    echo "  spiralpool-add-coin -s SYMBOL -g GITHUB_URL [OPTIONS]"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  spiralpool-add-coin -s DOGE -g https://github.com/dogecoin/dogecoin"
+    echo "  spiralpool-add-coin -s LTC -g https://github.com/litecoin-project/litecoin -a scrypt"
+    echo "  spiralpool-add-coin -s NEWCOIN --interactive"
+    echo "  spiralpool-add-coin -s NEWCOIN -g https://github.com/newcoin/newcoin --dry-run"
+    echo ""
+    echo "OPTIONS:"
+    echo "  -s, --symbol      Coin ticker symbol (required)"
+    echo "  -g, --github      GitHub repository URL (enables full automation)"
+    echo "  -a, --algorithm   Override algorithm detection (sha256d or scrypt)"
+    echo "  -n, --name        Override coin name"
+    echo "  -i, --interactive Enter interactive mode for manual data entry"
+    echo "  -j, --from-json   Load parameters from previously saved JSON file"
+    echo "  --dry-run         Preview output without writing files"
+    echo "  --force           Overwrite existing files without prompting"
+    echo "  -h, --help        Show this help message"
+    echo ""
+    echo "The script automatically:"
+    echo "  1. Downloads and parses chainparams.cpp from GitHub"
+    echo "  2. Detects the mining algorithm (SHA256d vs Scrypt)"
+    echo "  3. Detects AuxPoW (merge mining) support and extracts chain_id"
+    echo "  4. Fetches metadata from CoinGecko (name, explorer URL)"
+    echo "  5. Generates complete Go implementation file"
+    echo "  6. Generates manifest YAML entry"
+    echo ""
+    echo "For more details, see: docs/development/COIN_ONBOARDING_SPEC.md"
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    exit 0
+fi
+
+# Pass all arguments to the Python script
+python3 "$PYTHON_SCRIPT" "$@"
+EXIT_CODE=$?
+
+# Show post-run instructions if successful
+if [[ $EXIT_CODE -eq 0 ]]; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    echo "  NEXT STEPS:"
+    echo ""
+    if [[ -f "/spiralpool/.dockerenv" ]] || [[ -f "/.dockerenv" ]]; then
+        echo "  Docker deployment detected. Rebuild containers to apply changes:"
+        echo ""
+        echo "    docker compose down"
+        echo "    docker compose build --no-cache"
+        echo "    docker compose up -d"
+    else
+        echo "  Native deployment: Restart the pool daemon to load the new coin:"
+        echo ""
+        echo "    sudo systemctl restart spiralpool"
+        echo ""
+        echo "  Docker deployment: Rebuild and restart containers:"
+        echo ""
+        echo "    docker compose down && docker compose build --no-cache && docker compose up -d"
+    fi
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+fi
+
+exit $EXIT_CODE

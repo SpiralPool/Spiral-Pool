@@ -1,0 +1,76 @@
+{
+  "name": "Compact Minimal",
+  "id": "compact-minimal",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Minimal compact view perfect for small screens, side monitors, or quick status checks",
+  "preview": "compact-preview.png",
+  "layout": {
+    "statsRow": true,
+    "chartsRow": false,
+    "lifetimeSection": false,
+    "healthSection": false,
+    "minersSection": true
+  },
+  "components": {
+    "stats": {
+      "hashrate": true,
+      "power": false,
+      "shares": true,
+      "blocks": true,
+      "difficulty": false,
+      "miners": true
+    },
+    "charts": {
+      "hashrateHistory": false,
+      "earningsCalculator": false
+    },
+    "lifetime": {
+      "totalShares": false,
+      "blocksFound": false,
+      "bestShare": false,
+      "uptime": false
+    },
+    "health": {
+      "pool": false,
+      "node": false
+    },
+    "miners": {
+      "showAll": true,
+      "showActions": false,
+      "showTemperature": true,
+      "showPower": false,
+      "showBestDiff": false,
+      "showUptime": false,
+      "showBlocksFound": false,
+      "compactMode": true,
+      "sortBy": "name"
+    },
+    "header": {
+      "showLogo": true,
+      "showStatus": true,
+      "showRefresh": true,
+      "showSettings": false
+    },
+    "footer": {
+      "showSlogan": false,
+      "showVersion": false,
+      "showRefreshCountdown": true
+    }
+  },
+  "customization": {
+    "gridColumns": "auto",
+    "statsPerRow": 4,
+    "minersPerRow": 4,
+    "showFooterSlogan": false,
+    "refreshInterval": 30,
+    "animationsEnabled": false,
+    "compactPadding": true
+  },
+  "emphasis": {
+    "primary": ["hashrate", "blocks"],
+    "secondary": [],
+    "muted": ["shares", "miners"]
+  },
+  "customCSS": "/* Compact Minimal Theme */\n\n/* Reduce overall padding */\n.dashboard-content {\n  padding: 1rem;\n}\n\n.dashboard-header {\n  padding: 0.75rem 1rem;\n}\n\n/* Smaller header */\n.logo {\n  font-size: 1.2rem;\n}\n\n.header-right {\n  gap: 0.5rem;\n}\n\n.refresh-btn {\n  padding: 0.4rem 0.75rem;\n  font-size: 0.8rem;\n}\n\n/* Compact stats grid */\n.stats-overview {\n  display: grid;\n  grid-template-columns: repeat(4, 1fr);\n  gap: 0.75rem;\n  margin-bottom: 1rem;\n}\n\n.stat-card {\n  padding: 0.75rem;\n  border-radius: 8px;\n}\n\n.stat-label {\n  font-size: 0.65rem;\n  margin-bottom: 0.25rem;\n}\n\n.stat-value {\n  font-size: 1.3rem;\n}\n\n.stat-unit {\n  font-size: 0.75rem;\n}\n\n.stat-sub {\n  font-size: 0.7rem;\n  margin-top: 0.15rem;\n}\n\n/* Section headers smaller */\n.section-header {\n  margin-bottom: 0.5rem;\n}\n\n.section-header h2 {\n  font-size: 1rem;\n}\n\n/* Compact miner grid */\n.miners-grid {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));\n  gap: 0.75rem;\n}\n\n/* Compact miner cards */\n.miner-card {\n  border-radius: 8px;\n}\n\n.miner-header {\n  padding: 0.5rem 0.75rem;\n}\n\n.miner-name {\n  font-size: 0.9rem;\n}\n\n.miner-type {\n  font-size: 0.65rem;\n  padding: 0.15rem 0.4rem;\n}\n\n.miner-body {\n  padding: 0.75rem;\n}\n\n/* Single row stats in compact mode */\n.compact-mode .miner-stats {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n}\n\n.compact-mode .miner-stat {\n  flex: 1 1 45%;\n  padding: 0.5rem;\n  min-width: 80px;\n}\n\n.compact-mode .miner-stat-label {\n  font-size: 0.6rem;\n}\n\n.compact-mode .miner-stat-value {\n  font-size: 0.9rem;\n}\n\n/* Compact temperature gauge */\n.compact-mode .temp-gauge {\n  display: none;\n}\n\n/* Minimal footer */\n.dashboard-footer {\n  padding: 0.75rem 1rem;\n}\n\n.footer-info {\n  font-size: 0.75rem;\n}\n\n/* Hide decorative elements */\n.cyber-grid,\n.cyber-glow,\n.cyber-particles {\n  opacity: 0.3;\n}\n\n/* Mobile-first responsive adjustments already built in */\n@media (max-width: 600px) {\n  .stats-overview {\n    grid-template-columns: repeat(2, 1fr);\n  }\n  \n  .miners-grid {\n    grid-template-columns: 1fr;\n  }\n}\n\n/* Perfect for sidebar or small window */\n@media (max-width: 400px) {\n  .dashboard-content {\n    padding: 0.5rem;\n  }\n  \n  .stat-card {\n    padding: 0.5rem;\n  }\n  \n  .stat-value {\n    font-size: 1.1rem;\n  }\n}"
+}

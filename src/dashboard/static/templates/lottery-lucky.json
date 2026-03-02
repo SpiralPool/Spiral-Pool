@@ -1,0 +1,84 @@
+{
+  "name": "Lottery & Lucky",
+  "id": "lottery-lucky",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Focus on block finding luck, best difficulties, and the thrill of solo mining!",
+  "preview": "lottery-preview.png",
+  "layout": {
+    "statsRow": true,
+    "chartsRow": true,
+    "lifetimeSection": true,
+    "healthSection": false,
+    "minersSection": true
+  },
+  "components": {
+    "stats": {
+      "hashrate": true,
+      "power": false,
+      "shares": true,
+      "blocks": true,
+      "difficulty": true,
+      "miners": true
+    },
+    "charts": {
+      "hashrateHistory": true,
+      "earningsCalculator": true
+    },
+    "lifetime": {
+      "totalShares": true,
+      "blocksFound": true,
+      "bestShare": true,
+      "uptime": true
+    },
+    "health": {
+      "pool": false,
+      "node": false
+    },
+    "miners": {
+      "showAll": true,
+      "showActions": false,
+      "showTemperature": false,
+      "showPower": false,
+      "showBestDiff": true,
+      "showUptime": false,
+      "showBlocksFound": true,
+      "compactMode": false,
+      "sortBy": "bestDiff",
+      "highlightBlockFinders": true
+    },
+    "header": {
+      "showLogo": true,
+      "showStatus": true,
+      "showRefresh": true,
+      "showSettings": true
+    },
+    "footer": {
+      "showSlogan": true,
+      "showVersion": true,
+      "showRefreshCountdown": true
+    }
+  },
+  "customization": {
+    "gridColumns": "auto",
+    "statsPerRow": 5,
+    "minersPerRow": 3,
+    "showFooterSlogan": true,
+    "refreshInterval": 30,
+    "animationsEnabled": true,
+    "celebrateBlocks": true,
+    "showLuckIndicator": true
+  },
+  "emphasis": {
+    "primary": ["blocks", "difficulty"],
+    "secondary": ["shares"],
+    "muted": ["power"]
+  },
+  "specialFeatures": {
+    "blockCountdown": true,
+    "luckMeter": true,
+    "bestShareLeaderboard": true,
+    "nextBlockEstimate": true
+  },
+  "customCSS": "/* Emphasize blocks and luck */\n.stat-card.blocks {\n  grid-column: span 2;\n  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(59, 157, 255, 0.1) 100%);\n  border: 2px solid rgba(168, 85, 247, 0.4);\n}\n\n.stat-card.blocks .stat-value {\n  font-size: 3rem;\n  color: var(--neon-purple);\n  text-shadow: 0 0 30px rgba(168, 85, 247, 0.5);\n}\n\n.stat-card.difficulty {\n  background: linear-gradient(135deg, rgba(244, 114, 182, 0.2) 0%, rgba(168, 85, 247, 0.1) 100%);\n  border: 2px solid rgba(244, 114, 182, 0.4);\n}\n\n.stat-card.difficulty .stat-value {\n  color: var(--neon-pink);\n  text-shadow: 0 0 20px rgba(244, 114, 182, 0.5);\n}\n\n/* Highlight block finders in miner list */\n.miner-card[data-blocks-found]:not([data-blocks-found='0']) {\n  border: 2px solid var(--neon-purple);\n  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);\n}\n\n.miner-card[data-blocks-found]:not([data-blocks-found='0'])::after {\n  content: 'BLOCK FINDER';\n  position: absolute;\n  top: -10px;\n  right: 10px;\n  background: var(--neon-purple);\n  color: white;\n  font-size: 0.7rem;\n  padding: 2px 8px;\n  border-radius: 4px;\n  font-family: var(--font-display);\n}\n\n/* Lifetime section emphasis */\n.lifetime-card:nth-child(2) {\n  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(26, 31, 46, 1) 100%);\n  border: 2px solid rgba(168, 85, 247, 0.3);\n}\n\n.lifetime-card:nth-child(2) .lifetime-value {\n  font-size: 2rem;\n}\n\n.lifetime-card:nth-child(3) {\n  background: linear-gradient(135deg, rgba(244, 114, 182, 0.15) 0%, rgba(26, 31, 46, 1) 100%);\n  border: 2px solid rgba(244, 114, 182, 0.3);\n}"
+}

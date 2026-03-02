@@ -1,0 +1,51 @@
+{
+  "name": "Gruvbox Dark",
+  "id": "gruvbox-dark",
+  "author": "Spiral Pool (colors: Gruvbox by Pavel Pertsev, MIT)",
+  "version": "1.0.0",
+  "description": "Warm earthy palette with retro character",
+  "category": "Editor",
+  "colors": {
+    "bg-primary": "#282828",
+    "bg-secondary": "#1d2021",
+    "bg-card": "#3c3836",
+    "bg-card-hover": "#504945",
+    "neon-blue": "#83a598",
+    "neon-cyan": "#8ec07c",
+    "neon-purple": "#d3869b",
+    "neon-pink": "#d3869b",
+    "neon-orange": "#fe8019",
+    "neon-yellow": "#fabd2f",
+    "neon-green": "#b8bb26",
+    "neon-red": "#fb4934",
+    "text-primary": "#ebdbb2",
+    "text-secondary": "#d5c4a1",
+    "text-muted": "#665c54",
+    "status-online": "#b8bb26",
+    "status-offline": "#fb4934",
+    "status-warning": "#fabd2f",
+    "border-primary": "rgba(131, 165, 152, 0.2)",
+    "border-accent": "rgba(254, 128, 25, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #fe8019 0%, #fabd2f 100%)",
+    "secondary": "linear-gradient(135deg, #83a598 0%, #8ec07c 100%)",
+    "accent": "linear-gradient(135deg, #d3869b 0%, #b16286 100%)",
+    "card": "linear-gradient(180deg, rgba(60, 56, 54, 0.95) 0%, rgba(29, 32, 33, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'IBM Plex Sans', sans-serif",
+    "body": "'IBM Plex Sans', sans-serif",
+    "mono": "'IBM Plex Mono', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.1,
+    "animationSpeed": 0.8,
+    "borderRadius": "6px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": false
+  },
+  "customCSS": "/* Gruvbox Dark - Retro Warmth */\n@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 30% 20%, rgba(254, 128, 25, 0.05), transparent),\n    radial-gradient(ellipse 500px 350px at 70% 80%, rgba(131, 165, 152, 0.04), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(235, 219, 178, 0.12);\n  background: rgba(60, 56, 54, 0.9);\n  border-radius: 6px;\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #fb4934, #fe8019, #fabd2f, #b8bb26);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(254, 128, 25, 0.3);\n  box-shadow: 0 4px 16px rgba(254, 128, 25, 0.08);\n}\n\n.stat-value {\n  text-shadow: none;\n}\n\n.celebration-title {\n  color: #fabd2f !important;\n  text-shadow: 0 0 20px rgba(250, 189, 47, 0.4);\n}\n\n.miner-card, .health-card, .lifetime-card {\n  background: rgba(60, 56, 54, 0.7);\n  border: 1px solid rgba(235, 219, 178, 0.08);\n  border-radius: 6px;\n}\n\n.miner-card:hover {\n  border-color: rgba(184, 187, 38, 0.2);\n}"
+}

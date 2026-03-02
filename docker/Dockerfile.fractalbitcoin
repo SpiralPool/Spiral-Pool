@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    FRACTAL BITCOIN - DOCKER IMAGE                         ║
+# ║                                                                            ║
+# ║   Separate container for Fractal Bitcoin node (SHA-256d mining)            ║
+# ║   Can be solo mined or merge-mined with Bitcoin as parent chain            ║
+# ║   NOTE: Fractal uses Bitcoin Core binaries (bitcoind/bitcoin-cli)          ║
+# ║   aliased as fractald/fractal-cli                                          ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Fractal Bitcoin Node for Spiral Pool"
+LABEL version="0.3.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG FBTC_VERSION=0.3.0
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create fractal user
+RUN useradd -r -m -s /bin/bash fractal \
+    && mkdir -p /home/fractal/.fractal \
+    && chown -R fractal:fractal /home/fractal
+
+# Download and install Fractal Bitcoin
+# NOTE: Archive contains bitcoind/bitcoin-cli, we symlink as fractald/fractal-cli
+# NOTE: Fractal Bitcoin only provides x86_64 binaries — no ARM64 releases available upstream.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" != "amd64" ]; then \
+        echo "ERROR: Fractal Bitcoin only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
+    fi && \
+    wget -q --max-redirect=5 "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${FBTC_VERSION}/fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && tar -xzf "fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && cp "fractald-${FBTC_VERSION}-x86_64-linux-gnu/bin/"* /usr/local/bin/ \
+    && ln -sf /usr/local/bin/bitcoind /usr/local/bin/fractald \
+    && ln -sf /usr/local/bin/bitcoin-cli /usr/local/bin/fractal-cli \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+# Fractal uses bitcoin.conf (Bitcoin Core fork)\n\
+if [ -f /config/fractal.conf.template ]; then\n\
+    envsubst < /config/fractal.conf.template > /home/fractal/.fractal/bitcoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R fractal:fractal /home/fractal/.fractal\n\
+\n\
+# Start Fractal Bitcoin daemon (uses bitcoind binary)\n\
+exec gosu fractal fractald -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 8341
+# RPC
+EXPOSE 8340
+# ZMQ
+EXPOSE 28340
+
+# Data volume
+VOLUME ["/home/fractal/.fractal"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

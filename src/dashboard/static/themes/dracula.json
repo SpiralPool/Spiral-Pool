@@ -1,0 +1,51 @@
+{
+  "name": "Dracula",
+  "id": "dracula",
+  "author": "Spiral Pool (colors: Dracula Theme by Zeno Rocha, MIT)",
+  "version": "1.0.0",
+  "description": "Rich purple and pink palette on a dark base",
+  "category": "Editor",
+  "colors": {
+    "bg-primary": "#282a36",
+    "bg-secondary": "#21222c",
+    "bg-card": "#44475a",
+    "bg-card-hover": "#4d5066",
+    "neon-blue": "#8be9fd",
+    "neon-cyan": "#8be9fd",
+    "neon-purple": "#bd93f9",
+    "neon-pink": "#ff79c6",
+    "neon-orange": "#ffb86c",
+    "neon-yellow": "#f1fa8c",
+    "neon-green": "#50fa7b",
+    "neon-red": "#ff5555",
+    "text-primary": "#f8f8f2",
+    "text-secondary": "#bfbfba",
+    "text-muted": "#6272a4",
+    "status-online": "#50fa7b",
+    "status-offline": "#ff5555",
+    "status-warning": "#f1fa8c",
+    "border-primary": "rgba(189, 147, 249, 0.2)",
+    "border-accent": "rgba(255, 121, 198, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #bd93f9 0%, #ff79c6 100%)",
+    "secondary": "linear-gradient(135deg, #8be9fd 0%, #50fa7b 100%)",
+    "accent": "linear-gradient(135deg, #ff79c6 0%, #ffb86c 100%)",
+    "card": "linear-gradient(180deg, rgba(68, 71, 90, 0.95) 0%, rgba(40, 42, 54, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Fira Sans', sans-serif",
+    "body": "'Fira Sans', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.2,
+    "animationSpeed": 1,
+    "borderRadius": "10px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Dracula Theme */\n@import url('https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 20% 10%, rgba(189, 147, 249, 0.08), transparent),\n    radial-gradient(ellipse 500px 350px at 80% 80%, rgba(255, 121, 198, 0.06), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(189, 147, 249, 0.15);\n  background: rgba(68, 71, 90, 0.8);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #bd93f9, #ff79c6, #8be9fd);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(255, 121, 198, 0.3);\n  box-shadow: 0 4px 20px rgba(189, 147, 249, 0.15);\n}\n\n.stat-value {\n  text-shadow: 0 0 15px currentColor;\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #bd93f9, #ff79c6);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  background: rgba(68, 71, 90, 0.6);\n  border: 1px solid rgba(189, 147, 249, 0.1);\n}\n\n.miner-card:hover {\n  border-color: rgba(80, 250, 123, 0.2);\n}"
+}

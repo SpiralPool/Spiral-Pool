@@ -1,0 +1,90 @@
+{
+  "name": "Power & Efficiency",
+  "id": "power-efficiency",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Track power consumption, efficiency metrics, and cost analysis for your mining operation",
+  "preview": "power-preview.png",
+  "layout": {
+    "statsRow": true,
+    "chartsRow": true,
+    "lifetimeSection": false,
+    "healthSection": false,
+    "minersSection": true
+  },
+  "components": {
+    "stats": {
+      "hashrate": true,
+      "power": true,
+      "shares": false,
+      "blocks": false,
+      "difficulty": false,
+      "miners": true,
+      "efficiency": true,
+      "cost": true
+    },
+    "charts": {
+      "hashrateHistory": true,
+      "earningsCalculator": true,
+      "powerHistory": true
+    },
+    "lifetime": {
+      "totalShares": false,
+      "blocksFound": false,
+      "bestShare": false,
+      "uptime": false
+    },
+    "health": {
+      "pool": false,
+      "node": false
+    },
+    "miners": {
+      "showAll": true,
+      "showActions": true,
+      "showTemperature": true,
+      "showPower": true,
+      "showBestDiff": false,
+      "showUptime": false,
+      "showBlocksFound": false,
+      "showEfficiency": true,
+      "compactMode": false,
+      "sortBy": "efficiency",
+      "highlightInefficient": true
+    },
+    "header": {
+      "showLogo": true,
+      "showStatus": true,
+      "showRefresh": true,
+      "showSettings": true
+    },
+    "footer": {
+      "showSlogan": false,
+      "showVersion": true,
+      "showRefreshCountdown": true,
+      "showPowerCost": true
+    }
+  },
+  "customization": {
+    "gridColumns": "auto",
+    "statsPerRow": 4,
+    "minersPerRow": 2,
+    "showFooterSlogan": false,
+    "refreshInterval": 30,
+    "animationsEnabled": true,
+    "showPowerCostCalculator": true
+  },
+  "emphasis": {
+    "primary": ["power", "efficiency"],
+    "secondary": ["hashrate", "miners"],
+    "muted": ["shares", "blocks", "difficulty"]
+  },
+  "powerSettings": {
+    "showWattsPerTH": true,
+    "showDailyCost": true,
+    "showMonthlyCost": true,
+    "costPerKWH": 0.12,
+    "currency": "USD",
+    "efficencyTarget": 25
+  },
+  "customCSS": "/* Power & Efficiency Theme Overrides */\n\n/* Make power stat prominent */\n.stat-card.power {\n  grid-column: span 2;\n  background: linear-gradient(135deg, rgba(250, 204, 21, 0.15) 0%, rgba(26, 31, 46, 1) 100%);\n  border: 2px solid rgba(250, 204, 21, 0.4);\n}\n\n.stat-card.power .stat-value {\n  font-size: 2.5rem;\n  color: var(--neon-yellow);\n}\n\n/* Efficiency sub-stat highlight */\n.stat-card.power .stat-sub {\n  font-size: 1rem;\n  color: var(--neon-green);\n  font-weight: 600;\n}\n\n/* Temperature gauge emphasis */\n.temp-gauge {\n  margin-top: 0.5rem;\n}\n\n.temp-bar {\n  height: 8px;\n}\n\n/* Miner power display */\n.miner-stat.power {\n  background: rgba(250, 204, 21, 0.1);\n  border: 1px solid rgba(250, 204, 21, 0.2);\n}\n\n.miner-stat.power .miner-stat-value {\n  font-size: 1.3rem;\n}\n\n/* Efficiency coloring for miners */\n.miner-card[data-efficiency='good'] {\n  border-left: 4px solid var(--neon-green);\n}\n\n.miner-card[data-efficiency='average'] {\n  border-left: 4px solid var(--neon-yellow);\n}\n\n.miner-card[data-efficiency='poor'] {\n  border-left: 4px solid var(--neon-red);\n}\n\n/* Charts row - give power chart priority */\n.charts-row {\n  grid-template-columns: 1fr 1fr;\n}\n\n/* Earnings calculator shows cost/profit prominently */\n.earnings-card {\n  border: 2px solid rgba(74, 222, 128, 0.3);\n}\n\n/* Footer power cost display */\n.footer-power-cost {\n  display: flex;\n  gap: 2rem;\n  justify-content: center;\n  padding: 1rem 0;\n  border-top: 1px solid rgba(250, 204, 21, 0.2);\n  margin-top: 1rem;\n}\n\n.footer-power-cost .cost-item {\n  text-align: center;\n}\n\n.footer-power-cost .cost-value {\n  font-family: var(--font-mono);\n  font-size: 1.2rem;\n  color: var(--neon-yellow);\n}\n\n.footer-power-cost .cost-label {\n  font-size: 0.8rem;\n  color: var(--text-muted);\n}"
+}

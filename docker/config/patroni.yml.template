@@ -1,0 +1,113 @@
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║           SPIRAL POOL - PATRONI CONFIGURATION TEMPLATE                     ║
+# ║                                                                            ║
+# ║   PostgreSQL High Availability with automatic failover                     ║
+# ║                                                                            ║
+# ║   This configuration enables:                                              ║
+# ║   - Automatic leader election via etcd                                     ║
+# ║   - Automatic replica promotion on primary failure                         ║
+# ║   - Synchronous replication to minimize data loss                          ║
+# ║   - Health endpoints for pool integration                                  ║
+# ║                                                                            ║
+# ║   IMPORTANT: The pool's pg_is_in_recovery() check remains authoritative.   ║
+# ║   Patroni handles promotion; the pool handles write routing.               ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+scope: spiralpool-postgres
+namespace: /spiralpool/
+name: ${PATRONI_NAME}
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: ${PATRONI_HOST}:8008
+  authentication:
+    username: patroni
+    password: ${PATRONI_REST_PASSWORD}
+
+etcd3:
+  hosts:
+    - ${ETCD_HOST}:2379
+    - ${ETCD_HOST2}:2379
+    - ${ETCD_HOST3}:2379
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576  # 1MB - tight for mining pool consistency
+    synchronous_mode: true            # CRITICAL: Designed to minimize data loss on failover
+    synchronous_mode_strict: false    # Allow async if no sync replica available
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        # Connection settings
+        max_connections: 200
+        # WAL settings for synchronous replication
+        wal_level: replica
+        hot_standby: 'on'
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: '1GB'
+        # Synchronous commit for data safety
+        synchronous_commit: 'on'
+        # Checkpoints
+        checkpoint_timeout: '15min'
+        checkpoint_completion_target: 0.9
+        # Shared buffers (adjust based on available memory)
+        shared_buffers: '1GB'
+        effective_cache_size: '3GB'
+        work_mem: '64MB'
+        maintenance_work_mem: '256MB'
+        # Logging
+        log_destination: 'stderr'
+        logging_collector: 'off'
+        log_statement: 'ddl'
+        log_min_duration_statement: 1000
+
+  # Initial database setup (runs only on fresh cluster)
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  # Post-bootstrap: create application user and database.
+  # Patroni doesn't use the standard postgres entrypoint, so POSTGRES_USER/POSTGRES_DB
+  # env vars have no effect. This script runs once after initial cluster bootstrap.
+  post_bootstrap: /usr/local/bin/patroni-post-bootstrap.sh
+
+  pg_hba:
+    - host replication replicator 0.0.0.0/0 scram-sha-256
+    - host all all 0.0.0.0/0 scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: ${PATRONI_HOST}:5432
+  data_dir: /var/lib/postgresql/data
+  bin_dir: /usr/lib/postgresql/18/bin
+
+  authentication:
+    replication:
+      username: replicator
+      password: ${REPLICATION_PASSWORD}
+    superuser:
+      username: postgres
+      password: ${POSTGRES_PASSWORD}
+    rewind:
+      username: rewind_user
+      password: ${REWIND_PASSWORD}
+
+  parameters:
+    # Unix socket for local connections
+    unix_socket_directories: '/var/run/postgresql'
+
+watchdog:
+  mode: off  # Enable in production with proper permissions
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

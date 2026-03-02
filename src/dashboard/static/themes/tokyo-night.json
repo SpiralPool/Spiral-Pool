@@ -1,0 +1,51 @@
+{
+  "name": "Tokyo Night",
+  "id": "tokyo-night",
+  "author": "Spiral Pool (colors: Tokyo Night by enkia, MIT)",
+  "version": "1.0.0",
+  "description": "Cool blue-violet palette with neon accents",
+  "category": "Editor",
+  "colors": {
+    "bg-primary": "#1a1b26",
+    "bg-secondary": "#16161e",
+    "bg-card": "#24283b",
+    "bg-card-hover": "#2a2e45",
+    "neon-blue": "#7aa2f7",
+    "neon-cyan": "#7dcfff",
+    "neon-purple": "#bb9af7",
+    "neon-pink": "#ff007c",
+    "neon-orange": "#ff9e64",
+    "neon-yellow": "#e0af68",
+    "neon-green": "#9ece6a",
+    "neon-red": "#f7768e",
+    "text-primary": "#c0caf5",
+    "text-secondary": "#a9b1d6",
+    "text-muted": "#565f89",
+    "status-online": "#9ece6a",
+    "status-offline": "#f7768e",
+    "status-warning": "#e0af68",
+    "border-primary": "rgba(122, 162, 247, 0.2)",
+    "border-accent": "rgba(187, 154, 247, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #7aa2f7 0%, #7dcfff 100%)",
+    "secondary": "linear-gradient(135deg, #bb9af7 0%, #ff007c 100%)",
+    "accent": "linear-gradient(135deg, #ff9e64 0%, #e0af68 100%)",
+    "card": "linear-gradient(180deg, rgba(36, 40, 59, 0.95) 0%, rgba(22, 22, 30, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Inter', sans-serif",
+    "body": "'Inter', sans-serif",
+    "mono": "'JetBrains Mono', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.2,
+    "animationSpeed": 0.9,
+    "borderRadius": "10px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Tokyo Night - City Lights */\n@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 600px 400px at 25% 5%, rgba(122, 162, 247, 0.07), transparent),\n    radial-gradient(ellipse 500px 350px at 75% 85%, rgba(187, 154, 247, 0.05), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(122, 162, 247, 0.15);\n  background: rgba(36, 40, 59, 0.9);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #7aa2f7, #bb9af7, #ff007c);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(187, 154, 247, 0.3);\n  box-shadow: 0 4px 24px rgba(122, 162, 247, 0.12);\n}\n\n.stat-value {\n  text-shadow: 0 0 15px currentColor;\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #7aa2f7, #bb9af7, #ff007c);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  background: rgba(36, 40, 59, 0.7);\n  border: 1px solid rgba(122, 162, 247, 0.1);\n}\n\n.miner-card:hover {\n  border-color: rgba(158, 206, 106, 0.2);\n}"
+}

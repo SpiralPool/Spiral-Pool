@@ -1,0 +1,187 @@
+# ============================================================================
+#                              SPIRAL POOL
+#                             .gitignore
+# ============================================================================
+
+# =========================
+# Compiled binaries
+# =========================
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+spiralstratum
+spiralpool
+
+# =========================
+# Go build artifacts
+# =========================
+src/stratum/spiralpool
+src/stratum/spiralstratum
+*.test
+*.out
+vendor/
+
+# =========================
+# Python artifacts
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =========================
+# IDE and editor files
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# =========================
+# Configuration (SENSITIVE)
+# =========================
+config.yaml
+config.yml
+*.conf
+!digibyte.conf.example
+!docker/supervisord.conf
+!docker/config/logrotate.conf
+!docker/config/*.conf.template
+spiralpool-credentials.txt
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Sentinel configuration
+# =========================
+.spiralsentinel/
+sentinel_config.json
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+*.log.*
+
+# =========================
+# Database files
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Blockchain data
+# =========================
+.digibyte/
+blocks/
+chainstate/
+wallet.dat
+
+# =========================
+# Backups
+# =========================
+backups/
+*.bak
+*.backup
+
+# =========================
+# Test artifacts
+# =========================
+coverage.out
+coverage.html
+*.cover
+.coverage
+htmlcov/
+testdata/output/
+
+# =========================
+# OS generated files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Temporary files
+# =========================
+tmp/
+temp/
+*.tmp
+*.temp
+
+# =========================
+# Build directories
+# =========================
+bin/
+dist/
+build/
+out/
+
+# =========================
+# Package manager locks
+# (keep go.sum, exclude others)
+# =========================
+package-lock.json
+yarn.lock
+Pipfile.lock
+
+# =========================
+# Documentation builds
+# =========================
+site/
+docs/_build/
+
+# =========================
+# Certificates, keys, secrets
+# =========================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
+*.pub
+known_hosts
+authorized_keys
+*_secret*
+*_password*
+
+# =========================
+# Archives
+# =========================
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# =========================
+# Editor/IDE configuration
+# =========================
+CLAUDE.md
+claude.md
+.claude/

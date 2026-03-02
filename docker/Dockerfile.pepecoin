@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    PEPECOIN CORE - DOCKER IMAGE                            ║
+# ║                                                                            ║
+# ║   Separate container for PepeCoin Core node (Scrypt mining)                ║
+# ║   Merge-mineable with Litecoin (LTC) as parent chain                       ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="PepeCoin Core Node for Spiral Pool"
+LABEL version="1.1.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG PEPECOIN_VERSION=1.1.0
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libboost-all-dev \
+    libevent-dev \
+    libdb5.3++-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create pepecoin user
+RUN useradd -r -m -s /bin/bash pepecoin \
+    && mkdir -p /home/pepecoin/.pepecoin \
+    && chown -R pepecoin:pepecoin /home/pepecoin
+
+# Download and install PepeCoin Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+# Note: Update URL when official releases are available
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then PEP_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then PEP_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/pep-official/pepecoin/releases/download/v${PEPECOIN_VERSION}/pepecoin-${PEPECOIN_VERSION}-${PEP_ARCH}.tar.gz" \
+    && tar -xzf "pepecoin-${PEPECOIN_VERSION}-${PEP_ARCH}.tar.gz" \
+    && cp "pepecoin-${PEPECOIN_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/pepecoin.conf.template ]; then\n\
+    envsubst < /config/pepecoin.conf.template > /home/pepecoin/.pepecoin/pepecoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R pepecoin:pepecoin /home/pepecoin/.pepecoin\n\
+\n\
+# Start PepeCoin daemon\n\
+exec gosu pepecoin pepecoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 33874
+# RPC
+EXPOSE 33873
+# ZMQ
+EXPOSE 28873
+
+# Data volume
+VOLUME ["/home/pepecoin/.pepecoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

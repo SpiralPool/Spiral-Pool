@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    DOGECOIN CORE - DOCKER IMAGE                            ║
+# ║                                                                            ║
+# ║   Separate container for Dogecoin Core node (Scrypt mining)                ║
+# ║   This allows independent scaling and management                           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Dogecoin Core Node for Spiral Pool"
+LABEL version="1.14.9"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG DOGECOIN_VERSION=1.14.9
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create dogecoin user
+RUN useradd -r -m -s /bin/bash dogecoin \
+    && mkdir -p /home/dogecoin/.dogecoin \
+    && chown -R dogecoin:dogecoin /home/dogecoin
+
+# Download and install Dogecoin Core
+# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
+# Upstream binaries exist but have not been verified in this Docker environment.
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then DOGE_ARCH="x86_64-linux-gnu"; \
+       elif [ "$ARCH" = "arm64" ]; then DOGE_ARCH="aarch64-linux-gnu"; \
+       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
+    && wget -q --max-redirect=5 "https://github.com/dogecoin/dogecoin/releases/download/v${DOGECOIN_VERSION}/dogecoin-${DOGECOIN_VERSION}-${DOGE_ARCH}.tar.gz" \
+    && tar -xzf "dogecoin-${DOGECOIN_VERSION}-${DOGE_ARCH}.tar.gz" \
+    && cp "dogecoin-${DOGECOIN_VERSION}/bin/"* /usr/local/bin/ \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/dogecoin.conf.template ]; then\n\
+    envsubst < /config/dogecoin.conf.template > /home/dogecoin/.dogecoin/dogecoin.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R dogecoin:dogecoin /home/dogecoin/.dogecoin\n\
+\n\
+# Start Dogecoin daemon\n\
+exec gosu dogecoin dogecoind -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 22556
+# RPC
+EXPOSE 22555
+# ZMQ
+EXPOSE 28555
+
+# Data volume
+VOLUME ["/home/dogecoin/.dogecoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

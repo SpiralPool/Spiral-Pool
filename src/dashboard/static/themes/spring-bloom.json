@@ -1,0 +1,52 @@
+{
+  "name": "Spring Bloom",
+  "id": "spring-bloom",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Fresh pastel greens and soft florals of new growth",
+  "category": "Seasonal",
+  "colors": {
+    "bg-primary": "#0f1a14",
+    "bg-secondary": "#162820",
+    "bg-card": "#1d3629",
+    "bg-card-hover": "#264738",
+    "neon-blue": "#60a5fa",
+    "neon-cyan": "#5eead4",
+    "neon-purple": "#c084fc",
+    "neon-pink": "#f9a8d4",
+    "neon-orange": "#fdba74",
+    "neon-yellow": "#fde047",
+    "neon-green": "#86efac",
+    "neon-red": "#fca5a5",
+    "text-primary": "#f1f5f9",
+    "text-secondary": "#a1a9b8",
+    "text-muted": "#6b7280",
+    "status-online": "#86efac",
+    "status-offline": "#fca5a5",
+    "status-warning": "#fde047",
+    "border-primary": "rgba(134, 239, 172, 0.2)",
+    "border-accent": "rgba(192, 132, 252, 0.25)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #86efac 0%, #5eead4 100%)",
+    "secondary": "linear-gradient(135deg, #c084fc 0%, #f9a8d4 100%)",
+    "accent": "linear-gradient(135deg, #60a5fa 0%, #5eead4 100%)",
+    "card": "linear-gradient(180deg, rgba(29, 54, 41, 0.9) 0%, rgba(22, 40, 32, 0.95) 100%)",
+    "bloom": "linear-gradient(180deg, #86efac 0%, #5eead4 25%, #c084fc 50%, #f9a8d4 100%)"
+  },
+  "fonts": {
+    "display": "'Quicksand', sans-serif",
+    "body": "'Nunito', sans-serif",
+    "mono": "'Source Code Pro', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.2,
+    "animationSpeed": 1,
+    "borderRadius": "16px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Spring Bloom - Cherry Blossom Background */\n@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Nunito:wght@300;400;600&family=Source+Code+Pro&display=swap');\n\n/* Static floral gradient background */\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse at 20% 20%, rgba(249, 168, 212, 0.12) 0%, transparent 40%),\n    radial-gradient(ellipse at 80% 30%, rgba(192, 132, 252, 0.1) 0%, transparent 35%),\n    radial-gradient(ellipse at 40% 80%, rgba(134, 239, 172, 0.15) 0%, transparent 45%),\n    linear-gradient(180deg, rgba(192, 132, 252, 0.05) 0%, rgba(134, 239, 172, 0.08) 100%);\n  animation: none;\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border-radius: 16px;\n  border: 1px solid rgba(134, 239, 172, 0.2);\n}\n\n.stat-card::before {\n  background: linear-gradient(135deg, #86efac, #5eead4, #c084fc, #f9a8d4);\n}\n\n.stat-card:hover {\n  box-shadow: 0 0 25px rgba(134, 239, 172, 0.2);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #86efac, #5eead4, #c084fc, #f9a8d4);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card { border-radius: 16px; }"
+}

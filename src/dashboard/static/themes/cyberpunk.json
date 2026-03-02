@@ -1,0 +1,51 @@
+{
+  "name": "Cyberpunk",
+  "id": "cyberpunk",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Neon-infused futuristic mining dashboard with cyber aesthetics",
+  "category": "Core",
+  "colors": {
+    "bg-primary": "#0f1419",
+    "bg-secondary": "#1a1f2e",
+    "bg-card": "#1e2433",
+    "bg-card-hover": "#252d3d",
+    "neon-blue": "#3b9dff",
+    "neon-cyan": "#22d3ee",
+    "neon-purple": "#a78bfa",
+    "neon-pink": "#f472b6",
+    "neon-orange": "#fb923c",
+    "neon-yellow": "#facc15",
+    "neon-green": "#4ade80",
+    "neon-red": "#f87171",
+    "text-primary": "#f1f5f9",
+    "text-secondary": "#a1a9b8",
+    "text-muted": "#6b7280",
+    "status-online": "#4ade80",
+    "status-offline": "#f87171",
+    "status-warning": "#facc15",
+    "border-primary": "rgba(0, 212, 255, 0.2)",
+    "border-accent": "rgba(168, 85, 247, 0.3)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #3b9dff 0%, #0284c7 100%)",
+    "secondary": "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
+    "accent": "linear-gradient(135deg, #fb923c 0%, #f97316 100%)",
+    "card": "linear-gradient(180deg, rgba(30, 36, 51, 0.9) 0%, rgba(26, 31, 46, 0.95) 100%)"
+  },
+  "fonts": {
+    "display": "'Orbitron', sans-serif",
+    "body": "'Rajdhani', sans-serif",
+    "mono": "'Share Tech Mono', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.25,
+    "animationSpeed": 1,
+    "borderRadius": "12px",
+    "useGlitchEffect": true,
+    "useParticles": true,
+    "useScanLines": true,
+    "useNeonGlow": true
+  },
+  "customCSS": ""
+}

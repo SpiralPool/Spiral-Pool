@@ -1,0 +1,624 @@
+# Spiral Pool Grafana Alerting Rules
+# ===================================
+# Pre-configured alerts for pool operators.
+# Copy to: /etc/grafana/provisioning/alerting/
+#
+# Alert Categories:
+# - Hashrate monitoring (drops, anomalies)
+# - Worker health (disconnections, rejection spikes)
+# - System health (disk, memory, latency)
+# - Block submission (orphans, confirmation issues)
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: SpiralPool Alerts
+    folder: SpiralPool
+    interval: 1m
+    rules:
+      # =========================================
+      # Hashrate Alerts
+      # =========================================
+      - uid: spiralpool-hashrate-drop
+        title: Pool Hashrate Dropped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600  # 10 minutes ago
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_hashrate_pool_hps
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 3600  # 1 hour ago
+              to: 600     # 10 minutes ago
+            datasourceUid: prometheus
+            model:
+              expr: avg_over_time(stratum_hashrate_pool_hps[50m])
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: "$A < $B * 0.7"  # Alert if current < 70% of hourly average
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Pool hashrate dropped significantly
+          description: "Current hashrate is below 70% of the 1-hour average. This may indicate miner disconnections or network issues."
+        labels:
+          severity: warning
+          category: hashrate
+
+      - uid: spiralpool-hashrate-zero
+        title: Pool Hashrate Zero
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_hashrate_pool_hps == 0
+              refId: A
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Pool hashrate is zero
+          description: "No hashrate detected for 5 minutes. Check miner connections and stratum server health."
+        labels:
+          severity: critical
+          category: hashrate
+
+      # =========================================
+      # Worker Alerts
+      # =========================================
+      - uid: spiralpool-worker-loss
+        title: Significant Worker Loss
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_workers_active
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 300
+            datasourceUid: prometheus
+            model:
+              expr: avg_over_time(stratum_workers_active[25m])
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: "$A < $B * 0.5"  # Alert if current < 50% of 30min average
+        noDataState: NoData
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          summary: Significant worker loss detected
+          description: "Active workers dropped below 50% of recent average. Check network connectivity and stratum port availability."
+        labels:
+          severity: warning
+          category: workers
+
+      - uid: spiralpool-high-rejection-rate
+        title: High Share Rejection Rate
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(stratum_shares_rejected_total[5m])) / rate(stratum_shares_submitted_total[5m]) > 0.1
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: High share rejection rate
+          description: "More than 10% of shares are being rejected. Check for outdated jobs, difficulty issues, or miner misconfigurations."
+        labels:
+          severity: warning
+          category: shares
+
+      - uid: spiralpool-stale-share-spike
+        title: Stale Share Spike
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(stratum_shares_stale_total[5m]) / rate(stratum_shares_submitted_total[5m]) > 0.05
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: High stale share rate
+          description: "More than 5% of shares are stale. This may indicate slow block propagation or ZMQ issues."
+        labels:
+          severity: warning
+          category: shares
+
+      # =========================================
+      # System Health Alerts
+      # =========================================
+      - uid: spiralpool-zmq-disconnected
+        title: ZMQ Disconnected
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_zmq_connected == 0
+              refId: A
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: ZMQ block notifications disconnected
+          description: "Pool has fallen back to RPC polling for block notifications. Check daemon ZMQ configuration."
+        labels:
+          severity: warning
+          category: system
+
+      - uid: spiralpool-high-db-latency
+        title: High Database Latency
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(stratum_db_write_seconds_bucket[5m])) > 1
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: High database write latency
+          description: "p99 database write latency exceeds 1 second. Check PostgreSQL performance and disk I/O."
+        labels:
+          severity: warning
+          category: system
+
+      - uid: spiralpool-high-rpc-latency
+        title: High RPC Latency
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(stratum_rpc_call_seconds_bucket[5m])) > 5
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: High daemon RPC latency
+          description: "p99 RPC call latency exceeds 5 seconds. Check daemon health and network connectivity."
+        labels:
+          severity: warning
+          category: system
+
+      - uid: spiralpool-high-memory
+        title: High Memory Usage
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_memory_alloc_bytes > 2147483648  # 2GB
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: High memory usage detected
+          description: "Stratum server memory usage exceeds 2GB. Consider restarting or investigating memory leaks."
+        labels:
+          severity: warning
+          category: system
+
+      # =========================================
+      # Block Alerts
+      # =========================================
+      - uid: spiralpool-block-orphaned
+        title: Block Orphaned
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_blocks_orphaned_total[1h]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: Block was orphaned
+          description: "A found block was orphaned. This is normal occasionally but frequent orphans may indicate latency issues."
+        labels:
+          severity: info
+          category: blocks
+
+      - uid: spiralpool-block-found
+        title: Block Found!
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_blocks_found_total[1m]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: OK
+        for: 0s
+        annotations:
+          summary: "Block found!"
+          description: "Congratulations! A new block has been found by the pool."
+        labels:
+          severity: info
+          category: blocks
+
+      # =========================================
+      # CRITICAL: Block Loss Prevention Alerts
+      # These alerts detect conditions that could
+      # lead to permanent block/share loss.
+      # =========================================
+      - uid: spiralpool-block-submission-failed
+        title: "CRITICAL: Block Submission Failed"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_blocks_submission_failed_total[5m]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "CRITICAL: Block submission failed after all retries"
+          description: "A found block failed to submit to the daemon. Check WAL for recovery. This may indicate daemon issues or network problems."
+        labels:
+          severity: critical
+          category: blocks
+
+      - uid: spiralpool-share-batches-dropped
+        title: "CRITICAL: Share Batches Dropped"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_share_batches_dropped_total[5m]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "CRITICAL: Share batches permanently dropped"
+          description: "Share batches failed after all retries. Miner share data has been lost. Check database connectivity."
+        labels:
+          severity: critical
+          category: shares
+
+      - uid: spiralpool-circuit-breaker-open
+        title: Circuit Breaker Open
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_circuit_breaker_state > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: "Database circuit breaker is open"
+          description: "Share writes are being blocked due to database failures. Circuit breaker state: 1=open, 2=half-open. Check PostgreSQL health."
+        labels:
+          severity: warning
+          category: system
+
+      - uid: spiralpool-wal-write-errors
+        title: "CRITICAL: WAL Write Errors"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_wal_write_errors_total[5m]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "CRITICAL: WAL write failures detected"
+          description: "Write-Ahead Log writes are failing. Shares are at risk of loss on crash. Check disk space and filesystem health."
+        labels:
+          severity: critical
+          category: system
+
+      # =========================================
+      # Payment Processor & Financial Alerts
+      # =========================================
+      - uid: spiralpool-payment-processor-dead
+        title: "CRITICAL: Payment Processor Failing"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_payment_processor_failed_cycles >= 5
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "CRITICAL: Payment processor has failed 5+ consecutive cycles"
+          description: "The payment processor is silently failing. Blocks may be stuck in 'pending' indefinitely and miners are not being paid. Check daemon connectivity and database health immediately."
+        labels:
+          severity: critical
+          category: payments
+
+      - uid: spiralpool-paid-block-reorg
+        title: "CRITICAL: Paid Block Reorged"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_paid_block_reorgs_total[1h]) > 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "CRITICAL: Paid block orphaned by deep reorg — FINANCIAL LOSS"
+          description: "A block that was already paid out has been orphaned by a chain reorganization. Payment was already sent to the miner for a block that no longer exists. MANUAL INTERVENTION REQUIRED."
+        labels:
+          severity: critical
+          category: payments
+
+      - uid: spiralpool-redis-fallback
+        title: Redis Fallback Active
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_redis_fallback_active == 1
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: "Redis unavailable — using local fallback"
+          description: "Redis is unreachable and the pool is using local in-memory deduplication. Cross-node block/share deduplication is degraded. Check Redis connectivity."
+        labels:
+          severity: warning
+          category: system
+
+      - uid: spiralpool-backpressure-critical
+        title: Share Pipeline Backpressure Critical
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_backpressure_level >= 2
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          summary: "Share pipeline backpressure is critical"
+          description: "Share buffer is over 90% full. Shares may be dropped if pressure continues. Check database write performance."
+        labels:
+          severity: warning
+          category: system
+
+      # =========================================
+      # Block Submission Health Alerts
+      # =========================================
+      - uid: spiralpool-false-rejection-rate
+        title: High Block False Rejection Rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_blocks_false_rejection_total[1h])
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_blocks_submitted_total[1h])
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: "$B > 0 && ($A / $B) > 0.1"  # Alert if >10% false rejections
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: High block false rejection rate
+          description: "More than 10% of submitted blocks were false rejections (submitblock failed but block found in chain). This indicates daemon RPC instability."
+        labels:
+          severity: warning
+          category: blocks
+
+      # =========================================
+      # Daemon Health Alerts
+      # =========================================
+      - uid: spiralpool-chain-tip-stale
+        title: "CRITICAL: Daemon Chain Tip Stalled"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_daemon_chain_tip_stale_seconds > 1800
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: "CRITICAL: Daemon block height not advancing"
+          description: "Daemon chain tip has been stalled for over 30 minutes. Miners are working on stale block templates and any found blocks will be orphaned. Check daemon sync status, peer connections, and network health."
+        labels:
+          severity: critical
+          category: daemon
+
+      - uid: spiralpool-low-peer-count
+        title: Daemon Low Peer Count
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_daemon_peer_count < 3 and stratum_daemon_peer_count >= 0
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Daemon has few peer connections
+          description: "Daemon peer count is below 3. The node may be partially isolated from the network, increasing orphan risk and reducing block propagation speed. Check firewall rules and network connectivity."
+        labels:
+          severity: warning
+          category: daemon
+
+      - uid: spiralpool-block-maturity-stall
+        title: Block Maturity Stall
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_blocks_oldest_pending_age_seconds
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stratum_blocks_pending_maturity_count
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: "$B > 0 && $A > 21600"  # 6 hours = 21600 seconds
+        noDataState: OK
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: Found block stuck in pending status
+          description: "A found block has been in pending status for over 6 hours without gaining enough confirmations. This may indicate the block was orphaned but not yet detected, or the daemon is not syncing properly. Check block explorer and daemon status."
+        labels:
+          severity: warning
+          category: blocks
+
+      - uid: spiralpool-retry-storm
+        title: Block Submit Retry Storm
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(stratum_block_submit_retries_total[1h]) > 5
+              refId: A
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: Block submission retry storm detected
+          description: "More than 5 block submission retries in the last hour. This indicates transient daemon RPC failures that risk block loss. Check daemon health and network connectivity."
+        labels:
+          severity: warning
+          category: blocks

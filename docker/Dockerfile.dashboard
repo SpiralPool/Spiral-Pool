@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                      SPIRAL DASHBOARD - DOCKER IMAGE                       ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM python:3.12-slim
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Spiral Pool Dashboard"
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Dashboard authentication (enabled by default)
+ENV DASHBOARD_AUTH_ENABLED=true
+ENV DASHBOARD_SESSION_LIFETIME=24
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create user
+RUN useradd -r -m -s /bin/bash spiraluser
+
+# Install dependencies from pinned requirements.txt (reproducible builds)
+COPY src/dashboard/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+# Create directories (config, auth data, and shared data)
+RUN mkdir -p /home/spiraluser/.spiralpool \
+    && mkdir -p /app/data \
+    && mkdir -p /spiralpool/data \
+    && mkdir -p /spiralpool/dashboard/data \
+    && chown -R spiraluser:spiraluser /home/spiraluser \
+    && chown -R spiraluser:spiraluser /app/data \
+    && chown -R spiraluser:spiraluser /spiralpool/data \
+    && chown -R spiraluser:spiraluser /spiralpool/dashboard/data \
+    && chmod 700 /app/data \
+    && chmod 700 /spiralpool/dashboard/data \
+    && chmod 775 /spiralpool/data
+
+# Copy dashboard files (dashboard.py and templates)
+COPY --chown=spiraluser:spiraluser src/dashboard /app
+
+WORKDIR /app
+
+USER spiraluser
+
+EXPOSE 1618
+
+# Kubernetes-compatible health probes:
+# - Liveness:  GET /api/health/live  (always 200 if running)
+# - Readiness: GET /api/health/ready (200 if pool API reachable, 503 otherwise)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:1618/api/health/live || exit 1
+
+CMD ["python", "dashboard.py"]

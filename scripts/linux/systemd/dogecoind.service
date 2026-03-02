@@ -1,0 +1,36 @@
+# Dogecoin Node Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{DOGE_DIR}} - Dogecoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Dogecoin Core Daemon
+Documentation=https://dogecoin.com
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{DOGE_DIR}}/bin/dogecoind -daemon -conf={{INSTALL_DIR}}/doge/dogecoin.conf -datadir={{INSTALL_DIR}}/doge
+ExecStop={{DOGE_DIR}}/bin/dogecoin-cli -conf={{INSTALL_DIR}}/doge/dogecoin.conf stop
+PIDFile={{INSTALL_DIR}}/doge/dogecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Dogecoin v1.14.x (Bitcoin Core 0.14.x base) crashes with SIGABRT
+# under modern systemd hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target

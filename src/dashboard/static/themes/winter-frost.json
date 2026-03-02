@@ -1,0 +1,52 @@
+{
+  "name": "Winter Frost",
+  "id": "winter-frost",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "Cool icy blues and crisp snowy whites",
+  "category": "Seasonal",
+  "colors": {
+    "bg-primary": "#0c1929",
+    "bg-secondary": "#142338",
+    "bg-card": "#1e3a5f",
+    "bg-card-hover": "#2a4a73",
+    "neon-blue": "#93c5fd",
+    "neon-cyan": "#a5f3fc",
+    "neon-purple": "#c4b5fd",
+    "neon-pink": "#fbcfe8",
+    "neon-orange": "#fdba74",
+    "neon-yellow": "#fef08a",
+    "neon-green": "#86efac",
+    "neon-red": "#fca5a5",
+    "text-primary": "#f0f9ff",
+    "text-secondary": "#bae6fd",
+    "text-muted": "#7dd3fc",
+    "status-online": "#86efac",
+    "status-offline": "#fca5a5",
+    "status-warning": "#fef08a",
+    "border-primary": "rgba(147, 197, 253, 0.25)",
+    "border-accent": "rgba(165, 243, 252, 0.3)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #93c5fd 0%, #a5f3fc 100%)",
+    "secondary": "linear-gradient(135deg, #c4b5fd 0%, #fbcfe8 100%)",
+    "accent": "linear-gradient(135deg, #a5f3fc 0%, #f0f9ff 100%)",
+    "card": "linear-gradient(180deg, rgba(30, 58, 95, 0.9) 0%, rgba(20, 35, 56, 0.95) 100%)",
+    "frost": "linear-gradient(180deg, #f0f9ff 0%, #a5f3fc 25%, #93c5fd 50%, #c4b5fd 100%)"
+  },
+  "fonts": {
+    "display": "'Montserrat', sans-serif",
+    "body": "'Open Sans', sans-serif",
+    "mono": "'Roboto Mono', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.35,
+    "animationSpeed": 1,
+    "borderRadius": "12px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Winter Frost - Icy Aurora Background */\n@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Open+Sans:wght@300;400;600&family=Roboto+Mono&display=swap');\n\n/* Static icy gradient background */\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse at 25% 10%, rgba(165, 243, 252, 0.2) 0%, transparent 40%),\n    radial-gradient(ellipse at 75% 25%, rgba(147, 197, 253, 0.15) 0%, transparent 35%),\n    radial-gradient(ellipse at 50% 60%, rgba(196, 181, 253, 0.1) 0%, transparent 45%),\n    linear-gradient(180deg, rgba(240, 249, 255, 0.1) 0%, rgba(165, 243, 252, 0.08) 50%, rgba(147, 197, 253, 0.06) 100%);\n  animation: none;\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border-radius: 12px;\n  border: 1px solid rgba(165, 243, 252, 0.25);\n  backdrop-filter: blur(8px);\n}\n\n.stat-card::before {\n  background: linear-gradient(135deg, #f0f9ff, #a5f3fc, #93c5fd, #c4b5fd);\n}\n\n.stat-card:hover {\n  box-shadow: 0 0 25px rgba(165, 243, 252, 0.25);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #f0f9ff, #a5f3fc, #93c5fd, #c4b5fd);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border-radius: 12px;\n  backdrop-filter: blur(5px);\n}"
+}

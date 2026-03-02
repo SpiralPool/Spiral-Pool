@@ -1,0 +1,36 @@
+# Litecoin Node Service
+# This is a template - actual paths are set during installation
+#
+# Variables to replace:
+#   {{INSTALL_DIR}} - Installation directory (default: /spiralpool)
+#   {{LTC_DIR}} - Litecoin binary directory
+#   {{POOL_USER}} - Pool system user (default: spiraluser)
+
+[Unit]
+Description=Litecoin Core Daemon
+Documentation=https://litecoin.org
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 60 minutes (nodes can take 30+ min to start)
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User={{POOL_USER}}
+Group={{POOL_USER}}
+ExecStart={{LTC_DIR}}/bin/litecoind -daemon -conf={{INSTALL_DIR}}/ltc/litecoin.conf -datadir={{INSTALL_DIR}}/ltc
+ExecStop={{LTC_DIR}}/bin/litecoin-cli -conf={{INSTALL_DIR}}/ltc/litecoin.conf stop
+PIDFile={{INSTALL_DIR}}/ltc/litecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Some blockchain daemons crash with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.)
+
+[Install]
+WantedBy=multi-user.target
