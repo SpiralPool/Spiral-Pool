@@ -250,10 +250,8 @@ send_discord_notification() {
     local node_id
     node_id=$(get_node_uuid | cut -c1-8)
 
-    # Escape newlines so they don't break JSON payloads
-    local safe_msg="${message//$'\n'/\\n}"
-
     if command -v jq &>/dev/null; then
+        # jq --arg handles newline escaping for JSON automatically
         payload=$(jq -n \
             --arg title "Spiral Pool HA Event" \
             --arg desc "$message" \
@@ -261,8 +259,10 @@ send_discord_notification() {
             --arg footer "Node: ${node_id}..." \
             '{embeds: [{title: $title, description: $desc, color: $color, footer: {text: $footer}}]}')
     else
+        # Fallback: escape backslashes and quotes first (per line), then replace newlines with \n for JSON
         local escaped_message
-        escaped_message=$(printf '%s' "$safe_msg" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_message="${escaped_message//$'\n'/\\n}"
         payload="{\"embeds\": [{\"title\": \"Spiral Pool HA Event\", \"description\": \"${escaped_message}\", \"color\": ${color}, \"footer\": {\"text\": \"Node: ${node_id}...\"}}]}"
     fi
 
@@ -290,22 +290,22 @@ send_telegram_notification() {
     local node_id
     node_id=$(get_node_uuid | cut -c1-8)
 
-    # Escape newlines so they don't break JSON payloads
-    local safe_msg="${message//$'\n'/\\n}"
+    # Append node footer with actual newlines
+    local full_text="${message}"$'\n\n'"Node: ${node_id}..."
 
     if command -v jq &>/dev/null; then
+        # jq --arg handles newline escaping for JSON automatically
         local payload
         payload=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "${message}\n\nNode: ${node_id}..." \
+            --arg text "$full_text" \
             '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s --max-time 10 -H "Content-Type: application/json" --data-raw "${payload}" "${url}" > /dev/null 2>&1 || true
     else
+        # Fallback: --data-urlencode handles newlines via URL encoding
         curl -s --max-time 10 -X POST "$url" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${safe_msg}
-
-Node: ${node_id}..." \
+            --data-urlencode "text=${full_text}" \
             --data-urlencode "parse_mode=HTML" > /dev/null 2>&1 || true
     fi
 }
@@ -487,11 +487,14 @@ promote() {
         echo ""
         echo -e "${GREEN}All services started successfully${NC}"
 
-        # Send notifications (backgrounded to avoid blocking service control)
+        # Send notifications (delayed so Sentinel's startup message appears first in Discord)
         load_notification_settings
-        local msg="HA PROMOTE: Node is now MASTER\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: ${reason}"
-        send_discord_notification "$msg" 3066993 &
-        send_telegram_notification "<b>HA PROMOTE</b>\n\nNode is now <b>MASTER</b>\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: ${reason}" &
+        local msg
+        printf -v msg 'HA PROMOTE: Node is now MASTER\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: %s' "${reason}"
+        local tg_msg
+        printf -v tg_msg '<b>HA PROMOTE</b>\n\nNode is now <b>MASTER</b>\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: %s' "${reason}"
+        (sleep 120 && send_discord_notification "$msg" 3066993) &
+        (sleep 120 && send_telegram_notification "$tg_msg") &
     else
         log "ERROR" "Some services failed to start"
         echo ""
@@ -587,9 +590,12 @@ demote() {
 
         # Send notifications (backgrounded to avoid blocking service control)
         load_notification_settings
-        local msg="HA DEMOTE: Node is now ${new_role}\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: ${reason}"
-        send_discord_notification "$msg" 16776960 &
-        send_telegram_notification "<b>HA DEMOTE</b>\n\nNode is now <b>${new_role}</b>\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: ${reason}" &
+        local msg
+        printf -v msg 'HA DEMOTE: Node is now %s\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: %s' "${new_role}" "${reason}"
+        local tg_msg
+        printf -v tg_msg '<b>HA DEMOTE</b>\n\nNode is now <b>%s</b>\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: %s' "${new_role}" "${reason}"
+        (sleep 120 && send_discord_notification "$msg" 16776960) &
+        (sleep 120 && send_telegram_notification "$tg_msg") &
     else
         log "ERROR" "Some services failed to stop"
         echo ""
