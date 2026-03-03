@@ -258,6 +258,28 @@ However, regulatory interpretation varies. The authors make no legal determinati
 - Offsite backup storage
 - Documented recovery procedures
 
+### Disk Formatting
+
+**WARNING: THE INSTALLER CAN FORMAT DISKS — DATA LOSS IS PERMANENT AND IRREVERSIBLE**
+
+During installation, if Spiral Pool detects an unformatted (raw) disk or partition, it will offer to format it as ext4 for blockchain data storage. **Formatting permanently destroys all existing data on the selected device.** This action cannot be undone.
+
+| Safeguard | Description |
+|-----------|-------------|
+| **Explicit confirmation required** | You must type `YES` (uppercase) to confirm formatting — any other input cancels |
+| **Root disk protected** | The OS disk and its partitions are never offered for formatting |
+| **Destructive warning displayed** | A prominent red warning box shows the exact device and size before confirmation |
+| **Graceful cancellation** | Declining to format does not interrupt the installation — it continues on the root disk |
+
+**DESPITE THESE SAFEGUARDS:**
+- The authors and contributors accept **NO responsibility** for data loss resulting from disk formatting
+- **YOU** are solely responsible for verifying which disks are connected to the system before running the installer
+- **YOU** must ensure any disk offered for formatting does not contain data you need
+- Formatting is **PERMANENT** — there is no undo, no recovery, and no recourse
+- If you are unsure which disk is which, **do NOT confirm formatting** — press any key other than `YES` to cancel safely
+
+**RECOMMENDATION:** Before running the installer on a system with multiple disks, verify disk contents with `lsblk -f` and `blkid` to identify all connected storage devices.
+
 ### Availability
 
 **WARNING: 100% UPTIME IS NOT POSSIBLE**
@@ -413,7 +435,9 @@ Cryptocurrency mining is speculative. You may lose money.
 
 6. **DATA LOSS WILL OCCUR** - backups are mandatory, not optional
 
-7. **NO WARRANTY OF ANY KIND** - you accept all risks by using this software
+7. **DISK FORMATTING IS IRREVERSIBLE** - the installer can format unformatted disks as ext4; all existing data on formatted disks is permanently destroyed
+
+8. **NO WARRANTY OF ANY KIND** - you accept all risks by using this software
 
 ---
 

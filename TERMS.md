@@ -83,6 +83,7 @@ You acknowledge that:
 - Mining shares, block data, and other information may be lost during crashes or failures
 - The Software includes crash recovery mechanisms that may not recover all data
 - You are responsible for implementing your own backup and recovery procedures
+- The installer may offer to format unformatted disks as ext4 for blockchain data storage. **Disk formatting permanently and irreversibly destroys all existing data on the formatted device.** While the installer requires explicit `YES` confirmation before formatting, you accept full responsibility for verifying which disks are connected and confirming the correct device. The authors accept no liability for data loss resulting from disk formatting, whether accidental or intentional
 
 ## 7. Dispute Resolution
 

@@ -213,7 +213,7 @@ Enter credentials during installation or configure in `~/.spiralsentinel/config.
 
 ## Docker Deployment (Optional)
 
-> **Note:** Docker is **not recommended** for bare metal or VM installations. Native installation via `./install.sh` provides the best performance with zero container I/O overhead. Docker is intended for Windows/WSL2 users or environments where containerization is specifically desired.
+> **Note:** Docker is for **Windows/WSL2 only**. Native installation via `./install.sh` provides the best performance with zero container I/O overhead. Do not use Docker on bare metal or VM installations.
 
 Docker supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 13 configurations available: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
 
@@ -322,6 +322,7 @@ Use at your own risk. The authors and contributors make no representations or wa
 - Securing your systems, wallets, and credentials
 - Any financial losses, hardware damage, or legal consequences arising from use of this software
 - Conducting your own security assessment before production deployment
+- **Verifying disk contents before confirming disk formatting during installation** &mdash; the installer can format unformatted disks as ext4 for blockchain storage; formatting permanently destroys all data on the selected device and cannot be undone (see [WARNINGS.md](WARNINGS.md))
 
 **The authors accept no liability for damages of any kind, including but not limited to:**
 - Direct, indirect, incidental, special, or consequential damages

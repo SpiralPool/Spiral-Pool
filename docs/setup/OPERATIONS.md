@@ -269,6 +269,10 @@ main()
  └── print_completion        # Summary with connection info
 ```
 
+**Multi-Disk Storage:**
+
+If additional storage devices are detected during installation, the installer offers to use them for blockchain data (mounted at `/spiralpool/chain/`). If an unformatted (raw) disk is detected, the installer will offer to format it as ext4. **Formatting permanently destroys all data on the selected device.** You must type `YES` (uppercase) to confirm — any other input cancels safely. The OS disk is never offered for formatting. **Verify which disks are connected before running the installer.** See [WARNINGS.md](../../WARNINGS.md) for the complete disk formatting hazard warning.
+
 **Key design features:**
 - **Checkpoint resume**: Each major step saves a checkpoint. If the script fails mid-install (e.g., network timeout downloading a daemon), re-running `./install.sh` resumes from the last successful checkpoint.
 - **Operation lock**: Prevents running install and upgrade simultaneously.
