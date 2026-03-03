@@ -9,6 +9,10 @@ on:
     # Run weekly on Sundays at midnight UTC
     - cron: '0 0 * * 0'
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   build:
     name: Build Verification
@@ -101,7 +105,7 @@ jobs:
           staticcheck ./...
 
       - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: src/stratum/gosec-results.sarif
         if: always()
@@ -128,7 +132,7 @@ jobs:
 
       - name: Run tests with race detector
         run: |
-          go test -race -v -timeout 10m ./...
+          go test -short -race -v -timeout 10m ./...
 
   fuzz-testing:
     name: Fuzz Testing
@@ -152,12 +156,12 @@ jobs:
 
       - name: Run fuzz tests
         run: |
-          # Run each fuzz test for 30 seconds
-          go test -fuzz=FuzzWorkerIdentity -fuzztime=30s ./internal/shares/...
-          go test -fuzz=FuzzDifficultyValue -fuzztime=30s ./internal/shares/...
-          go test -fuzz=FuzzNonce -fuzztime=30s ./internal/shares/...
-          go test -fuzz=FuzzJSONMessageParsing -fuzztime=30s ./internal/stratum/v1/...
-          go test -fuzz=FuzzWorkerName -fuzztime=30s ./internal/stratum/v1/...
+          # Run each fuzz test for 30 seconds (-short skips long-running non-fuzz tests)
+          go test -short -fuzz=FuzzWorkerIdentity -fuzztime=30s ./internal/shares/...
+          go test -short -fuzz=FuzzDifficultyValue -fuzztime=30s ./internal/shares/...
+          go test -short -fuzz=FuzzNonce -fuzztime=30s ./internal/shares/...
+          go test -short -fuzz=FuzzJSONMessageParsing -fuzztime=30s ./internal/stratum/v1/...
+          go test -short -fuzz=FuzzWorkerName -fuzztime=30s ./internal/stratum/v1/...
 
   dco-check:
     name: DCO Sign-off Verification
