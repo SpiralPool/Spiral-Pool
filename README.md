@@ -140,7 +140,7 @@ BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Ubuntu 24.04.x LTS** (Noble Numbat) | **Primary** | Native and Docker deployment. **x86_64 (amd64) only.** |
+| **Ubuntu 24.04.x LTS** (Noble Numbat) | **Primary** | Native installation (recommended). Docker available separately. **x86_64 (amd64) only.** |
 | **Windows 11 (Docker)** | **Experimental** | Docker Desktop with WSL2 required. Not for production. See [Docker Guide](docs/setup/DOCKER_GUIDE.md). |
 | **ARM / Raspberry Pi** | **Not Tested/Experimental** | All packages and binaries target x86_64. ARM may not work. See [WARNINGS.md](WARNINGS.md). |
 
@@ -211,7 +211,9 @@ Enter credentials during installation or configure in `~/.spiralsentinel/config.
 
 ---
 
-## Docker Deployment
+## Docker Deployment (Optional)
+
+> **Note:** Docker is **not recommended** for bare metal or VM installations. Native installation via `./install.sh` provides the best performance with zero container I/O overhead. Docker is intended for Windows/WSL2 users or environments where containerization is specifically desired.
 
 Docker supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 13 configurations available: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
 
