@@ -30,13 +30,13 @@
 
 Spiral Pool is **free, open-source, self-hosted mining pool software** &mdash; you install it on your own hardware, you control the stack, and you own every block reward that hits your wallet. No custodians. No middlemen. No cloud.
 
-It implements a non-custodial solo mining architecture where block rewards are embedded directly in the coinbase transaction paying the **miner's own wallet address**. The fund flow is absolute: **Blockchain &rarr; Coinbase Transaction &rarr; Your Wallet.** The pool operator never takes custody, control, or possession of miner funds at any stage.
+It implements a non-custodial solo mining architecture where block rewards are embedded directly in the coinbase transaction paying the **miner's own wallet address**. The fund flow is absolute: **Blockchain &rarr; Coinbase Transaction &rarr; Miner's Wallet.** There is no pool wallet, no intermediate balance, no fees, and no withdrawal process &mdash; the full block reward goes directly to the miner, and the software never holds, routes, or has access to funds at any point in the payment path.
 
 At its core is the **Spiral Router** &mdash; a miner classification engine that reads 280+ device signatures at connection time and maps each miner to the right difficulty profile before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4x up / 0.75x down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
 
 In this documentation, "operator" means the individual or entity that installs and runs Spiral Pool on their own infrastructure. The Spiral Pool project does not operate pool infrastructure, provide hosted services, or have any relationship with miners connecting to operator-run pools.
 
-12 coins. 2 algorithms. 6 merge-mining pairs. One binary.
+13 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
 ---
 
@@ -49,7 +49,7 @@ In this documentation, "operator" means the individual or entity that installs a
 | **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
 | **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
-| **Non-custodial solo payout** | Block reward embedded in coinbase transaction to miner's wallet &mdash; no operator custody |
+| **Non-custodial solo payout** | Block reward embedded in coinbase transaction to miner's wallet &mdash; no pool wallet, no intermediate custody |
 | **High availability** | VIP failover, Patroni database replication, blockchain rsync, advisory lock payment fencing |
 | **Spiral Sentinel** | Autonomous monitoring: device discovery, health checks, temperature alerts, block notifications |
 | **Spiral Dash** | Real-time web dashboard with multi-theme support (port 1618) |
