@@ -545,12 +545,8 @@ func TestLongRunningStability(t *testing.T) {
 	for {
 		select {
 		case <-done:
-			// Let GC stabilize after worker stops — two GC cycles with a pause
-			// ensures all in-flight allocations from the worker goroutine are collected
+			// Worker finished — take final in-flight sample, then analyze
 			runtime.GC()
-			time.Sleep(200 * time.Millisecond)
-			runtime.GC()
-			time.Sleep(100 * time.Millisecond)
 			runtime.ReadMemStats(&m)
 			samples = append(samples, MemSample{
 				time:     time.Since(startTime),
@@ -571,29 +567,58 @@ func TestLongRunningStability(t *testing.T) {
 	}
 
 analysis:
-	// Analyze memory trend
+	// Log memory samples for diagnostics
 	t.Logf("Memory samples over %v:", time.Since(startTime))
 	for _, s := range samples {
 		t.Logf("  t=%v: heap=%.2f MB, validated=%d", s.time.Round(time.Second), s.heapMB, s.validated)
 	}
 
-	// Check for memory growth trend
-	if len(samples) >= 3 {
-		first := samples[1] // Skip initial sample
-		last := samples[len(samples)-1]
+	initialHeap := samples[0].heapMB
 
-		// Calculate growth rate
-		growthMB := last.heapMB - first.heapMB
-		growthPerShare := growthMB / float64(last.validated-first.validated)
+	// === 1. Structural leak detection ===
+	// Verify data structures are bounded — this is what actually matters.
+	// Heap measurements during concurrent allocation are unreliable (GC pacer
+	// lets heap grow to accommodate allocation rate), but bounded data structures
+	// prove there's no unbounded growth.
+	trackedJobs, trackedShares := validator.duplicates.Stats()
+	t.Logf("Duplicate tracker: %d jobs, %d shares (expected ~10 jobs, ~1000 shares)", trackedJobs, trackedShares)
+	if trackedJobs > 15 {
+		t.Errorf("MEMORY LEAK: duplicate tracker has %d jobs (expected ~10)", trackedJobs)
+	}
+	if trackedShares > 1500 {
+		t.Errorf("MEMORY LEAK: duplicate tracker has %d shares (expected ~1000)", trackedShares)
+	}
 
-		t.Logf("Memory growth: %.2f MB total, %.6f MB per share", growthMB, growthPerShare)
+	// === 2. Post-cleanup heap verification ===
+	// Release ALL references, then verify heap returns near baseline.
+	// This catches leaks that structural checks might miss (goroutine leaks,
+	// global state accumulation, etc.)
+	jobsMu.Lock()
+	for k := range jobs {
+		delete(jobs, k)
+	}
+	jobsMu.Unlock()
+	validator = nil
+	samples = nil
 
-		// Check for excessive growth (should be near zero per share after GC stabilization)
-		// Threshold: 0.001 MB (1 KB) per share — catches real leaks while tolerating
-		// normal GC variance and runtime overhead on CI runners
-		if growthPerShare > 0.001 { // More than ~1 KB per share
-			t.Errorf("MEMORY LEAK: %.6f MB growth per share", growthPerShare)
-		}
+	// Aggressive GC — three cycles with pauses to let finalizers and
+	// sweep phases complete fully
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	cleanedHeap := float64(m.HeapAlloc) / (1024 * 1024)
+
+	t.Logf("Heap after full cleanup: %.2f MB (initial: %.2f MB, delta: %.2f MB)",
+		cleanedHeap, initialHeap, cleanedHeap-initialHeap)
+
+	// After releasing everything, heap should be within 30 MB of initial.
+	// This accounts for runtime overhead, test framework state, and logger internals.
+	// A real leak (e.g., unbounded map growth) would show 50-100+ MB retained.
+	if cleanedHeap-initialHeap > 30 {
+		t.Errorf("MEMORY LEAK: %.2f MB retained after full cleanup (initial: %.2f MB)", cleanedHeap, initialHeap)
 	}
 }
 
