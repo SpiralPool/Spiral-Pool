@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/SpiralPool/Spiral-Pool"><img src="https://img.shields.io/github/license/SpiralPool/Spiral-Pool?style=flat-square&color=blue" alt="License"></a>
-  <a href="https://github.com/SpiralPool/Spiral-Pool/releases"><img src="https://img.shields.io/github/v/release/SpiralPool/Spiral-Pool?style=flat-square&color=brightgreen" alt="Release"></a>
+  <a href="https://github.com/SpiralPool/Spiral-Pool/releases"><img src="https://img.shields.io/github/v/tag/SpiralPool/Spiral-Pool?style=flat-square&label=release&color=brightgreen" alt="Release"></a>
   <a href="https://github.com/SpiralPool/Spiral-Pool/stargazers"><img src="https://img.shields.io/github/stars/SpiralPool/Spiral-Pool?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="https://x.com/SpiralMiner"><img src="https://img.shields.io/badge/𝕏-@SpiralMiner-black?style=flat-square&logo=x" alt="X"></a>
 </p>
