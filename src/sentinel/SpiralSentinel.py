@@ -4831,7 +4831,7 @@ ALERT_BYPASS_QUIET = {
     # CRITICAL - Always wake up for these (bypass quiet hours)
     "block_found": True,           # You found a block! Always celebrate
     "temp_critical": True,         # Hardware emergency
-    "hashrate_crash": True,        # Major fleet issue
+    "hashrate_crash": False,       # Suppress during quiet hours — visible in intel reports
     "coin_node_down": True,        # Node emergency
     "ha_vip_change": True,         # HA failover event
     "ha_state_change": True,       # HA cluster state change
@@ -13272,7 +13272,7 @@ class AchievementTracker:
 
 # === MONITOR STATE ===
 class MonitorState:
-    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","previous_month_earnings","revenue_decline_alerted"]
+    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted"]
 
     def __init__(self):
         self.data_dir = DATA_DIR
@@ -13467,6 +13467,7 @@ class MonitorState:
         self.last_wallet_balance = None        # Last known wallet balance (float)
         self.wallet_balance_last_check = 0     # Timestamp of last wallet balance check
         self.missing_payout_alerted = False    # Cleared when balance changes
+        self.payout_deferred_from_quiet = False # True when payout alert was suppressed by quiet hours
         self.previous_month_earnings = {}      # Snapshot of last month's final earnings totals
         self.revenue_decline_alerted = False   # Cleared each new month
 
@@ -15231,7 +15232,7 @@ def create_price_crash_embed(crash_info, all_prices=None):
     )
 
 
-def create_payout_received_embed(coin, amount_change, new_balance, prices=None):
+def create_payout_received_embed(coin, amount_change, new_balance, prices=None, deferred=False):
     """Create Discord embed for payout received (wallet balance increase)."""
     coin_emoji = get_coin_emoji(coin)
     coin_name = get_coin_name(coin)
@@ -15252,6 +15253,11 @@ def create_payout_received_embed(coin, amount_change, new_balance, prices=None):
         if fiat_val > 0:
             value_lines += f"\n**Payout Value:** `{cur['symbol']}{fiat_val:,.{cur['decimals']}f} {REPORT_CURRENCY}`"
 
+    # Note if this payout was deferred from quiet hours
+    deferred_note = ""
+    if deferred:
+        deferred_note = "\n\n> *Payout completed earlier but alert was suppressed during quiet hours.*"
+
     desc = f"""```diff
 + PAYOUT RECEIVED: {amount_str}
 ```
@@ -15259,7 +15265,7 @@ def create_payout_received_embed(coin, amount_change, new_balance, prices=None):
 {coin_emoji} **{coin_name}** {theme("payout.body")}
 
 **Amount:** `{amount_str}`
-**New Balance:** `{balance_str}`{value_lines}
+**New Balance:** `{balance_str}`{value_lines}{deferred_note}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
@@ -16256,16 +16262,27 @@ def monitor_loop(state):
                         if current_balance is not None:
                             prev_balance = state.last_wallet_balance
 
+                            payout_deferred = False
+
                             if prev_balance is not None:
                                 balance_change = current_balance - prev_balance
 
                                 # Payout received (balance increased)
                                 if balance_change > 0:
-                                    embed = create_payout_received_embed(primary_coin, balance_change, current_balance, prices)
-                                    send_alert("payout_received", embed, state)
-                                    state.missing_payout_alerted = False  # Reset missing payout tracker
-                                    state.wallet_balance_last_check = current_time  # Reset activity timer
-                                    logger.info(f"PAYOUT RECEIVED: {balance_change} {primary_coin} (new balance: {current_balance})")
+                                    was_deferred = state.payout_deferred_from_quiet
+                                    embed = create_payout_received_embed(primary_coin, balance_change, current_balance, prices, deferred=was_deferred)
+                                    alert_sent = send_alert("payout_received", embed, state)
+                                    if alert_sent:
+                                        state.missing_payout_alerted = False  # Reset missing payout tracker
+                                        state.wallet_balance_last_check = current_time  # Reset activity timer
+                                        state.payout_deferred_from_quiet = False  # Clear deferral flag
+                                        logger.info(f"PAYOUT RECEIVED: {balance_change} {primary_coin} (new balance: {current_balance}){' [was deferred from quiet hours]' if was_deferred else ''}")
+                                    else:
+                                        # Alert suppressed (quiet hours) — do NOT update last_wallet_balance
+                                        # so the payout alert retries on the next check after quiet hours end
+                                        payout_deferred = True
+                                        state.payout_deferred_from_quiet = True
+                                        logger.info(f"PAYOUT RECEIVED (alert deferred): {balance_change} {primary_coin} — payout completed but alert suppressed due to quiet hours, will retry after quiet hours end")
 
                                 # Missing payout check (no change for N days)
                                 elif balance_change == 0:
@@ -16297,7 +16314,8 @@ def monitor_loop(state):
                                 # First reading - initialize tracking
                                 state.wallet_balance_last_check = current_time
 
-                            state.last_wallet_balance = current_balance
+                            if not payout_deferred:
+                                state.last_wallet_balance = current_balance
                 except Exception as e:
                     logger.debug(f"Payout tracking error: {e}")
 
