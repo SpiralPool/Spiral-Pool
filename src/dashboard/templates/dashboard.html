@@ -3183,11 +3183,15 @@
         }
 
         // Check for new blocks
-        function checkForNewBlocks(currentBlockCount, blockFinder = null, blockHeight = null) {
+        function checkForNewBlocks(currentBlockCount, blockFinder = null, blockHeight = null, quietHours = false) {
             if (lastKnownBlockCount !== null && currentBlockCount > lastKnownBlockCount) {
                 const newBlocks = currentBlockCount - lastKnownBlockCount;
                 console.log(`New block(s) detected! ${lastKnownBlockCount} -> ${currentBlockCount}`, blockFinder ? `by ${blockFinder}` : '');
-                triggerBlockCelebration(newBlocks, blockFinder, blockHeight);
+                if (quietHours) {
+                    console.log('Block celebration suppressed — quiet hours active');
+                } else {
+                    triggerBlockCelebration(newBlocks, blockFinder, blockHeight);
+                }
             }
             lastKnownBlockCount = currentBlockCount;
             // Track finder for reference
@@ -4757,9 +4761,11 @@
             updateLastBlockDisplay(lastBlockTime, lastBlockFinder, lastBlockHeight);
 
             // Check for new blocks and trigger celebration (with finder info from API)
+            // Quiet hours: suppress confetti/audio but still update block count
             const blockFinder = data.last_block_finder || null;
             const blockHeight = data.last_block_height || null;
-            checkForNewBlocks(currentBlocks, blockFinder, blockHeight);
+            const celebrationQuiet = data.celebration_quiet_hours || false;
+            checkForNewBlocks(currentBlocks, blockFinder, blockHeight, celebrationQuiet);
 
             // Update all-time best difficulty
             document.getElementById('best-diff-alltime').textContent =
