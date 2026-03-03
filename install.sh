@@ -3558,7 +3558,7 @@ detect_existing_docker_install() {
     fi
 
     DOCKER_UPGRADE_MODE="fresh"
-    return 1
+    return 0
 }
 
 merge_docker_configuration() {
