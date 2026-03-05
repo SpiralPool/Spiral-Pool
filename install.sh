@@ -12584,6 +12584,7 @@ echo -e "    ${YELLOW}spiralctl config${NC}         Config         ${YELLOW}spir
 echo -e "    ${YELLOW}spiralctl restart${NC}        Restart all    ${YELLOW}spiralctl mining${NC}          Mining mode"
 echo -e "    ${YELLOW}spiralctl chain export${NC}   Push chain     ${YELLOW}spiralctl chain restore${NC}   Pull chain"
 echo -e "    ${YELLOW}spiralctl ha${NC}             HA cluster     ${YELLOW}spiralctl help${NC}            All commands"
+echo -e "    ${YELLOW}spiralctl add-coin${NC}       Add new coin   ${YELLOW}spiralctl remove-coin${NC}     Remove a coin"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB       ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"

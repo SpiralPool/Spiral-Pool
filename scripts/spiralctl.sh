@@ -4640,6 +4640,388 @@ with open(sys.argv[1], 'w') as f:
 }
 
 #===============================================================================
+# ADD COIN
+#===============================================================================
+
+cmd_add_coin() {
+    local symbol=""
+    local extra_args=()
+
+    # Show usage if no args given
+    if [[ $# -eq 0 ]]; then
+        echo ""
+        echo -e "${WHITE}USAGE${NC}"
+        echo "    spiralctl add-coin <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
+        echo "    spiralctl add-coin <SYMBOL> --interactive"
+        echo "    spiralctl add-coin <SYMBOL> --from-json <file>"
+        echo ""
+        echo -e "${WHITE}EXAMPLES${NC}"
+        echo "    spiralctl add-coin DOGE --github https://github.com/dogecoin/dogecoin"
+        echo "    spiralctl add-coin LTC  --github https://github.com/litecoin-project/litecoin --algorithm scrypt"
+        echo "    spiralctl add-coin FOO  --interactive"
+        echo ""
+        echo -e "${DIM}Fetches chain parameters from the GitHub repo, queries CoinGecko for metadata,${NC}"
+        echo -e "${DIM}detects the mining algorithm, and generates a complete coin implementation${NC}"
+        echo -e "${DIM}and manifest entry with minimal manual input.${NC}"
+        echo ""
+        return 0
+    fi
+
+    # First positional arg is the symbol (must not start with -)
+    if [[ "$1" == -* ]]; then
+        log_error "Expected coin symbol as first argument, got option: $1"
+        echo "Usage: spiralctl add-coin <SYMBOL> --github <URL>"
+        exit 1
+    fi
+    symbol="${1^^}"
+    local symbol_lower="${symbol,,}"
+    shift
+    extra_args=("--symbol" "$symbol")
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --github|-g)    extra_args+=("--github" "$2"); shift 2 ;;
+            --algorithm|-a) extra_args+=("--algorithm" "$2"); shift 2 ;;
+            --interactive)  extra_args+=("--interactive"); shift ;;
+            --from-json)    extra_args+=("--from-json" "$2"); shift 2 ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Run 'spiralctl add-coin' with no arguments for usage."
+                exit 1
+                ;;
+        esac
+    done
+
+    # Locate add-coin.py (installed path or repo layout)
+    local script=""
+    for candidate in \
+        "${INSTALL_DIR}/scripts/add-coin.py" \
+        "$(dirname "$(realpath "$0")")/add-coin.py" \
+        "$(dirname "$(realpath "$0")")/../scripts/add-coin.py"
+    do
+        if [[ -f "$candidate" ]]; then
+            script="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$script" ]]; then
+        log_error "add-coin.py not found under ${INSTALL_DIR}/scripts/"
+        exit 1
+    fi
+
+    if ! command -v python3 &>/dev/null; then
+        log_error "python3 is required but not installed."
+        exit 1
+    fi
+
+    # ── Run add-coin.py ───────────────────────────────────────────────────────
+    log_info "Running coin onboarding for ${symbol}..."
+
+    # Interactive / from-json modes need a real TTY — run without output capture
+    # so prompts are visible. Port parsing falls back to the params JSON.
+    local sv1="" sv2="" stls=""
+    local needs_tty=false
+    for arg in "${extra_args[@]}"; do
+        [[ "$arg" == "--interactive" || "$arg" == "--from-json" ]] && needs_tty=true
+    done
+
+    if [[ "$needs_tty" == true ]]; then
+        python3 "$script" "${extra_args[@]}"
+        local py_exit=$?
+        if [[ $py_exit -ne 0 ]]; then
+            log_error "add-coin.py exited with error ($py_exit)"
+            exit $py_exit
+        fi
+    else
+        # Automated mode: capture output so we can parse the port line
+        local py_output
+        py_output=$(python3 "$script" "${extra_args[@]}" 2>&1)
+        local py_exit=$?
+        echo "$py_output"
+        if [[ $py_exit -ne 0 ]]; then
+            log_error "add-coin.py exited with error ($py_exit)"
+            exit $py_exit
+        fi
+        # ── Parse stratum ports from add-coin.py output ──────────────────────
+        local port_line
+        port_line=$(echo "$py_output" | grep "^__STRATUM_PORTS__:" | tail -1)
+        if [[ -n "$port_line" ]]; then
+            IFS=':' read -r _tag sv1 sv2 stls <<< "$port_line"
+        fi
+    fi
+
+    # ── Read P2P port from generated params JSON ─────────────────────────────
+    local params_json="${INSTALL_DIR}/scripts/${symbol_lower}_params.json"
+    local p2p_port=""
+    if [[ -f "$params_json" ]] && command -v python3 &>/dev/null; then
+        p2p_port=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('p2p_port',''))" "$params_json" 2>/dev/null || true)
+    fi
+
+    # ── Sync generated Go file into stratum-src ──────────────────────────────
+    local go_src="${INSTALL_DIR}/src/stratum/internal/coin/${symbol_lower}.go"
+    local go_dst_dir="${INSTALL_DIR}/stratum-src/internal/coin"
+    if [[ -f "$go_src" && -d "$go_dst_dir" ]]; then
+        cp "$go_src" "${go_dst_dir}/${symbol_lower}.go"
+        log_success "Synced ${symbol_lower}.go → stratum-src"
+    elif [[ -f "$go_src" ]]; then
+        log_warn "stratum-src not found — skipping Go file sync (run install.sh first)"
+    fi
+
+    # ── Open firewall ports ───────────────────────────────────────────────────
+    if command -v ufw &>/dev/null; then
+        local fw_opened=()
+        for port in "$sv1" "$sv2" "$stls"; do
+            if [[ -n "$port" && "$port" =~ ^[0-9]+$ ]]; then
+                ufw allow "${port}/tcp" > /dev/null 2>&1 && fw_opened+=("${port}/tcp")
+            fi
+        done
+        if [[ -n "$p2p_port" && "$p2p_port" =~ ^[0-9]+$ ]]; then
+            ufw allow "${p2p_port}/tcp" > /dev/null 2>&1 && fw_opened+=("${p2p_port}/tcp (P2P)")
+        fi
+        if [[ ${#fw_opened[@]} -gt 0 ]]; then
+            log_success "Firewall ports opened: ${fw_opened[*]}"
+        fi
+    else
+        log_warn "ufw not found — open these ports manually:"
+        [[ -n "$sv1"   ]] && echo "  ${sv1}/tcp (stratum V1)"
+        [[ -n "$sv2"   ]] && echo "  ${sv2}/tcp (stratum V2)"
+        [[ -n "$stls"  ]] && echo "  ${stls}/tcp (stratum TLS)"
+        [[ -n "$p2p_port" ]] && echo "  ${p2p_port}/tcp (P2P)"
+    fi
+
+    # ── Offer to rebuild and restart stratum ─────────────────────────────────
+    echo ""
+    local src_dir="${INSTALL_DIR}/stratum-src"
+    local bin="${INSTALL_DIR}/bin/spiralstratum"
+    if [[ -d "$src_dir" ]] && command -v go &>/dev/null; then
+        read -rp "Rebuild and restart stratum now? [Y/n] " answer
+        if [[ "${answer,,}" != "n" ]]; then
+            log_info "Building stratum..."
+            if sudo -u "$POOL_USER" bash -c \
+                "cd '${src_dir}' && PATH=\$PATH:/usr/local/go/bin CGO_ENABLED=1 go build -o '${bin}' ./cmd/spiralpool" 2>&1; then
+                log_success "Stratum rebuilt successfully"
+                log_info "Restarting spiralstratum..."
+                systemctl restart spiralstratum && log_success "spiralstratum restarted"
+            else
+                log_error "Build failed — review errors above and rebuild manually:"
+                echo "  cd ${src_dir} && go build -o ${bin} ./cmd/spiralpool"
+            fi
+        else
+            echo -e "${DIM}To rebuild manually:${NC}"
+            echo "  cd ${src_dir} && sudo -u ${POOL_USER} go build -o ${bin} ./cmd/spiralpool"
+            echo "  sudo systemctl restart spiralstratum"
+        fi
+    else
+        echo -e "${DIM}Rebuild stratum to activate ${symbol}:${NC}"
+        echo "  cd ${src_dir} && sudo -u ${POOL_USER} go build -o ${bin} ./cmd/spiralpool"
+        echo "  sudo systemctl restart spiralstratum"
+    fi
+    echo ""
+}
+
+#===============================================================================
+# REMOVE COIN
+#===============================================================================
+
+cmd_remove_coin() {
+    if [[ $# -eq 0 ]]; then
+        echo ""
+        echo -e "${WHITE}USAGE${NC}"
+        echo "    spiralctl remove-coin <SYMBOL> [--yes]"
+        echo ""
+        echo -e "${WHITE}EXAMPLES${NC}"
+        echo "    spiralctl remove-coin DOGE"
+        echo "    spiralctl remove-coin DOGE --yes   (skip confirmation)"
+        echo ""
+        echo -e "${DIM}Removes the Go implementation, Dockerfile, node config template,${NC}"
+        echo -e "${DIM}native installer, params JSON, and manifest entry for the coin.${NC}"
+        echo ""
+        return 0
+    fi
+
+    local symbol="${1^^}"
+    local symbol_lower="${symbol,,}"
+    local confirm=false
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y) confirm=true; shift ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Usage: spiralctl remove-coin <SYMBOL> [--yes]"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Files that add-coin generates
+    local go_file="${INSTALL_DIR}/src/stratum/internal/coin/${symbol_lower}.go"
+    local dockerfile="${INSTALL_DIR}/docker/Dockerfile.${symbol_lower}"
+    local conf_template="${INSTALL_DIR}/docker/config/${symbol_lower}.conf.template"
+    local install_script="${INSTALL_DIR}/scripts/install-${symbol}.sh"
+    local params_json="${INSTALL_DIR}/scripts/${symbol_lower}_params.json"
+    local manifest="${INSTALL_DIR}/config/coins.manifest.yaml"
+
+    # Inventory what actually exists
+    local found=()
+    for f in "$go_file" "$dockerfile" "$conf_template" "$install_script" "$params_json"; do
+        [[ -f "$f" ]] && found+=("$f")
+    done
+
+    if [[ -f "$manifest" ]] && grep -qE "^\s+-\s+symbol:\s+['\"]?${symbol}['\"]?\s*$" "$manifest" 2>/dev/null; then
+        found+=("${manifest} (entry for ${symbol})")
+    fi
+
+    if [[ ${#found[@]} -eq 0 ]]; then
+        log_warn "No generated files found for coin: ${symbol}"
+        echo "If the coin was added manually, remove its entries from:"
+        echo "  ${manifest}"
+        echo "  ${INSTALL_DIR}/src/stratum/internal/coin/${symbol_lower}.go"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${WHITE}Files to remove for ${symbol}:${NC}"
+    for f in "${found[@]}"; do
+        echo "  - $f"
+    done
+    echo ""
+
+    if [[ "$confirm" == false ]]; then
+        read -rp "Remove these files? [y/N] " answer
+        [[ "${answer,,}" != "y" ]] && { log_info "Aborted."; exit 0; }
+    fi
+
+    # Disable coin daemon if running
+    local daemon
+    daemon=$(get_coin_daemon "$symbol" 2>/dev/null || echo "")
+    if [[ -n "$daemon" ]] && systemctl is-active --quiet "$daemon" 2>/dev/null; then
+        log_info "Stopping ${daemon}..."
+        systemctl stop "$daemon" 2>/dev/null || true
+        systemctl disable "$daemon" 2>/dev/null || true
+    fi
+
+    # Read ports from params JSON before deleting it (for firewall cleanup)
+    local p2p_port="" sv1="" sv2="" stls=""
+    if [[ -f "$params_json" ]] && command -v python3 &>/dev/null; then
+        local port_data
+        port_data=$(python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(d.get('p2p_port',''))
+print(d.get('stratum_port',''))
+print(d.get('stratum_v2_port',''))
+print(d.get('stratum_tls_port',''))
+" "$params_json" 2>/dev/null || true)
+        local -a _ports
+        mapfile -t _ports <<< "$port_data"
+        p2p_port="${_ports[0]:-}"
+        sv1="${_ports[1]:-}"
+        sv2="${_ports[2]:-}"
+        stls="${_ports[3]:-}"
+    fi
+
+    # Remove files
+    for f in "$go_file" "$dockerfile" "$conf_template" "$install_script" "$params_json"; do
+        if [[ -f "$f" ]]; then
+            rm -f "$f" && log_success "Removed: $f"
+        fi
+    done
+
+    # Remove Go file from stratum-src if it exists there
+    local go_dst="${INSTALL_DIR}/stratum-src/internal/coin/${symbol_lower}.go"
+    if [[ -f "$go_dst" ]]; then
+        rm -f "$go_dst" && log_success "Removed: $go_dst"
+    fi
+
+    # Close firewall ports
+    if command -v ufw &>/dev/null; then
+        local fw_closed=()
+        for port in "$sv1" "$sv2" "$stls"; do
+            if [[ -n "$port" && "$port" =~ ^[0-9]+$ ]]; then
+                ufw delete allow "${port}/tcp" > /dev/null 2>&1 && fw_closed+=("${port}/tcp")
+            fi
+        done
+        if [[ -n "$p2p_port" && "$p2p_port" =~ ^[0-9]+$ ]]; then
+            ufw delete allow "${p2p_port}/tcp" > /dev/null 2>&1 && fw_closed+=("${p2p_port}/tcp (P2P)")
+        fi
+        if [[ ${#fw_closed[@]} -gt 0 ]]; then
+            log_success "Firewall ports closed: ${fw_closed[*]}"
+        fi
+    fi
+
+    # Remove manifest entry using line-based removal (preserves comments for other coins)
+    if [[ -f "$manifest" ]] && grep -qE "^\s+-\s+symbol:\s+['\"]?${symbol}['\"]?\s*$" "$manifest" 2>/dev/null; then
+        if command -v python3 &>/dev/null; then
+            python3 - "$manifest" "$symbol" << 'PYEOF'
+import sys, re, pathlib
+
+manifest_path = pathlib.Path(sys.argv[1])
+target_symbol = sys.argv[2].upper()
+
+lines = manifest_path.read_text().splitlines(keepends=True)
+out = []
+i = 0
+# Matches "  - symbol: DOGE" with optional quotes and any indent
+block_start = re.compile(
+    r'^\s+-\s+symbol:\s+["\']?' + re.escape(target_symbol) + r'["\']?\s*$',
+    re.IGNORECASE
+)
+while i < len(lines):
+    line = lines[i]
+    if block_start.match(line):
+        # Remove any preceding comment lines that belong to this block
+        while out and re.match(r'^\s+#', out[-1]):
+            out.pop()
+        # Determine indent of the list item marker
+        indent = len(line) - len(line.lstrip())
+        i += 1
+        # Skip lines until the next list item at the same or shallower indent
+        while i < len(lines):
+            stripped = lines[i].lstrip()
+            next_indent = len(lines[i]) - len(stripped)
+            if stripped.startswith('- ') and next_indent <= indent:
+                break
+            i += 1
+        print(f"  Manifest entry for {target_symbol} removed.")
+        continue
+    out.append(line)
+    i += 1
+
+manifest_path.write_text("".join(out))
+PYEOF
+        else
+            log_warn "python3 not found — remove the ${symbol} block from ${manifest} manually."
+        fi
+    fi
+
+    echo ""
+    log_success "Coin ${symbol} removed."
+    local src_dir="${INSTALL_DIR}/stratum-src"
+    local bin="${INSTALL_DIR}/bin/spiralstratum"
+    if [[ -d "$src_dir" ]] && command -v go &>/dev/null; then
+        read -rp "Rebuild and restart stratum now to apply removal? [Y/n] " answer
+        if [[ "${answer,,}" != "n" ]]; then
+            log_info "Building stratum..."
+            if sudo -u "$POOL_USER" bash -c \
+                "cd '${src_dir}' && PATH=\$PATH:/usr/local/go/bin CGO_ENABLED=1 go build -o '${bin}' ./cmd/spiralpool" 2>&1; then
+                log_success "Stratum rebuilt"
+                systemctl restart spiralstratum && log_success "spiralstratum restarted"
+            else
+                log_error "Build failed — rebuild manually after reviewing errors"
+            fi
+        fi
+    else
+        echo -e "${DIM}Rebuild stratum to apply removal:${NC}"
+        echo "  cd ${src_dir} && sudo -u ${POOL_USER} go build -o ${bin} ./cmd/spiralpool"
+        echo "  sudo systemctl restart spiralstratum"
+    fi
+    echo ""
+}
+
+#===============================================================================
 # HELP & VERSION
 #===============================================================================
 
@@ -4671,6 +5053,10 @@ show_help() {
     echo "                        Manage blockchain node daemons"
     echo "    coin [status|disable] <coin>"
     echo "                        Show or disable cryptocurrency support"
+    echo "    add-coin <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
+    echo "                        Add a new coin from its GitHub repository"
+    echo "    remove-coin <SYMBOL> [--yes]"
+    echo "                        Remove a coin and all its generated files"
     echo ""
     echo -e "${WHITE}MINING${NC}"
     echo "    mining [status|solo|multi|merge] [options]"
@@ -4717,6 +5103,9 @@ show_help() {
     echo "    spiralctl mining solo dgb                  Switch to solo DGB mining"
     echo "    spiralctl ha enable --vip 192.168.1.100    Enable HA on this node"
     echo "    spiralctl config set expected_hashrate 50  Update expected TH/s"
+    echo "    spiralctl add-coin DOGE --github https://github.com/dogecoin/dogecoin"
+    echo "                                               Add a new coin from GitHub"
+    echo "    spiralctl remove-coin DOGE                 Remove DOGE and all generated files"
     echo ""
     echo -e "${WHITE}SUPPORTED COINS${NC}"
     echo "    SHA-256d: bc2, bch, btc, dgb, fbtc, nmc, sys, xmy"
@@ -4986,6 +5375,8 @@ main() {
         # Node & coin management
         coin)       cmd_coin "$@" ;;
         node)       cmd_node "$@" ;;
+        add-coin)    cmd_add_coin "$@" ;;
+        remove-coin) cmd_remove_coin "$@" ;;
 
         # Infrastructure
         tor)        cmd_tor "$@" ;;
