@@ -1,0 +1,19 @@
+# Force LF line endings for all shell scripts, regardless of OS
+*.sh        text eol=lf
+*.py        text eol=lf
+*.go        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.html      text eol=lf
+*.conf      text eol=lf
+*.template  text eol=lf
+*.env       text eol=lf
+
+# Treat these as binary (no line ending conversion)
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
