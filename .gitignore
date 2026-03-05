@@ -12,13 +12,13 @@
 *.so
 *.dylib
 spiralstratum
-spiralpool
 
 # =========================
 # Go build artifacts
 # =========================
 src/stratum/spiralpool
 src/stratum/spiralstratum
+src/stratum/spiralpool-*-linux-amd64
 *.test
 *.out
 vendor/
