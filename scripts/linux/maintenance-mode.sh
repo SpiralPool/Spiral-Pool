@@ -96,6 +96,14 @@ acquire_lock() {
             return 0
         fi
 
+        # If the lock file still doesn't exist after a failed write, the failure
+        # is due to permissions (not lock contention) — fail immediately
+        if [[ ! -f "$LOCK_FILE" ]]; then
+            log "ERROR" "Cannot create lock file: $LOCK_FILE (permission denied — run: sudo chown -R spiraluser:spiraluser $(dirname "$LOCK_FILE"))"
+            echo -e "${RED}Cannot create lock file: permission denied on $(dirname "$LOCK_FILE")${NC}"
+            return 1
+        fi
+
         # Check if lock holder is still running
         local lock_pid
         lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
