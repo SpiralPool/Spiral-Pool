@@ -32689,6 +32689,12 @@ main() {
         log_success "Installation verified successfully"
     fi
 
+    # Strip Windows CRLF line endings from all installed scripts.
+    # Prevents shebangs from becoming /bin/bash\r when files are copied from a Windows checkout.
+    find "$INSTALL_DIR/bin" "$INSTALL_DIR/scripts" /usr/local/bin -maxdepth 2 -type f 2>/dev/null \
+        | xargs grep -lU $'\r' 2>/dev/null \
+        | xargs sed -i 's/\r//' 2>/dev/null || true
+
     start_services
     print_completion
 
