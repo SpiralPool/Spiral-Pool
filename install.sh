@@ -8254,11 +8254,21 @@ update_existing_peers() {
         fi
 
         # SCP the script to the peer
-        if ! sudo -u "$POOL_USER" scp $ssh_opts "$script_src" "${POOL_USER}@${peer_ip}:/tmp/ha-add-peer.sh" &>/dev/null; then
+        # Copy to /tmp first so spiraluser can read it (installer dir may be under
+        # another user's home with 700 permissions, blocking traversal)
+        local scp_src="$script_src"
+        if ! sudo -u "$POOL_USER" test -r "$script_src" 2>/dev/null; then
+            cp "$script_src" /tmp/.ha-add-peer-scp.sh
+            chmod 644 /tmp/.ha-add-peer-scp.sh
+            scp_src="/tmp/.ha-add-peer-scp.sh"
+        fi
+        if ! sudo -u "$POOL_USER" scp $ssh_opts "$scp_src" "${POOL_USER}@${peer_ip}:/tmp/ha-add-peer.sh" &>/dev/null; then
             log_warn "Cannot SCP ha-add-peer.sh to ${peer_ip} — update manually"
+            rm -f /tmp/.ha-add-peer-scp.sh 2>/dev/null || true
             failed=$((failed + 1))
             continue
         fi
+        rm -f /tmp/.ha-add-peer-scp.sh 2>/dev/null || true
 
         # Install the script on the peer and run it
         # /spiralpool/scripts/ is owned by spiraluser — no sudo needed for cp/chmod
