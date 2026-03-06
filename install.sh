@@ -8254,14 +8254,12 @@ update_existing_peers() {
         fi
 
         # SCP the script to the peer
-        # Copy to /tmp first so spiraluser can read it (installer dir may be under
-        # another user's home with 700 permissions, blocking traversal)
-        local scp_src="$script_src"
-        if ! sudo -u "$POOL_USER" test -r "$script_src" 2>/dev/null; then
-            cp "$script_src" /tmp/.ha-add-peer-scp.sh
-            chmod 644 /tmp/.ha-add-peer-scp.sh
-            scp_src="/tmp/.ha-add-peer-scp.sh"
-        fi
+        # Always stage through /tmp: fixes both permission issues (installer dir
+        # under another user's home with 700) and CRLF from Windows zip extractions.
+        cp "$script_src" /tmp/.ha-add-peer-scp.sh
+        sed -i 's/\r//' /tmp/.ha-add-peer-scp.sh
+        chmod 644 /tmp/.ha-add-peer-scp.sh
+        local scp_src="/tmp/.ha-add-peer-scp.sh"
         if ! sudo -u "$POOL_USER" scp $ssh_opts "$scp_src" "${POOL_USER}@${peer_ip}:/tmp/ha-add-peer.sh" &>/dev/null; then
             log_warn "Cannot SCP ha-add-peer.sh to ${peer_ip} — update manually"
             rm -f /tmp/.ha-add-peer-scp.sh 2>/dev/null || true
