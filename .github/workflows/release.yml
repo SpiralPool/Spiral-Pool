@@ -70,6 +70,6 @@ jobs:
           body_path: /tmp/changelog.txt
           draft: false
           prerelease: false
+          make_latest: true
           files: |
             src/stratum/spiralpool-*-linux-amd64
-          generate_release_notes: true
