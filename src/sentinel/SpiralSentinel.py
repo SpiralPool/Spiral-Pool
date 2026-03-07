@@ -17423,6 +17423,7 @@ def monitor_loop(state):
                 state.flush_alert_batch()
 
             state.save()
+            lv, _ = get_status_level(net_phs, primary_coin)
             logger.info(f"[{now.strftime('%H:%M:%S')}] Net: {net_phs:.2f} PH/s | Fleet: {fleet_ths:.2f} TH/s | Odds: {odds['daily_odds_pct']:.1f}% | {lv}")
 
         except Exception as e:
