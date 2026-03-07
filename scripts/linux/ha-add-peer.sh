@@ -165,5 +165,26 @@ else
     log "Patroni is not running — pg_hba changes will apply when Patroni starts"
 fi
 
+# ── Update ha.yaml with peer info ─────────────────────────────────────────
+# Ensures this node knows its peer for dashboard data sync during failover.
+HA_YAML="/spiralpool/config/ha.yaml"
+if [[ -f "$HA_YAML" ]]; then
+    if grep -q '^\s*peers:' "$HA_YAML" 2>/dev/null; then
+        # peers section exists — check if this peer IP is already listed
+        if ! grep -q "$PEER_IP" "$HA_YAML" 2>/dev/null; then
+            sed -i "/^\s*peers:/a\\  - host: ${PEER_IP}" "$HA_YAML"
+            log "Added peer ${PEER_IP} to ha.yaml"
+        else
+            log "Peer ${PEER_IP} already in ha.yaml"
+        fi
+    else
+        # No peers section — append one
+        printf '\npeers:\n  - host: %s\n' "$PEER_IP" >> "$HA_YAML"
+        log "Added peers section with ${PEER_IP} to ha.yaml"
+    fi
+else
+    log_warn "ha.yaml not found at ${HA_YAML} — peer discovery for dashboard sync may fail"
+fi
+
 log "Peer ${PEER_IP} added successfully"
 exit 0

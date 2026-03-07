@@ -320,6 +320,96 @@ send_telegram_notification() {
 }
 
 # =============================================================================
+# Dashboard Data Sync (HA Failover)
+# =============================================================================
+
+DASHBOARD_DATA_DIR="${INSTALL_DIR}/dashboard/data"
+HA_YAML="${INSTALL_DIR}/config/ha.yaml"
+
+# Discover peer node IP address
+# Tries: ha.yaml peers → etcdctl member list → patroni.yml etcd hosts
+get_peer_ip() {
+    local local_ip
+    local_ip=$(grep '^\s*nodeIp:' "$HA_YAML" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [[ -z "$local_ip" ]]; then
+        local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 1: ha.yaml peers section
+    local peer
+    peer=$(grep '^\s*-\s*host:' "$HA_YAML" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [[ -n "$peer" ]] && [[ "$peer" != "$local_ip" ]]; then
+        echo "$peer"
+        return 0
+    fi
+
+    # Method 2: etcdctl member list (filter out our own IP)
+    if command -v etcdctl &>/dev/null; then
+        local members
+        members=$(etcdctl member list 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)
+        for ip in $members; do
+            if [[ "$ip" != "$local_ip" ]] && [[ "$ip" != "127.0.0.1" ]]; then
+                echo "$ip"
+                return 0
+            fi
+        done
+    fi
+
+    # Method 3: patroni.yml etcd3 hosts
+    local patroni_hosts
+    patroni_hosts=$(grep -A1 'etcd3:' /etc/patroni/patroni.yml 2>/dev/null | grep 'hosts:' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true)
+    for ip in $patroni_hosts; do
+        if [[ "$ip" != "$local_ip" ]] && [[ "$ip" != "127.0.0.1" ]]; then
+            echo "$ip"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Sync dashboard data from peer node before starting spiraldash
+# Non-blocking: logs warning and continues if peer is unreachable
+sync_dashboard_data() {
+    local pool_user
+    pool_user=$(get_pool_user)
+
+    local peer_ip
+    peer_ip=$(get_peer_ip) || true
+
+    if [[ -z "$peer_ip" ]]; then
+        log "WARN" "Dashboard sync: no peer IP found — skipping"
+        return 0
+    fi
+
+    log "INFO" "Dashboard sync: pulling data from peer ${peer_ip}..."
+    echo -e "Syncing dashboard data from peer ${CYAN}${peer_ip}${NC}..."
+
+    # Ensure local dashboard data dir exists with correct ownership
+    mkdir -p "$DASHBOARD_DATA_DIR"
+    chown "${pool_user}:${pool_user}" "$DASHBOARD_DATA_DIR"
+
+    # rsync as pool_user (SSH keys set up during HA install)
+    # --timeout=10: don't block promotion if peer is slow/unreachable
+    # -az: archive mode + compression
+    local rsync_output
+    if rsync_output=$(sudo -u "$pool_user" rsync -az --timeout=10 \
+        -e "ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+        "${pool_user}@${peer_ip}:${DASHBOARD_DATA_DIR}/" \
+        "${DASHBOARD_DATA_DIR}/" 2>&1); then
+        # Fix ownership after sync
+        chown -R "${pool_user}:${pool_user}" "$DASHBOARD_DATA_DIR"
+        log "SUCCESS" "Dashboard data synced from peer ${peer_ip}"
+        echo -e "  ${GREEN}Dashboard data synced successfully${NC}"
+    else
+        log "WARN" "Dashboard sync failed (peer may be down): ${rsync_output}"
+        echo -e "  ${YELLOW}Dashboard sync failed (peer may be down) — using local data${NC}"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # Service Control Functions
 # =============================================================================
 
@@ -481,6 +571,12 @@ promote() {
     echo -e "Previous role: ${old_role}"
     echo -e "New role:      ${GREEN}MASTER${NC}"
     echo ""
+
+    # Sync dashboard data from peer before starting services
+    # This ensures the dashboard has auth/config data after failover
+    if is_ha_enabled; then
+        sync_dashboard_data
+    fi
 
     local failed=0
     for service in "${HA_MANAGED_SERVICES[@]}"; do
