@@ -14488,6 +14488,7 @@ class MonitorState:
                 return []
 
             wallet = CONFIG.get("wallet_address", "")
+            _fresh_start = len(self.seen_pool_block_hashes) == 0
 
             for block in pool_blocks:
                 block_hash = block.get("hash", "")
@@ -14497,6 +14498,23 @@ class MonitorState:
                 # Skip blocks we've already processed
                 if block_hash in self.seen_pool_block_hashes:
                     continue
+
+                # Skip stale blocks on startup recovery — prevents duplicate alerts
+                # when state file is lost/empty after restart. Blocks older than 1 hour
+                # are silently marked as seen without alerting.
+                # _fresh_start is set before the loop (True when seen_pool_block_hashes was empty).
+                block_created = block.get("created", "")
+                if block_created and _fresh_start:
+                    try:
+                        from datetime import datetime, timezone
+                        created_dt = datetime.fromisoformat(block_created.replace("Z", "+00:00"))
+                        age_seconds = (datetime.now(timezone.utc) - created_dt).total_seconds()
+                        if age_seconds > 3600:
+                            self.seen_pool_block_hashes.add(block_hash)
+                            logger.info(f"Skipping stale block {block.get('blockHeight', '?')} (age: {age_seconds/3600:.1f}h) — marking as seen")
+                            continue
+                    except (ValueError, TypeError):
+                        pass  # Can't parse timestamp, proceed normally
 
                 # Check if this block belongs to our wallet/workers
                 block_miner = block.get("miner", "")

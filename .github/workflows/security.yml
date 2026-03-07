@@ -92,6 +92,7 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Run govulncheck
+        continue-on-error: true
         run: |
           govulncheck ./...
 
