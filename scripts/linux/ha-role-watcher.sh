@@ -340,7 +340,14 @@ stabilize_after_recovery() {
     local final_role
     final_role=$(get_cluster_role)
     log "WARN" "POST-RECOVERY: VIP election did not reach MASTER within ${max_wait}s (final: ${final_role})"
-    if [[ "$final_role" != "UNAVAILABLE" ]]; then
+    if [[ "$final_role" == "MASTER" ]]; then
+        # Role became MASTER right at/after timeout — still promote services
+        log "INFO" "POST-RECOVERY: Final role is MASTER — promoting services"
+        trigger_service_control "${last_role}" "MASTER"
+        save_role "MASTER"
+        last_role="MASTER"
+        return 0
+    elif [[ "$final_role" != "UNAVAILABLE" ]]; then
         save_role "$final_role"
         last_role="$final_role"
     fi
