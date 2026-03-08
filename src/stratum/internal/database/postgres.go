@@ -504,7 +504,7 @@ func (db *PostgresDB) GetBlocksByStatus(ctx context.Context, status string) ([]*
 	query := fmt.Sprintf(`
 		SELECT id, blockheight, networkdifficulty, status, type,
 			   confirmationprogress, effort, transactionconfirmationdata,
-			   miner, reward, hash, created,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
 			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
 			   COALESCE(stability_check_count, 0) as stability_check_count,
 			   COALESCE(last_verified_tip, '') as last_verified_tip
@@ -525,7 +525,7 @@ func (db *PostgresDB) GetBlocksByStatus(ctx context.Context, status string) ([]*
 		err := rows.Scan(
 			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
 			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
-			&b.Miner, &b.Reward, &b.Hash, &b.Created,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
 			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
 		)
 		if err != nil {
@@ -556,7 +556,7 @@ func (db *PostgresDB) GetPendingBlocks(ctx context.Context) ([]*Block, error) {
 	query := fmt.Sprintf(`
 		SELECT id, blockheight, networkdifficulty, status, type,
 			   confirmationprogress, effort, transactionconfirmationdata,
-			   miner, reward, hash, created,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
 			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
 			   COALESCE(stability_check_count, 0) as stability_check_count,
 			   COALESCE(last_verified_tip, '') as last_verified_tip
@@ -577,7 +577,7 @@ func (db *PostgresDB) GetPendingBlocks(ctx context.Context) ([]*Block, error) {
 		err := rows.Scan(
 			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
 			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
-			&b.Miner, &b.Reward, &b.Hash, &b.Created,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
 			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
 		)
 		if err != nil {
@@ -604,7 +604,7 @@ func (db *PostgresDB) GetBlocks(ctx context.Context) ([]*Block, error) {
 	query := fmt.Sprintf(`
 		SELECT id, blockheight, networkdifficulty, status, type,
 			   confirmationprogress, effort, transactionconfirmationdata,
-			   miner, reward, hash, created,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
 			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
 			   COALESCE(stability_check_count, 0) as stability_check_count,
 			   COALESCE(last_verified_tip, '') as last_verified_tip
@@ -625,7 +625,7 @@ func (db *PostgresDB) GetBlocks(ctx context.Context) ([]*Block, error) {
 		err := rows.Scan(
 			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
 			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
-			&b.Miner, &b.Reward, &b.Hash, &b.Created,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
 			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
 		)
 		if err != nil {
@@ -654,7 +654,7 @@ func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context) ([]*Block, error
 	query := fmt.Sprintf(`
 		SELECT id, blockheight, networkdifficulty, status, type,
 			   confirmationprogress, effort, transactionconfirmationdata,
-			   miner, reward, hash, created,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
 			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
 			   COALESCE(stability_check_count, 0) as stability_check_count,
 			   COALESCE(last_verified_tip, '') as last_verified_tip
@@ -675,7 +675,7 @@ func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context) ([]*Block, error
 		err := rows.Scan(
 			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
 			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
-			&b.Miner, &b.Reward, &b.Hash, &b.Created,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
 			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
 		)
 		if err != nil {
@@ -700,7 +700,7 @@ func (db *PostgresDB) GetConfirmedBlocks(ctx context.Context) ([]*Block, error) 
 	query := fmt.Sprintf(`
 		SELECT id, blockheight, networkdifficulty, status, type,
 			   confirmationprogress, effort, transactionconfirmationdata,
-			   miner, reward, hash, created,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
 			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
 			   COALESCE(stability_check_count, 0) as stability_check_count,
 			   COALESCE(last_verified_tip, '') as last_verified_tip
@@ -721,7 +721,7 @@ func (db *PostgresDB) GetConfirmedBlocks(ctx context.Context) ([]*Block, error) 
 		err := rows.Scan(
 			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
 			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
-			&b.Miner, &b.Reward, &b.Hash, &b.Created,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
 			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
 		)
 		if err != nil {
@@ -1066,6 +1066,7 @@ type Block struct {
 	Effort                      float64
 	TransactionConfirmationData string
 	Miner                       string
+	Source                      string // Worker name that found the block (wallet.worker format or just worker)
 	Reward                      float64
 	Hash                        string
 	Created                     time.Time

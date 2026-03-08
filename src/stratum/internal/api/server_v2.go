@@ -392,7 +392,7 @@ func (s *ServerV2) handlePoolBlocks(w http.ResponseWriter, r *http.Request, pool
 
 	response := make([]map[string]interface{}, 0, len(blocks))
 	for _, b := range blocks {
-		response = append(response, map[string]interface{}{
+		entry := map[string]interface{}{
 			"blockHeight":          b.Height,
 			"status":               b.Status,
 			"confirmationProgress": b.ConfirmationProgress,
@@ -403,7 +403,11 @@ func (s *ServerV2) handlePoolBlocks(w http.ResponseWriter, r *http.Request, pool
 			"hash":                 b.Hash,
 			"created":              b.Created,
 			"coin":                 coinSymbol,
-		})
+		}
+		if b.Source != "" {
+			entry["source"] = b.Source
+		}
+		response = append(response, entry)
 	}
 
 	s.writeJSON(w, response)
