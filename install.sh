@@ -7626,9 +7626,8 @@ select_ha_mode() {
     echo -e "       • ${YELLOW}You must know the IP address of at least one Backup server${NC}"
     echo -e "       • All servers on the same subnet, powered on with OS installed"
     echo -e "       • ${YELLOW}All servers must have static IPs or DHCP reservations configured${NC}"
-    echo -e "       • An unused IP address for the VIP (not assigned by DHCP to any device)"
-    echo -e "       • ${YELLOW}A VIP MAC address will be generated during install — you must${NC}"
-    echo -e "       • ${YELLOW}add a DHCP reservation for it in your router after this step${NC}"
+    echo -e "       • An unused IP address for the VIP — either exclude it from your"
+    echo -e "         DHCP pool, or reserve it using the placeholder MAC shown during install"
     echo ""
     echo -e "     ${DIM}You can add additional Backup nodes later. Install Spiral Pool on the new${NC}"
     echo -e "     ${DIM}server, then run: ${NC}${CYAN}sudo spiralctl ha enable --vip <VIP> --token <token> --priority <N>${NC}"
@@ -7721,12 +7720,14 @@ collect_ha_primary_config() {
     echo -e "${RED}║${NC}       or static IPs so their addresses never change.                     ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
     echo -e "${RED}║${NC}    3. ${YELLOW}An unused IP address for the Virtual IP (VIP)${NC}                      ${RED}║${NC}"
-    echo -e "${RED}║${NC}       Pick an IP on the same subnet that is NOT used by any device       ${RED}║${NC}"
-    echo -e "${RED}║${NC}       and NOT in your router's DHCP range.                               ${RED}║${NC}"
+    echo -e "${RED}║${NC}       Pick an IP on the same subnet that is NOT used by any device.      ${RED}║${NC}"
+    echo -e "${RED}║${NC}       To prevent DHCP conflicts, do ONE of the following:               ${RED}║${NC}"
+    echo -e "${RED}║${NC}         ${YELLOW}Option A:${NC} Exclude the VIP IP from your router's DHCP pool        ${RED}║${NC}"
+    echo -e "${RED}║${NC}         ${YELLOW}Option B:${NC} Create a DHCP reservation using the placeholder       ${RED}║${NC}"
+    echo -e "${RED}║${NC}                   MAC address generated during install                  ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
-    echo -e "${RED}║${NC}       ${YELLOW}A MAC address for the VIP will be generated during this install.${NC}   ${RED}║${NC}"
-    echo -e "${RED}║${NC}       ${YELLOW}You MUST add a DHCP reservation in your router/DHCP server${NC}         ${RED}║${NC}"
-    echo -e "${RED}║${NC}       ${YELLOW}using that MAC + VIP IP after it is shown on screen.${NC}               ${RED}║${NC}"
+    echo -e "${RED}║${NC}       ${DIM}The VIP uses the physical MAC of whichever node is master.${NC}        ${RED}║${NC}"
+    echo -e "${RED}║${NC}       ${DIM}The placeholder MAC just reserves the IP in your router.${NC}          ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
     echo -e "${RED}║${NC}  ${DIM}If any of these are not ready, press Ctrl+C to exit and prepare.${NC}        ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
@@ -7740,7 +7741,9 @@ collect_ha_primary_config() {
         log_warn "Please prepare the following before running HA setup:"
         echo -e "  1. Power on both servers and install Ubuntu 24.04 on each"
         echo -e "  2. Set DHCP reservations in your router for both server MAC addresses"
-        echo -e "  3. Choose an unused IP for the VIP (outside your DHCP range)"
+        echo -e "  3. Choose an unused IP for the VIP, then either:"
+        echo -e "     a) Exclude it from your DHCP pool, OR"
+        echo -e "     b) Reserve it with the placeholder MAC shown during install"
         echo -e "  4. Run this installer again when ready"
         echo ""
         exit 0
@@ -7788,9 +7791,11 @@ collect_ha_primary_config() {
 
     echo -e "${CYAN}Virtual IP Address (VIP)${NC}"
     echo "This IP will float between Primary and Backup nodes."
-    echo -e "${YELLOW}IMPORTANT: Choose an IP that is NOT in use and NOT assigned by DHCP!${NC}"
-    echo -e "${YELLOW}A MAC address for this VIP will be generated next — you must add a DHCP${NC}"
-    echo -e "${YELLOW}reservation in your router using that MAC + this IP address.${NC}"
+    echo -e "${YELLOW}IMPORTANT: Choose an IP that is NOT in use by any device!${NC}"
+    echo -e "${YELLOW}To prevent DHCP conflicts, do one of the following in your router:${NC}"
+    echo -e "  ${YELLOW}Option A:${NC} Exclude this IP from your DHCP pool"
+    echo -e "  ${YELLOW}Option B:${NC} Create a DHCP reservation using the placeholder MAC shown next"
+    echo -e "${DIM}The VIP uses the master node's physical MAC — the placeholder just reserves the IP.${NC}"
     echo -e "${DIM}(IPv4 only — IPv6 is not supported)${NC}"
     echo ""
     if [[ -n "$suggested_vip" ]]; then
@@ -7927,11 +7932,13 @@ collect_ha_primary_config() {
     # Generate cluster token
     HA_CLUSTER_TOKEN="spiral-$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 64)"
     log "Generated cluster token (save this for the Backup node!)"
-    # Generate deterministic VIP MAC address (format: 02:53:XX:XX:XX:XX)
+    # Generate deterministic placeholder MAC for DHCP reservation (format: 02:53:XX:XX:XX:XX)
     # 02 = locally administered, 53 = "S" for Spiral
+    # Note: This MAC is NOT applied to any interface — it's only used as a DHCP placeholder.
+    # The VIP uses the physical MAC of whichever node is currently master via keepalived.
     IFS='.' read -r o1 o2 o3 o4 <<< "$VIP_ADDRESS"
     VIP_MAC=$(printf "02:53:%02x:%02x:%02x:%02x" "$o1" "$o2" "$o3" "$o4")
-    log "VIP MAC address: $VIP_MAC"
+    log "VIP placeholder MAC: $VIP_MAC (for DHCP reservation only)"
 
     echo ""
     # Box inner width is 75 chars (between the two ║ chars)
@@ -7953,7 +7960,7 @@ collect_ha_primary_config() {
     # Token is 71 chars, fits in 73 char content area
     local token_line=$(box_line " $HA_CLUSTER_TOKEN" 73)
     local vip_line=$(box_line " VIP Address: $VIP_ADDRESS" 73)
-    local mac_line=$(box_line " VIP MAC:     $VIP_MAC" 73)
+    local mac_line=$(box_line " VIP MAC:     $VIP_MAC (placeholder for DHCP)" 73)
     local mac_bullet=$(box_line "   • MAC: $VIP_MAC" 73)
     local ip_bullet=$(box_line "   • IP:  $VIP_ADDRESS" 73)
 
@@ -7968,11 +7975,14 @@ collect_ha_primary_config() {
     echo -e "  ${YELLOW}║${NC} ${CYAN}${mac_line}${NC} ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}║${NC}                                                                           ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}╠═══════════════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "  ${YELLOW}║${NC}  ROUTER DHCP RESERVATION:                                                 ${YELLOW}║${NC}"
-    echo -e "  ${YELLOW}║${NC}  Add a static reservation in your router with:                            ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}  ROUTER SETUP — do ONE of the following to prevent DHCP conflicts:        ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}                                                                           ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}  ${WHITE}Option A:${NC} Exclude the VIP IP from your router's DHCP pool               ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}  ${WHITE}Option B:${NC} Create a DHCP reservation with this placeholder MAC:          ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}║${NC} ${CYAN}${mac_bullet}${NC} ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}║${NC} ${GREEN}${ip_bullet}${NC} ${YELLOW}║${NC}"
-    echo -e "  ${YELLOW}║${NC}  This ensures the VIP works correctly across failovers.                   ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}  ${DIM}The VIP uses the physical MAC of whichever node is currently master.${NC}     ${YELLOW}║${NC}"
+    echo -e "  ${YELLOW}║${NC}  ${DIM}This placeholder MAC just reserves the IP so nothing else takes it.${NC}      ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}║${NC}                                                                           ${YELLOW}║${NC}"
     echo -e "  ${YELLOW}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -8573,10 +8583,10 @@ collect_ha_backup_config() {
     log "Node priority: $HA_NODE_PRIORITY"
     echo ""
 
-    # Generate deterministic VIP MAC address (same as primary - must match!)
+    # Generate deterministic placeholder MAC for DHCP reservation (same as primary)
     IFS='.' read -r o1 o2 o3 o4 <<< "$VIP_ADDRESS"
     VIP_MAC=$(printf "02:53:%02x:%02x:%02x:%02x" "$o1" "$o2" "$o3" "$o4")
-    log "VIP MAC address: $VIP_MAC (same as primary)"
+    log "VIP placeholder MAC: $VIP_MAC (for DHCP reservation only)"
 
     # Replication password will be fetched from primary or set manually
     echo -e "${CYAN}PostgreSQL Passwords (from Primary)${NC}"
@@ -8663,7 +8673,7 @@ collect_ha_backup_config() {
     echo -e "     • Primary node: ${HA_PRIMARY_IP:-$HA_PEER_IP}"
     echo -e "     • Peers: ${HA_PEER_IPS[*]}"
     echo -e "     • VIP: $VIP_ADDRESS/$VIP_NETMASK on $VIP_INTERFACE"
-    echo -e "     • VIP MAC: $VIP_MAC"
+    echo -e "     • VIP MAC: $VIP_MAC (placeholder for DHCP reservation)"
     echo -e "     • Priority: $HA_NODE_PRIORITY (Backup)"
     echo -e "     • PostgreSQL replication: Enabled (replica)"
     echo ""
