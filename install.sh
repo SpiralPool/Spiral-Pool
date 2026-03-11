@@ -8480,6 +8480,9 @@ collect_ha_backup_config() {
     echo "Enter the cluster token from the Primary node installation."
     echo "(It starts with 'spiral-' and is 72 characters long)"
     echo ""
+    echo -e "${DIM}Lost the token? Run this on the Primary node to retrieve it:${NC}"
+    echo -e "${CYAN}  sudo cat /etc/keepalived/.cluster_token${NC}"
+    echo ""
 
     while true; do
         prompt_input "Cluster token: "; read input_token
@@ -26973,8 +26976,12 @@ def status_fmt(status):
     else:
         return f'\033[2m{s}\033[0m'
 
-# Extract worker name from miner field (format: ADDRESS.workername or just ADDRESS)
+# Extract worker name: prefer 'source' (worker name), fall back to 'miner' (wallet)
 def get_finder(block):
+    # source field contains the actual worker name (e.g. 'HashForge')
+    source = block.get('source', '') or ''
+    if source and source.lower() not in ('stratum', 'default', 'x', ''):
+        return source
     miner = block.get('miner', '') or ''
     # If miner contains a dot, the part after the last dot is the worker name
     if '.' in miner:

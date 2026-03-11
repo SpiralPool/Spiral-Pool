@@ -4832,11 +4832,10 @@ def fetch_block_reward():
             data = response.json()
             if data.get("pools") and len(data["pools"]) > 0:
                 pool = data["pools"][0]
-                # Pool API may include block reward info
+                # Pool API returns blockReward in coin units (already converted from satoshis)
                 block_stats = pool.get("poolStats", {})
-                if block_stats.get("lastBlockReward"):
-                    # Convert satoshis to coin units
-                    block_reward = block_stats["lastBlockReward"] / 100000000
+                if block_stats.get("blockReward"):
+                    block_reward = block_stats["blockReward"]
                     block_reward_cache["block_height"] = block_stats.get("blockHeight", 0)
     except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
         pass
@@ -4856,8 +4855,8 @@ def fetch_block_reward():
             if blocks_resp.status_code == 200:
                 blocks = blocks_resp.json()
                 if blocks and len(blocks) > 0 and blocks[0].get("reward"):
-                    # Reward is in satoshis
-                    block_reward = blocks[0]["reward"] / 100000000
+                    # Reward is already in coin units (stratum converts from satoshis)
+                    block_reward = blocks[0]["reward"]
         except (requests.exceptions.RequestException, ValueError, KeyError):
             pass
 
