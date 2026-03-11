@@ -289,7 +289,7 @@ func (db *PostgresDB) InsertBlock(ctx context.Context, block *Block) error {
 		block.TransactionConfirmationData,
 		block.Miner,
 		block.Reward,
-		"stratum",
+		block.Source,
 		block.Hash,
 		block.Created,
 	)
