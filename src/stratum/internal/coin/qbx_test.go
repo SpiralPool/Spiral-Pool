@@ -368,6 +368,17 @@ func TestQBXRegistry(t *testing.T) {
 	}
 }
 
+// TestQBXGBTRules verifies QBX requests legacy-only block templates.
+// Passing ["segwit"] causes the QBX daemon to return SegWit transactions,
+// which results in "unexpected-witness" block rejection.
+func TestQBXGBTRules(t *testing.T) {
+	c := NewQBXCoin()
+	rules := c.GBTRules()
+	if len(rules) != 0 {
+		t.Errorf("QBX GBTRules must return empty slice (no segwit), got %v", rules)
+	}
+}
+
 // TestQBXShareDiffMultiplier verifies the share difficulty multiplier.
 func TestQBXShareDiffMultiplier(t *testing.T) {
 	c := NewQBXCoin()

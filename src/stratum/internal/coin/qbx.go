@@ -311,6 +311,14 @@ func (c *QBXCoin) Bech32HRP() string {
 	return QBXBech32HRP
 }
 
+// GBTRules returns the rules for getblocktemplate.
+// QBX does not support SegWit — passing ["segwit"] causes the daemon to return
+// SegWit-serialized transactions and a witness commitment, which results in
+// "unexpected-witness" block rejection. Empty rules = legacy-only template.
+func (c *QBXCoin) GBTRules() []string {
+	return []string{}
+}
+
 // Algorithm returns the mining algorithm.
 func (c *QBXCoin) Algorithm() string {
 	return "sha256d"
