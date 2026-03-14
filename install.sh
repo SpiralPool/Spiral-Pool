@@ -18942,10 +18942,45 @@ configure_stratum_single() {
             target_time="6"
             max_diff="100000000"
             ;;
+        QBX)
+            pool_id="qbx_sha256_1"
+            coin_type="qbitx"
+            rpc_port="$QBX_RPC_PORT"
+            zmq_port="$QBX_ZMQ_PORT"
+            rpc_user="$QBX_RPC_USER"
+            # CRITICAL: Read password from daemon config to ensure consistency
+            local qbx_conf="$INSTALL_DIR/qbx/qbitx.conf"
+            if [[ -f "$qbx_conf" ]]; then
+                rpc_password=$(grep -E "^rpcpassword=" "$qbx_conf" 2>/dev/null | head -1 | cut -d= -f2)
+                if [[ -n "$rpc_password" ]]; then
+                    log "Read QBX RPC password from existing node config"
+                else
+                    log_warn "QBX node config exists but password not found, using generated password"
+                    rpc_password="$QBX_RPC_PASSWORD"
+                    if [[ -n "$rpc_password" ]]; then
+                        sudo sed -i "s/^rpcpassword=.*/rpcpassword=$rpc_password/" "$qbx_conf"
+                        log "Updated QBX node config with correct password"
+                    fi
+                fi
+            else
+                rpc_password="$QBX_RPC_PASSWORD"
+            fi
+            if [[ -z "$rpc_password" ]]; then
+                log_warn "No QBX RPC password available, generating new one"
+                rpc_password=$(generate_password)
+                QBX_RPC_PASSWORD="$rpc_password"
+            fi
+            daemon_service="qbitxd"
+            pool_address="$QBX_ADDRESS"
+            # QBX: 150s blocks - SHA256d with post-quantum features
+            initial_diff="5000"
+            target_time="6"
+            max_diff="100000000"
+            ;;
         *)
             # Unknown coin - error out instead of defaulting to DGB
             log_error "Unknown coin type: $SOLO_COIN"
-            log_error "Supported coins: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XMY"
+            log_error "Supported coins: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XMY, QBX"
             exit 1
             ;;
     esac
