@@ -23937,7 +23937,7 @@ watch_sync() {
 
             # Always show pool address — point miners here as their username
             local _pool_addr
-            _pool_addr=$(sudo grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null \
+            _pool_addr=$(grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null \
                 | grep -v 'PENDING_GENERATION' | head -1 \
                 | sed 's/.*address:[[:space:]]*["'\'']\?\([^"'\'' ]*\)["'\'']\?.*/\1/')
             if [[ -n "$_pool_addr" ]]; then
