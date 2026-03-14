@@ -970,7 +970,13 @@ ensure_wallet_and_address() {
             # SYS: Syscoin supports SegWit (sys1q... addresses)
             addr_type="bech32"
             ;;
-        BCH|DOGE|BC2|PEP|CAT|XMY|FBTC|QBX)
+        QBX)
+            # Q-BitX: post-quantum "pq" address type per qbitx.org docs
+            # Try pq first; daemon falls back to legacy if not yet supported
+            addr_type="pq"
+            use_addr_type=true
+            ;;
+        BCH|DOGE|BC2|PEP|CAT|XMY|FBTC)
             # These daemons do NOT support standard address_type parameter:
             # - BCH: No SegWit (rejected it)
             # - DOGE: No SegWit implemented
@@ -978,7 +984,6 @@ ensure_wallet_and_address() {
             # - PEP/CAT: Legacy Scrypt coins without SegWit
             # - XMY: Myriad uses legacy addresses (M...)
             # - FBTC: Fractal Bitcoin - use legacy for compatibility
-            # - QBX: Uses "pq" post-quantum address type (handled separately)
             use_addr_type=false
             ;;
         *)
