@@ -2787,10 +2787,10 @@ BLOCK_EXPLORERS = {
         ]
     },
     "QBX": {
-        "api": None,
-        "url": None,
+        "api": None,  # No public REST API — use RPC for block data
+        "url": "https://explorer.qbitx.org",
         "name": "Q-BitX Explorer",
-        "fallbacks": []  # Not yet listed - no public explorer
+        "fallbacks": []
     },
     # === Scrypt Coins ===
     "LTC": {

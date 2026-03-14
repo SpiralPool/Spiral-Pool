@@ -420,7 +420,7 @@ coins:
       full_name: "Q-BitX"
       short_name: "QBX"
       coingecko_id: null     # Not listed on CoinGecko yet
-      explorer_url: null     # No known block explorer
+      explorer_url: "https://explorer.qbitx.org"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # SCRYPT COINS
