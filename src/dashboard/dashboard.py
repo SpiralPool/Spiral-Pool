@@ -16262,10 +16262,9 @@ def get_estimated_time_to_block():
     hashrate_ths = etb_calculator.get("current_hashrate_ths", 0)
     network_diff = etb_calculator.get("network_difficulty", 0)
 
-    # Sanity check: ETB under 1 hour is unrealistic for most solo mining setups
-    # This usually indicates wrong difficulty or hashrate values
+    # Sanity check: ETB under 5 minutes is likely wrong difficulty or hashrate values
     sanity_warning = None
-    if estimated_seconds > 0 and estimated_seconds < 3600:
+    if estimated_seconds > 0 and estimated_seconds < 300:
         sanity_warning = (
             f"WARNING: ETB of {estimated_seconds/60:.1f} minutes is unrealistically low. "
             f"Check if network_difficulty ({network_diff:.2e}) and hashrate ({hashrate_ths:.2f} TH/s) are correct. "
@@ -16275,7 +16274,7 @@ def get_estimated_time_to_block():
     # Format time nicely
     if estimated_seconds == float('inf') or estimated_seconds <= 0:
         time_formatted = "∞ (need more hashrate)"
-    elif estimated_seconds < 3600:
+    elif estimated_seconds < 300:
         time_formatted = f"{estimated_seconds/60:.1f} minutes (check data!)"
     elif estimated_seconds < 86400:
         time_formatted = f"{estimated_seconds/3600:.1f} hours"
