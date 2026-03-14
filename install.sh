@@ -19029,6 +19029,7 @@ configure_stratum_single() {
             coin_type="qbitx"
             rpc_port="$QBX_RPC_PORT"
             zmq_port="$QBX_ZMQ_PORT"
+            zmq_enabled="false"  # QBX daemon compiled without ZMQ support
             rpc_user="$QBX_RPC_USER"
             # CRITICAL: Read password from daemon config to ensure consistency
             local qbx_conf="$INSTALL_DIR/qbx/qbitx.conf"
