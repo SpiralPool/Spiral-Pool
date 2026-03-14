@@ -4788,7 +4788,12 @@ func (p *Pool) waitForSync(ctx context.Context) error {
 			// On regtest, skip IBD check entirely — regtest is a private test network
 			// with no peers, so there's no risk of mining on stale blocks. This allows
 			// the pool to start on a fresh chain (height 0) where IBD is always true.
-			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && bcInfo.VerificationProgress >= syncThreshold) {
+			//
+			// QBX has extremely low chain work so verificationProgress is near-zero even
+			// when fully synced. Use blocks >= headers as the sync signal instead.
+			isQBX := strings.EqualFold(p.cfg.Pool.Coin, "qbitx") || strings.EqualFold(p.cfg.Pool.Coin, "qbx")
+			qbxSynced := isQBX && !bcInfo.InitialBlockDownload && bcInfo.Headers > 0 && bcInfo.Blocks >= bcInfo.Headers
+			if bcInfo.Chain == "regtest" || qbxSynced || (!bcInfo.InitialBlockDownload && bcInfo.VerificationProgress >= syncThreshold) {
 				p.logger.Infow("✅ SYNC GATE PASSED: Daemon is fully synced",
 					"blocks", bcInfo.Blocks,
 					"progress", fmt.Sprintf("%.4f%%", bcInfo.VerificationProgress*100),
