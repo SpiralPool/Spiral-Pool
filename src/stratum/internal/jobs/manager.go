@@ -983,7 +983,9 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 	// Output count — skip witness commitment for non-SegWit coins.
 	// Some non-SegWit daemons (e.g. QBX) still include default_witness_commitment
 	// in getblocktemplate; including it causes "unexpected-witness" rejection.
-	includeWitness := template.DefaultWitnessCommitment != "" && m.coinImpl.SupportsSegWit()
+	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
+	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()
+	includeWitness := template.DefaultWitnessCommitment != "" && segwitOK
 	outputCount := byte(0x01)
 	if includeWitness {
 		outputCount = 0x02
@@ -1115,9 +1117,15 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff)
 
 	// Output count - MUST be calculated BEFORE appending outputs
-	// 1 output for pool reward, optionally +1 for witness commitment
+	// 1 output for pool reward, optionally +1 for witness commitment.
+	// CRITICAL: Only include witness commitment for coins that support SegWit.
+	// Non-SegWit coins (e.g. QBX) must use outputCount=1 or the node returns
+	// "unexpected-witness" and rejects the block.
+	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
+	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()
+	includeWitness := template.DefaultWitnessCommitment != "" && segwitOK
 	outputCount := byte(0x01)
-	if template.DefaultWitnessCommitment != "" {
+	if includeWitness {
 		outputCount = 0x02
 	}
 	cb2 = append(cb2, outputCount)
@@ -1146,7 +1154,7 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	// IMPORTANT: default_witness_commitment from getblocktemplate is the FULL output script
 	// (e.g., "6a24aa21a9ed..." = OP_RETURN + PUSH(36) + commitment), NOT just the commitment hash.
 	// Reference: BIP 145 - https://github.com/bitcoin/bips/blob/master/bip-0145.mediawiki
-	if template.DefaultWitnessCommitment != "" {
+	if includeWitness {
 		witnessScript, err := hex.DecodeString(template.DefaultWitnessCommitment)
 		if err != nil {
 			// CRITICAL: If we can't decode the witness commitment, we MUST NOT
