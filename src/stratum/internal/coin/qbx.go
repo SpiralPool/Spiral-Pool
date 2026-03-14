@@ -4,8 +4,8 @@
 // Package coin - Q-BitX (QBX) implementation.
 //
 // Q-BitX is a SHA-256d Bitcoin fork with post-quantum cryptography features
-// (Dilithium signatures). It uses the same base address format as Bitcoin
-// for legacy addresses, plus a unique "pq" prefix for post-quantum addresses.
+// (Dilithium signatures). It uses Dilithium-derived address version bytes,
+// NOT Bitcoin's 0x00/0x05 — addresses start with 'M' (P2PKH) or 'P' (P2SH).
 //
 // Key characteristics:
 //   - SHA-256d algorithm (same as Bitcoin)
@@ -14,7 +14,8 @@
 //   - No SegWit support
 //   - No AuxPoW (standalone mining only)
 //   - Post-quantum "pq" address type (Dilithium signatures)
-//   - Same legacy address format as Bitcoin (1..., 3...)
+//   - P2PKH addresses start with 'M' (version byte 0x32)
+//   - P2SH addresses start with 'P' (version byte 0x37)
 //
 // References:
 //   - https://qbitx.org/
@@ -31,11 +32,11 @@ import (
 )
 
 // Q-BitX mainnet address version bytes
-// NOTE: Q-BitX uses the SAME legacy address format as Bitcoin
+// NOTE: Q-BitX uses Dilithium-derived version bytes, NOT Bitcoin's 0x00/0x05.
 const (
-	QBXP2PKHVersion byte = 0x00 // Mainnet P2PKH starts with '1' (same as Bitcoin)
-	QBXP2SHVersion  byte = 0x05 // Mainnet P2SH starts with '3' (same as Bitcoin)
-	QBXBech32HRP         = "bc" // Mainnet bech32 prefix (same as Bitcoin, but SegWit not supported)
+	QBXP2PKHVersion byte = 0x32 // Mainnet P2PKH starts with 'M' (0x32 = 50)
+	QBXP2SHVersion  byte = 0x37 // Mainnet P2SH starts with 'P' (0x37 = 55)
+	QBXBech32HRP         = "bc" // Mainnet bech32 prefix (SegWit not supported by QBX)
 
 	// Regtest address version bytes
 	QBXRegtestP2PKHVersion byte = 0x6f // Regtest P2PKH starts with 'm' or 'n'
@@ -75,7 +76,7 @@ func (c *QBXCoin) Name() string {
 }
 
 // ValidateAddress validates a Q-BitX address.
-// Supports legacy P2PKH (1...), P2SH (3...), and post-quantum (pq...) addresses.
+// Supports legacy P2PKH (M...), P2SH (P...), and post-quantum (pq...) addresses.
 func (c *QBXCoin) ValidateAddress(address string) error {
 	_, _, err := c.DecodeAddress(address)
 	return err
@@ -83,8 +84,8 @@ func (c *QBXCoin) ValidateAddress(address string) error {
 
 // DecodeAddress decodes a Q-BitX address to its hash and type.
 // Q-BitX supports:
-//   - P2PKH (1...) - legacy pay-to-pubkey-hash
-//   - P2SH (3...) - legacy pay-to-script-hash
+//   - P2PKH (M...) - legacy pay-to-pubkey-hash (version byte 0x32)
+//   - P2SH (P...) - legacy pay-to-script-hash (version byte 0x37)
 //   - PQ (pq...) - post-quantum Dilithium address
 //
 // NOTE: SegWit (bc1...) addresses are NOT supported by Q-BitX.
@@ -104,7 +105,7 @@ func (c *QBXCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 		}
 		// For pq addresses, we cannot build a coinbase script directly.
 		// Return an error suggesting legacy address use for pool payouts.
-		return nil, AddressTypeUnknown, fmt.Errorf("post-quantum (pq) addresses are not supported for stratum coinbase payouts — use a legacy (1...) or P2SH (3...) address for pool mining")
+		return nil, AddressTypeUnknown, fmt.Errorf("post-quantum (pq) addresses are not supported for stratum coinbase payouts — use a legacy (M...) or P2SH (P...) address for pool mining")
 	}
 
 	// Regtest bech32 (bcrt1...) — only for testing
@@ -127,7 +128,7 @@ func (c *QBXCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 
 	// Reject mainnet bech32 addresses (Q-BitX does not support SegWit)
 	if strings.HasPrefix(addrLower, "bc1") {
-		return nil, AddressTypeUnknown, fmt.Errorf("Q-BitX does not support SegWit (bc1) addresses — use a legacy (1...) or P2SH (3...) address")
+		return nil, AddressTypeUnknown, fmt.Errorf("Q-BitX does not support SegWit (bc1) addresses — use a legacy (M...) or P2SH (P...) address")
 	}
 
 	// Legacy Base58Check (1... for P2PKH, 3... for P2SH)
@@ -163,7 +164,7 @@ func (c *QBXCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 	case QBXP2SHVersion, QBXRegtestP2SHVersion:
 		return hash, AddressTypeP2SH, nil
 	default:
-		return nil, AddressTypeUnknown, fmt.Errorf("unsupported version byte: 0x%02x (expected 0x00/0x6f for P2PKH or 0x05/0xc4 for P2SH)", version)
+		return nil, AddressTypeUnknown, fmt.Errorf("unsupported version byte: 0x%02x (expected 0x32/0x6f for P2PKH or 0x37/0xc4 for P2SH)", version)
 	}
 }
 
