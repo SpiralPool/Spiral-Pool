@@ -2201,8 +2201,10 @@ func validateCashAddr(address string) error {
 // getCoinAddressPrefixes returns the valid address version bytes for a coin.
 func getCoinAddressPrefixes(coinSymbol string) []byte {
 	switch strings.ToUpper(coinSymbol) {
-	case "BTC", "BC2", "FBTC", "QBX":
-		return []byte{0x00, 0x05} // P2PKH (1), P2SH (3) - FBTC/QBX use same format as Bitcoin
+	case "BTC", "BC2", "FBTC":
+		return []byte{0x00, 0x05} // P2PKH (1...), P2SH (3...)
+	case "QBX":
+		return []byte{0x32, 0x37} // P2PKH (M..., 0x32=50), P2SH (P..., 0x37=55) — Dilithium-derived
 	case "BCH":
 		return []byte{0x00, 0x05} // Legacy format (before CashAddr)
 	case "DGB", "DGB-SCRYPT", "DGB_SCRYPT":
