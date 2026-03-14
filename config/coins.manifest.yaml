@@ -399,15 +399,9 @@ coins:
       stratum_tls_port: 20337
 
     address:
-      p2pkh_version: 0x00    # '1' addresses (same as Bitcoin)
-      p2sh_version: 0x05     # '3' addresses (same as Bitcoin)
-      bech32_hrp: "bc"       # Standard bech32 (same as Bitcoin)
-      # Post-quantum (Dilithium) addresses:
-      #   dilithium_p2pkh: 0x32 (50 decimal)
-      #   dilithium_p2sh: 0x37 (55 decimal)
-      #   dilithium_bech32_hrp: "dil"
-      #   Address types: "pq" (legacy), "pq-bech32" (bech32), "dilithium" (default bech32)
-      collision_warning: "Uses same base58 format as BTC — verify wallet before use!"
+      p2pkh_version: 0x32    # 'M' addresses (Dilithium-derived, 50 decimal)
+      p2sh_version: 0x37     # 'P' addresses (Dilithium-derived, 55 decimal)
+      bech32_hrp: "bc"       # Standard bech32 (SegWit not supported by QBX)
 
     chain:
       genesis_hash: "407cdbc2ca102bd9e69069f25cebc2ef363a427166edba7580b41031b68549d9"

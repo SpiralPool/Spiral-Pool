@@ -3607,11 +3607,11 @@ collect_docker_coin_addresses() {
         echo ""
         while true; do
             prompt_input "QBX Address: "; read QBX_POOL_ADDRESS
-            if [[ "$QBX_POOL_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+            if [[ "$QBX_POOL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                 log_success "Valid QBX address"
                 break
             else
-                echo -e "  ${RED}Invalid QBX address. Must start with 1, 3, bc1q, or pq.${NC}"
+                echo -e "  ${RED}Invalid QBX address. Must start with M, P, bc1q, or pq.${NC}"
             fi
         done
         echo ""
@@ -4089,7 +4089,7 @@ merge_docker_configuration() {
             echo ""
             while true; do
                 prompt_input "QBX Address: "; read QBX_POOL_ADDRESS
-                if [[ "$QBX_POOL_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+                if [[ "$QBX_POOL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                     log_success "Valid QBX address format"
                     break
                 else
@@ -10230,19 +10230,19 @@ collect_configuration() {
                         1)
                             echo ""
                             echo "Supported formats:"
-                            echo -e "  • Legacy (P2PKH):    ${GREEN}1${NC}... (26-35 chars)"
-                            echo -e "  • P2SH:              ${GREEN}3${NC}... (26-35 chars)"
+                            echo -e "  • Legacy (P2PKH):    ${GREEN}M${NC}... (26-35 chars)"
+                            echo -e "  • P2SH:              ${GREEN}P${NC}... (26-35 chars)"
                             echo -e "  • Post-Quantum (PQ): ${GREEN}pq${NC}... (variable length)"
                             echo ""
                             echo -e "  ${DIM}To create an address: qbitx-cli getnewaddress \"\" pq${NC}"
                             echo ""
                             while true; do
                                 prompt_input "QBX Address: "; read QBX_ADDRESS
-                                if [[ "$QBX_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+                                if [[ "$QBX_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                                     log_success "Valid QBX address format"
                                     break
                                 else
-                                    log_error "Invalid QBX address format. Must start with 1, 3, bc1q, or pq."
+                                    log_error "Invalid QBX address format. Must start with M, P, bc1q, or pq."
                                 fi
                             done
                             break
@@ -10991,8 +10991,8 @@ collect_configuration() {
                     1)
                         echo ""
                         echo "Supported formats:"
-                        echo -e "  • Legacy (P2PKH):    ${GREEN}1${NC}... (26-35 chars)"
-                        echo -e "  • SegWit (P2WPKH):   ${GREEN}bc1q${NC}... (42-62 chars)"
+                        echo -e "  • Legacy (P2PKH):    ${GREEN}M${NC}... (26-35 chars)"
+                        echo -e "  • P2SH:              ${GREEN}P${NC}... (26-35 chars)"
                         echo -e "  • Post-Quantum (PQ): ${GREEN}pq${NC}... (variable length)"
                         echo ""
                         echo -e "  ${DIM}To create an address, use: qbitx-cli createwallet \"pqwallet\"${NC}"
@@ -11000,12 +11000,12 @@ collect_configuration() {
                         echo ""
                         while true; do
                             prompt_input "QBX Address: "; read QBX_ADDRESS
-                            if [[ "$QBX_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+                            if [[ "$QBX_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                                 log_success "Valid QBX address format"
                                 QBX_POOL_ADDRESS="$QBX_ADDRESS"
                                 break
                             else
-                                log_error "Invalid QBX address format. Must start with 1, 3, bc1q, or pq."
+                                log_error "Invalid QBX address format. Must start with M, P, bc1q, or pq."
                             fi
                         done
                         break
@@ -25325,7 +25325,7 @@ prompt_manual_address() {
                 ;;
             qbx|qbitx)
                 # QBX supports BTC-style addresses plus post-quantum (pq) addresses
-                if [[ "$MANUAL_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+                if [[ "$MANUAL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                     valid=true
                 fi
                 ;;
