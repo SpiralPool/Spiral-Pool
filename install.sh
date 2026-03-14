@@ -459,6 +459,11 @@ log_step() {
     echo ""
 }
 
+# Clear terminal between interactive config sections for readability
+screen_clear() {
+    printf '\033[2J\033[H'
+}
+
 # Run command with animated progress spinner
 # Usage: run_with_spinner "message" command arg1 arg2 ...
 run_with_spinner() {
@@ -11098,6 +11103,7 @@ collect_configuration() {
 
     # Coinbase text (max 40 bytes - Bitcoin protocol limit for coinbase signature)
     # Note: Emojis use 4 bytes each in UTF-8, so count bytes not characters
+    screen_clear
     echo ""
     echo -e "${CYAN}Coinbase Signature${NC}"
     echo "Your signature embedded in every block you mine (max 40 bytes)."
@@ -11146,6 +11152,7 @@ collect_configuration() {
     echo ""
 
     # Expected hashrate (for VarDiff calibration and reporting)
+    screen_clear
     echo ""
     echo -e "${CYAN}Expected Hashrate${NC}"
     echo "What is your expected total hashrate? (used for VarDiff and reporting)"
@@ -11169,6 +11176,7 @@ collect_configuration() {
     echo ""
 
     # Block celebration settings
+    screen_clear
     echo ""
     echo -e "${CYAN}Block Celebration${NC}"
     echo "When a block is found, display a celebration message on miner screens?"
@@ -11193,7 +11201,7 @@ collect_configuration() {
     echo ""
 
     # ASIC miner support info
-    echo ""
+    screen_clear
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}Supported Mining Hardware${NC}"
@@ -11241,6 +11249,7 @@ collect_configuration() {
     echo ""
 
     # Passwords - preserve existing if found during re-installation
+    screen_clear
     echo ""
     echo -e "${CYAN}Passwords${NC}"
     if [[ -n "$EXISTING_RPC_PASSWORD" ]]; then
@@ -11309,6 +11318,7 @@ collect_configuration() {
     UPDATE_CHECK_ENABLED="true"     # Enable/disable update notifications
     AUTO_UPDATE_MODE="notify"       # "auto" (fully automatic), "notify" (alert only), "disabled"
     if [[ "$INSTALL_MODE" == "full" ]]; then
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Notification Setup (Optional)${NC}"
@@ -11407,7 +11417,7 @@ collect_configuration() {
         echo ""
 
         # Reporting Currency Preference
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Reporting Currency Preference${NC}"
@@ -11444,7 +11454,7 @@ collect_configuration() {
         echo ""
 
         # Alert Theme Preference
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Alert Theme${NC}"
@@ -11473,7 +11483,7 @@ collect_configuration() {
         echo ""
 
         # Spiral Sentinel Configuration
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Spiral Sentinel Configuration${NC}"
@@ -11567,7 +11577,7 @@ collect_configuration() {
         echo ""
 
         # Update Notifications & Auto-Update
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Update Mode Configuration${NC}"
@@ -11624,7 +11634,7 @@ collect_configuration() {
         echo ""
 
         # Power Cost Configuration
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Power / Electricity Cost Configuration${NC}"
@@ -11716,7 +11726,7 @@ collect_configuration() {
         echo ""
 
         # Dashboard Display Currency
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}Dashboard Display Currency${NC}"
@@ -11739,7 +11749,7 @@ collect_configuration() {
         echo ""
 
         # Miner Discovery
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}  ⛏️  MINER DISCOVERY${NC}"
@@ -11786,7 +11796,7 @@ collect_configuration() {
         BLOCKCHAIN_SYNC_CHOICE="1"  # Placeholder — HA path in ask_blockchain_rsync overrides this
         log "HA backup mode: blockchain replication will be offered after coin install"
     else
-        echo ""
+        screen_clear
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo -e "${WHITE}  Blockchain Data Synchronization${NC}"
@@ -11828,7 +11838,7 @@ collect_configuration() {
     fi
 
     # ── Automated Database Backups ────────────────────────────────────────
-    echo ""
+    screen_clear
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}  Automated Database Backups${NC}"
@@ -11860,7 +11870,7 @@ collect_configuration() {
     echo ""
 
     # ── Watch Sync Progress ───────────────────────────────────────────────
-    echo ""
+    screen_clear
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}  Sync Progress Monitor${NC}"
@@ -11886,7 +11896,7 @@ collect_configuration() {
     echo ""
 
     # Summary
-    echo ""
+    screen_clear
     echo ""
     echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}Configuration Summary${NC}"
@@ -12035,8 +12045,8 @@ collect_configuration() {
         echo -e "  ${WHITE}RPC User:${NC}      ${GREEN}$display_rpc_user${NC}"
         echo -e "  ${WHITE}Server IP:${NC}     ${GREEN}$SERVER_IP${NC}"
         if [[ "$display_wallet" == "PENDING_GENERATION" ]]; then
-            echo -e "  ${WHITE}Wallet:${NC}        ${YELLOW}Will be generated after sync${NC}"
-            echo -e "                 ${YELLOW}(run 'spiralpool-wallet' after blockchain syncs)${NC}"
+            echo -e "  ${WHITE}Wallet:${NC}        ${YELLOW}Auto-generated after blockchain sync${NC}"
+            echo -e "                 ${YELLOW}(address displayed in sync watcher when ready)${NC}"
         else
             echo -e "  ${WHITE}Wallet:${NC}        ${GREEN}$display_wallet${NC}"
         fi
@@ -23375,6 +23385,15 @@ show_status() {
             echo -e "  ${YELLOW}⟳${NC} Spiral Stratum is ${YELLOW}starting up${NC} (state: ${stratum_state})"
             echo -e "    ${DIM}The service has Restart=always and will come online automatically${NC}"
             echo -e "    ${DIM}Check status: ${WHITE}systemctl status spiralstratum${NC}"
+        fi
+
+        # Show pool address (auto-generated by wait-for-node.sh after sync)
+        local pool_addr
+        pool_addr=$(sudo grep -E '^\s*address:' "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*address:\s*["'\'']\?\([^"'\'']*\)["'\'']\?.*/\1/' | tr -d ' ')
+        if [[ -n "$pool_addr" ]] && [[ "$pool_addr" != "PENDING_GENERATION" ]] && [[ "$pool_addr" != '""' ]]; then
+            echo ""
+            echo -e "  ${WHITE}Pool Address:${NC} ${GREEN}$pool_addr${NC}"
+            echo -e "  ${DIM}Point your miners to this address (Username field)${NC}"
         fi
         echo ""
         return 0
