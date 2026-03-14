@@ -35,7 +35,7 @@
 //
 // Supported Coins:
 //
-//	SHA-256d: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc
+//	SHA-256d: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx
 //	Scrypt:   ltc, doge, dgb-scrypt, pep, cat
 //
 // Merge Mining (AuxPoW):

@@ -528,7 +528,7 @@ func (c *ConfigV2) Validate() error {
 		coinName := symbolToCoinName(coin.Symbol)
 		if _, ok := SupportedCoins[coinName]; !ok {
 			return fmt.Errorf("coins[%d]: unknown symbol '%s'. Supported: BTC, BCH, BC2, DGB, DGB-SCRYPT, "+
-				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
+				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC, QBX (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
 		}
 	}
 
@@ -815,6 +815,7 @@ func (c *ConfigV2) SetDefaults() {
 				"sys":        "syscoin",
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
+				"qbx":        "qbitx",
 			}
 			coinName := symbolToCoin[coinSymbol]
 			if coinName == "" {
@@ -885,6 +886,7 @@ func (c *ConfigV2) SetDefaults() {
 				"sys":        "syscoin",
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
+				"qbx":        "qbitx",
 			}
 			coinName := symbolToCoin[coinSymbol]
 			if coinName == "" {
@@ -1035,6 +1037,8 @@ func getBlockTimeForCoin(symbol string) int {
 		return 60 // 1 minute blocks
 	case "FBTC", "FRACTALBTC":
 		return 30 // 30 second blocks
+	case "QBX", "QBITX":
+		return 600 // 10 minute blocks
 	default:
 		return 600 // Default to Bitcoin-like 10 minute blocks
 	}
@@ -1144,7 +1148,7 @@ func symbolToCoinName(symbol string) string {
 		"BTC": "bitcoin", "BCH": "bitcoincash", "BC2": "bitcoinii",
 		"LTC": "litecoin", "DOGE": "dogecoin", "PEP": "pepecoin",
 		"CAT": "catcoin", "NMC": "namecoin", "SYS": "syscoin",
-		"XMY": "myriadcoin", "FBTC": "fractalbitcoin",
+		"XMY": "myriadcoin", "FBTC": "fractalbitcoin", "QBX": "qbitx",
 	}
 	if name, ok := m[strings.ToUpper(symbol)]; ok {
 		return name
@@ -1180,6 +1184,8 @@ func getDefaultPortForCoin(symbol string) int {
 		return 10889 // FIX: Was 10888 (P2P port). RPC port is 10889.
 	case "FBTC", "FRACTALBTC", "FRACTAL-BTC":
 		return 8340 // FIX: Was 8341 (P2P port). RPC port is 8340.
+	case "QBX", "QBITX", "Q-BITX":
+		return 8344
 	default:
 		return 8332
 	}

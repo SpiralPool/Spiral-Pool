@@ -167,6 +167,15 @@
                         </div>
                         <div class="coin-check">✓</div>
                     </div>
+                    <div class="coin-option" id="coin-QBX" data-coin="QBX" onclick="toggleCoin('QBX')">
+                        <div class="coin-icon">🔐</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Q-BitX</div>
+                            <div class="coin-symbol">QBX</div>
+                            <div class="coin-port">Port: 20335</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
                     <!-- BTC Merge Mining Aux Chains (hidden until BTC selected) -->
                     <div class="merge-mining-group" id="merge-group-BTC" style="display: none;">
                         <p class="merge-label">🔗 Merge-mine with BTC</p>
@@ -831,6 +840,7 @@
             'DGB': { name: 'DigiByte', icon: '💎', port: 3333, algo: 'sha256d' },
             // SHA-256d merge-mineable (BTC parent)
             'FBTC': { name: 'Fractal Bitcoin', icon: '🔶', port: 18335, algo: 'sha256d', mergeParent: 'BTC' },
+            'QBX': { name: 'Q-BitX', icon: '🔐', port: 20335, algo: 'sha256d' },
             'NMC': { name: 'Namecoin', icon: '📛', port: 14335, algo: 'sha256d', mergeParent: 'BTC' },
             'SYS': { name: 'Syscoin', icon: '⚙️', port: 15335, algo: 'sha256d', mergeParent: 'BTC', mergeOnly: true },
             'XMY': { name: 'Myriad', icon: '🌀', port: 17335, algo: 'sha256d', mergeParent: 'BTC', mergeOnly: true },

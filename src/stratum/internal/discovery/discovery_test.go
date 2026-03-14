@@ -97,7 +97,7 @@ func TestScannerDefaults(t *testing.T) {
 
 	// DefaultStratumPorts includes all supported coins:
 	// DGB:3333, DGB-V2:3334, DGB-SCRYPT:3336, BTC:4333, BCH:5333, BC2:6333, LTC:7333, DOGE:8335
-	// PEP:10335, CAT:12335, NMC:14335, SYS:15335, XMY:17335, FBTC:18335
+	// PEP:10335, CAT:12335, NMC:14335, SYS:15335, XMY:17335, FBTC:18335, QBX:20335
 	if len(scanner.ports) != len(DefaultStratumPorts) {
 		t.Errorf("Expected default ports %v, got %v", DefaultStratumPorts, scanner.ports)
 	}

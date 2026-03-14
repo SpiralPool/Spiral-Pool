@@ -200,6 +200,7 @@ Stratum ports follow this pattern:
 | 8335-8342 | Scrypt | DOGE |
 | 10335-12337 | Scrypt | PEP, CAT |
 | 14335-18337 | SHA-256d | NMC, SYS, XMY, FBTC |
+| 20335-20337 | SHA-256d | QBX |
 
 When adding a new coin, select the next available port in the appropriate range.
 
@@ -285,6 +286,14 @@ BTC ──┬── NMC (Namecoin)
 ```
 LTC ──┬── DOGE (Dogecoin)
       └── PEP (PepeCoin)
+```
+
+### Standalone SHA-256d (Not Merge-Mineable)
+```
+BC2 (Bitcoin II)
+BCH (Bitcoin Cash)
+DGB (DigiByte)
+QBX (Q-BitX)
 ```
 
 ---

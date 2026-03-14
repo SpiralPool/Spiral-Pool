@@ -380,6 +380,49 @@ coins:
       explorer_url: "https://mempool.fractalbitcoin.io"
 
   # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: QBX
+    name: Q-BitX
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      # NOTE: QBX defaults to P2P 8334 / RPC 8332 which conflict with NMC/BTC
+      # Using unique ports to avoid collision
+      rpc_port: 8344
+      p2p_port: 8345
+      zmq_port: 28344
+
+    mining:
+      stratum_port: 20335
+      stratum_v2_port: 20336
+      stratum_tls_port: 20337
+
+    address:
+      p2pkh_version: 0x00    # '1' addresses (same as Bitcoin)
+      p2sh_version: 0x05     # '3' addresses (same as Bitcoin)
+      bech32_hrp: "bc"       # Standard bech32 (same as Bitcoin)
+      # Post-quantum (Dilithium) addresses:
+      #   dilithium_p2pkh: 0x32 (50 decimal)
+      #   dilithium_p2sh: 0x37 (55 decimal)
+      #   dilithium_bech32_hrp: "dil"
+      #   Address types: "pq" (legacy), "pq-bech32" (bech32), "dilithium" (default bech32)
+      collision_warning: "Uses same base58 format as BTC — verify wallet before use!"
+
+    chain:
+      genesis_hash: "407cdbc2ca102bd9e69069f25cebc2ef363a427166edba7580b41031b68549d9"
+      block_time: 150        # 2.5 minutes (same as Litecoin)
+      coinbase_maturity: 100
+      supports_segwit: false  # Uses post-quantum (Dilithium) signatures instead
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Q-BitX"
+      short_name: "QBX"
+      coingecko_id: null     # Not listed on CoinGecko yet
+      explorer_url: null     # No known block explorer
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # SCRYPT COINS
   # ─────────────────────────────────────────────────────────────────────────────
 

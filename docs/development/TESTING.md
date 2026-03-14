@@ -76,7 +76,7 @@ All tests are designed to run with `go test -race` and should produce zero data 
 | `merkle_fuzz_test.go` | Fuzz testing for Merkle tree building |
 | `proof_edge_cases_test.go` | Edge cases: empty trees, single leaf, chain ID collisions |
 
-### Coin Support (`internal/coin/`) — 18 files
+### Coin Support (`internal/coin/`) — 19 files
 
 | File | Focus |
 |------|-------|
@@ -93,6 +93,7 @@ All tests are designed to run with `go test -race` and should produce zero data 
 | `digibyte_scrypt_test.go` | DGB Scrypt params |
 | `dogecoin_test.go` | DOGE params and merge-mining |
 | `fractalbtc_test.go` | FBTC-specific params |
+| `qbitx_test.go` | QBX-specific params |
 | `litecoin_test.go` | LTC Scrypt params |
 | `myriad_test.go` | XMY multi-algo params |
 | `namecoin_test.go` | NMC merge-mining params |

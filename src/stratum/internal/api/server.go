@@ -40,7 +40,7 @@ var (
 	// Multi-coin address patterns:
 	// - DigiByte: D (mainnet P2PKH), S (P2SH), dgb1 (bech32)
 	// Address validation supports all 13 coins:
-	// - BTC/BC2/FBTC: 1 (P2PKH), 3 (P2SH), bc1q (bech32)
+	// - BTC/BC2/FBTC/QBX: 1 (P2PKH), 3 (P2SH), bc1q (bech32)
 	// - BCH: q/p (CashAddr), bitcoincash: prefix
 	// - DGB: D (P2PKH), S (P2SH), 3 (P2SH), dgb1q (bech32)
 	// - LTC: L/M (P2PKH/P2SH), ltc1q (bech32)
@@ -52,7 +52,7 @@ var (
 	// - CAT: 9 (P2PKH, version byte 21) — SegWit disabled on mainnet (SegwitHeight=INT_MAX)
 	validAddressPattern = regexp.MustCompile(`^(?:` +
 		`[13DSLMNP9][a-km-zA-HJ-NP-Z1-9]{25,34}|` + // Legacy P2PKH/P2SH (all coins; 9=CAT)
-		`bc1q[a-z0-9]{38,58}|` + // Bitcoin/BC2/FBTC bech32
+		`bc1q[a-z0-9]{38,58}|` + // Bitcoin/BC2/FBTC/QBX bech32
 		`bcrt1q[a-z0-9]{38,58}|` + // Bitcoin regtest bech32
 		`dgb1q[a-z0-9]{38,58}|` + // DigiByte mainnet bech32
 		`dgbt1q[a-z0-9]{38,58}|` + // DigiByte testnet bech32

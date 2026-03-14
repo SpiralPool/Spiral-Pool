@@ -358,6 +358,9 @@ services:
       fractalbitcoin:
         condition: service_healthy
         required: false
+      qbitx:
+        condition: service_healthy
+        required: false
       litecoin:
         condition: service_healthy
         required: false

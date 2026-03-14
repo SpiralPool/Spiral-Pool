@@ -37,6 +37,7 @@ var coinRegistry = map[string]coinMetadata{
 	"sys":  {"Syscoin", "sha256d", DefaultSYSConfig, "syscoind", "syscoin-cli", 8370},
 	"xmy":  {"Myriad", "sha256d", DefaultXMYConfig, "myriadcoind", "myriadcoin-cli", 10889},
 	"fbtc": {"Fractal Bitcoin", "sha256d", DefaultFBTCConfig, "fractald", "fractal-cli", 8340},
+	"qbx":  {"Q-BitX", "sha256d", DefaultQBXConfig, "qbitxd", "qbitx-cli", 8344},
 
 	// Scrypt coins
 	"ltc":        {"Litecoin", "scrypt", DefaultLTCConfig, "litecoind", "litecoin-cli", 9332},
@@ -78,6 +79,7 @@ var syncRequirements = map[string]struct {
 	"sys":  {85, "1-2 days"},
 	"xmy":  {6, "< 1 day"},
 	"fbtc": {50, "< 1 day"}, // Fractal Bitcoin: 30-second blocks, fast sync
+	"qbx":  {5, "< 1 day"},  // Q-BitX: SHA-256d standalone
 	"ltc":  {180, "2-4 days"},
 	"doge": {75, "1-2 days"},
 	"pep":  {2, "< 1 day"},
@@ -209,7 +211,7 @@ func printMiningUsage() {
 	fmt.Println("  --yes, -y        Skip confirmation prompts (for automation)")
 	fmt.Println()
 	fmt.Printf("%sSupported Coins (SHA-256d):%s\n", ColorBold, ColorReset)
-	fmt.Println("  btc, bch, dgb, bc2, nmc, sys, xmy, fbtc")
+	fmt.Println("  btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx")
 	fmt.Println()
 	fmt.Printf("%sSupported Coins (Scrypt):%s\n", ColorBold, ColorReset)
 	fmt.Println("  ltc, doge, dgb-scrypt, pep, cat")

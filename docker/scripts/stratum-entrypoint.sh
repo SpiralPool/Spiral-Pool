@@ -146,6 +146,15 @@ case "$POOL_COIN" in
         export STRATUM_PORT="${STRATUM_PORT:-18335}"
         export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-18337}"
         ;;
+    qbitx)
+        export DAEMON_HOST="${DAEMON_HOST:-qbitx}"
+        export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-8344}"
+        export DAEMON_RPC_USER="${DAEMON_RPC_USER:-${QBX_RPC_USER:-spiralqbx}}"
+        export DAEMON_RPC_PASSWORD="${DAEMON_RPC_PASSWORD:-${QBX_RPC_PASSWORD:-}}"
+        export DAEMON_ZMQ_PORT="${DAEMON_ZMQ_PORT:-28344}"
+        export STRATUM_PORT="${STRATUM_PORT:-20335}"
+        export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-20337}"
+        ;;
     litecoin)
         export DAEMON_HOST="${DAEMON_HOST:-litecoin}"
         export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-9332}"
@@ -186,7 +195,7 @@ case "$POOL_COIN" in
     *)
         echo "ERROR: Unknown POOL_COIN: $POOL_COIN"
         echo "Valid: digibyte, dgb-scrypt, bitcoin, bitcoincash, bitcoinii, namecoin, syscoin,"
-        echo "       myriadcoin, fractalbitcoin, litecoin, dogecoin, pepecoin, catcoin"
+        echo "       myriadcoin, fractalbitcoin, qbitx, litecoin, dogecoin, pepecoin, catcoin"
         exit 1
         ;;
 esac

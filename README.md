@@ -36,7 +36,7 @@ At its core is the **Spiral Router** &mdash; a miner classification engine that 
 
 In this documentation, "operator" means the individual or entity that installs and runs Spiral Pool on their own infrastructure. The Spiral Pool project does not operate pool infrastructure, provide hosted services, or have any relationship with miners connecting to operator-run pools.
 
-13 coins. 2 algorithms. 6 merge-mining pairs. One binary.
+14 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
 ---
 
@@ -44,7 +44,7 @@ In this documentation, "operator" means the individual or entity that installs a
 
 | Feature | Details |
 |---------|---------|
-| **Spiral Router** | Classifies miners at connection time via 280+ user-agent patterns across 13 SHA-256d and 6 Scrypt difficulty profiles |
+| **Spiral Router** | Classifies miners at connection time via 280+ user-agent patterns across 14 SHA-256d and 6 Scrypt difficulty profiles |
 | **Lock-free vardiff** | Per-session atomic state, asymmetric limits (4x up / 0.75x down), 50% variance floor |
 | **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
@@ -74,6 +74,7 @@ In this documentation, "operator" means the individual or entity that installs a
 | Syscoin | SYS | 2.5 min | BTC (AuxPoW, chain ID 16) &mdash; merge-mining only |
 | Myriad | XMY | 1 min | BTC (AuxPoW, chain ID 90) |
 | Fractal Bitcoin | FBTC | 30 sec | BTC (AuxPoW, chain ID 8228) |
+| Q-BitX | QBX | 2.5 min | &mdash; |
 
 ### Scrypt
 
@@ -94,6 +95,8 @@ BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
       ├── SYS  (Syscoin)                └── PEP  (PepeCoin)
       ├── XMY  (Myriad)
       └── FBTC (Fractal Bitcoin)
+
+QBX (standalone — no merge mining)
 ```
 
 ---
@@ -215,7 +218,7 @@ Enter credentials during installation or configure in `~/.spiralsentinel/config.
 
 > **Note:** Docker is for **Windows/WSL2 only**. Native installation via `./install.sh` provides the best performance with zero container I/O overhead. Do not use Docker on bare metal or VM installations.
 
-Docker supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 13 configurations available: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
+Docker supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 14 configurations available: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
 
 ```bash
 cd docker

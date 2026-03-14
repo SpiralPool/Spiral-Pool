@@ -68,7 +68,7 @@
 #   2. Create a wallet address for the new coin BEFORE starting mining
 #
 #   For wallet addresses:
-#   - Coins with CLI support (DGB, BTC, BCH, BC2, LTC, DOGE, FBTC):
+#   - Coins with CLI support (DGB, BTC, BCH, BC2, LTC, DOGE, FBTC, QBX):
 #     Run: spiralpool-wallet --coin <symbol>
 #
 #   - Coins with limited CLI support (NMC, SYS, XMY, PEP, CAT):
@@ -1510,6 +1510,7 @@ fix_config_issues() {
                     SYS) coin_name="Syscoin" ;;
                     XMY) coin_name="Myriad" ;;
                     FBTC) coin_name="Fractal Bitcoin" ;;
+                    QBX) coin_name="Q-BitX" ;;
                     *) coin_name="${symbol//[^a-zA-Z0-9 _-]/}" ;;  # Sanitized symbol as fallback
                 esac
                 log_info "    - Adding missing 'name: ${coin_name}' after line ${line_num}"
@@ -2407,7 +2408,7 @@ update_systemd_services() {
     fi
 
     # Detect daemon type from config.yaml or existing service file
-    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BC2, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC
+    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BC2, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC, QBX
     local DETECTED_DAEMON=""
 
     # First, try to detect from config.yaml (most reliable)
@@ -2850,7 +2851,7 @@ echo -e "    ${YELLOW}spiralctl chain export${NC}   Push chain     ${YELLOW}spir
 echo -e "    ${YELLOW}spiralctl ha${NC}             HA cluster     ${YELLOW}spiralctl help${NC}            All commands"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB       ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
 echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  LTC+DOGE  LTC+PEP"
 echo ""
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

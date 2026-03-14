@@ -51,7 +51,7 @@
 param(
     [switch]$Unattended,
     [string]$PoolAddress,
-    [ValidateSet("DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC")]
+    [ValidateSet("DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX")]
     [string]$Coin,  # Required in unattended mode; interactive mode shows menu
     [string]$DataDrive = "C:",
     [switch]$AcceptTerms,
@@ -68,7 +68,7 @@ $Script:Version = "1.0.0"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# COIN CONFIGURATION TABLE (single source of truth for all 13 coins)
+# COIN CONFIGURATION TABLE (single source of truth for all 14 coins)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $Script:CoinConfig = @{
@@ -80,6 +80,7 @@ $Script:CoinConfig = @{
     SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
     XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
     FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
+    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  ZmqPort=28344; RpcUser="spiralqbx";  StratumPort=20335; TlsPort=20337; PoolCoin="qbitx";            Profile="qbx";        Algo="SHA256d"; Storage="5 GB";    CliName="qbitx-cli" }
     LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
     DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
     "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="60 GB";   CliName="digibyte-cli" }
@@ -97,6 +98,7 @@ $Script:WalletPatterns = @{
     SYS          = "^(sys1[a-z0-9]{38,59})$"
     XMY          = "^(M[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     FBTC         = "^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58})$"
+    QBX          = "^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$"
     LTC          = "^(L[a-km-zA-HJ-NP-Z1-9]{25,34}|M[a-km-zA-HJ-NP-Z1-9]{25,34}|ltc1[a-z0-9]{38,59})$"
     DOGE         = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|A[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     "DGB-SCRYPT" = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|S[a-km-zA-HJ-NP-Z1-9]{25,34}|dgb1[a-z0-9]{38,59})$"
@@ -212,7 +214,7 @@ function Show-Help {
   OPTIONS:
     -Unattended       Fully automated installation (no prompts)
     -PoolAddress      Your wallet address for mining rewards
-    -Coin             Coin to mine: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, or XMY
+    -Coin             Coin to mine: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, or XMY
     -DataDrive        Drive for blockchain data (default: C:)
     -AcceptTerms      Accept Terms of Use and warnings (non-interactive)
     -Help             Show this help message
@@ -234,7 +236,7 @@ function Show-Help {
     When run without -Unattended, the installer presents a coin selection menu:
 
     SHA256d: DGB (~60GB), BTC (~600GB), BCH (~250GB), BC2 (~10GB)
-             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB)
+             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), QBX (~5GB)
     Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~60GB), PEP (~5GB), CAT (~5GB)
 
     You will be prompted for:
@@ -417,32 +419,35 @@ function Show-SoloCoinMenu {
     Write-Host "   [8] " -NoNewline -ForegroundColor Cyan
     Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
     Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
+    Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
+    Write-Host "QBX  - Q-BitX" -NoNewline -ForegroundColor White
+    Write-Host "         ~5 GB    Port 20335" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Scrypt Coins:" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
     Write-Host "LTC  - Litecoin" -NoNewline -ForegroundColor Green
     Write-Host "       ~150 GB  Port 7333" -ForegroundColor DarkGray
-    Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
     Write-Host "DOGE - Dogecoin" -NoNewline -ForegroundColor White
     Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
-    Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
     Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
     Write-Host " ~60 GB   Port 3336" -ForegroundColor DarkGray
-    Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
     Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
     Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
-    Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
     Write-Host "CAT  - Catcoin" -NoNewline -ForegroundColor White
     Write-Host "        ~5 GB    Port 12335" -ForegroundColor DarkGray
     Write-Host ""
 
-    $choice = Read-Host "  Select coin (1-13) [default: 1]"
+    $choice = Read-Host "  Select coin (1-14) [default: 1]"
     if ([string]::IsNullOrEmpty($choice)) { $choice = "1" }
 
     $coinMap = @{
-        "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BC2"; "5"="NMC"; "6"="SYS"; "7"="XMY"; "8"="FBTC"
-        "9"="LTC"; "10"="DOGE"; "11"="DGB-SCRYPT"; "12"="PEP"; "13"="CAT"
+        "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BC2"; "5"="NMC"; "6"="SYS"; "7"="XMY"; "8"="FBTC"; "9"="QBX"
+        "10"="LTC"; "11"="DOGE"; "12"="DGB-SCRYPT"; "13"="PEP"; "14"="CAT"
     }
 
     if ($coinMap.ContainsKey($choice)) {

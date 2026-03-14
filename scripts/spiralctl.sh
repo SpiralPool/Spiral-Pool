@@ -93,6 +93,7 @@ get_enabled_coins() {
         [[ "$ENABLE_LTC" == "true" ]] && coins="$coins LTC"
         [[ "$ENABLE_NMC" == "true" ]] && coins="$coins NMC"
         [[ "$ENABLE_PEP" == "true" ]] && coins="$coins PEP"
+        [[ "$ENABLE_QBX" == "true" ]] && coins="$coins QBX"
         [[ "$ENABLE_SYS" == "true" ]] && coins="$coins SYS"
         [[ "$ENABLE_XMY" == "true" ]] && coins="$coins XMY"
     fi
@@ -109,6 +110,7 @@ get_enabled_coins() {
         systemctl is-enabled litecoind &>/dev/null 2>&1 && coins="$coins LTC"
         systemctl is-enabled namecoind &>/dev/null 2>&1 && coins="$coins NMC"
         systemctl is-enabled pepecoind &>/dev/null 2>&1 && coins="$coins PEP"
+        systemctl is-enabled qbitxd &>/dev/null 2>&1 && coins="$coins QBX"
         systemctl is-enabled syscoind &>/dev/null 2>&1 && coins="$coins SYS"
         systemctl is-enabled myriadcoind &>/dev/null 2>&1 && coins="$coins XMY"
     fi
@@ -125,6 +127,7 @@ get_enabled_coins() {
         systemctl is-active --quiet litecoind 2>/dev/null && coins="$coins LTC"
         systemctl is-active --quiet namecoind 2>/dev/null && coins="$coins NMC"
         systemctl is-active --quiet pepecoind 2>/dev/null && coins="$coins PEP"
+        systemctl is-active --quiet qbitxd 2>/dev/null && coins="$coins QBX"
         systemctl is-active --quiet syscoind 2>/dev/null && coins="$coins SYS"
         systemctl is-active --quiet myriadcoind 2>/dev/null && coins="$coins XMY"
     fi
@@ -140,6 +143,7 @@ get_coin_daemon() {
         BC2) echo "bitcoiniid" ;;
         FBTC) echo "fractald" ;;
         LTC) echo "litecoind" ;;
+        QBX) echo "qbitxd" ;;
         DOGE) echo "dogecoind" ;;
         NMC) echo "namecoind" ;;
         PEP|PEPECOIN|MEME) echo "pepecoind" ;;
@@ -158,6 +162,7 @@ get_coin_cli() {
         BC2) echo "bitcoinii-cli -conf=$INSTALL_DIR/bc2/bitcoinii.conf" ;;
         FBTC) echo "fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf" ;;
         LTC) echo "litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf" ;;
+        QBX) echo "qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf" ;;
         DOGE) echo "dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf" ;;
         NMC) echo "namecoin-cli -conf=$INSTALL_DIR/nmc/namecoin.conf" ;;
         PEP|PEPECOIN|MEME) echo "pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf" ;;
@@ -215,7 +220,7 @@ cmd_status() {
     # SHA-256d coins
     # Alphabetically ordered
     local sha256_shown=false
-    for coin in BC2 BCH BTC DGB FBTC NMC SYS XMY; do
+    for coin in BC2 BCH BTC DGB FBTC NMC QBX SYS XMY; do
         daemon=$(get_coin_daemon $coin)
         if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
             if [[ "$sha256_shown" == "false" ]]; then
@@ -386,6 +391,10 @@ cmd_status() {
     fi
     if systemctl is-enabled --quiet namecoind 2>/dev/null; then
         sha256_ports="${sha256_ports}  NMC:        ${GREEN}stratum+tcp://$connect_ip:14335${NC} (V2: 14336)\n"
+        shown_any="true"
+    fi
+    if systemctl is-enabled --quiet qbitxd 2>/dev/null; then
+        sha256_ports="${sha256_ports}  QBX:        ${GREEN}stratum+tcp://$connect_ip:20335${NC} (V2: 20336)\n"
         shown_any="true"
     fi
     if systemctl is-enabled --quiet syscoind 2>/dev/null; then
@@ -3907,7 +3916,7 @@ cmd_coin() {
             echo -e "─────────────────────────────────────────────────────────────────────────"
 
             # Alphabetically ordered
-            for c in BC2 BCH BTC CAT DGB DGB-SCRYPT DOGE FBTC LTC NMC PEP SYS XMY; do
+            for c in BC2 BCH BTC CAT DGB DGB-SCRYPT DOGE FBTC LTC NMC PEP QBX SYS XMY; do
                 daemon=$(get_coin_daemon $c)
                 if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
                     if systemctl is-active --quiet "$daemon" 2>/dev/null; then
@@ -3930,7 +3939,7 @@ cmd_coin() {
         disable)
             check_root
             if [[ -z "$coin" ]]; then
-                log_error "Usage: spiralctl coin disable <bc2|bch|btc|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|sys|xmy>"
+                log_error "Usage: spiralctl coin disable <bc2|bch|btc|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|qbx|sys|xmy>"
                 exit 1
             fi
             coin="${coin^^}"
@@ -3942,7 +3951,7 @@ cmd_coin() {
             fi
             daemon=$(get_coin_daemon $coin)
             if [[ -z "$daemon" ]]; then
-                log_error "Unknown coin: $coin. Use bc2, bch, btc, cat, dgb, dgb-scrypt, doge, fbtc, ltc, nmc, pep, sys, or xmy."
+                log_error "Unknown coin: $coin. Use bc2, bch, btc, cat, dgb, dgb-scrypt, doge, fbtc, ltc, nmc, pep, qbx, sys, or xmy."
                 exit 1
             fi
             log_warn "Disabling $coin..."
@@ -3978,8 +3987,8 @@ cmd_sync() {
     local pool_user=""
 
     # Check systemd service files for the configured User=
-    # Checks all supported coins (alphabetically): BC2, BCH, BTC, CAT, DGB, DOGE, FBTC, LTC, NMC, PEP, SYS, XMY + stratum
-    for service in bitcoiniid bitcoind-bch bitcoind catcoind digibyted dogecoind fractald litecoind namecoind pepecoind syscoind myriadcoind spiralstratum; do
+    # Checks all supported coins (alphabetically): BC2, BCH, BTC, CAT, DGB, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XMY + stratum
+    for service in bitcoiniid bitcoind-bch bitcoind catcoind digibyted dogecoind fractald litecoind namecoind pepecoind qbitxd syscoind myriadcoind spiralstratum; do
         if [[ -f "/etc/systemd/system/${service}.service" ]]; then
             pool_user=$(grep -oP '^User=\K.*' "/etc/systemd/system/${service}.service" 2>/dev/null | head -1)
             [[ -n "$pool_user" ]] && break
@@ -3988,7 +3997,7 @@ cmd_sync() {
 
     # Fallback: detect from directory ownership (checks all coin directories)
     if [[ -z "$pool_user" ]] || [[ "$pool_user" == "root" ]]; then
-        for dir in "$INSTALL_DIR/dgb" "$INSTALL_DIR/btc" "$INSTALL_DIR/bch" "$INSTALL_DIR/bc2" "$INSTALL_DIR/fbtc" "$INSTALL_DIR/ltc" "$INSTALL_DIR/nmc" "$INSTALL_DIR/doge" "$INSTALL_DIR/pep" "$INSTALL_DIR/sys" "$INSTALL_DIR/xmy" "$INSTALL_DIR/cat"; do
+        for dir in "$INSTALL_DIR/dgb" "$INSTALL_DIR/btc" "$INSTALL_DIR/bch" "$INSTALL_DIR/bc2" "$INSTALL_DIR/fbtc" "$INSTALL_DIR/ltc" "$INSTALL_DIR/nmc" "$INSTALL_DIR/doge" "$INSTALL_DIR/pep" "$INSTALL_DIR/qbx" "$INSTALL_DIR/sys" "$INSTALL_DIR/xmy" "$INSTALL_DIR/cat"; do
             if [[ -d "$dir" ]]; then
                 pool_user=$(stat -c '%U' "$dir" 2>/dev/null)
                 [[ -n "$pool_user" ]] && [[ "$pool_user" != "root" ]] && break
@@ -4081,7 +4090,7 @@ cmd_node() {
 
     get_daemons() {
         if [[ "$1" == "all" ]]; then
-            echo "digibyted bitcoind bitcoind-bch bitcoiniid litecoind dogecoind pepecoind catcoind fractald namecoind syscoind myriadcoind"
+            echo "digibyted bitcoind bitcoind-bch bitcoiniid litecoind dogecoind pepecoind catcoind fractald qbitxd namecoind syscoind myriadcoind"
         else
             get_coin_daemon "${1^^}"
         fi
@@ -4132,7 +4141,7 @@ cmd_node() {
             done
             ;;
         *)
-            echo "Usage: spiralctl node [status|start|stop|restart] [bc2|bch|btc|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|sys|xmy|all]"
+            echo "Usage: spiralctl node [status|start|stop|restart] [bc2|bch|btc|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|qbx|sys|xmy|all]"
             exit 1
             ;;
     esac
@@ -4368,7 +4377,7 @@ cmd_webhook() {
     local SENTINEL_CONFIG=""
 
     # Try pool user home first (from systemd service)
-    for service in spiralsentinel spiralstratum bitcoiniid bitcoind-bch bitcoind catcoind digibyted dogecoind fractald litecoind myriadcoind namecoind pepecoind syscoind; do
+    for service in spiralsentinel spiralstratum bitcoiniid bitcoind-bch bitcoind catcoind digibyted dogecoind fractald litecoind myriadcoind namecoind pepecoind qbitxd syscoind; do
         if [[ -f "/etc/systemd/system/${service}.service" ]]; then
             local svc_user=$(grep -oP '^User=\K.*' "/etc/systemd/system/${service}.service" 2>/dev/null | head -1)
             if [[ -n "$svc_user" ]] && [[ "$svc_user" != "root" ]]; then
@@ -5108,7 +5117,7 @@ show_help() {
     echo "    spiralctl remove-coin DOGE                 Remove DOGE and all generated files"
     echo ""
     echo -e "${WHITE}SUPPORTED COINS${NC}"
-    echo "    SHA-256d: bc2, bch, btc, dgb, fbtc, nmc, sys, xmy"
+    echo "    SHA-256d: bc2, bch, btc, dgb, fbtc, nmc, qbx, sys, xmy"
     echo "    Scrypt:   cat, dgb-scrypt, doge, ltc, pep"
     echo ""
 }
@@ -5221,6 +5230,7 @@ cmd_sync_addresses() {
                 bitcoinii)       current_coin="BC2" ;;
                 digibyte-scrypt) current_coin="DGB-SCRYPT" ;;
                 fractalbitcoin)  current_coin="FBTC" ;;
+                qbitx)           current_coin="QBX" ;;
                 *)               current_coin="${coin_name^^}" ;;
             esac
         fi

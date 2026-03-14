@@ -68,6 +68,7 @@ declare -A COIN_DIRS=(
     ["SYS"]="${INSTALL_DIR}/sys"
     ["XMY"]="${INSTALL_DIR}/xmy"
     ["FBTC"]="${INSTALL_DIR}/fbtc"
+    ["QBX"]="${INSTALL_DIR}/qbx"
 )
 
 # Coin symbol → display label
@@ -84,6 +85,7 @@ declare -A COIN_LABELS=(
     ["SYS"]="Syscoin (SYS)"
     ["XMY"]="Myriadcoin (XMY)"
     ["FBTC"]="Fractal Bitcoin (FBTC)"
+    ["QBX"]="Q-BitX (QBX)"
 )
 
 # Coin symbol → systemd service name
@@ -100,6 +102,7 @@ declare -A COIN_SERVICES=(
     ["SYS"]="syscoind"
     ["XMY"]="myriadcoind"
     ["FBTC"]="fractald"
+    ["QBX"]="qbitxd"
 )
 
 # rsync flags for blockchain data

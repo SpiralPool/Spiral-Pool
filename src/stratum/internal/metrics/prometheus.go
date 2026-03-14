@@ -298,7 +298,7 @@ func New(cfg *config.MetricsConfig, logger *zap.Logger) *Metrics {
 		//   30s coins (FBTC):       250ms=0.8%  1s=3.3%   5s=17%   30s=stale
 		//   60s coins (DOGE, SYS):  250ms=0.4%  1s=1.7%   5s=8%    60s=stale
 		//   150s coins (LTC):       250ms=0.2%  1s=0.7%   5s=3%    30s=20%
-		//   600s coins (BTC, BCH):  250ms=0.04% 1s=0.2%   5s=0.8%  30s=5%
+		//   600s coins (BTC, BCH, QBX): 250ms=0.04% 1s=0.2% 5s=0.8% 30s=5%
 		Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 15000, 30000},
 	})
 	m.BlockRejectionsByReason = prometheus.NewCounterVec(prometheus.CounterOpts{

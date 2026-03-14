@@ -192,7 +192,7 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `multi_coin_enabled` | bool | `false` | Explicit multi-coin mode |
-| `coins` | list | 13 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
+| `coins` | list | 14 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
 
 ### Historical Data
 
@@ -367,6 +367,7 @@ If all channels fail: retries once after 10s, then writes to `fallback_notificat
 |--------|----------|-------|
 | DGB / DGB-SCRYPT | 30s | Fast block time (15s) |
 | FBTC | 20s | Fast block time (30s) |
+| QBX | 60s | Block time (150s) |
 | DOGE / SYS / XMY | 45s | |
 | LTC / PEP / CAT | 60s | |
 | BTC / BCH / BC2 / NMC | 120s | Slow block time (10 min) |
@@ -476,6 +477,7 @@ New achievements are announced via Discord embed when unlocked.
 | SYS | `syscoin` |
 | XMY | `myriadcoin` |
 | FBTC | `fractal-bitcoin` |
+| QBX | `q-bitx` |
 | PEP | `pepecoin` |
 | CAT | `catcoin` |
 

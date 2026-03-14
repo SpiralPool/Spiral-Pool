@@ -40,7 +40,7 @@ func main() {
 		fmt.Printf("Build Time: %s\n", BuildTime)
 		fmt.Printf("Git Commit: %s\n", GitCommit)
 		fmt.Printf("\nFeatures:\n")
-		fmt.Printf("  - Multi-coin support (BTC, BCH, BC2, DGB, DGB-SCRYPT, NMC, SYS, XMY, FBTC, LTC, DOGE, PEP, CAT)\n")
+		fmt.Printf("  - Multi-coin support (BTC, BCH, BC2, DGB, DGB-SCRYPT, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, PEP, CAT)\n")
 		fmt.Printf("  - Multi-node failover per coin\n")
 		fmt.Printf("  - Health-based automatic failover\n")
 		fmt.Printf("  - ZMQ block notifications with RPC fallback\n")

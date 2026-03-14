@@ -492,7 +492,7 @@ type AuxChainConfig struct {
 // SupportedCoins defines the coins supported by this pool.
 // V1.0-BLACKICE: Supports SHA-256d and Scrypt algorithms.
 //
-// SHA-256d coins: BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC
+// SHA-256d coins: BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC, QBX
 // Scrypt coins:   LTC, DOGE, DGB-SCRYPT, PEP, CAT
 var SupportedCoins = map[string]CoinInfo{
 	// === SHA-256d Coins ===
@@ -609,6 +609,16 @@ var SupportedCoins = map[string]CoinInfo{
 		P2PPort:       8341,
 		AddressPrefix: []byte{0x00}, // Same as Bitcoin - addresses start with 1
 		BlockTime:     30,           // 30 seconds (NOT 600 like Bitcoin!)
+	},
+	// Q-BitX (QBX) - standalone SHA-256d coin (NOT merge-mineable)
+	"qbitx": {
+		Name:          "Q-BitX",
+		Symbol:        "QBX",
+		Algorithm:     "sha256d",
+		DefaultPort:   8344,
+		P2PPort:       8345,
+		AddressPrefix: []byte{0x00}, // Same as Bitcoin
+		BlockTime:     600,          // 10 minutes
 	},
 	// Syscoin (SYS) - merge-mined with Bitcoin via AuxPoW
 	"syscoin": {
@@ -1592,6 +1602,7 @@ func (c *Config) SetDefaults() {
 			15335, 15336, // SYS + V2
 			17335, 17336, // XMY + V2
 			18335, 18336, // FBTC + V2
+			20335, 20336, // QBX + V2
 		}
 	}
 	if c.Failover.Discovery.ScanTimeout == 0 {
@@ -1946,6 +1957,9 @@ func extractSymbolFromCoin(coinConfig string) string {
 		"fractalbitcoin":  "FBTC",
 		"fractal-bitcoin": "FBTC",
 		"fbtc":            "FBTC",
+		"qbitx":           "QBX",
+		"q-bitx":          "QBX",
+		"qbx":             "QBX",
 		"syscoin":         "SYS",
 		"sys":             "SYS",
 		"myriadcoin":      "XMY",
@@ -2187,8 +2201,8 @@ func validateCashAddr(address string) error {
 // getCoinAddressPrefixes returns the valid address version bytes for a coin.
 func getCoinAddressPrefixes(coinSymbol string) []byte {
 	switch strings.ToUpper(coinSymbol) {
-	case "BTC", "BC2", "FBTC":
-		return []byte{0x00, 0x05} // P2PKH (1), P2SH (3) - FBTC uses same format as Bitcoin
+	case "BTC", "BC2", "FBTC", "QBX":
+		return []byte{0x00, 0x05} // P2PKH (1), P2SH (3) - FBTC/QBX use same format as Bitcoin
 	case "BCH":
 		return []byte{0x00, 0x05} // Legacy format (before CashAddr)
 	case "DGB", "DGB-SCRYPT", "DGB_SCRYPT":

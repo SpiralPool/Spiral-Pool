@@ -10,7 +10,7 @@ Docker supports **V1 single-coin solo mining** only:
 
 - One cryptocurrency per deployment
 - Stratum V1 protocol (plain + TLS encrypted connections)
-- 13 supported configurations: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, LTC, DOGE, DGB-SCRYPT, PEP, CAT
+- 14 supported configurations: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT
 - Dashboard, Sentinel monitoring, Prometheus, and Grafana included
 - Self-signed TLS certificates auto-generated
 
@@ -21,7 +21,7 @@ Docker supports **V1 single-coin solo mining** only:
 **Not supported in Docker** (requires native `sudo ./install.sh`):
 
 - V2 Enhanced Stratum (SV2 binary protocol with Noise encryption)
-- Multi-coin mining (12 coins simultaneously)
+- Multi-coin mining (14 coins simultaneously)
 - Merge mining (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP)
 - Full HA with VIP failover (Keepalived) and multi-node stratum
 
@@ -49,10 +49,10 @@ sudo usermod -aG docker $USER
 > pull the correct architecture, but this has **not been tested** by the Spiral Pool
 > team. Known limitations:
 >
-> - **Fractal Bitcoin (FBTC)** has no arm64 binary and will fail to build on ARM.
+> - **Fractal Bitcoin (FBTC)** and **Q-BitX (QBX)** have no arm64 binaries and will fail to build on ARM.
 > - Go compilation and stratum binary compatibility are unverified on ARM.
 > - Performance characteristics are unknown on ARM hardware.
-> - 11 of 12 coin images include arm64 conditionals; FBTC is x86_64-only.
+> - 12 of 14 coin images include arm64 conditionals; FBTC and QBX are x86_64-only.
 >
 > If you encounter issues on ARM64, please report them with your architecture
 > (`dpkg --print-architecture`) and full error output.
@@ -101,7 +101,7 @@ POOL_COIN=digibyte
 POOL_ADDRESS=YOUR_WALLET_ADDRESS_HERE
 ```
 
-Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`
+Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`, `qbitx`
 
 Also set your Pool ID to match your coin:
 
@@ -116,6 +116,7 @@ Also set your Pool ID to match your coin:
 | Syscoin | `sys_sha256_1` |
 | Myriadcoin | `xmy_sha256_1` |
 | Fractal BTC | `fbtc_sha256_1` |
+| Q-BitX | `qbx_sha256_1` |
 | Litecoin | `ltc_scrypt_1` |
 | Dogecoin | `doge_scrypt_1` |
 | PepeCoin | `pep_scrypt_1` |
@@ -128,7 +129,7 @@ Also set your Pool ID to match your coin:
 ```
 
 This auto-generates unique random passwords for:
-- All coin daemon RPC credentials (12 daemons; DGB-SCRYPT shares the DGB daemon)
+- All coin daemon RPC credentials (14 daemons; DGB-SCRYPT shares the DGB daemon)
 - PostgreSQL database
 - Grafana admin
 - Admin API key
@@ -155,6 +156,7 @@ Available profiles:
 | `sys` | Syscoin (daemon sync only — mining requires native install, see note) | SHA-256d |
 | `xmy` | Myriadcoin | SHA-256d |
 | `fbtc` | Fractal Bitcoin | SHA-256d |
+| `qbx` | Q-BitX | SHA-256d |
 | `ltc` | Litecoin | Scrypt |
 | `doge` | Dogecoin | Scrypt |
 | `dgb-scrypt` | DigiByte (Scrypt) | Scrypt |
@@ -197,6 +199,7 @@ After the pool starts (allow 5-10 minutes for blockchain daemon initialization):
 | Syscoin | 15335 | 15337 |
 | Myriadcoin | 17335 | 17337 |
 | Fractal BTC | 18335 | 18337 |
+| Q-BitX | 20335 | 20337 |
 
 ### Miner Configuration Example (cgminer/bfgminer)
 

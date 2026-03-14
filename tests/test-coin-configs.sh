@@ -1036,6 +1036,79 @@ EOF
     test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 60 "pool-fbtc" "bech32" "bc1" "modern"
 }
 
+test_qbx() {
+    local coin="qbx"
+
+    # QBX is x86_64 only
+    if [[ "$ARCH" != "x86_64" ]]; then
+        log_skip "$coin - x86_64 only (current: $ARCH)"
+        return 0
+    fi
+
+    local url="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
+    local rpc_user="spiralqbx"
+    local rpc_pass=$(gen_rpc_pass)
+    local rpc_port=8344
+    local zmq_port=28344
+    local p2p_port=8345
+    local datadir="$TEST_BASE/$coin/data"
+    local conf="$datadir/qbitx.conf"
+
+    # QBX ships as a zip, not tar.gz
+    download_extract "$coin" "$url" || return 1
+
+    local daemon=$(find "$TEST_BASE/$coin/extract" -name "qbitx" -not -name "qbitx-cli" -type f | head -1)
+    local cli=$(find "$TEST_BASE/$coin/extract" -name "qbitx-cli" -type f | head -1)
+    [[ -z "$daemon" ]] && { log_fail "$coin - qbitx not found in archive"; return 1; }
+    chmod +x "$daemon" "$cli"
+
+    mkdir -p "$datadir"
+
+    cat > "$conf" << EOF
+# Q-BitX Configuration for Spiral Pool
+
+# === CORE SETTINGS ===
+server=1
+daemon=1
+txindex=1
+
+# RPC Settings
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=$rpc_port
+
+# ZMQ for block notifications
+zmqpubhashblock=tcp://127.0.0.1:$zmq_port
+zmqpubrawtx=tcp://127.0.0.1:$zmq_port
+
+# P2P port
+port=$p2p_port
+
+# === NETWORK CONFIGURATION ===
+maxconnections=32
+listen=1
+
+# Performance
+dbcache=512
+maxmempool=300
+
+# Wallet
+disablewallet=0
+
+# Logging
+shrinkdebugfile=1
+printtoconsole=0
+
+# PID file
+pid=$datadir/qbitxd.pid
+EOF
+
+    # Wallet: pool-qbx, pq address type (post-quantum). Standalone SHA-256d.
+    test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 60 "pool-qbx" "" "" ""
+}
+
 test_ltc() {
     local coin="ltc"
     local url="https://github.com/litecoin-project/litecoin/releases/download/v0.21.4/litecoin-0.21.4-${ARCH_SUFFIX}.tar.gz"
@@ -1327,7 +1400,7 @@ echo "Arch: $ARCH ($ARCH_SUFFIX)" >> "$RESULTS_FILE"
 echo "---" >> "$RESULTS_FILE"
 
 # Determine which coins to test
-ALL_COINS="dgb btc bch bc2 nmc sys xmy fbtc ltc doge pep cat"
+ALL_COINS="dgb btc bch bc2 nmc sys xmy fbtc qbx ltc doge pep cat"
 if [[ $# -gt 0 ]]; then
     COINS_TO_TEST="$*"
 else
@@ -1355,6 +1428,7 @@ for coin in $COINS_TO_TEST; do
         sys)  test_sys  ;;
         xmy)  test_xmy  ;;
         fbtc) test_fbtc ;;
+        qbx)  test_qbx  ;;
         ltc)  test_ltc  ;;
         doge) test_doge ;;
         pep)  test_pep  ;;

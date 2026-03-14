@@ -282,6 +282,9 @@ func extractCoinSymbol(coinConfig string) string {
 		"fractal-bitcoin": "FBTC",
 		"fractal":         "FBTC",
 		"fbtc":            "FBTC",
+		"qbitx":           "QBX",
+		"q-bitx":          "QBX",
+		"qbx":             "QBX",
 		// Scrypt coins
 		"digibyte-scrypt": "DGB-SCRYPT",
 		"dgb-scrypt":      "DGB-SCRYPT",

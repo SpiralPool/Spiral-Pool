@@ -23,6 +23,7 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Syscoin | SYS | 15335 | 15336 | 15337 |
 | Myriad | XMY | 17335 | 17336 | 17337 |
 | Fractal Bitcoin | FBTC | 18335 | 18336 | 18337 |
+| Q-BitX | QBX | 20335 | 20336 | 20337 |
 
 ## Service Ports
 

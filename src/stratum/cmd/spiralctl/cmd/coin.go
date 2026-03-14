@@ -57,7 +57,7 @@ func printCoinUsage() {
 	fmt.Println("  spiralctl mining merge enable      Enable merge mining")
 	fmt.Println()
 	fmt.Println("Supported Coins (SHA256d):")
-	fmt.Println("  btc, bch, dgb, bc2, nmc, xmy, fbtc  (sys = merge-mining only w/ BTC)")
+	fmt.Println("  btc, bch, dgb, bc2, nmc, xmy, fbtc, qbx  (sys = merge-mining only w/ BTC)")
 	fmt.Println()
 	fmt.Println("Supported Coins (Scrypt):")
 	fmt.Println("  ltc, doge, dgb-scrypt, pep, cat")
@@ -92,6 +92,7 @@ func listCoins() error {
 		{"LTC", "Litecoin", "Scrypt", DefaultLTCConfig, "litecoind"},
 		{"NMC", "Namecoin", "SHA-256d", DefaultNMCConfig, "namecoind"},
 		{"PEP", "PepeCoin", "Scrypt", DefaultPEPConfig, "pepecoind"},
+		{"QBX", "Q-BitX", "SHA-256d", DefaultQBXConfig, "qbitxd"},
 		{"SYS", "Syscoin (merge-mine only)", "SHA-256d", DefaultSYSConfig, "syscoind"},
 		{"XMY", "Myriad", "SHA-256d", DefaultXMYConfig, "myriadcoind"},
 	}
@@ -187,6 +188,7 @@ func coinStatus() error {
 		{"SYS", "Syscoin", DefaultSYSConfig, "syscoind", 8370, "syscoin-cli"},
 		{"XMY", "Myriad", DefaultXMYConfig, "myriadcoind", 10889, "myriadcoin-cli"},
 		{"FBTC", "Fractal Bitcoin", DefaultFBTCConfig, "fractald", 8340, "fractal-cli"},
+		{"QBX", "Q-BitX", DefaultQBXConfig, "qbitxd", 8344, "qbitx-cli"},
 		// Scrypt coins
 		{"LTC", "Litecoin", DefaultLTCConfig, "litecoind", 9332, "litecoin-cli"},
 		{"DOGE", "Dogecoin", DefaultDOGEConfig, "dogecoind", 22555, "dogecoin-cli"},

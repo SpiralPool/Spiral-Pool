@@ -5,7 +5,7 @@
 <h3 align="center">⛏️ Self-Hosted Solo Mining Pool Software 🌀</h3>
 
 <p align="center">
-  <em>Non-custodial · Lock-free vardiff · Stratum V1/V2/TLS · 13 coins · BSD-3-Clause</em>
+  <em>Non-custodial · Lock-free vardiff · Stratum V1/V2/TLS · 14 coins · BSD-3-Clause</em>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@ Free, open-source mining pool software you run on your own hardware. Non-custodi
 
 ### ⛏️ Supported Coins
 
-**SHA-256d:** BTC · BCH · DGB · BC2 · NMC · SYS · XMY · FBTC
+**SHA-256d:** BTC · BCH · DGB · BC2 · NMC · SYS · XMY · FBTC · QBX
 **Scrypt:** LTC · DOGE · DGB-SCRYPT · PEP · CAT
 
 ### ✨ Highlights

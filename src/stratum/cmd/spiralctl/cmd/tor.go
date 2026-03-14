@@ -72,7 +72,7 @@ func runTor(args []string) error {
 	}
 
 	fs := flag.NewFlagSet("tor", flag.ExitOnError)
-	nodeFlag := fs.String("node", "", "Specific node (btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, ltc, doge, dgb-scrypt, pep, cat) or 'all'")
+	nodeFlag := fs.String("node", "", "Specific node (btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx, ltc, doge, dgb-scrypt, pep, cat) or 'all'")
 	allFlag := fs.Bool("all", false, "Apply to all nodes")
 
 	if len(args) < 1 {
@@ -108,7 +108,7 @@ func printTorUsage() {
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  --node <coin>  Apply to specific node")
-	fmt.Println("                 SHA-256d: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc")
+	fmt.Println("                 SHA-256d: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx")
 	fmt.Println("                 Scrypt:   ltc, doge, dgb-scrypt, pep, cat")
 	fmt.Println("  --all          Apply to all installed nodes")
 	fmt.Println()
@@ -266,6 +266,7 @@ func getAllNodes() []nodeInfo {
 		{"Myriad", "xmy", DefaultXMYConfig, "myriadcoind"},
 		{"Namecoin", "nmc", DefaultNMCConfig, "namecoind"},
 		{"PepeCoin", "pep", DefaultPEPConfig, "pepecoind"},
+		{"Q-BitX", "qbx", DefaultQBXConfig, "qbitxd"},
 		{"Syscoin", "sys", DefaultSYSConfig, "syscoind"},
 	}
 }

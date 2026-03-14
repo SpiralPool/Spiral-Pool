@@ -35,7 +35,7 @@ For lookup tables (ports, miner classes, CLI), see [REFERENCE.md](../reference/R
 
 ## 1. System Overview
 
-Spiral Pool is a mining pool server written in Go that supports 13 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
+Spiral Pool is a mining pool server written in Go that supports 14 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
 
 ### Core Design Principles
 
@@ -970,7 +970,7 @@ Source: `src/sentinel/SpiralSentinel.py`, `src/dashboard/dashboard.py`
 
 ## 18. Multi-Coin and Merge Mining
 
-### Supported Coins (13 total)
+### Supported Coins (14 total)
 
 | Coin | Symbol | Algorithm | Solo-Minable | Merge-Mined With |
 |------|--------|-----------|--------------|------------------|
@@ -982,6 +982,7 @@ Source: `src/sentinel/SpiralSentinel.py`, `src/dashboard/dashboard.py`
 | Syscoin | SYS | SHA-256d | No | BTC (chain ID 16) |
 | Myriad | XMY | SHA-256d | Yes | BTC (chain ID 90) |
 | Fractal Bitcoin | FBTC | SHA-256d | Yes | BTC (chain ID 8228) |
+| Q-BitX | QBX | SHA-256d | Yes | -- |
 | Litecoin | LTC | Scrypt | Yes | Parent chain |
 | Dogecoin | DOGE | Scrypt | Yes | LTC (chain ID 98) |
 | DigiByte-Scrypt | DGB-SCRYPT | Scrypt | Yes | -- |

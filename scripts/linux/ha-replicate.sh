@@ -76,6 +76,7 @@ declare -A BLOCKCHAIN_DIRS=(
     ["syscoin"]="${INSTALL_DIR}/sys"
     ["myriadcoin"]="${INSTALL_DIR}/xmy"
     ["fractal"]="${INSTALL_DIR}/fbtc"
+    ["qbitx"]="${INSTALL_DIR}/qbx"
 )
 
 # rsync flags for blockchain data (large files, sparse files, hardlinks)
@@ -418,6 +419,9 @@ get_blockchain_service_name() {
             ;;
         fractal)
             echo "fractald"
+            ;;
+        qbitx)
+            echo "qbitxd"
             ;;
         *)
             die "Unknown blockchain: $blockchain"

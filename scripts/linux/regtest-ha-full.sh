@@ -73,7 +73,7 @@ SYSTEM_PG_WAS_RUNNING=0
 if [[ -z "${1:-}" ]]; then
     echo "Usage: $0 <coin>"
     echo ""
-    echo "Supported coins: btc, ltc, dgb, doge, bch, sys, nmc, xmy, fbtc, pep, cat, bc2"
+    echo "Supported coins: btc, ltc, dgb, doge, bch, sys, nmc, xmy, fbtc, qbx, pep, cat, bc2"
     echo ""
     echo "Example: $0 btc"
     exit 1
@@ -382,6 +382,8 @@ XMY_RPC_USER=spiralpool
 XMY_RPC_PASSWORD=${RPC_PASS}
 FBTC_RPC_USER=spiralpool
 FBTC_RPC_PASSWORD=${RPC_PASS}
+QBX_RPC_USER=spiralpool
+QBX_RPC_PASSWORD=${RPC_PASS}
 EOF
 
     log_ok "Environment file created for $COIN_UPPER"

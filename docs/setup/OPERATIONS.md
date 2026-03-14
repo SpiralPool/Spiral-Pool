@@ -176,6 +176,7 @@ docker compose --profile bc2 up -d       # Bitcoin II
 docker compose --profile nmc up -d       # Namecoin
 docker compose --profile xmy up -d       # Myriadcoin
 docker compose --profile fbtc up -d      # Fractal Bitcoin
+docker compose --profile qbx up -d       # Q-BitX
 docker compose --profile sys up -d       # Syscoin (daemon sync only — mining requires native install)
 docker compose --profile ltc up -d       # Litecoin
 docker compose --profile doge up -d      # Dogecoin
@@ -337,6 +338,7 @@ main()
 | Dogecoin | DOGE | 75 GB |
 | DigiByte | DGB | 45 GB |
 | Fractal Bitcoin | FBTC | 50 GB |
+| Q-BitX | QBX | 5 GB |
 | Namecoin | NMC | 12 GB |
 | Myriad | XMY | 6 GB |
 | Bitcoin II | BC2 | 5 GB |
@@ -398,7 +400,7 @@ spiralctl mining merge enable doge,pep   # LTC parent
 
 | Port | Service |
 |------|---------|
-| 3333-18337 | Stratum (see [REFERENCE.md](../reference/REFERENCE.md)) |
+| 3333-20337 | Stratum (see [REFERENCE.md](../reference/REFERENCE.md)) |
 | 4000 | REST API |
 | 1618 | Dashboard |
 | 9100 | Prometheus metrics |
@@ -596,6 +598,8 @@ For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-up
   ltc-bin/, doge-bin/, pep-bin/...       Daemon binaries (Scrypt coins, symlinked to /usr/local/bin/)
   nmc/, sys/, xmy/, fbtc/               Blockchain data + config (merge-mined coins)
   nmc-bin/, sys-bin/, xmy-bin/, fbtc-bin/ Daemon binaries (merge-mined coins)
+  qbx/                                  Blockchain data + config (Q-BitX, standalone SHA-256d)
+  qbx-bin/                              Daemon binaries (Q-BitX, symlinked to /usr/local/bin/)
 
 ~spiraluser/.spiralsentinel/             Sentinel state
   config.json                           Sentinel settings (webhook URLs, etc.)

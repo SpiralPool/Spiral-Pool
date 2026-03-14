@@ -25,7 +25,7 @@
 #   bc2   - Bitcoin II       btc   - Bitcoin          bch   - Bitcoin Cash
 #   ltc   - Litecoin         dgb   - DigiByte (SHA256d)  nmc   - Namecoin
 #   dgb-scrypt - DigiByte (Scrypt)
-#   xmy   - Myriad           fbtc  - Fractal Bitcoin
+#   xmy   - Myriad           fbtc  - Fractal Bitcoin    qbx   - Q-BitX
 #   doge  - Dogecoin         pep   - PepeCoin          cat   - Catcoin
 #   (SYS is merge-mining only — see btc+sys below)
 #
@@ -108,7 +108,7 @@ if [[ -z "${1:-}" ]]; then
     echo "Supported coins:"
     echo "  bc2   - Bitcoin II         btc   - Bitcoin            bch   - Bitcoin Cash"
     echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
-    echo "  xmy   - Myriad             fbtc  - Fractal Bitcoin"
+    echo "  xmy   - Myriad             fbtc  - Fractal Bitcoin    qbx   - Q-BitX"
     echo "  doge  - Dogecoin           pep   - PepeCoin            cat   - Catcoin"
     echo "  dgb-scrypt - DigiByte (Scrypt)"
     echo "  (SYS is merge-mining only — use: $0 --merge btc+sys)"
@@ -363,6 +363,27 @@ setup_coin() {
                 TARBALL_DIR="fractald-0.2.9-x86_64-linux-gnu"
             fi
             ;;
+        qbx)
+            COIN_SYMBOL=QBX; COIN_NAME="Q-BitX"; COIN_ALGO=sha256d
+            DAEMON_CMD="${QBITXD:-qbitx}"; CLI_CMD="${QBITXCLI:-qbitx-cli}"
+            RPC_PORT_DEF=18570; P2P_PORT_DEF=18571; ZMQ_PORT_DEF=29362
+            STRATUM_PORT_DEF=16359; STRATUM_V2_PORT_DEF=17350; API_PORT_DEF=14026; METRICS_PORT_DEF=19126
+            HA_STRATUM=16360; HA_API=14027; HA_METRICS=19127
+            DB_NAME_DEF=spiralstratum_qbx_regtest; WALLET_NAME=regtest-pool-qbx
+            POOL_ID=qbx_regtest; DATA_DIR=.qbitx
+            DAEMON_LOG=qbitxd-regtest.log; DAEMON_STARTUP=qbitxd-startup.log
+            PKILL_PATTERN="qbitx.*regtest"
+            GITHUB_URL="https://github.com/q-bitx/Source-"
+            # Auto-install info (QBX has no arm64 binary)
+            DAEMON_VERSION="0.1.0"
+            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
+                DOWNLOAD_URL=""
+                TARBALL_DIR=""
+            else
+                DOWNLOAD_URL="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
+                TARBALL_DIR=""
+            fi
+            ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt
             ADDR_TYPE=""        # Dogecoin 1.14.x getnewaddress doesn't accept address_type param
@@ -436,7 +457,7 @@ setup_coin() {
             echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
             echo "  sys   - Syscoin            xmy   - Myriad"
             echo "  fbtc  - Fractal Bitcoin    doge  - Dogecoin           pep   - PepeCoin"
-            echo "  cat   - Catcoin            dgb-scrypt - DigiByte (Scrypt)"
+            echo "  cat   - Catcoin            dgb-scrypt - DigiByte (Scrypt)  qbx   - Q-BitX"
             exit 1
             ;;
     esac
@@ -1206,6 +1227,7 @@ if [[ "${KEEP_CHAIN:-0}" != "1" ]]; then
         NMC)   COIN_DATA_DIR="$HOME/.namecoin" ;;
         XMY)   COIN_DATA_DIR="$HOME/.myriadcoin" ;;
         FBTC)  COIN_DATA_DIR="$HOME/.fractal" ;;
+        QBX)   COIN_DATA_DIR="$HOME/.qbitx" ;;
         BC2)   COIN_DATA_DIR="$HOME/.bitcoinii" ;;
         *)     COIN_DATA_DIR="" ;;
     esac
@@ -1282,6 +1304,12 @@ DAEMON_ARGS=(
 if [[ "$COIN" == "fbtc" ]]; then
     mkdir -p "$HOME/.fractal"
     DAEMON_ARGS+=(-datadir="$HOME/.fractal")
+fi
+
+# Q-BitX: ensure data directory exists
+if [[ "$COIN" == "qbx" ]]; then
+    mkdir -p "$HOME/.qbitx"
+    DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
 fi
 
 # Add optional flags based on coin type
@@ -2786,6 +2814,8 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     [[ "$COIN" == "bch" ]] && RESTART_ARGS+=(-expire=0)
     # Fractal Bitcoin: must specify datadir (binary is bitcoind, defaults to ~/.bitcoin)
     [[ "$COIN" == "fbtc" ]] && RESTART_ARGS+=(-datadir="$HOME/.fractal")
+    # Q-BitX: specify datadir
+    [[ "$COIN" == "qbx" ]] && RESTART_ARGS+=(-datadir="$HOME/.qbitx")
     # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
 
     "$DAEMON_CMD" "${RESTART_ARGS[@]}" &>"$LOG_DIR/$DAEMON_STARTUP" &
@@ -3252,12 +3282,14 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
             )
 
             # Add fallbackfee for coins that need it
-            if [[ "$COIN_SYMBOL" =~ ^(BTC|LTC|DOGE|PEP|CAT|FBTC)$ ]]; then
+            if [[ "$COIN_SYMBOL" =~ ^(BTC|LTC|DOGE|PEP|CAT|FBTC|QBX)$ ]]; then
                 HA_DAEMON_ARGS+=(-fallbackfee=0.0001)
             fi
 
             # Fractal Bitcoin: must specify datadir (binary is bitcoind, defaults to ~/.bitcoin)
             [[ "$COIN" == "fbtc" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.fractal")
+            # Q-BitX: specify datadir
+            [[ "$COIN" == "qbx" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
 
             # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
 

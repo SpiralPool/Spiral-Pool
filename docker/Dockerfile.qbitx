@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                    Q-BITX - DOCKER IMAGE                                  ║
+# ║                                                                            ║
+# ║   Separate container for Q-BitX node (SHA-256d mining)                    ║
+# ║   Standalone solo mining only — no merge mining support                   ║
+# ║   Supports post-quantum (pq) and legacy (1..., 3...) addresses            ║
+# ║   NOTE: Q-BitX distributes as ZIP — no arm64 releases available           ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:24.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Q-BitX Node for Spiral Pool"
+LABEL version="0.1.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG QBX_VERSION=0.1.0
+
+# Install dependencies
+# NOTE: Q-BitX requires libevent, libleveldb, and unzip (distributes as ZIP)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    unzip \
+    ca-certificates \
+    libzmq3-dev \
+    libevent-2.1-7 \
+    libevent-pthreads-2.1-7t64 \
+    libleveldb1d \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create qbitx user
+RUN useradd -r -m -s /bin/bash qbitx \
+    && mkdir -p /home/qbitx/.qbitx \
+    && chown -R qbitx:qbitx /home/qbitx
+
+# Download and install Q-BitX
+# NOTE: Q-BitX only provides x86_64 binaries — no ARM64 releases available upstream.
+# NOTE: Q-BitX distributes as a ZIP file (not tar.gz)
+WORKDIR /tmp
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" != "amd64" ]; then \
+        echo "ERROR: Q-BitX only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
+    fi && \
+    wget -q --max-redirect=5 "https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86.zip" \
+    && unzip -q "qbitx-linux-x86.zip" \
+    && cp qbitxd /usr/local/bin/qbitxd \
+    && cp qbitx-cli /usr/local/bin/qbitx-cli \
+    && chmod +x /usr/local/bin/qbitxd /usr/local/bin/qbitx-cli \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars)\n\
+if [ -f /config/qbitx.conf.template ]; then\n\
+    envsubst < /config/qbitx.conf.template > /home/qbitx/.qbitx/qbitx.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R qbitx:qbitx /home/qbitx/.qbitx\n\
+\n\
+# Start Q-BitX daemon\n\
+exec gosu qbitx qbitxd -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 8345
+# RPC
+EXPOSE 8344
+# ZMQ
+EXPOSE 28344
+
+# Data volume
+VOLUME ["/home/qbitx/.qbitx"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

@@ -181,8 +181,8 @@ The following data points were verified as consistent across all documents where
 | Data Point | Documents Checked | Consistent |
 |-----------|-------------------|------------|
 | Merge mining chain IDs (NMC=1, SYS=16, XMY=90, FBTC=8228, DOGE=98, PEP=63) | README, OPERATIONS, COIN_ONBOARDING_SPEC, ARCHITECTURE | Yes |
-| Stratum port assignments (13 coins) | README, REFERENCE, DOCKER_GUIDE, OPERATIONS, COIN_ONBOARDING_SPEC | Yes |
-| Supported coin count (12 coins + DGB-SCRYPT variant) | README, DOCKER_GUIDE, ARCHITECTURE, COIN_ONBOARDING_SPEC | Yes |
+| Stratum port assignments (15 coins) | README, REFERENCE, DOCKER_GUIDE, OPERATIONS, COIN_ONBOARDING_SPEC | Yes |
+| Supported coin count (14 coins + DGB-SCRYPT variant) | README, DOCKER_GUIDE, ARCHITECTURE, COIN_ONBOARDING_SPEC | Yes |
 | License (BSD-3-Clause) | README, LICENSE, CONTRIBUTING, TERMS, THIRD_PARTY_LICENSES | Yes |
 | Platform (Ubuntu 24.04 LTS, x86_64 only) | README, OPERATIONS, DOCKER_GUIDE, WARNINGS, TERMS | Yes |
 | Cloud deployment blocked | README, WARNINGS, TERMS, LICENSE, OPERATIONS | Yes |

@@ -829,7 +829,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Pool, error) {
 			)
 
 			// V40 FIX: Reject if aux chain uses same payout address as parent chain.
-			// Coins with identical address formats (BC2/BTC, FBTC/BTC) can accept
+			// Coins with identical address formats (BC2/BTC, FBTC/BTC, QBX/BTC) can accept
 			// addresses from either chain. If the same address is configured for both,
 			// payments for different coins may go to the wrong chain wallet.
 			if auxCfg.Address == cfg.Pool.Address {
@@ -4139,7 +4139,7 @@ func getAlgoBlockTime(symbol string) float64 {
 	switch strings.ToUpper(symbol) {
 	case "DGB", "DGB-SCRYPT":
 		return 75 // 15s chain time * 5 algorithms
-	case "BTC", "BCH", "BC2", "NMC", "CAT":
+	case "BTC", "BCH", "BC2", "NMC", "CAT", "QBX":
 		return 600
 	case "SYS", "LTC":
 		return 150

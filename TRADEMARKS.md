@@ -101,6 +101,7 @@ This software and its documentation reference third-party products, services, an
 | Syscoin | Syscoin Foundation | Protocol implementation (merge-mining) |
 | Myriad, Myriadcoin | Myriadcoin community | Protocol implementation (merge-mining) |
 | Fractal Bitcoin | Fractal Bitcoin community | Protocol implementation (merge-mining) |
+| Q-BitX, QBX | Q-BitX community | Protocol implementation |
 | PepeCoin | PepeCoin community | Protocol implementation (merge-mining) |
 | Catcoin | Catcoin community | Protocol implementation |
 | Bitcoin II | Bitcoin II community | Protocol implementation |

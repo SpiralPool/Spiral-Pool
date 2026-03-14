@@ -274,6 +274,12 @@ get_rpc_creds() {
                 [ -f "$f" ] && { conf_file="$f"; break; }
             done
             ;;
+        QBX)
+            # Q-BitX (Post-Quantum Bitcoin)
+            for f in "$base_dir/qbx/qbitx.conf" "$base_dir/qbitx/qbitx.conf"; do
+                [ -f "$f" ] && { conf_file="$f"; break; }
+            done
+            ;;
         *)
             # Try to find config file by symbol name (lowercase)
             local sym_lower=$(echo "$symbol" | tr '[:upper:]' '[:lower:]')
@@ -554,6 +560,10 @@ ensure_auxchain_wallet_and_address() {
             use_addr_type=false
             new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
             ;;
+        QBX)
+            # Q-BitX uses post-quantum "pq" address type
+            new_address=$("$cli_path" -conf="$conf_path" getnewaddress "" "pq" 2>&1) || true
+            ;;
         *)
             use_addr_type=false
             new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
@@ -722,6 +732,9 @@ get_cli_path() {
             # Fractal release ships bitcoin-cli; fractal-cli is a symlink in /usr/local/bin only
             echo "$base_dir/fbtc-bin/bin/bitcoin-cli"
             ;;
+        QBX)
+            echo "$base_dir/qbx-bin/qbitx-cli"
+            ;;
     esac
 }
 
@@ -743,6 +756,7 @@ get_wallet_dir() {
         SYS) echo "$base_dir/sys/wallets" ;;
         XMY) echo "$base_dir/xmy/wallets" ;;
         FBTC) echo "$base_dir/fbtc/wallets" ;;
+        QBX) echo "$base_dir/qbx/wallets" ;;
         *) echo "$base_dir/${symbol,,}/wallets" ;;
     esac
 }
@@ -789,6 +803,9 @@ get_conf_path() {
             ;;
         FBTC)
             echo "$base_dir/fbtc/fractal.conf"
+            ;;
+        QBX)
+            echo "$base_dir/qbx/qbitx.conf"
             ;;
     esac
 }
@@ -941,6 +958,7 @@ ensure_wallet_and_address() {
     #   DOGE - NO address_type param (no SegWit, legacy D... addresses)
     #   BC2 - NO address_type param (older Bitcoin fork)
     #   XMY, FBTC - may or may not support, try legacy for safety
+    #   QBX - uses post-quantum "pq" address type (handled in separate case above)
     local new_address
     local addr_type=""
     local use_addr_type=true
@@ -952,14 +970,15 @@ ensure_wallet_and_address() {
             # SYS: Syscoin supports SegWit (sys1q... addresses)
             addr_type="bech32"
             ;;
-        BCH|DOGE|BC2|PEP|CAT|XMY|FBTC)
-            # These daemons do NOT support address_type parameter:
+        BCH|DOGE|BC2|PEP|CAT|XMY|FBTC|QBX)
+            # These daemons do NOT support standard address_type parameter:
             # - BCH: No SegWit (rejected it)
             # - DOGE: No SegWit implemented
             # - BC2: Older Bitcoin fork
             # - PEP/CAT: Legacy Scrypt coins without SegWit
             # - XMY: Myriad uses legacy addresses (M...)
             # - FBTC: Fractal Bitcoin - use legacy for compatibility
+            # - QBX: Uses "pq" post-quantum address type (handled separately)
             use_addr_type=false
             ;;
         *)
@@ -1198,6 +1217,7 @@ elif [ -n "$V1_INFO" ]; then
         syscoin|sys) COIN_SYMBOL="SYS" ;;
         myriadcoin|myriad|xmy) COIN_SYMBOL="XMY" ;;
         fractalbitcoin|fractal|fbtc) COIN_SYMBOL="FBTC" ;;
+        qbitx|q-bitx|qbx) COIN_SYMBOL="QBX" ;;
         *) COIN_SYMBOL="${COIN_RAW^^}" ;;
     esac
     echo "Coin: $COIN_SYMBOL"
