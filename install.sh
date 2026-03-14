@@ -10214,6 +10214,55 @@ collect_configuration() {
                 FBTC_RPC_PASSWORD=$(generate_password)
                 log_success "Generated secure FBTC RPC password"
                 ;;
+
+            QBX)
+                echo "Block rewards go to a Q-BitX wallet address. You have two options:"
+                echo ""
+                echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
+                echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
+                echo -e "      ${YELLOW}If generation fails, create an address externally.${NC}"
+                echo ""
+
+                while true; do
+                    prompt_input "Choose [1] or [2]: "; read wallet_choice
+                    case "$wallet_choice" in
+                        1)
+                            echo ""
+                            echo "Supported formats:"
+                            echo -e "  • Legacy (P2PKH):    ${GREEN}1${NC}... (26-35 chars)"
+                            echo -e "  • P2SH:              ${GREEN}3${NC}... (26-35 chars)"
+                            echo -e "  • Post-Quantum (PQ): ${GREEN}pq${NC}... (variable length)"
+                            echo ""
+                            echo -e "  ${DIM}To create an address: qbitx-cli getnewaddress \"\" pq${NC}"
+                            echo ""
+                            while true; do
+                                prompt_input "QBX Address: "; read QBX_ADDRESS
+                                if [[ "$QBX_ADDRESS" =~ ^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58}|pq[a-zA-Z0-9]{20,80})$ ]]; then
+                                    log_success "Valid QBX address format"
+                                    break
+                                else
+                                    log_error "Invalid QBX address format. Must start with 1, 3, bc1q, or pq."
+                                fi
+                            done
+                            break
+                            ;;
+                        2)
+                            GENERATE_QBX_WALLET="true"
+                            QBX_ADDRESS="PENDING_GENERATION"
+                            echo ""
+                            log_warn "QBX wallet generation deferred until blockchain sync completes"
+                            echo -e "    Run: ${GREEN}spiralpool-wallet --coin qbx${NC}"
+                            break
+                            ;;
+                        *)
+                            echo "Please enter 1 or 2"
+                            ;;
+                    esac
+                done
+                QBX_RPC_PASSWORD=$(generate_password)
+                log_success "Generated secure QBX RPC password"
+                ;;
         esac
     else
         # Multi-coin mode - collect addresses for each enabled coin
