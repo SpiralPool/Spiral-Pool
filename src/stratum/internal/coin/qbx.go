@@ -95,17 +95,17 @@ func (c *QBXCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 	}
 
 	// Post-quantum address (pq...)
-	// PQ addresses use Dilithium signatures. For coinbase output purposes,
-	// the node handles the script construction via createrawtransaction.
-	// We validate the format but the pool operator should use a standard
-	// address type (P2PKH/P2SH) for pool payouts.
+	// PQ addresses are a separate address format for Dilithium wallets.
+	// For pool mining, use a standard M... (P2PKH) address — the stratum
+	// automatically builds the required Dilithium P2PKH coinbase script
+	// (OP_CHECKSIGDILITHIUM) from the M... address hash.
 	if strings.HasPrefix(address, "pq") {
 		if len(address) < 22 || len(address) > 82 {
 			return nil, AddressTypeUnknown, fmt.Errorf("invalid pq address length: %d (expected 22-82)", len(address))
 		}
-		// For pq addresses, we cannot build a coinbase script directly.
-		// Return an error suggesting legacy address use for pool payouts.
-		return nil, AddressTypeUnknown, fmt.Errorf("post-quantum (pq) addresses are not supported for stratum coinbase payouts — use a legacy (M...) or P2SH (P...) address for pool mining")
+		// pq address encoding is not Base58Check — we cannot decode the hash.
+		// Use a standard M... (P2PKH) address for the pool mining address.
+		return nil, AddressTypeUnknown, fmt.Errorf("pq addresses cannot be decoded by stratum — use a standard M... (P2PKH) address for pool mining")
 	}
 
 	// Regtest bech32 (bcrt1...) — only for testing
@@ -169,6 +169,16 @@ func (c *QBXCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 }
 
 // BuildCoinbaseScript builds the output script for the coinbase transaction.
+//
+// CRITICAL: QBX consensus rules (validation.cpp CheckBlock) require that every
+// coinbase vout[0] uses IsPQPayToPubKeyHash() — a Dilithium P2PKH script ending
+// with OP_CHECKSIGDILITHIUM (0xC4), NOT standard OP_CHECKSIG (0xAC).
+// Submitting a block with a standard P2PKH coinbase returns "bad-cb-pq".
+//
+// For P2PKH (M...) addresses we extract the 20-byte hash and build the
+// Dilithium variant:
+//
+//	OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIGDILITHIUM
 func (c *QBXCoin) BuildCoinbaseScript(params CoinbaseParams) ([]byte, error) {
 	hash, addrType, err := c.DecodeAddress(params.PoolAddress)
 	if err != nil {
@@ -177,14 +187,15 @@ func (c *QBXCoin) BuildCoinbaseScript(params CoinbaseParams) ([]byte, error) {
 
 	switch addrType {
 	case AddressTypeP2PKH:
-		// OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+		// QBX REQUIRES OP_CHECKSIGDILITHIUM (0xC4) for coinbase outputs.
+		// Using standard OP_CHECKSIG (0xAC) causes "bad-cb-pq" rejection.
 		script := make([]byte, 25)
 		script[0] = 0x76 // OP_DUP
 		script[1] = 0xa9 // OP_HASH160
 		script[2] = 0x14 // PUSH 20 bytes
 		copy(script[3:23], hash)
 		script[23] = 0x88 // OP_EQUALVERIFY
-		script[24] = 0xac // OP_CHECKSIG
+		script[24] = 0xc4 // OP_CHECKSIGDILITHIUM (QBX-specific, NOT 0xac OP_CHECKSIG)
 		return script, nil
 
 	case AddressTypeP2SH:
@@ -197,7 +208,7 @@ func (c *QBXCoin) BuildCoinbaseScript(params CoinbaseParams) ([]byte, error) {
 		return script, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported address type for QBX coinbase: %v (use P2PKH or P2SH)", addrType)
+		return nil, fmt.Errorf("unsupported address type for QBX coinbase: %v (use P2PKH M... or P2SH P... address)", addrType)
 	}
 }
 
