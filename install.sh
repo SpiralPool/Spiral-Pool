@@ -23935,6 +23935,17 @@ watch_sync() {
             fi
             echo ""
 
+            # Always show pool address — point miners here as their username
+            local _pool_addr
+            _pool_addr=$(sudo grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null \
+                | grep -v 'PENDING_GENERATION' | head -1 \
+                | sed 's/.*address:[[:space:]]*["'\'']\?\([^"'\'' ]*\)["'\'']\?.*/\1/')
+            if [[ -n "$_pool_addr" ]]; then
+                echo -e "  ${WHITE}Pool Address:${NC} ${GREEN}${_pool_addr}${NC}"
+                echo -e "  ${DIM}Use this as the username on your miners${NC}"
+                echo ""
+            fi
+
             # ═══════════════════════════════════════════════════════════════════
             # AUTO-GENERATE WALLET IF REQUESTED DURING INSTALL
             # Check if any coin has PENDING_GENERATION and trigger wallet creation
