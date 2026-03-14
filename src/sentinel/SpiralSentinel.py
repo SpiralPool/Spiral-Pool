@@ -2338,6 +2338,9 @@ def auto_detect_pool_coin():
             "fractalbitcoin": "FBTC",
             "fractal": "FBTC",
             "fbtc": "FBTC",
+            "qbitx": "QBX",
+            "q-bitx": "QBX",
+            "qbx": "QBX",
             # Scrypt coins
             "litecoin": "LTC",
             "ltc": "LTC",
