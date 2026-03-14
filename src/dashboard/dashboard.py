@@ -646,12 +646,11 @@ WALLET_PATTERNS = {
         r'^bc1q[a-z0-9]{58}$|'
         r'^bc1p[a-z0-9]{58}$'
     ),
-    # QBX - Q-BitX: same format as BTC plus post-quantum Dilithium (pq...)
+    # QBX - Q-BitX: M prefix P2PKH (0x32), P prefix P2SH (0x37), pq... Dilithium
     'QBX': re.compile(
         r'^(?:'
-        r'1[a-km-zA-HJ-NP-Z1-9]{25,34}'   # P2PKH (same as BTC)
-        r'|3[a-km-zA-HJ-NP-Z1-9]{25,34}'  # P2SH (same as BTC)
-        r'|bc1q[a-z0-9]{38,58}'            # Bech32 (same as BTC)
+        r'M[a-km-zA-HJ-NP-Z1-9]{25,34}'   # P2PKH (version byte 0x32 = 'M')
+        r'|P[a-km-zA-HJ-NP-Z1-9]{25,34}'  # P2SH (version byte 0x37 = 'P')
         r'|pq[a-zA-Z0-9]{20,80}'           # Post-quantum Dilithium
         r')$'
     ),
