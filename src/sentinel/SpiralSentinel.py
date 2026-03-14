@@ -1357,6 +1357,7 @@ def get_enabled_coins():
         "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933, "pool_id": "ltc_scrypt_1"},
         "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336, "pool_id": "nmc_sha256_1"},
         "PEP": {"stratum": 10335, "stratum_v2": 10336, "rpc": 33873, "zmq": 28873, "pool_id": "pep_scrypt_1"},
+        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": 28344, "pool_id": "qbx_sha256_1"},
         "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370, "pool_id": "sys_sha256_1"},  # Merge-mining only (BTC parent) — cannot solo mine
         "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889, "pool_id": "xmy_sha256_1"},
     }
@@ -1381,7 +1382,7 @@ def get_enabled_coins():
                 ("bc2", "BC2"), ("bitcoinii", "BC2"),
                 ("dgb", "DGB"),
                 ("ltc", "LTC"), ("doge", "DOGE"), ("pep", "PEP"), ("cat", "CAT"),
-                ("nmc", "NMC"), ("sys", "SYS"), ("xmy", "XMY"),
+                ("nmc", "NMC"), ("sys", "SYS"), ("xmy", "XMY"), ("qbx", "QBX"),
             ]
             symbol = ""
             for prefix, coin_sym in _pool_id_prefixes:
