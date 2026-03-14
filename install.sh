@@ -23406,7 +23406,7 @@ show_status() {
 
         # Show pool address — single-coin config uses pool.address directly (no symbol: block)
         local pool_addr
-        pool_addr=$(sudo grep -E '^\s*address:' "${INSTALL_DIR}/config/config.yaml" 2>/dev/null \
+        pool_addr=$(grep -E '^\s*address:' "${INSTALL_DIR}/config/config.yaml" 2>/dev/null \
             | grep -v 'PENDING_GENERATION' | head -1 \
             | sed 's/.*address:[[:space:]]*["'\'']\?\([^"'\'' ]*\)["'\'']\?.*/\1/')
         if [[ -n "$pool_addr" ]] && [[ "$pool_addr" != "PENDING_GENERATION" ]] && [[ "$pool_addr" != '""' ]]; then
@@ -24038,15 +24038,15 @@ watch_sync() {
                         # Read the generated address from config and display it prominently
                         local generated_addr
                         # Multi-coin config uses symbol: blocks; single-coin uses flat pool.address
-                        if sudo grep -q '^\s*symbol:' /spiralpool/config/config.yaml 2>/dev/null; then
-                            generated_addr=$(sudo awk -v sym="$wallet_coin" '
+                        if grep -q '^\s*symbol:' /spiralpool/config/config.yaml 2>/dev/null; then
+                            generated_addr=$(awk -v sym="$wallet_coin" '
                                 /symbol:/ { in_section = ($0 ~ "\"?"sym"\"?") }
                                 in_section && /address:/ && !/PENDING_GENERATION/ {
                                     gsub(/.*address:[[:space:]]*"?/, ""); gsub(/".*/, ""); gsub(/[[:space:]]/, ""); print; exit
                                 }
                             ' /spiralpool/config/config.yaml 2>/dev/null)
                         else
-                            generated_addr=$(sudo grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null \
+                            generated_addr=$(grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null \
                                 | grep -v 'PENDING_GENERATION' | head -1 \
                                 | sed 's/.*address:[[:space:]]*["'\'']\?\([^"'\'' ]*\)["'\'']\?.*/\1/')
                         fi
