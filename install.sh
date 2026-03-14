@@ -12206,8 +12206,9 @@ Match User ${POOL_USER}
 SSHDEOF
             log_success "SSH password auth enabled for ${POOL_USER} (appended to $sshd_main)"
         fi
-        # Validate config before reloading — defer if sshd not ready yet (host keys
-        # may not exist on fresh installs; a deferred reload runs after prerequisites)
+        # Validate config before reloading — on fresh installs /run/sshd may not
+        # exist yet (created when sshd first starts). Create it so sshd -t passes.
+        sudo mkdir -p /run/sshd
         if sudo sshd -t 2>/dev/null; then
             sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true
         else
@@ -12279,6 +12280,7 @@ SSHDEOF
     # Deferred sshd reload — sshd -t may have failed earlier if host keys weren't
     # generated yet (common on fresh installs). Now that packages are installed, retry.
     if [[ "${SSHD_RELOAD_DEFERRED:-false}" == "true" ]]; then
+        sudo mkdir -p /run/sshd
         if sudo sshd -t 2>&1; then
             sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true
             log_success "sshd reloaded — SSH password auth now active for ${POOL_USER}"
