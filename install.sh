@@ -23872,6 +23872,7 @@ watch_sync() {
                     syscoin) STRATUM_V1_PORT=15335 ;;
                     myriad|myriadcoin) STRATUM_V1_PORT=17335 ;;
                     fractal|fractalbitcoin) STRATUM_V1_PORT=18335 ;;
+                    qbitx|qbx) STRATUM_V1_PORT=20335 ;;
                     *) STRATUM_V1_PORT=3333 ;;
                 esac
             fi
@@ -24004,6 +24005,18 @@ watch_sync() {
 
                     if [[ $wallet_result -eq 0 ]]; then
                         echo -e "  ${GREEN}✓${NC} ${wallet_coin^^} wallet created successfully"
+                        # Read the generated address from config and display it prominently
+                        local generated_addr
+                        generated_addr=$(sudo grep -E '^\s*address:' /spiralpool/config/config.yaml 2>/dev/null | head -1 | sed 's/.*address:\s*["'\'']\?\([^"'\'']*\)["'\'']\?.*/\1/' | tr -d ' ')
+                        if [[ -n "$generated_addr" ]] && [[ "$generated_addr" != "PENDING_GENERATION" ]] && [[ "$generated_addr" != '""' ]]; then
+                            echo ""
+                            echo -e "  ${WHITE}╔══════════════════════════════════════════════╗${NC}"
+                            echo -e "  ${WHITE}║  Pool Wallet Address (point miners here):    ║${NC}"
+                            echo -e "  ${WHITE}╠══════════════════════════════════════════════╣${NC}"
+                            echo -e "  ${GREEN}║  $generated_addr${NC}"
+                            echo -e "  ${WHITE}╚══════════════════════════════════════════════╝${NC}"
+                            echo ""
+                        fi
                     elif [[ $wallet_result -eq 2 ]]; then
                         # Exit code 2 = blockchain not synced (shouldn't happen here, but handle it)
                         echo -e "  ${YELLOW}⚠${NC} ${wallet_coin^^} blockchain still syncing - wallet deferred"
