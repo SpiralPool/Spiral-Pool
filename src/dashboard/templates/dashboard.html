@@ -712,6 +712,16 @@
             }
         }
 
+        @media (max-width: 768px) {
+            #sortable-sections {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            #sortable-sections > .sortable-half {
+                grid-column: 1 / -1;
+            }
+        }
+
         /* Vertical health grid for side-by-side layout */
         .health-grid-vertical {
             display: flex;
