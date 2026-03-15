@@ -24,16 +24,30 @@
     min-width: 44px;
 }
 
-/* Prevent horizontal scroll */
-html, body {
+/* Prevent horizontal scroll — position:relative is required for iOS Safari */
+html {
     overflow-x: hidden;
-    max-width: 100vw;
+    width: 100%;
 }
 
-/* Force all elements to respect viewport width */
+body {
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+}
+
+/* Force layout containers to viewport width */
+.dashboard-page,
+.dashboard-content {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+/* Constrain all grid/flex children */
 *, *::before, *::after {
     box-sizing: border-box;
-    max-width: 100%;
+    min-width: 0; /* Prevents flex/grid children from overflowing their container */
 }
 
 /* =============================================
