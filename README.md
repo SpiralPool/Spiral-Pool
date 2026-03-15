@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  <strong>Contact:</strong> spiralpool@proton.me &bull; Discord: Fibonacci#1618
+</p>
+
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/SpiralPool/Spiral-Pool/releases"><img src="https://img.shields.io/github/v/tag/SpiralPool/Spiral-Pool?style=flat-square&label=release&color=brightgreen&v=2" alt="Release"></a>
   <a href="https://github.com/SpiralPool/Spiral-Pool/stargazers"><img src="https://img.shields.io/github/stars/SpiralPool/Spiral-Pool?style=flat-square&color=yellow&v=2" alt="Stars"></a>
@@ -372,7 +376,3 @@ This project is licensed under BSD-3-Clause. See [LICENSE](LICENSE) and [THIRD_P
 ---
 
 *Spiral Pool &mdash; Black Ice 1.0 &mdash; Convergent difficulty. Minimal oscillation.*
-
----
-
-**Contact:** spiralpool@proton.me | Discord: Fibonacci#1618
