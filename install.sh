@@ -21500,6 +21500,14 @@ install_health_monitor() {
 #
 
 INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 LOG_FILE="$INSTALL_DIR/logs/health-monitor.log"
 CHECK_INTERVAL=60
 MAX_RESTART_ATTEMPTS=3
@@ -22508,6 +22516,14 @@ RESTARTEOF
 #===============================================================================
 
 INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 
 # Detect the pool user from systemd service files or directory ownership
 detect_pool_user() {
@@ -24497,6 +24513,14 @@ SYNCSTATUSEOF
 #
 
 INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 BACKUP_DIR="$INSTALL_DIR/backups"
 
 # Colors
@@ -26211,6 +26235,14 @@ set -e
 
 # Configuration
 INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 BACKUP_DIR="${INSTALL_DIR}/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="spiralpool_backup_${TIMESTAMP}"
@@ -26921,6 +26953,14 @@ set -e
 
 # Configuration
 INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 # Standard pool user - hardcoded (no customization)
 POOL_USER="spiraluser"
 # SECURITY: Use /run/spiralpool (not world-writable /tmp) for temp directory
@@ -31593,10 +31633,13 @@ INSTALL_DIR="/spiralpool"
 LOG_FILE="$INSTALL_DIR/logs/sync-monitor.log"
 CHECK_INTERVAL=60
 
-# Read enabled coins from config
+# Read enabled coins and multi-disk config
 # SECURITY: Use safe parsing instead of source to prevent code injection
 CONFIG_FILE="$INSTALL_DIR/config/coins.env"
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 if [[ -f "$CONFIG_FILE" ]] && [[ ! -L "$CONFIG_FILE" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$CONFIG_FILE" 2>/dev/null || echo "")
     # Only extract known boolean variables using grep
     # SHA-256d coins
     ENABLE_DGB=$(grep -oP '^ENABLE_DGB=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
@@ -31636,6 +31679,7 @@ ENABLE_PEP="${ENABLE_PEP:-false}"
 ENABLE_CAT="${ENABLE_CAT:-false}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 
 # Get CLI command for a coin
 get_cli_cmd() {
