@@ -19032,7 +19032,7 @@ configure_stratum_single() {
             zmq_enabled="false"  # QBX daemon compiled without ZMQ support
             rpc_user="$QBX_RPC_USER"
             # CRITICAL: Read password from daemon config to ensure consistency
-            local qbx_conf="$INSTALL_DIR/qbx/qbitx.conf"
+            local qbx_conf="$(get_blockchain_dir qbx)/qbitx.conf"
             if [[ -f "$qbx_conf" ]]; then
                 rpc_password=$(grep -E "^rpcpassword=" "$qbx_conf" 2>/dev/null | head -1 | cut -d= -f2)
                 if [[ -n "$rpc_password" ]]; then
@@ -19360,14 +19360,16 @@ configure_stratum_multicoin() {
     fi
     [[ -z "$fbtc_rpc_pass" ]] && fbtc_rpc_pass="$FBTC_RPC_PASSWORD"
 
-    if [[ -f "$INSTALL_DIR/qbx/qbitx.conf" ]]; then
-        qbx_rpc_pass=$(grep -E "^rpcpassword=" "$INSTALL_DIR/qbx/qbitx.conf" 2>/dev/null | head -1 | cut -d= -f2)
+    local _qbx_conf_path
+    _qbx_conf_path="$(get_blockchain_dir qbx)/qbitx.conf"
+    if [[ -f "$_qbx_conf_path" ]]; then
+        qbx_rpc_pass=$(grep -E "^rpcpassword=" "$_qbx_conf_path" 2>/dev/null | head -1 | cut -d= -f2)
         if [[ -n "$qbx_rpc_pass" ]]; then
             log "Read QBX RPC password from node config"
         else
             log_warn "QBX node config exists but rpcpassword not found — using generated password and patching config"
             qbx_rpc_pass="$QBX_RPC_PASSWORD"
-            [[ -n "$qbx_rpc_pass" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$INSTALL_DIR/qbx/qbitx.conf"
+            [[ -n "$qbx_rpc_pass" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$_qbx_conf_path"
         fi
     else
         qbx_rpc_pass="$QBX_RPC_PASSWORD"
@@ -19376,7 +19378,7 @@ configure_stratum_multicoin() {
         log_warn "No QBX RPC password available — generating new one and patching qbitx.conf"
         qbx_rpc_pass=$(generate_password)
         QBX_RPC_PASSWORD="$qbx_rpc_pass"
-        [[ -f "$INSTALL_DIR/qbx/qbitx.conf" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$INSTALL_DIR/qbx/qbitx.conf"
+        [[ -f "$_qbx_conf_path" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$_qbx_conf_path"
     fi
 
     # Build the coins array based on enabled coins
@@ -21627,7 +21629,7 @@ is_blockchain_synced() {
     if service_enabled "fractald" && is_daemon_synced "fractal-cli" "$INSTALL_DIR/fbtc/fractal.conf"; then
         return 0
     fi
-    if service_enabled "qbitxd" && is_daemon_synced "qbitx-cli" "$INSTALL_DIR/qbx/qbitx.conf"; then
+    if service_enabled "qbitxd" && is_daemon_synced "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf"; then
         return 0
     fi
     return 1
@@ -21864,7 +21866,7 @@ check_blockchain_health() {
     check_blockchain_daemon_health "syscoind" "syscoin-cli" "$INSTALL_DIR/sys/syscoin.conf" "Syscoin"
     check_blockchain_daemon_health "myriadcoind" "myriadcoin-cli" "$INSTALL_DIR/xmy/myriadcoin.conf" "Myriadcoin"
     check_blockchain_daemon_health "fractald" "fractal-cli" "$INSTALL_DIR/fbtc/fractal.conf" "Fractal Bitcoin"
-    check_blockchain_daemon_health "qbitxd" "qbitx-cli" "$INSTALL_DIR/qbx/qbitx.conf" "Q-BitX"
+    check_blockchain_daemon_health "qbitxd" "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf" "Q-BitX"
 }
 
 check_disk_space() {
@@ -24591,7 +24593,7 @@ INSTALLED_COINS=()
 [[ -f "$INSTALL_DIR/sys/syscoin.conf" ]] && INSTALLED_COINS+=("sys")
 [[ -f "$INSTALL_DIR/xmy/myriadcoin.conf" ]] && INSTALLED_COINS+=("xmy")
 [[ -f "$INSTALL_DIR/fbtc/fractal.conf" ]] && INSTALLED_COINS+=("fbtc")
-[[ -f "$INSTALL_DIR/qbx/qbitx.conf" ]] && INSTALLED_COINS+=("qbx")
+[[ -f "$(get_blockchain_dir qbx)/qbitx.conf" ]] && INSTALLED_COINS+=("qbx")
 # Scrypt coins
 [[ -f "$INSTALL_DIR/ltc/litecoin.conf" ]] && INSTALLED_COINS+=("ltc")
 [[ -f "$INSTALL_DIR/doge/dogecoin.conf" ]] && INSTALLED_COINS+=("doge")
@@ -24991,13 +24993,13 @@ case "$COIN" in
         COIN_NAME="Q-BitX"
         COIN_SYMBOL="QBX"
         COIN_EMOJI="⚛️"
-        CONF="$INSTALL_DIR/qbx/qbitx.conf"
-        CLI="qbitx-cli -conf=$CONF -datadir=$INSTALL_DIR/qbx"
+        CONF="$(get_blockchain_dir qbx)/qbitx.conf"
+        CLI="qbitx-cli -conf=$CONF -datadir=$(get_blockchain_dir qbx)"
         SERVICE_NAME="qbitxd"
         CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
         ADDRESS_PREFIX="M (P2PKH), P (P2SH), or pq (post-quantum)"
         ADDRESS_TYPE="pq"
-        WALLET_DIR="$INSTALL_DIR/qbx"
+        WALLET_DIR="$(get_blockchain_dir qbx)"
         ;;
     *)
         echo "Unsupported coin: $COIN"
@@ -26016,7 +26018,7 @@ fi
 # without this line the named wallet is gone after every restart.
 # Only do this when a local wallet was actually generated (not manual address entry).
 if [[ "$MANUAL_INPUT_USED" != "true" ]] && [[ "$COIN" == "qbx" || "$COIN" == "qbitx" ]]; then
-    qbx_node_conf="$INSTALL_DIR/qbx/qbitx.conf"
+    qbx_node_conf="$(get_blockchain_dir qbx)/qbitx.conf"
     if [[ -f "$qbx_node_conf" ]]; then
         if ! grep -q "^wallet=" "$qbx_node_conf" 2>/dev/null; then
             echo "wallet=$WALLET_NAME" | sudo -u "$POOL_USER" tee -a "$qbx_node_conf" > /dev/null
@@ -31186,7 +31188,7 @@ get_coin_cli_info() {
             echo "fractal-cli|$INSTALL_DIR/fbtc/fractal.conf"
             ;;
         QBX|qbx|qbitx)
-            echo "qbitx-cli|$INSTALL_DIR/qbx/qbitx.conf"
+            echo "qbitx-cli|$(get_blockchain_dir qbx)/qbitx.conf"
             ;;
         *)
             echo ""
@@ -31648,7 +31650,7 @@ get_cli_cmd() {
         SYS) echo "syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf" ;;
         XMY) echo "myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf" ;;
         FBTC) echo "fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf" ;;
-        QBX) echo "qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf" ;;
+        QBX) echo "qbitx-cli -conf=$(get_blockchain_dir qbx)/qbitx.conf" ;;
         # Scrypt coins
         LTC) echo "litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf" ;;
         DOGE) echo "dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf" ;;
