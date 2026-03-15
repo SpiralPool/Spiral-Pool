@@ -9281,7 +9281,9 @@ def get_miners():
         prometheus_metrics = fetch_prometheus_metrics()
         pool_accepted = int(prometheus_metrics.get("stratum_shares_accepted_total", 0))
         pool_rejected = int(prometheus_metrics.get("stratum_shares_rejected_total", 0))
-        pool_blocks = int(prometheus_metrics.get("stratum_blocks_found_total", 0))
+        _prom_blocks = int(prometheus_metrics.get("stratum_blocks_found_total", 0))
+        _db_blocks = pool_stats.get("blocks_found", -1)
+        pool_blocks = max(_prom_blocks, _db_blocks if _db_blocks >= 0 else 0)
         pool_best_diff = prometheus_metrics.get("stratum_best_share_difficulty", 0)
 
         # H-3 fix: Include wrong_pool status in API response for UI indicator
