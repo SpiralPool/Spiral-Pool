@@ -116,19 +116,28 @@ body {
         align-items: center;
     }
 
-    /* Hide non-essential badges — title is enough */
+    /* Hide non-essential header elements */
     .coin-badge,
     .mode-badge,
     .device-badge {
-        display: none;
+        display: none !important;
+    }
+
+    .last-update {
+        display: none !important;
+    }
+
+    .refresh-btn .btn-text,
+    .connect-btn .btn-text {
+        display: none !important;
     }
 
     .logo {
-        font-size: 1.1rem;
+        font-size: 1.1rem !important;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 60vw;
+        max-width: 70vw;
     }
 
     .status-indicator {
@@ -140,17 +149,6 @@ body {
         flex-wrap: wrap;
         gap: 0.5rem;
         justify-content: flex-start;
-    }
-
-    /* Hide last-update text on mobile — takes too much space */
-    .last-update {
-        display: none;
-    }
-
-    /* Compact buttons — icon only on mobile */
-    .refresh-btn .btn-text,
-    .connect-btn .btn-text {
-        display: none;
     }
 
     .refresh-btn,
@@ -209,6 +207,14 @@ body {
 
     .chart-container {
         height: 180px;
+        width: 100%;
+        max-width: 100vw;
+        position: relative;
+    }
+
+    /* Increase collapsible max-height — 7 stacked miner cards exceed 2000px */
+    .collapsible-content {
+        max-height: 20000px !important;
     }
 
     /* Earnings content */
@@ -245,7 +251,7 @@ body {
     }
 
     .health-stats-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, 1fr) !important;
         gap: 0.75rem;
     }
 
@@ -257,8 +263,31 @@ body {
 
     /* Miner grid single column */
     .miners-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
         gap: 1rem;
+    }
+
+    /* Prevent miner card from overflowing viewport */
+    .miner-card {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .miner-header {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    /* Override white-space:nowrap that forces cards wider than screen */
+    .miner-type,
+    .miner-status,
+    .miner-name {
+        white-space: normal !important;
+    }
+
+    .miner-header-right {
+        flex-wrap: wrap;
+        gap: 0.4rem;
     }
 
     .miner-header {
