@@ -1636,6 +1636,32 @@
         .activity-time { flex-shrink: 0; color: var(--text-muted, #8899aa); font-size: 0.72rem; }
         .activity-empty { text-align: center; color: var(--text-muted, #8899aa); padding: 2rem 0; font-size: 0.85rem; }
     </style>
+    <script>
+        (function() {
+            var _mobileTimer;
+            function detectMobile() {
+                var mq = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+                var coarse = window.matchMedia('(pointer: coarse)');
+                window.isMobile = mq.matches;
+                document.body.classList.toggle('is-mobile', mq.matches);
+                document.body.classList.toggle('is-touch', coarse.matches);
+                var badge = document.getElementById('device-type-badge');
+                if (badge) {
+                    badge.textContent = window.isMobile ? '📱' : '🖥️';
+                    badge.title = window.isMobile ? 'Mobile view active' : 'Desktop view active';
+                }
+            }
+            window.addEventListener('resize', function() {
+                clearTimeout(_mobileTimer);
+                _mobileTimer = setTimeout(detectMobile, 100);
+            });
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', detectMobile);
+            } else {
+                detectMobile();
+            }
+        })();
+    </script>
 </head>
 <body class="dashboard-page">
     <!-- Cyberpunk grid background -->
@@ -1965,6 +1991,7 @@
                 <span class="status-dot"></span>
                 <span id="connection-status">Connecting...</span>
             </div>
+            <span id="device-type-badge" class="device-badge" title="Device type detected"></span>
         </div>
         <div class="header-right">
             <span id="last-update" class="last-update">Last update: --</span>
