@@ -15743,7 +15743,7 @@ def broadcast_block_found(block_data):
     # Record to activity feed
     coin = block_data.get("coin", "")
     height = block_data.get("height", "?")
-    finder = block_data.get("miner", block_data.get("worker", "unknown"))
+    finder = block_data.get("worker") or block_data.get("miner") or "unknown"
     record_activity("block", f"Block found by {finder} ({coin} #{height})", block_data)
 
     # Persist block finder attribution
