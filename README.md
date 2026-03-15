@@ -375,4 +375,4 @@ This project is licensed under BSD-3-Clause. See [LICENSE](LICENSE) and [THIRD_P
 
 ---
 
-**Contact:** spiralpool@proton.me
+**Contact:** spiralpool@proton.me | Discord: Fibonacc#1618
