@@ -19362,9 +19362,22 @@ configure_stratum_multicoin() {
 
     if [[ -f "$INSTALL_DIR/qbx/qbitx.conf" ]]; then
         qbx_rpc_pass=$(grep -E "^rpcpassword=" "$INSTALL_DIR/qbx/qbitx.conf" 2>/dev/null | head -1 | cut -d= -f2)
-        [[ -n "$qbx_rpc_pass" ]] && log "Read QBX RPC password from node config"
+        if [[ -n "$qbx_rpc_pass" ]]; then
+            log "Read QBX RPC password from node config"
+        else
+            log_warn "QBX node config exists but rpcpassword not found — using generated password and patching config"
+            qbx_rpc_pass="$QBX_RPC_PASSWORD"
+            [[ -n "$qbx_rpc_pass" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$INSTALL_DIR/qbx/qbitx.conf"
+        fi
+    else
+        qbx_rpc_pass="$QBX_RPC_PASSWORD"
     fi
-    [[ -z "$qbx_rpc_pass" ]] && qbx_rpc_pass="$QBX_RPC_PASSWORD"
+    if [[ -z "$qbx_rpc_pass" ]]; then
+        log_warn "No QBX RPC password available — generating new one and patching qbitx.conf"
+        qbx_rpc_pass=$(generate_password)
+        QBX_RPC_PASSWORD="$qbx_rpc_pass"
+        [[ -f "$INSTALL_DIR/qbx/qbitx.conf" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$INSTALL_DIR/qbx/qbitx.conf"
+    fi
 
     # Build the coins array based on enabled coins
     local COINS_CONFIG=""
