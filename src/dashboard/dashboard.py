@@ -1687,7 +1687,7 @@ def fetch_pool_stats():
                     pool_stats_cache["last_block_time"] = latest_block.get("created")
                     pool_stats_cache["last_block_height"] = latest_block.get("blockHeight")
                     # Get the miner who found the block (worker name or address)
-                    pool_stats_cache["last_block_finder"] = latest_block.get("worker") or latest_block.get("miner") or latest_block.get("minerAddress")
+                    pool_stats_cache["last_block_finder"] = latest_block.get("source") or latest_block.get("worker") or latest_block.get("miner") or latest_block.get("minerAddress")
                 # Detect newly found blocks (count increased since last poll).
                 # old_count == -1 on the very first poll — just establishes the baseline,
                 # no celebration (avoids false-triggering existing blocks on startup).
@@ -1711,6 +1711,7 @@ def fetch_pool_stats():
                     "height": blk.get("blockHeight", "?"),
                     "miner": blk.get("miner", ""),
                     "worker": blk.get("worker", ""),
+                    "source": blk.get("source", ""),
                     "reward": blk.get("reward", 0),
                     "hash": blk.get("hash", ""),
                     "status": blk.get("status", ""),
@@ -15743,7 +15744,7 @@ def broadcast_block_found(block_data):
     # Record to activity feed
     coin = block_data.get("coin", "")
     height = block_data.get("height", "?")
-    finder = block_data.get("worker") or block_data.get("miner") or "unknown"
+    finder = block_data.get("source") or block_data.get("worker") or block_data.get("miner") or "unknown"
     record_activity("block", f"Block found by {finder} ({coin} #{height})", block_data)
 
     # Persist block finder attribution
