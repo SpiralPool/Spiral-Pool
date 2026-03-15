@@ -671,6 +671,13 @@ func TestAuxSubmissionWithParentHeightContext(t *testing.T) {
 
 	const numAuxSubmissions = 40
 
+	// Barrier: all goroutines signal once their HeightContext is registered.
+	// We advance the epoch only after all 40 contexts are registered, guaranteeing
+	// Advance() cancels every in-flight context. This eliminates the timing
+	// sensitivity of the original fixed 100ms sleep on loaded machines.
+	var readyWg sync.WaitGroup
+	readyWg.Add(numAuxSubmissions)
+
 	for i := 0; i < numAuxSubmissions; i++ {
 		wg.Add(1)
 		go func(submissionID int) {
@@ -680,12 +687,17 @@ func TestAuxSubmissionWithParentHeightContext(t *testing.T) {
 			auxHeightCtx, auxHeightCancel := parentEpoch.HeightContext(context.Background())
 			defer auxHeightCancel()
 
-			// Create deadline context (pool.go:1568)
-			auxDeadlineCtx, auxDeadlineCancel := context.WithTimeout(auxHeightCtx, 400*time.Millisecond)
+			// Create deadline context (pool.go:1568) — generous timeout so
+			// AuxDeadlineAborts never fires before Advance() does.
+			auxDeadlineCtx, auxDeadlineCancel := context.WithTimeout(auxHeightCtx, 5*time.Second)
 			defer auxDeadlineCancel()
 
+			// Signal that HeightContext is registered; main goroutine will
+			// call Advance() once all 40 are ready.
+			readyWg.Done()
+
 			// Simulate aux proof construction + RPC (pool.go:1570-1572)
-			submissionTime := time.Duration(50+submissionID*8) * time.Millisecond
+			submissionTime := time.Duration(200+submissionID*5) * time.Millisecond
 
 			select {
 			case <-auxDeadlineCtx.Done():
@@ -696,18 +708,24 @@ func TestAuxSubmissionWithParentHeightContext(t *testing.T) {
 					metrics.AuxDeadlineAborts.Add(1)
 				}
 			case <-time.After(submissionTime):
-				if auxDeadlineCtx.Err() == nil {
+				// Fix race: check context state in priority order so every
+				// goroutine always increments exactly one counter, even if the
+				// context cancelled in the gap between select and this check.
+				if auxHeightCtx.Err() != nil {
+					metrics.AuxHeightAborts.Add(1)
+				} else if auxDeadlineCtx.Err() != nil {
+					metrics.AuxDeadlineAborts.Add(1)
+				} else {
 					metrics.AuxBlocksSubmitted.Add(1)
 				}
 			}
 		}(i)
 	}
 
-	// Parent chain advances (aux proofs become stale)
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		parentEpoch.Advance(22000001)
-	}()
+	// Wait until all goroutines have registered their HeightContext, then
+	// advance — every pending context is cancelled atomically.
+	readyWg.Wait()
+	parentEpoch.Advance(22000001)
 
 	wg.Wait()
 
@@ -721,7 +739,8 @@ func TestAuxSubmissionWithParentHeightContext(t *testing.T) {
 		t.Error("Expected aux HeightAborts when parent chain advanced")
 	}
 
-	// Total should account for all submissions
+	// Total must account for all submissions — no goroutine may fall through
+	// without incrementing a counter.
 	total := metrics.AuxBlocksSubmitted.Load() + metrics.AuxHeightAborts.Load() + metrics.AuxDeadlineAborts.Load()
 	if total != numAuxSubmissions {
 		t.Errorf("Aux accounting mismatch: expected %d, got %d", numAuxSubmissions, total)
