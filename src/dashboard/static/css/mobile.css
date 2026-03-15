@@ -702,3 +702,97 @@ html, body {
         display: none;
     }
 }
+
+/* =============================================
+   APPEARANCE SIDEBAR FIX
+   ============================================= */
+
+@media (max-width: 768px) {
+    .appearance-panel {
+        width: min(320px, 92vw) !important;
+        right: -92vw !important;
+    }
+    .appearance-panel.open {
+        right: 0 !important;
+    }
+}
+
+/* =============================================
+   FONT SIZE FIXES FOR SMALL LABELS
+   ============================================= */
+
+@media (max-width: 480px) {
+    .miner-stat-label {
+        font-size: 0.75rem !important;
+    }
+    .miner-type {
+        font-size: 0.75rem !important;
+    }
+    .stat-label {
+        font-size: 0.72rem !important;
+    }
+}
+
+/* =============================================
+   MODAL SIZING FIX
+   ============================================= */
+
+@media (max-width: 768px) {
+    .modal-content {
+        max-width: min(600px, 92vw) !important;
+        width: 92vw !important;
+    }
+    .settings-modal .modal-content,
+    .miner-detail-modal .modal-content {
+        max-width: 92vw !important;
+    }
+}
+
+/* =============================================
+   CHART HEIGHT FIX
+   ============================================= */
+
+@media (max-width: 768px) {
+    .chart-container {
+        min-height: 200px !important;
+    }
+}
+
+/* =============================================
+   TOUCH ACTION ON BUTTONS
+   ============================================= */
+
+@media (hover: none) and (pointer: coarse) {
+    button, .btn, .cyber-btn, .refresh-btn, .settings-btn,
+    .miner-action-btn, .period-btn, .chart-period-select,
+    .celebration-close {
+        touch-action: manipulation;
+    }
+}
+
+/* =============================================
+   JS-DETECTED MOBILE / TOUCH BODY CLASSES
+   ============================================= */
+
+/* Hide non-essential decorative elements on mobile */
+body.is-mobile .cyber-scanline,
+body.is-mobile .cyber-grid-overlay {
+    display: none !important;
+}
+
+/* Remove hover transforms on touch devices */
+body.is-touch .stat-card:hover,
+body.is-touch .miner-card:hover {
+    transform: none !important;
+}
+
+/* =============================================
+   DEVICE TYPE BADGE
+   ============================================= */
+
+.device-badge {
+    font-size: 1rem;
+    opacity: 0.6;
+    cursor: default;
+    user-select: none;
+}
