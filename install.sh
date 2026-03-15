@@ -18731,18 +18731,19 @@ configure_stratum_single() {
                     log "Read DGB RPC password from existing node config"
                 else
                     log_warn "DGB node config exists but password not found, using generated password"
-                    rpc_password="$RPC_PASSWORD"
+                    rpc_password="${DGB_RPC_PASSWORD:-$RPC_PASSWORD}"
                     if [[ -n "$rpc_password" ]]; then
                         sudo sed -i "s/^rpcpassword=.*/rpcpassword=$rpc_password/" "$dgb_conf"
                         log "Updated DGB node config with correct password"
                     fi
                 fi
             else
-                rpc_password="$RPC_PASSWORD"
+                rpc_password="${DGB_RPC_PASSWORD:-$RPC_PASSWORD}"
             fi
             if [[ -z "$rpc_password" ]]; then
                 log_warn "No DGB RPC password available, generating new one"
                 rpc_password=$(generate_password)
+                DGB_RPC_PASSWORD="$rpc_password"
                 RPC_PASSWORD="$rpc_password"
             fi
             daemon_service="digibyted"
@@ -18766,18 +18767,19 @@ configure_stratum_single() {
                     log "Read DGB-SCRYPT RPC password from existing node config"
                 else
                     log_warn "DGB node config exists but password not found, using generated password"
-                    rpc_password="$RPC_PASSWORD"
+                    rpc_password="${DGB_RPC_PASSWORD:-$RPC_PASSWORD}"
                     if [[ -n "$rpc_password" ]]; then
                         sudo sed -i "s/^rpcpassword=.*/rpcpassword=$rpc_password/" "$dgbs_conf"
                         log "Updated DGB node config with correct password"
                     fi
                 fi
             else
-                rpc_password="$RPC_PASSWORD"
+                rpc_password="${DGB_RPC_PASSWORD:-$RPC_PASSWORD}"
             fi
             if [[ -z "$rpc_password" ]]; then
                 log_warn "No DGB RPC password available, generating new one"
                 rpc_password=$(generate_password)
+                DGB_RPC_PASSWORD="$rpc_password"
                 RPC_PASSWORD="$rpc_password"
             fi
             daemon_service="digibyted"
