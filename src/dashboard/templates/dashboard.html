@@ -720,6 +720,31 @@
             #sortable-sections > .sortable-half {
                 grid-column: 1 / -1;
             }
+            /* Section headers wrap on mobile */
+            .collapsible-header {
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+            .collapsible-header h2,
+            .collapsible-header h3 {
+                flex: 1 1 auto;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            /* Earnings rows wrap label/value */
+            .earnings-row {
+                flex-wrap: wrap;
+                gap: 0.25rem;
+            }
+            .earnings-value {
+                text-align: left;
+            }
+            /* Schedule rule — stack on mobile */
+            .schedule-rule {
+                grid-template-columns: 1fr 1fr;
+            }
         }
 
         /* Vertical health grid for side-by-side layout */
@@ -1958,7 +1983,7 @@
                 <!-- Profile Descriptions -->
                 <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
                     <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Power Profiles:</div>
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; font-size: 0.75rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem; font-size: 0.75rem;">
                         <div><span class="profile-badge efficiency">Efficiency</span><br><span style="color: var(--text-muted);">Low power, reduced hashrate</span></div>
                         <div><span class="profile-badge balanced">Balanced</span><br><span style="color: var(--text-muted);">Normal operation</span></div>
                         <div><span class="profile-badge high">High</span><br><span style="color: var(--text-muted);">Maximum performance</span></div>

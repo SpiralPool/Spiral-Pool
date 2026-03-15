@@ -112,7 +112,27 @@ body {
     .header-left {
         width: 100%;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 0.4rem;
+        align-items: center;
+    }
+
+    /* Hide non-essential badges — title is enough */
+    .coin-badge,
+    .mode-badge,
+    .device-badge {
+        display: none;
+    }
+
+    .logo {
+        font-size: 1.1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 60vw;
+    }
+
+    .status-indicator {
+        font-size: 0.75rem;
     }
 
     .header-right {
