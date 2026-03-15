@@ -429,7 +429,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, isTLS bool
 	// which is acceptable (pool restarts reset the counter, and connections don't persist)
 	extranonce1Val := s.extranonce1Gen.Add(1)
 	session.ExtraNonce1 = fmt.Sprintf("%08x", extranonce1Val)
-	session.ExtraNonce2Size = 4
+	session.ExtraNonce2Size = 8
 
 	// RED-TEAM: Extranonce1 collision detection - log when counter wraps
 	// This helps operators monitor for potential collision scenarios

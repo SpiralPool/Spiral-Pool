@@ -24,7 +24,7 @@ func TestHandleSubscribe(t *testing.T) {
 	session := &protocol.Session{
 		ID:              1,
 		ExtraNonce1:     "00000001",
-		ExtraNonce2Size: 4,
+		ExtraNonce2Size: 8,
 	}
 
 	// Valid subscribe request
@@ -56,8 +56,8 @@ func TestHandleSubscribe(t *testing.T) {
 	}
 
 	// Check extranonce2_size
-	if en2Size, ok := result[2].(float64); !ok || int(en2Size) != 4 {
-		t.Errorf("ExtraNonce2Size = %v, want 4", result[2])
+	if en2Size, ok := result[2].(float64); !ok || int(en2Size) != 8 {
+		t.Errorf("ExtraNonce2Size = %v, want 8", result[2])
 	}
 
 	// Session should be marked as subscribed

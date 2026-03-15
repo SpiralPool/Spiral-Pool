@@ -928,8 +928,8 @@ func (m *Manager) buildCoinbaseWithAux(template *daemon.BlockTemplate, auxMerkle
 	// Build aux commitment (44 bytes)
 	auxCommitment := auxpow.BuildAuxCommitment(auxMerkleRoot, auxTreeSize, m.auxMerkleNonce)
 
-	// Scriptsig = height + coinbase text + aux commitment + extranonce1 (4 bytes) + extranonce2 (4 bytes)
-	scriptsigLen := len(heightBytes) + len(coinbaseText) + len(auxCommitment) + 8
+	// Scriptsig = height + coinbase text + aux commitment + extranonce1 (4 bytes) + extranonce2 (8 bytes)
+	scriptsigLen := len(heightBytes) + len(coinbaseText) + len(auxCommitment) + 12
 
 	// Validate scriptsig length doesn't exceed Bitcoin limit (100 bytes max for coinbase)
 	const maxScriptsigLen = 100
@@ -942,13 +942,13 @@ func (m *Manager) buildCoinbaseWithAux(template *daemon.BlockTemplate, auxMerkle
 			"auxCommitmentBytes", len(auxCommitment),
 		)
 		// Truncate coinbase text to fit - aux commitment takes priority for merge mining
-		maxCoinbaseText := maxScriptsigLen - len(heightBytes) - len(auxCommitment) - 8
+		maxCoinbaseText := maxScriptsigLen - len(heightBytes) - len(auxCommitment) - 12
 		if maxCoinbaseText < 0 {
 			maxCoinbaseText = 0
 		}
 		if len(coinbaseText) > maxCoinbaseText {
 			coinbaseText = coinbaseText[:maxCoinbaseText]
-			scriptsigLen = len(heightBytes) + len(coinbaseText) + len(auxCommitment) + 8
+			scriptsigLen = len(heightBytes) + len(coinbaseText) + len(auxCommitment) + 12
 			m.logger.Warnw("Coinbase text truncated for merge mining",
 				"newLen", len(coinbaseText),
 				"newScriptsigLen", scriptsigLen,
@@ -961,7 +961,7 @@ func (m *Manager) buildCoinbaseWithAux(template *daemon.BlockTemplate, auxMerkle
 	cb1 = append(cb1, []byte(coinbaseText)...)
 	cb1 = append(cb1, auxCommitment...)
 
-	// Space for extranonce1 (4 bytes) + extranonce2 (4 bytes) will be inserted by miner
+	// Space for extranonce1 (4 bytes) + extranonce2 (8 bytes) will be inserted by miner
 
 	coinbase1 = cb1
 
@@ -1070,8 +1070,8 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	// Use local copy to avoid race condition - m.coinbaseText could be accessed concurrently
 	coinbaseText := m.coinbaseText
 
-	// Scriptsig = height + coinbase text + extranonce1 (4 bytes) + extranonce2 (4 bytes)
-	scriptsigLen := len(heightBytes) + len(coinbaseText) + 8 // +8 for extranonce
+	// Scriptsig = height + coinbase text + extranonce1 (4 bytes) + extranonce2 (8 bytes)
+	scriptsigLen := len(heightBytes) + len(coinbaseText) + 12 // +12 for extranonce
 
 	// Validate scriptsig length doesn't exceed Bitcoin limit (100 bytes max for coinbase)
 	// This catches configuration errors early rather than producing invalid blocks
@@ -1086,13 +1086,13 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 		)
 		// Truncate local copy to fit - don't modify shared state
 		// Better to produce valid blocks with truncated text than reject all blocks
-		maxCoinbaseText := maxScriptsigLen - len(heightBytes) - 8
+		maxCoinbaseText := maxScriptsigLen - len(heightBytes) - 12
 		if maxCoinbaseText < 0 {
 			maxCoinbaseText = 0
 		}
 		if len(coinbaseText) > maxCoinbaseText {
 			coinbaseText = coinbaseText[:maxCoinbaseText]
-			scriptsigLen = len(heightBytes) + len(coinbaseText) + 8
+			scriptsigLen = len(heightBytes) + len(coinbaseText) + 12
 			m.logger.Warnw("Coinbase text truncated to fit scriptsig limit",
 				"newLen", len(coinbaseText),
 				"newScriptsigLen", scriptsigLen,
@@ -1106,7 +1106,7 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	// Coinbase text
 	cb1 = append(cb1, []byte(coinbaseText)...)
 
-	// Space for extranonce1 (4 bytes) + extranonce2 (4 bytes) will be inserted by miner
+	// Space for extranonce1 (4 bytes) + extranonce2 (8 bytes) will be inserted by miner
 
 	coinbase1 = cb1
 
