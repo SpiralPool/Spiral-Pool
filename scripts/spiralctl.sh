@@ -698,9 +698,14 @@ vip_enable() {
         exit 1
     fi
 
-    # Validate IP format
-    if ! [[ "$vip_address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # Validate IP format and octet ranges
+    if ! [[ "$vip_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         log_error "Invalid IP address format: $vip_address"
+        exit 1
+    fi
+    IFS='.' read -r _vip1 _vip2 _vip3 _vip4 <<< "$vip_address"
+    if [[ "$_vip1" -gt 255 || "$_vip2" -gt 255 || "$_vip3" -gt 255 || "$_vip4" -gt 255 ]]; then
+        log_error "Invalid IP address (octet out of range 0-255): $vip_address"
         exit 1
     fi
 
@@ -3065,8 +3070,13 @@ ha_enable() {
         echo "Example: sudo spiralctl ha enable --vip 192.168.1.100"
         exit 1
     fi
-    if ! [[ "$vip_address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if ! [[ "$vip_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         log_error "Invalid IP address format: $vip_address"
+        exit 1
+    fi
+    IFS='.' read -r _vip1 _vip2 _vip3 _vip4 <<< "$vip_address"
+    if [[ "$_vip1" -gt 255 || "$_vip2" -gt 255 || "$_vip3" -gt 255 || "$_vip4" -gt 255 ]]; then
+        log_error "Invalid IP address (octet out of range 0-255): $vip_address"
         exit 1
     fi
 
@@ -3100,8 +3110,13 @@ ha_enable() {
             log_error "--primary-ip is required for backup nodes"
             exit 1
         fi
-        if ! [[ "$primary_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if ! [[ "$primary_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
             log_error "Invalid --primary-ip format: $primary_ip"
+            exit 1
+        fi
+        IFS='.' read -r _pip1 _pip2 _pip3 _pip4 <<< "$primary_ip"
+        if [[ "$_pip1" -gt 255 || "$_pip2" -gt 255 || "$_pip3" -gt 255 || "$_pip4" -gt 255 ]]; then
+            log_error "Invalid --primary-ip (octet out of range 0-255): $primary_ip"
             exit 1
         fi
         if [[ -z "$repl_password" ]]; then

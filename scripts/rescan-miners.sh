@@ -970,8 +970,13 @@ case "${1:-}" in
             echo -e "${RED}Please specify IP address${NC}"
             exit 1
         fi
-        if ! [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if ! [[ "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
             echo -e "${RED}Invalid IP address format: $2${NC}"
+            exit 1
+        fi
+        IFS='.' read -r _o1 _o2 _o3 _o4 <<< "$2"
+        if [[ "$_o1" -gt 255 || "$_o2" -gt 255 || "$_o3" -gt 255 || "$_o4" -gt 255 ]]; then
+            echo -e "${RED}Invalid IP address (octet out of range 0-255): $2${NC}"
             exit 1
         fi
         mtype=$(detect_miner_type "$2")

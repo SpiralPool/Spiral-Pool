@@ -36,6 +36,18 @@
 
 set -euo pipefail
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
 LOG_PREFIX="etcd-cluster-rejoin"
 
 # Accept --peer-ip <IP> from caller (ha-failback.sh already knows the peer)
@@ -54,6 +66,19 @@ log() {
 log_error() {
     echo "ERROR: $1" >&2
 }
+
+# Validate --peer-ip if provided (used in etcdctl --endpoints URLs)
+if [[ -n "$ARG_PEER_IP" ]]; then
+    if ! [[ "$ARG_PEER_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        log_error "--peer-ip '${ARG_PEER_IP}' is not a valid IPv4 address"
+        exit 1
+    fi
+    IFS='.' read -r _o1 _o2 _o3 _o4 <<< "$ARG_PEER_IP"
+    if [[ "$_o1" -gt 255 || "$_o2" -gt 255 || "$_o3" -gt 255 || "$_o4" -gt 255 ]]; then
+        log_error "--peer-ip '${ARG_PEER_IP}' octet out of valid range (0-255)"
+        exit 1
+    fi
+fi
 
 # Read etcd environment config
 if [[ ! -f /etc/default/etcd ]]; then

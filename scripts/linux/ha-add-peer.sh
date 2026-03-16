@@ -35,9 +35,14 @@ fi
 
 PEER_IP="$1"
 
-# Validate IP format (basic IPv4 check)
-if ! [[ "$PEER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+# Validate IP format and octet ranges (strict IPv4)
+if ! [[ "$PEER_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     echo "ERROR: Invalid IP address: $PEER_IP"
+    exit 1
+fi
+IFS='.' read -r _o1 _o2 _o3 _o4 <<< "$PEER_IP"
+if [[ "$_o1" -gt 255 || "$_o2" -gt 255 || "$_o3" -gt 255 || "$_o4" -gt 255 ]]; then
+    echo "ERROR: IP address octets out of valid range (0-255): $PEER_IP"
     exit 1
 fi
 
@@ -79,6 +84,12 @@ REPL_USER="${REPL_USER:-replicator}"
 # Entries to add (replication + all-access for the peer IP)
 REPL_ENTRY="host replication ${REPL_USER} ${PEER_IP}/32 scram-sha-256"
 ALL_ENTRY="host all all ${PEER_IP}/32 scram-sha-256"
+
+# SECURITY (F-05): Escape PEER_IP for sed replacement context.
+# Valid IPs (digits and dots) cannot contain sed metacharacters (\, &, /) in the
+# replacement position, so this is a safety net against any future regex bypass.
+# Escapes: backslash, ampersand, and forward-slash (the default sed delimiter).
+PEER_IP_SED=$(printf '%s' "${PEER_IP}" | sed 's/[\/&\\]/\\&/g')
 
 # Temp file for atomic patroni.yml edits (initialized for trap safety with set -u)
 tmp_file=""
@@ -127,6 +138,7 @@ else
         if [[ -n "$last_line" ]]; then
             # append-after with fixed line number: second append pushes first down
             # So append ALL first, then REPL → produces "replication, all" order
+            # SECURITY: Use PEER_IP_SED (escaped) as the sed replacement value
             sed -i "${last_line}a\\    - ${ALL_ENTRY}" "$tmp_file"
             sed -i "${last_line}a\\    - ${REPL_ENTRY}" "$tmp_file"
         else
@@ -172,7 +184,7 @@ if [[ -f "$HA_YAML" ]]; then
     if grep -q '^\s*peers:' "$HA_YAML" 2>/dev/null; then
         # peers section exists — check if this peer IP is already listed
         if ! grep -q "$PEER_IP" "$HA_YAML" 2>/dev/null; then
-            sed -i "/^\s*peers:/a\\  - host: ${PEER_IP}" "$HA_YAML"
+            sed -i "/^\s*peers:/a\\  - host: ${PEER_IP_SED}" "$HA_YAML"
             log "Added peer ${PEER_IP} to ha.yaml"
         else
             log "Peer ${PEER_IP} already in ha.yaml"

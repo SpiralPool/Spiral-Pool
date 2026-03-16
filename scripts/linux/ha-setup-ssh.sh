@@ -5,7 +5,7 @@
 
 #
 # Spiral Pool HA SSH Key Setup Script
-# Version: 1.0.0
+# Version: 1.1.0
 # License: BSD-3-Clause
 #
 # PURPOSE:
@@ -38,7 +38,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 SCRIPT_NAME="$(basename "$0")"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -477,8 +477,12 @@ if [[ -z "$PEER_IP" ]]; then
 fi
 
 # Validate PEER_IP is a real IP address (prevents SSH option injection)
-if [[ ! "$PEER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ ! "$PEER_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     die "Invalid peer IP: $PEER_IP. Must be a valid IPv4 address."
+fi
+IFS='.' read -r _o1 _o2 _o3 _o4 <<< "$PEER_IP"
+if [[ "$_o1" -gt 255 || "$_o2" -gt 255 || "$_o3" -gt 255 || "$_o4" -gt 255 ]]; then
+    die "Invalid peer IP (octet out of range 0-255): $PEER_IP"
 fi
 
 if [[ ! "$MODE" =~ ^(primary|standby)$ ]]; then
