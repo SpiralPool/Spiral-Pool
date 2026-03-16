@@ -4365,6 +4365,194 @@ with open(sys.argv[1], 'w') as f:
 }
 
 #===============================================================================
+# SECURITY COMMAND — unified security status view
+#===============================================================================
+
+cmd_security() {
+    local period="${1:-24h}"
+
+    local NC='\033[0m'    CYAN='\033[0;36m' WHITE='\033[1;37m'
+    local GREEN='\033[0;32m' YELLOW='\033[1;33m' RED='\033[0;31m' DIM='\033[2m'
+
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}  SECURITY STATUS${NC}  ${DIM}(last $period)${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    # ── Firewall ──────────────────────────────────────────────────────────────
+    echo -e "  ${WHITE}Firewall${NC}"
+
+    local ufw_status
+    ufw_status=$(sudo ufw status 2>/dev/null | head -1)
+    if echo "$ufw_status" | grep -qi "active"; then
+        echo -e "    UFW:       ${GREEN}ACTIVE${NC}  (default: deny incoming)"
+    else
+        echo -e "    UFW:       ${RED}INACTIVE${NC}  ${YELLOW}⚠  pool is unprotected${NC}"
+    fi
+
+    if command -v fail2ban-client &>/dev/null && systemctl is-active --quiet fail2ban 2>/dev/null; then
+        echo -e "    fail2ban:  ${GREEN}ACTIVE${NC}  (72h ban on brute-force / IP violation)"
+    elif command -v fail2ban-client &>/dev/null; then
+        echo -e "    fail2ban:  ${YELLOW}INSTALLED but not running${NC}"
+    else
+        echo -e "    fail2ban:  ${RED}NOT INSTALLED${NC}"
+    fi
+    echo ""
+
+    # ── fail2ban jail status ──────────────────────────────────────────────────
+    if command -v fail2ban-client &>/dev/null && systemctl is-active --quiet fail2ban 2>/dev/null; then
+        echo -e "  ${WHITE}Active Bans${NC}"
+        printf "    %-28s %s\n" "Jail" "Total / Currently banned"
+        echo -e "    ${DIM}──────────────────────────────────────────────────────${NC}"
+
+        local any_banned=false
+        declare -A jail_banned_ips
+
+        for jail in spiralpool-dashboard spiralpool-api spiralpool-stratum; do
+            local raw
+            raw=$(sudo fail2ban-client status "$jail" 2>/dev/null)
+            local total currently
+            total=$(echo "$raw" | grep "Total banned:" | awk '{print $NF}')
+            currently=$(echo "$raw" | grep "Currently banned:" | awk '{print $NF}')
+            local banned_list
+            banned_list=$(echo "$raw" | grep "Banned IP list:" | sed 's/.*Banned IP list://' | xargs)
+
+            total="${total:-0}"; currently="${currently:-0}"
+            [[ -n "$banned_list" ]] && jail_banned_ips[$jail]="$banned_list" && any_banned=true
+
+            local cur_str
+            if [[ "$currently" -gt 0 ]]; then
+                cur_str="${RED}${currently}${NC}"
+            else
+                cur_str="${currently}"
+            fi
+            printf "    %-28s %s / %b\n" "$jail" "$total" "$cur_str"
+        done
+        echo ""
+
+        if $any_banned; then
+            echo -e "  ${WHITE}Currently Banned IPs${NC}"
+            for jail in "${!jail_banned_ips[@]}"; do
+                for ip in ${jail_banned_ips[$jail]}; do
+                    echo -e "    ${RED}${ip}${NC}  ${DIM}[${jail}]${NC}"
+                done
+            done
+            echo ""
+        fi
+    fi
+
+    # ── Stratum event counts from journald ────────────────────────────────────
+    echo -e "  ${WHITE}Stratum Events  ${DIM}(last $period)${NC}"
+    echo -e "    ${DIM}──────────────────────────────────────────────────────${NC}"
+
+    local stratum_journal
+    stratum_journal=$(journalctl -u spiralstratum --since "$period ago" --no-pager 2>/dev/null)
+
+    local ip_bans violations preauth_floods msg_too_large conn_refused
+    ip_bans=$(echo "$stratum_journal" | grep -c '"IP banned"\|"IP auto-banned due to violations"' 2>/dev/null || echo 0)
+    violations=$(echo "$stratum_journal" | grep -c '"Rate limit violation"' 2>/dev/null || echo 0)
+    preauth_floods=$(echo "$stratum_journal" | grep -c '"Pre-auth message limit exceeded"' 2>/dev/null || echo 0)
+    msg_too_large=$(echo "$stratum_journal" | grep -c '"Message too large"' 2>/dev/null || echo 0)
+    conn_refused=$(echo "$stratum_journal" | grep -c '"Connection rate limited"\|"Global partial buffer limit exceeded"' 2>/dev/null || echo 0)
+
+    _sec_row() { printf "    %-32s %s\n" "$1" "$2"; }
+
+    if [[ "$ip_bans" -gt 0 ]]; then
+        _sec_row "IP bans (rate limiter):" "${RED}${ip_bans}${NC}"
+    else
+        _sec_row "IP bans (rate limiter):" "${ip_bans}"
+    fi
+    if [[ "$violations" -gt 0 ]]; then
+        _sec_row "Rate limit violations:" "${YELLOW}${violations}${NC}"
+    else
+        _sec_row "Rate limit violations:" "${violations}"
+    fi
+    _sec_row "Pre-auth floods:" "${preauth_floods}"
+    _sec_row "Oversized messages:" "${msg_too_large}"
+    _sec_row "Connections refused:" "${conn_refused}"
+    echo ""
+
+    # ── Connection type breakdown ─────────────────────────────────────────────
+    echo -e "  ${WHITE}Connection Fingerprints  ${DIM}(last $period)${NC}"
+    echo -e "    ${DIM}──────────────────────────────────────────────────────${NC}"
+
+    local classified_lines
+    classified_lines=$(echo "$stratum_journal" | grep '"Connection classified"')
+
+    local n_asic n_proxy n_market n_unknown
+    n_asic=$(echo "$classified_lines" | grep -c '"type":"ASIC"' 2>/dev/null || echo 0)
+    n_proxy=$(echo "$classified_lines" | grep -c '"type":"PROXY"' 2>/dev/null || echo 0)
+    n_market=$(echo "$classified_lines" | grep -c '"type":"MARKETPLACE"' 2>/dev/null || echo 0)
+    n_unknown=$(echo "$classified_lines" | grep -c '"type":"UNKNOWN"' 2>/dev/null || echo 0)
+    local total_classified=$(( n_asic + n_proxy + n_market + n_unknown ))
+
+    if [[ "$total_classified" -eq 0 ]]; then
+        echo -e "    ${DIM}No classified connections in this window${NC}"
+    else
+        _sec_row "ASIC:"        "${n_asic}"
+        _sec_row "PROXY:"       "${n_proxy}"
+        _sec_row "MARKETPLACE:" "${n_market}"
+        _sec_row "UNKNOWN:"     "${n_unknown}"
+    fi
+    echo ""
+
+    # ── Recent security events ────────────────────────────────────────────────
+    echo -e "  ${WHITE}Recent Security Events${NC}"
+    echo -e "    ${DIM}──────────────────────────────────────────────────────${NC}"
+
+    local stratum_events dash_events combined_events
+    # Stratum: IP bans, violations, pre-auth floods
+    stratum_events=$(echo "$stratum_journal" \
+        | grep '"IP banned"\|"IP auto-banned\|"Rate limit violation"\|"Pre-auth message limit exceeded"' \
+        | tail -8 \
+        | sed 's/^[A-Za-z]* [0-9]* //' \
+        | awk '{ts=$1; $1=""; printf "    [stratum]   %-12s %s\n", ts, $0}')
+
+    # Dashboard: failed logins
+    dash_events=$(journalctl -u spiraldash --since "$period ago" --no-pager 2>/dev/null \
+        | grep "SECURITY:" \
+        | tail -5 \
+        | sed 's/^[A-Za-z]* [0-9]* //' \
+        | awk '{ts=$1; $1=""; printf "    [dashboard] %-12s %s\n", ts, $0}')
+
+    combined_events=$(printf '%s\n%s' "$stratum_events" "$dash_events" \
+        | grep -v '^$' | tail -12)
+
+    if [[ -z "$combined_events" ]]; then
+        echo -e "    ${DIM}None in this window — clean${NC}"
+    else
+        echo "$combined_events" | while IFS= read -r line; do
+            if echo "$line" | grep -qE '"IP banned"|"IP auto-banned"'; then
+                echo -e "    ${RED}${line#    }${NC}"
+            elif echo "$line" | grep -qE 'Failed login|Rate limited login'; then
+                echo -e "    ${YELLOW}${line#    }${NC}"
+            else
+                echo -e "    ${line#    }"
+            fi
+        done
+    fi
+    echo ""
+
+    # ── Whitelist reminder ────────────────────────────────────────────────────
+    local whitelist
+    whitelist=$(grep "^ignoreip" /etc/fail2ban/jail.d/spiralpool.conf 2>/dev/null \
+        | sed 's/ignoreip\s*=\s*//' | tr ' ' '\n' \
+        | grep -v '^127\.\|^::1\|^10\.\|^172\.1[6-9]\.\|^172\.2[0-9]\.\|^172\.3[0-1]\.\|^192\.168\.' \
+        | grep -v '^$')
+    if [[ -n "$whitelist" ]]; then
+        echo -e "  ${WHITE}Marketplace Whitelist${NC}"
+        echo "$whitelist" | while read -r cidr; do
+            echo -e "    ${GREEN}${cidr}${NC}"
+        done
+        echo ""
+    fi
+
+    echo -e "  ${DIM}spiralctl fail2ban unban <IP>   spiralctl fail2ban whitelist-add <CIDR>${NC}"
+    echo ""
+}
+
+#===============================================================================
 # FAIL2BAN COMMAND
 #===============================================================================
 
@@ -5528,6 +5716,9 @@ main() {
         # Configuration & notifications
         config)     cmd_config "$@" ;;
         webhook)    cmd_webhook "$@" ;;
+
+        # Security
+        security)   cmd_security "$@" ;;
         fail2ban)   cmd_fail2ban "$@" ;;
 
         # Go binary commands (pool-level)

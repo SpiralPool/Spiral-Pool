@@ -127,6 +127,19 @@ func NewServer(cfg *config.StratumConfig, logger *zap.Logger) *Server {
 		classifier:         NewConnectionClassifier(),
 	}
 
+	// Wire default Info-level logging for connection classification.
+	// The internal callback fires exactly once per classification transition
+	// (L1: user-agent instant, L2: handshake timing, L3: extranonce2 entropy).
+	// SetConnectionClassifiedHandler replaces this with a wrapped version that
+	// also invokes the pool's callback.
+	s.classifier.SetClassifiedHandler(func(id uint64, c ConnectionClassification) {
+		sugar.Infow("Connection classified",
+			"sessionId", id,
+			"type", c.Type.String(),
+			"confidence", c.Confidence,
+		)
+	})
+
 	// Initialize V1 protocol handler with config values
 	// Use version rolling settings from config
 	s.v1Handler = v1.NewHandler(
@@ -714,26 +727,13 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 	}
 	if !wasAuthorized && session.IsAuthorized() {
 		s.classifier.RecordAuthorize(session.ID, session.WorkerName, now)
-		if c := s.classifier.GetClassification(session.ID); c.Type != ConnectionTypeUnknown {
-			s.logger.Debugw("Connection classified",
-				"sessionId", session.ID,
-				"type", c.Type.String(),
-				"confidence", c.Confidence,
-				"signals", c.Signals,
-			)
-			if s.onConnectionClassified != nil {
-				s.onConnectionClassified(session.ID, c)
-			}
-		}
+		// Logging and pool callback fire via the classifier's internal notify,
+		// which fires only on type transitions — no manual poll needed here.
 	}
 	if en2, ok := extractSubmitEn2(msg); ok {
 		s.classifier.RecordShare(session.ID, en2, now)
-		// Fire callback if classification changed after this share batch.
-		if c := s.classifier.GetClassification(session.ID); c.Type != ConnectionTypeUnknown {
-			if s.onConnectionClassified != nil {
-				s.onConnectionClassified(session.ID, c)
-			}
-		}
+		// L3 entropy classification fires via the classifier's internal notify
+		// at 10 / 50 / 100 samples — no manual poll needed here.
 	}
 
 	// Send response back to miner
@@ -1169,9 +1169,21 @@ func (s *Server) SetMinerClassifiedHandler(handler func(sessionID uint64, profil
 
 // SetConnectionClassifiedHandler sets the callback for when a connection is fingerprinted
 // as ASIC, PROXY, or MARKETPLACE by the three-level classifier.
+// The classifier's internal callback is replaced with a wrapper that logs at
+// Info level and then invokes the pool's handler — ensuring exactly one log
+// line per classification transition regardless of which detection level fires.
 func (s *Server) SetConnectionClassifiedHandler(handler func(sessionID uint64, c ConnectionClassification)) {
 	s.onConnectionClassified = handler
-	s.classifier.SetClassifiedHandler(handler)
+	s.classifier.SetClassifiedHandler(func(id uint64, c ConnectionClassification) {
+		s.logger.Infow("Connection classified",
+			"sessionId", id,
+			"type", c.Type.String(),
+			"confidence", c.Confidence,
+		)
+		if handler != nil {
+			handler(id, c)
+		}
+	})
 }
 
 // GetConnectionClassification returns the current classification for a session.

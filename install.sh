@@ -12322,6 +12322,60 @@ JAILEOF
     else
         log_warn "fail2ban installed but service did not start — check: sudo systemctl status fail2ban"
     fi
+
+    # ── iptables connlimit: per-source-IP concurrent connection cap ───────────
+    # Limits the number of SIMULTANEOUS open connections from a single IP to
+    # any stratum port.  This is a kernel-level guard that fires before the
+    # application even sees the connection — effective against slow-loris and
+    # connection-exhaustion attacks.
+    #
+    # Value: 200 concurrent connections per source IP per stratum port.
+    # A single ASIC farm or proxy legitimately needs at most a handful; 200
+    # is generous enough not to affect any legitimate miner while blocking
+    # attackers who open thousands of connections from one IP.
+    #
+    # We insert these rules via ufw's after.rules so they survive ufw reload.
+    # They are idempotent: the grep checks prevent duplicate insertion.
+    local after_rules="/etc/ufw/after.rules"
+    local connlimit_marker="# spiralpool-connlimit"
+
+    if ! grep -q "$connlimit_marker" "$after_rules" 2>/dev/null; then
+        log "Adding stratum connlimit rules to UFW after.rules..."
+
+        # Build the list of stratum ports that are currently open
+        local stratum_ports=()
+        [[ -n "$STRATUM_PORT" ]]    && stratum_ports+=("$STRATUM_PORT")
+        [[ -n "$STRATUM_V2_PORT" ]] && stratum_ports+=("$STRATUM_V2_PORT")
+        [[ "$ENABLE_DGB"  == "true" ]] && stratum_ports+=(3333 3334 3335)
+        [[ "$ENABLE_BTC"  == "true" ]] && stratum_ports+=(4333 4334 4335)
+        [[ "$ENABLE_BCH"  == "true" ]] && stratum_ports+=(5333 5334 5335)
+        [[ "$ENABLE_BC2"  == "true" ]] && stratum_ports+=(6333 6334 6335)
+        [[ "$ENABLE_LTC"  == "true" ]] && stratum_ports+=(7333 7334 7335)
+        [[ "$ENABLE_DOGE" == "true" ]] && stratum_ports+=(8335 8337 8342)
+        [[ "$ENABLE_NMC"  == "true" ]] && stratum_ports+=(14335 14336 14337)
+        [[ "$ENABLE_SYS"  == "true" ]] && stratum_ports+=(15335 15336 15337)
+        [[ "$ENABLE_XMY"  == "true" ]] && stratum_ports+=(17335 17336 17337)
+
+        # Deduplicate
+        local unique_ports
+        unique_ports=$(printf '%s\n' "${stratum_ports[@]}" | sort -u)
+
+        # Append connlimit rules before the COMMIT line in after.rules
+        local rules_block
+        rules_block="$connlimit_marker — max 200 concurrent connections per source IP per stratum port\n"
+        for port in $unique_ports; do
+            rules_block+="# Port $port\n"
+            rules_block+="-A ufw-after-input -p tcp --dport $port -m connlimit --connlimit-above 200 --connlimit-mask 32 -j REJECT --reject-with tcp-reset\n"
+        done
+
+        # Insert before the final COMMIT in after.rules
+        sudo sed -i "/^COMMIT$/i ${rules_block}" "$after_rules" 2>/dev/null || \
+            log_warn "Could not add connlimit rules to $after_rules — add them manually if needed"
+
+        # Reload UFW to activate the new rules
+        sudo ufw --force reload > /dev/null 2>&1
+        log_success "Stratum connlimit rules added (max 200 concurrent per IP per port)"
+    fi
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -12809,8 +12863,8 @@ MINERDBEOF
     # Single-coin mode: open generic stratum ports (empty in multi-coin mode)
     [[ -n "$STRATUM_PORT" ]]    && sudo ufw allow $STRATUM_PORT/tcp > /dev/null 2>&1    # Stratum V1 (miners)
     [[ -n "$STRATUM_V2_PORT" ]] && sudo ufw allow $STRATUM_V2_PORT/tcp > /dev/null 2>&1 # Stratum V2 (miners)
-    sudo ufw allow $API_PORT/tcp > /dev/null 2>&1         # Pool API
-    sudo ufw allow $DASHBOARD_PORT/tcp > /dev/null 2>&1  # Dashboard
+    sudo ufw limit $API_PORT/tcp > /dev/null 2>&1         # Pool API (rate-limited: max 6 new conn/30s per IP)
+    sudo ufw limit $DASHBOARD_PORT/tcp > /dev/null 2>&1  # Dashboard (rate-limited: max 6 new conn/30s per IP)
     sudo ufw allow $METRICS_PORT/tcp > /dev/null 2>&1    # Prometheus metrics
 
     # Multi-coin P2P and Stratum ports (opened based on enabled coins)
