@@ -1225,6 +1225,13 @@ cmd_ha() {
             echo "  --ssh-password <pw>       spiraluser system password on primary (for SSH key exchange)"
             echo "  --force                   Re-run on partially-configured state"
             echo ""
+            echo "Environment variable alternatives (avoids passwords in shell history / ps aux):"
+            echo "  SPIRAL_REPL_PASSWORD        Alternative to --repl-password"
+            echo "  SPIRAL_SUPERUSER_PASSWORD   Alternative to --superuser-password"
+            echo "  SPIRAL_DB_PASSWORD          Alternative to --db-password"
+            echo "  SPIRAL_SSH_PASSWORD         Alternative to --ssh-password"
+            echo "  CLI flags take precedence over env vars when both are provided."
+            echo ""
             echo "What 'ha enable' does:"
             echo "  1. Installs and configures etcd (distributed consensus)"
             echo "  2. Installs and configures Patroni (PostgreSQL HA failover)"
@@ -3029,6 +3036,17 @@ ha_enable() {
                 ;;
         esac
     done
+
+    # ── Environment variable fallbacks for sensitive credentials ──────────────
+    # CLI flags take precedence. Env vars allow users to avoid passwords in
+    # shell history (bash/zsh record command lines) and ps aux output.
+    # Env vars are unset immediately after reading to prevent leakage to
+    # child processes.
+    [[ -z "$repl_password"       && -n "${SPIRAL_REPL_PASSWORD:-}"      ]] && repl_password="$SPIRAL_REPL_PASSWORD"
+    [[ -z "$superuser_password"  && -n "${SPIRAL_SUPERUSER_PASSWORD:-}" ]] && superuser_password="$SPIRAL_SUPERUSER_PASSWORD"
+    [[ -z "$db_password_flag"    && -n "${SPIRAL_DB_PASSWORD:-}"        ]] && db_password_flag="$SPIRAL_DB_PASSWORD"
+    [[ -z "$ssh_password"        && -n "${SPIRAL_SSH_PASSWORD:-}"       ]] && ssh_password="$SPIRAL_SSH_PASSWORD"
+    unset SPIRAL_REPL_PASSWORD SPIRAL_SUPERUSER_PASSWORD SPIRAL_DB_PASSWORD SPIRAL_SSH_PASSWORD 2>/dev/null || true
 
     # ── Cloud / VPS deployment guard ──
     # HA requires keepalived VRRP for VIP failover — VRRP uses broadcast/multicast MAC election
