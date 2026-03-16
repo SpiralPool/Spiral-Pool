@@ -6,6 +6,7 @@
 package stratum
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -72,7 +73,8 @@ type Server struct {
 	onConnect          func(*protocol.Session)
 	onDisconnect       func(*protocol.Session)
 	onDifficultyChange func(sessionID uint64, difficulty float64)   // Called when session difficulty changes
-	onMinerClassified  func(sessionID uint64, profile MinerProfile) // Called when miner is classified with full profile
+	onMinerClassified      func(sessionID uint64, profile MinerProfile)         // Called when miner is classified with full profile
+	onConnectionClassified func(sessionID uint64, c ConnectionClassification) // Called when connection type is detected
 
 	// State
 	running   atomic.Bool
@@ -91,6 +93,10 @@ type Server struct {
 	// Worker class tracking
 	workerClassMu sync.RWMutex
 	workerClasses map[MinerClass]int
+
+	// Connection classifier — fingerprints connections as ASIC / PROXY / MARKETPLACE.
+	// Runs in three levels: user-agent (instant), handshake timing, extranonce2 entropy.
+	classifier *ConnectionClassifier
 
 	// Metrics
 	totalConnections    atomic.Uint64
@@ -118,6 +124,7 @@ func NewServer(cfg *config.StratumConfig, logger *zap.Logger) *Server {
 		jobs:               make(map[string]*protocol.Job),
 		workerClasses:      make(map[MinerClass]int),
 		maxPartialBufferMB: 512, // FIX O-2: Default 512MB global limit for partial message buffers (10PH/s scale)
+		classifier:         NewConnectionClassifier(),
 	}
 
 	// Initialize V1 protocol handler with config values
@@ -665,6 +672,11 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 		"messageTruncated", sanitizeLogMessage(msg, 200),
 	)
 
+	// Snapshot subscribe/authorize state BEFORE the handler so we can detect
+	// the exact moment each transition fires (used by the connection classifier).
+	wasSubscribed := session.IsSubscribed()
+	wasAuthorized := session.IsAuthorized()
+
 	// Delegate to V1 handler for processing
 	response, err := s.v1Handler.HandleMessage(session, msg)
 	if err != nil {
@@ -687,6 +699,41 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 			_, _ = session.Conn.Write([]byte(errResp))                          // #nosec G104
 		}
 		return
+	}
+
+	// ── Connection classifier hooks ──────────────────────────────────────────
+	// Detect subscribe/authorize transitions and share submissions.
+	// All writes happen on this session's goroutine so the snapshot is race-free.
+	now := time.Now()
+	if !wasSubscribed && session.IsSubscribed() && session.UserAgent != "" {
+		var class MinerClass
+		if s.spiralRouter != nil {
+			class, _ = s.spiralRouter.DetectMiner(session.UserAgent)
+		}
+		s.classifier.RecordSubscribe(session.ID, class, now)
+	}
+	if !wasAuthorized && session.IsAuthorized() {
+		s.classifier.RecordAuthorize(session.ID, session.WorkerName, now)
+		if c := s.classifier.GetClassification(session.ID); c.Type != ConnectionTypeUnknown {
+			s.logger.Debugw("Connection classified",
+				"sessionId", session.ID,
+				"type", c.Type.String(),
+				"confidence", c.Confidence,
+				"signals", c.Signals,
+			)
+			if s.onConnectionClassified != nil {
+				s.onConnectionClassified(session.ID, c)
+			}
+		}
+	}
+	if en2, ok := extractSubmitEn2(msg); ok {
+		s.classifier.RecordShare(session.ID, en2, now)
+		// Fire callback if classification changed after this share batch.
+		if c := s.classifier.GetClassification(session.ID); c.Type != ConnectionTypeUnknown {
+			if s.onConnectionClassified != nil {
+				s.onConnectionClassified(session.ID, c)
+			}
+		}
 	}
 
 	// Send response back to miner
@@ -828,6 +875,7 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 // closeSession cleans up a session.
 func (s *Server) closeSession(session *protocol.Session) {
 	s.sessions.Delete(session.ID)
+	s.classifier.Cleanup(session.ID)
 	_ = session.Conn.Close() // #nosec G104 - error ignored during cleanup
 
 	s.logger.Debugw("Session closed",
@@ -1117,6 +1165,41 @@ func (s *Server) SetDifficultyChangeHandler(handler func(sessionID uint64, diffi
 // Called after Spiral Router classifies the miner based on user-agent.
 func (s *Server) SetMinerClassifiedHandler(handler func(sessionID uint64, profile MinerProfile)) {
 	s.onMinerClassified = handler
+}
+
+// SetConnectionClassifiedHandler sets the callback for when a connection is fingerprinted
+// as ASIC, PROXY, or MARKETPLACE by the three-level classifier.
+func (s *Server) SetConnectionClassifiedHandler(handler func(sessionID uint64, c ConnectionClassification)) {
+	s.onConnectionClassified = handler
+	s.classifier.SetClassifiedHandler(handler)
+}
+
+// GetConnectionClassification returns the current classification for a session.
+func (s *Server) GetConnectionClassification(sessionID uint64) ConnectionClassification {
+	return s.classifier.GetClassification(sessionID)
+}
+
+// extractSubmitEn2 parses a mining.submit message and returns the extranonce2 field (params[2]).
+// Returns ("", false) if the message is not a submit or cannot be parsed.
+func extractSubmitEn2(msg []byte) (string, bool) {
+	if !bytes.Contains(msg, []byte(`"mining.submit"`)) {
+		return "", false
+	}
+	var req struct {
+		Method string            `json:"method"`
+		Params []json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(msg, &req); err != nil || req.Method != "mining.submit" {
+		return "", false
+	}
+	if len(req.Params) < 3 {
+		return "", false
+	}
+	var en2 string
+	if err := json.Unmarshal(req.Params[2], &en2); err != nil {
+		return "", false
+	}
+	return en2, en2 != ""
 }
 
 // GetSession returns a session by ID.
