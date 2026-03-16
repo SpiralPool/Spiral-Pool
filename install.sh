@@ -10,7 +10,7 @@
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 1.0.0                                                           ║
+# ║   Version: 1.1.0                                                           ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -35,7 +35,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="1.0.0"
+    VERSION="1.1.0"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -54,6 +54,8 @@ STRATUM_TLS_PORT=""
 API_PORT=4000
 DASHBOARD_PORT=1618
 METRICS_PORT=9100
+CLOUD_PUBLIC_IP=""         # Set during install when cloud deployment is detected; used to restrict SSH in UFW
+CLOUD_DETECTED=""          # Set to cloud provider name when detect_cloud_provider() fires; used by SSH setup
 RPC_PORT=""
 ZMQ_PORT=""
 BC2_RPC_PORT=8339
@@ -113,9 +115,7 @@ ADMIN_USER=""
 SERVER_IP=""
 POOL_ADDRESS=""
 BTC_ADDRESS=""  # Bitcoin address for multi-coin mode
-SIMPLESWAP_ENABLED="false"    # SimpleSwap.io auto-conversion (optional)
-SIMPLESWAP_API_KEY=""          # SimpleSwap API key (stored in /etc/spiralpool/simpleswap.conf)
-SIMPLESWAP_BTC_ADDRESS=""      # BTC destination wallet for converted funds
+SIMPLESWAP_ENABLED="false"    # SimpleSwap.io integration (optional — alert only, no API key or address stored)
 BCH_ADDRESS=""  # Bitcoin Cash address for multi-coin mode
 BC2_ADDRESS=""  # Bitcoin II address for multi-coin mode
 LTC_ADDRESS=""  # Litecoin address for multi-coin mode
@@ -220,6 +220,7 @@ VIP_ADDRESS=""        # Virtual IP for HA cluster (e.g., 192.168.1.200)
 VIP_INTERFACE=""      # Network interface for VIP (e.g., ens33)
 VIP_NETMASK="32"      # CIDR for VIP address (/32 = single-IP route, prevents duplicate /24 subnet route conflicts)
 HA_CLUSTER_TOKEN=""   # Shared token for cluster authentication
+ETCD_ROOT_PASS=""     # Derived from HA_CLUSTER_TOKEN in configure_etcd(); exported as ETCDCTL_USER
 HA_NODE_PRIORITY=""   # Node priority (lower = higher priority for master)
 HA_PEER_IP=""         # Backward compat: first peer (primary) or primary IP (backup)
 HA_PEER_IPS=()        # Array of ALL peer IPs (reconstructed from CSV after checkpoint)
@@ -1458,17 +1459,265 @@ detect_cloud_provider() {
         val=$(cat "$dmi_file" 2>/dev/null) || continue
         val=$(echo "$val" | tr '[:upper:]' '[:lower:]')
         case "$val" in
+            # ── Major hyperscalers ────────────────────────────────────────────
             *amazon*|*ec2*)             echo "AWS EC2"; return 0 ;;
             *google*)                   echo "Google Cloud"; return 0 ;;
+            *microsoft*)                ;; # Skip — handled separately below (Azure vs on-prem Hyper-V)
             *digitalocean*)             echo "DigitalOcean"; return 0 ;;
-            *linode*|*akamai*)          echo "Linode/Akamai"; return 0 ;;
-            *hetzner*)                  echo "Hetzner Cloud"; return 0 ;;
-            *vultr*)                    echo "Vultr"; return 0 ;;
-            *scaleway*)                 echo "Scaleway"; return 0 ;;
-            *upcloud*)                  echo "UpCloud"; return 0 ;;
             *alibaba*|*aliyun*)         echo "Alibaba Cloud"; return 0 ;;
             *tencent*)                  echo "Tencent Cloud"; return 0 ;;
-            *ovh*)                      echo "OVHcloud"; return 0 ;;
+            *huawei*)                   echo "Huawei Cloud"; return 0 ;;
+
+            # ── European IaaS / VPS — Western ────────────────────────────────
+            *hetzner*)                  echo "Hetzner Cloud"; return 0 ;;
+            *ovh*|*kimsufi*|*soyoustart*) echo "OVHcloud"; return 0 ;;
+            *scaleway*)                 echo "Scaleway"; return 0 ;;
+            *gandi*)                    echo "Gandi"; return 0 ;;
+            *ionos*|*1and1*)            echo "IONOS"; return 0 ;;
+            *strato*)                   echo "Strato"; return 0 ;;
+            *hosteurope*)               echo "Host Europe"; return 0 ;;
+            *plusserver*)               echo "PlusServer"; return 0 ;;
+            *netcup*)                   echo "Netcup"; return 0 ;;
+            *mittwald*)                 echo "Mittwald"; return 0 ;;
+            *dogado*)                   echo "Dogado"; return 0 ;;
+            *servinga*)                 echo "Servinga"; return 0 ;;
+            *1blu*)                     echo "1blu"; return 0 ;;
+            *syseleven*)                echo "SysEleven"; return 0 ;;
+            *contabo*)                  echo "Contabo"; return 0 ;;
+            *leaseweb*)                 echo "LeaseWeb"; return 0 ;;
+            *worldstream*)              echo "Worldstream"; return 0 ;;
+            *serverius*)                echo "Serverius"; return 0 ;;
+            *transip*)                  echo "TransIP"; return 0 ;;
+            *tilaa*)                    echo "Tilaa"; return 0 ;;
+            *cloudvps*)                 echo "CloudVPS"; return 0 ;;
+            *pcextreme*)                echo "PCExtreme"; return 0 ;;
+            *aruba*)                    echo "Aruba Cloud"; return 0 ;;
+            *clouding*)                 echo "Clouding.io"; return 0 ;;
+            *gcore*)                    echo "Gcore"; return 0 ;;
+            *serverspace*)              echo "ServerSpace"; return 0 ;;
+            *ikoula*)                   echo "Ikoula"; return 0 ;;
+            *infomaniak*)               echo "Infomaniak"; return 0 ;;
+            *cloudscale*)               echo "Cloudscale.ch"; return 0 ;;
+            *vexxhost*)                 echo "Vexxhost"; return 0 ;;
+            *fuga*)                     echo "Fuga Cloud"; return 0 ;;
+            *cleura*|*citynetwork*)     echo "Cleura"; return 0 ;;
+            *combell*)                  echo "Combell"; return 0 ;;
+            *colocrossing*)             echo "ColoCrossing"; return 0 ;;
+            *nforce*)                   echo "NFOrce"; return 0 ;;
+            *zenlayer*)                 echo "Zenlayer"; return 0 ;;
+            *terrahost*)                echo "TerraHost"; return 0 ;;
+            *m247*)                     echo "M247"; return 0 ;;
+            *eurodir*|*eurovps*)        echo "EuroVPS"; return 0 ;;
+            *webdock*)                  echo "Webdock"; return 0 ;;
+
+            # ── European — Nordic ─────────────────────────────────────────────
+            *glesys*)                   echo "GleSYS"; return 0 ;;
+            *elastx*)                   echo "Elastx"; return 0 ;;
+            *binero*)                   echo "Binero"; return 0 ;;
+            *amito*)                    echo "Amito"; return 0 ;;
+            *creanova*)                 echo "Creanova"; return 0 ;;
+
+            # ── European — Central / Eastern ──────────────────────────────────
+            *vshosting*)                echo "VSHosting"; return 0 ;;
+            *wedos*)                    echo "WEDOS"; return 0 ;;
+            *active24*)                 echo "Active24"; return 0 ;;
+            *websupport*)               echo "Websupport"; return 0 ;;
+            *forpsi*)                   echo "Forpsi"; return 0 ;;
+            *coolhousing*)              echo "Coolhousing"; return 0 ;;
+            *vpsfree*)                  echo "VPSFree.cz"; return 0 ;;
+            *neterra*)                  echo "Neterra"; return 0 ;;
+            *linevast*)                 echo "Linevast"; return 0 ;;
+
+            # ── European — Austria / Switzerland ──────────────────────────────
+            *world4you*)                echo "World4You"; return 0 ;;
+            *a1digital*)                echo "A1 Digital"; return 0 ;;
+            *edis*)                     echo "EDIS Global"; return 0 ;;
+
+            # ── UK ────────────────────────────────────────────────────────────
+            *brightbox*)                echo "Brightbox"; return 0 ;;
+            *bytemark*)                 echo "Bytemark"; return 0 ;;
+            *iomart*)                   echo "Iomart"; return 0 ;;
+            *fasthosts*)                echo "Fasthosts"; return 0 ;;
+            *claranet*)                 echo "Claranet"; return 0 ;;
+            *ukcloud*)                  echo "UKCloud"; return 0 ;;
+            *memset*)                   echo "Memset"; return 0 ;;
+            *mythic*beast*)             echo "Mythic Beasts"; return 0 ;;
+            *node4*)                    echo "Node4"; return 0 ;;
+            *pulsant*)                  echo "Pulsant"; return 0 ;;
+            *i3d*)                      echo "i3D.net"; return 0 ;;
+
+            # ── North America — Established IaaS ─────────────────────────────
+            *linode*|*akamai*)          echo "Linode/Akamai"; return 0 ;;
+            *vultr*)                    echo "Vultr"; return 0 ;;
+            *upcloud*)                  echo "UpCloud"; return 0 ;;
+            *kamatera*)                 echo "Kamatera"; return 0 ;;
+            *rackspace*)                echo "Rackspace"; return 0 ;;
+            *packet*|*equinix*)         echo "Equinix Metal"; return 0 ;;
+            *cherryservers*)            echo "Cherry Servers"; return 0 ;;
+            *latitude*)                 echo "Latitude.sh"; return 0 ;;
+            *hivelocity*)               echo "Hivelocity"; return 0 ;;
+            *enzu*)                     echo "Enzu"; return 0 ;;
+            *cogecopeers1*|*cogeco*)    echo "Cogeco Peer 1"; return 0 ;;
+            *lumen*|*centurylink*)      echo "Lumen/CenturyLink"; return 0 ;;
+            *internap*)                 echo "Internap"; return 0 ;;
+            *liquidweb*)                echo "LiquidWeb"; return 0 ;;
+            *primus*)                   echo "Primus Canada"; return 0 ;;
+
+            # ── North America — VPS / Budget ─────────────────────────────────
+            *frantech*|*buyvm*)         echo "BuyVM/FranTech"; return 0 ;;
+            *ramnode*)                  echo "RamNode"; return 0 ;;
+            *hosthatch*)                echo "HostHatch"; return 0 ;;
+            *hostwinds*)                echo "Hostwinds"; return 0 ;;
+            *hostus*)                   echo "HostUS"; return 0 ;;
+            *interserver*)              echo "InterServer"; return 0 ;;
+            *cloudatcost*)              echo "CloudAtCost"; return 0 ;;
+            *psychz*)                   echo "Psychz Networks"; return 0 ;;
+            *datapacket*)               echo "DataPacket"; return 0 ;;
+            *servermania*)              echo "ServerMania"; return 0 ;;
+            *quadranet*)                echo "QuadraNet"; return 0 ;;
+            *hostnoc*)                  echo "HostNOC"; return 0 ;;
+            *nocix*)                    echo "Nocix"; return 0 ;;
+            *ssdnodes*)                 echo "SSD Nodes"; return 0 ;;
+            *virmach*)                  echo "VirMach"; return 0 ;;
+            *cloudcone*)                echo "CloudCone"; return 0 ;;
+            *pacificrack*)              echo "PacificRack"; return 0 ;;
+            *knownhost*)                echo "KnownHost"; return 0 ;;
+            *stablehost*)               echo "StableHost"; return 0 ;;
+            *dedipath*)                 echo "DediPath"; return 0 ;;
+            *vpsdime*)                  echo "VPSDime"; return 0 ;;
+            *arpnetworks*)              echo "ARP Networks"; return 0 ;;
+            *serverhub*)                echo "ServerHub"; return 0 ;;
+            *iozoom*)                   echo "IO Zoom"; return 0 ;;
+            *100tb*)                    echo "100TB"; return 0 ;;
+            *hostgator*)                echo "HostGator"; return 0 ;;
+            *dreamhost*)                echo "DreamHost"; return 0 ;;
+            *inmotion*)                 echo "InMotion Hosting"; return 0 ;;
+            *hostinger*)                echo "Hostinger"; return 0 ;;
+            *namecheap*)                echo "Namecheap"; return 0 ;;
+            *godaddy*)                  echo "GoDaddy"; return 0 ;;
+            *fastcomet*)                echo "FastComet"; return 0 ;;
+            *scalahosting*)             echo "ScalaHosting"; return 0 ;;
+            *a2hosting*)                echo "A2 Hosting"; return 0 ;;
+            *nexcess*)                  echo "Nexcess"; return 0 ;;
+            *chemicloud*)               echo "ChemiCloud"; return 0 ;;
+
+            # ── Russian / CIS ─────────────────────────────────────────────────
+            *yandex*)                   echo "Yandex Cloud"; return 0 ;;
+            *selectel*)                 echo "Selectel"; return 0 ;;
+            *vkcs*|*mail.ru*)           echo "VK Cloud"; return 0 ;;
+            *sbercloud*|*sbercloud*)    echo "SberCloud"; return 0 ;;
+            *timeweb*)                  echo "TimeWeb"; return 0 ;;
+            *firstvds*)                 echo "FirstVDS"; return 0 ;;
+            *beget*)                    echo "Beget"; return 0 ;;
+            *serveroid*)                echo "Serveroid"; return 0 ;;
+            *vdsina*)                   echo "Vdsina"; return 0 ;;
+            *aeza*)                     echo "Aeza"; return 0 ;;
+            *hostkey*)                  echo "HostKey"; return 0 ;;
+            *masterhost*)               echo "Masterhost"; return 0 ;;
+            *sprinthost*)               echo "SprintHost"; return 0 ;;
+            *adminvps*)                 echo "AdminVPS"; return 0 ;;
+            *servereast*)               echo "ServerEast"; return 0 ;;
+            *fozzy*)                    echo "Fozzy"; return 0 ;;
+            *gigacloud*)                echo "GigaCloud"; return 0 ;;
+            *mirohost*)                 echo "MiroHost"; return 0 ;;
+            *deltahost*)                echo "DeltaHost"; return 0 ;;
+            *hostpro*)                  echo "HostPro (UA)"; return 0 ;;
+
+            # ── Asia-Pacific — China ──────────────────────────────────────────
+            *ucloud*)                   echo "UCloud"; return 0 ;;
+            *baidu*)                    echo "Baidu Cloud"; return 0 ;;
+            *jdcloud*)                  echo "JD Cloud"; return 0 ;;
+            *kingsoft*)                 echo "Kingsoft Cloud"; return 0 ;;
+            *netease*)                  echo "NetEase Cloud"; return 0 ;;
+            *qingcloud*|*qingyun*)      echo "QingCloud"; return 0 ;;
+            *21vianet*)                 echo "21Vianet (Azure China)"; return 0 ;;
+            *ctyun*)                    echo "CTyun (China Telecom)"; return 0 ;;
+            *chinamobile*)              echo "China Mobile Cloud"; return 0 ;;
+            *chinaunicom*)              echo "China Unicom Cloud"; return 0 ;;
+            *inspur*)                   echo "Inspur Cloud"; return 0 ;;
+            *qiniu*)                    echo "Qiniu Cloud"; return 0 ;;
+            *zstack*)                   echo "ZStack Cloud"; return 0 ;;
+
+            # ── Asia-Pacific — Japan ──────────────────────────────────────────
+            *conoha*)                   echo "ConoHa (GMO)"; return 0 ;;
+            *gmo-internet*|*gmocloud*)  echo "GMO Cloud"; return 0 ;;
+            *sakura*)                   echo "Sakura Cloud"; return 0 ;;
+            *idcfrontier*)              echo "IDC Frontier"; return 0 ;;
+            *iij*)                      echo "IIJ GIO"; return 0 ;;
+            *kddi*)                     echo "KDDI Cloud"; return 0 ;;
+            *nttpc*)                    echo "NTTPC Communications"; return 0 ;;
+            *nifcloud*)                 echo "Nifcloud (NEC)"; return 0 ;;
+            *kagoya*)                   echo "Kagoya"; return 0 ;;
+
+            # ── Asia-Pacific — Korea ──────────────────────────────────────────
+            *naver*)                    echo "Naver Cloud"; return 0 ;;
+            *nhncloud*|*nhn*)           echo "NHN Cloud"; return 0 ;;
+            *gabia*)                    echo "Gabia"; return 0 ;;
+            *ktcloud*)                  echo "KT Cloud"; return 0 ;;
+            *cafe24*)                   echo "Cafe24"; return 0 ;;
+            *kakaocloud*)               echo "Kakao Cloud"; return 0 ;;
+
+            # ── Asia-Pacific — Southeast Asia ─────────────────────────────────
+            *idcloudhost*)              echo "IDCloudHost"; return 0 ;;
+            *biznet*)                   echo "Biznet Gio"; return 0 ;;
+            *exabytes*)                 echo "Exabytes"; return 0 ;;
+            *vodien*)                   echo "Vodien"; return 0 ;;
+            *shinjiru*)                 echo "Shinjiru"; return 0 ;;
+            *ipserverone*)              echo "IPServerOne"; return 0 ;;
+            *nipa*)                     echo "Nipa Cloud"; return 0 ;;
+            *cloudmile*)                echo "CloudMile"; return 0 ;;
+
+            # ── Asia-Pacific — India ──────────────────────────────────────────
+            *e2enetworks*)              echo "E2E Networks"; return 0 ;;
+            *sify*)                     echo "Sify Technologies"; return 0 ;;
+            *esds*)                     echo "ESDS"; return 0 ;;
+            *yotta*)                    echo "Yotta Infrastructure"; return 0 ;;
+            *cyfuture*)                 echo "Cyfuture"; return 0 ;;
+            *netmagic*)                 echo "NetMagic (NTT India)"; return 0 ;;
+
+            # ── Asia-Pacific — ANZ ────────────────────────────────────────────
+            *serversaustralia*)         echo "Servers Australia"; return 0 ;;
+            *aucloud*)                  echo "AUCloud"; return 0 ;;
+            *catalystcloud*)            echo "Catalyst Cloud (NZ)"; return 0 ;;
+            *conetix*)                  echo "Conetix"; return 0 ;;
+            *ventraip*)                 echo "VentraIP"; return 0 ;;
+
+            # ── Asia-Pacific — Middle East ────────────────────────────────────
+            *g42*|*core42*)             echo "G42 / Core42 Cloud"; return 0 ;;
+            *injazat*)                  echo "Injazat"; return 0 ;;
+            *stccloud*)                 echo "stc cloud (Saudi)"; return 0 ;;
+            *etisalat*|*eand*)          echo "e& Cloud (Etisalat)"; return 0 ;;
+
+            # ── Latin America ─────────────────────────────────────────────────
+            *locaweb*)                  echo "Locaweb"; return 0 ;;
+            *uoldiveo*)                 echo "UOL Diveo"; return 0 ;;
+            *kinghost*)                 echo "KingHost"; return 0 ;;
+            *hostnet*)                  echo "Hostnet"; return 0 ;;
+            *hostdime*)                 echo "HostDime"; return 0 ;;
+            *neubox*)                   echo "Neubox"; return 0 ;;
+            *akky*)                     echo "Akky"; return 0 ;;
+            *cdmon*)                    echo "CDmon"; return 0 ;;
+            *hostiserver*)              echo "Hostiserver"; return 0 ;;
+
+            # ── Africa ────────────────────────────────────────────────────────
+            *xneelo*)                   echo "Xneelo"; return 0 ;;
+            *afrihost*)                 echo "Afrihost"; return 0 ;;
+            *cloudafrica*)              echo "Cloud Africa"; return 0 ;;
+            *dimensiondata*)            echo "Dimension Data"; return 0 ;;
+
+            # ── Specialised / bare-metal / community cloud ────────────────────
+            *exoscale*)                 echo "Exoscale"; return 0 ;;
+            *cloudsigma*)               echo "CloudSigma"; return 0 ;;
+            *civo*)                     echo "Civo"; return 0 ;;
+            *alphavps*)                 echo "AlphaVPS"; return 0 ;;
+            *greencloud*)               echo "GreenCloud"; return 0 ;;
+            *virtono*)                  echo "Virtono"; return 0 ;;
+            *hostsolutions*)            echo "HostSolutions"; return 0 ;;
+            *cloudhero*)                echo "CloudHero"; return 0 ;;
+            *virtuozzo*)                echo "Virtuozzo Cloud"; return 0 ;;
+            *fleio*)                    echo "Fleio Cloud"; return 0 ;;
+            *hiformance*)               echo "HiFormance"; return 0 ;;
+            *stackpath*)                echo "Stackpath"; return 0 ;;
         esac
     done
 
@@ -1488,6 +1737,18 @@ detect_cloud_provider() {
     # physical Oracle/Sun servers (Sun Fire, SPARC, Oracle Server X-series).
     # No reliable DMI-based distinction exists between OCI and Oracle hardware.
     # OCI is still unsupported per documentation, but cannot be auto-detected.
+
+    # Note: IBM Cloud is intentionally NOT detected here.
+    # IBM Cloud VPC VMs expose sys_vendor "IBM" — identical to physical IBM
+    # server hardware (IBM Power, System x). No safe DMI distinction exists.
+
+    # Secondary probe: virtually every cloud platform exposes a metadata service
+    # at the IMDS link-local address 169.254.169.254, including providers whose
+    # DMI strings are generic (OCI, IBM Cloud, custom hosters, bare-metal clouds).
+    # A successful connection is a reliable secondary indicator of a cloud VM.
+    if curl -sf --max-time 2 --connect-timeout 2 http://169.254.169.254/ >/dev/null 2>&1; then
+        echo "Unknown (cloud metadata endpoint detected at 169.254.169.254)"; return 0
+    fi
 
     return 1
 }
@@ -2936,7 +3197,25 @@ select_deploy_method() {
     # report generic hypervisor types (e.g., "kvm"). DMI strings reliably
     # identify the actual cloud provider.
     local cloud_provider=""
-    cloud_provider=$(detect_cloud_provider) && {
+    cloud_provider=$(detect_cloud_provider 2>/dev/null) || true
+
+    # Failsafe: if auto-detection found nothing, ask the operator directly.
+    # This catches providers with generic DMI strings (OCI, IBM Cloud, bare-metal
+    # clouds) or setups where DMI files are restricted/missing.
+    if [[ -z "$cloud_provider" ]]; then
+        echo ""
+        echo -e "  ${DIM}Cloud provider auto-detection: no known provider matched.${NC}"
+        local cloud_failsafe_input=""
+        read -rp "  Is this machine hosted on a cloud or VPS provider? [y/N]: " cloud_failsafe_input
+        if [[ "$cloud_failsafe_input" =~ ^[Yy]$ ]]; then
+            local cloud_name_input=""
+            read -rp "  Enter provider name (e.g. OCI, IBM Cloud, Contabo): " cloud_name_input
+            cloud_provider="${cloud_name_input:-Unknown Cloud Provider}"
+        fi
+        echo ""
+    fi
+
+    if [[ -n "$cloud_provider" ]]; then
         echo ""
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${YELLOW}  WARNING: CLOUD DEPLOYMENT DETECTED — ${cloud_provider}${NC}"
@@ -2996,8 +3275,78 @@ select_deploy_method() {
             exit 1
         fi
         log_warn "Cloud deployment acknowledged by operator. Continuing without support."
+        CLOUD_DETECTED="$cloud_provider"   # Track cloud detection for SSH auth setup below
         echo ""
-    }
+
+        # ── Detect public IP and offer SSH lockdown ──────────────────────────────
+        # On cloud VMs, ip route gives the private/NAT IP.  We query two reliable
+        # IP-echo services to find the real public address so the operator can
+        # (a) tell their miners the correct stratum address and
+        # (b) restrict SSH access to their own IP — a critical cloud hardening step.
+        echo -e "  ${WHITE}Detecting your public IP address...${NC}"
+        local detected_public_ip local_ip
+        detected_public_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
+                          || curl -sf --max-time 5 https://icanhazip.com 2>/dev/null \
+                          || true)
+        local_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)
+
+        if [[ -n "$detected_public_ip" && "$detected_public_ip" != "$local_ip" ]]; then
+            echo ""
+            echo -e "  ${CYAN}Local (private) IP : ${WHITE}${local_ip}${NC}"
+            echo -e "  ${CYAN}Public IP detected : ${WHITE}${detected_public_ip}${NC}"
+            echo ""
+            echo -e "  ${YELLOW}Miners must connect to ${detected_public_ip}:${STRATUM_PORT:-<stratum_port>}${NC}"
+            echo -e "  ${YELLOW}NOT to the private address ${local_ip} — external miners cannot reach it.${NC}"
+        elif [[ -n "$detected_public_ip" ]]; then
+            echo ""
+            echo -e "  ${CYAN}Detected IP: ${WHITE}${detected_public_ip}${NC} (matches routing interface — no NAT detected)"
+        else
+            echo ""
+            echo -e "  ${YELLOW}Could not auto-detect public IP.${NC}"
+            echo -e "  Check manually: ${WHITE}curl -4 https://ifconfig.me${NC}"
+            detected_public_ip=""
+        fi
+        echo ""
+
+        # Offer to restrict SSH to operator's IP only — single most effective
+        # cloud hardening step for a pool holding wallet keys.
+        # We detect the operator's CLIENT IP (the machine they are connecting FROM)
+        # via $SSH_CLIENT, which sshd sets to "<client_ip> <client_port> <server_port>".
+        # This is NOT the server's public IP — it is the admin's workstation/home IP.
+        local ssh_client_ip=""
+        ssh_client_ip=$(awk '{print $1}' <<< "${SSH_CLIENT:-}" 2>/dev/null || true)
+
+        echo -e "  ${WHITE}SSH Lockdown (strongly recommended for cloud):${NC}"
+        echo -e "  Restricting SSH to your IP only prevents all other hosts from"
+        echo -e "  attempting to log in, even if fail2ban is misconfigured."
+        echo -e "  Enter the IP address of the machine you are connecting FROM."
+        echo ""
+        if [[ -n "$ssh_client_ip" ]]; then
+            echo -e "  ${CYAN}Your current connection IP: ${WHITE}${ssh_client_ip}${NC}"
+        fi
+        echo ""
+        local cloud_ip_input=""
+        if [[ -n "$ssh_client_ip" ]]; then
+            read -rp "  Enter your admin IP for SSH lockdown [${ssh_client_ip}] (or 'skip'): " cloud_ip_input
+            [[ -z "$cloud_ip_input" ]] && cloud_ip_input="$ssh_client_ip"
+        else
+            read -rp "  Enter your admin IP for SSH lockdown (or 'skip'): " cloud_ip_input
+        fi
+
+        if [[ "$cloud_ip_input" == "skip" || -z "$cloud_ip_input" ]]; then
+            log_warn "SSH lockdown skipped — port 22 will remain open to all IPs."
+            log_warn "Apply manually after install: sudo ufw allow from <YOUR_IP> to any port 22 proto tcp && sudo ufw delete allow 22"
+        elif [[ "$cloud_ip_input" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            # SECURITY: CLOUD_PUBLIC_IP is a global — used later by the UFW section
+            # to restrict SSH to this address instead of opening port 22 to all.
+            CLOUD_PUBLIC_IP="$cloud_ip_input"
+            log "SSH will be restricted to ${CLOUD_PUBLIC_IP} during UFW configuration."
+        else
+            log_warn "Invalid IP format '${cloud_ip_input}' — skipping SSH lockdown."
+            log_warn "Apply manually after install: sudo ufw allow from <YOUR_IP> to any port 22 proto tcp && sudo ufw delete allow 22"
+        fi
+        echo ""
+    fi
 
     # --- ARM architecture detection (warning, not a hard block) ---
     local arm_info=""
@@ -3049,8 +3398,12 @@ select_deploy_method() {
         confirm_vm="${confirm_vm:-Y}"
 
         if [[ "$confirm_vm" =~ ^[Yy]$ ]]; then
-            # VM - native installation only
-            select_vm_deployment_method
+            # Route WSL2 to dedicated handler — bridged networking warning is irrelevant
+            if [[ "$detected_virt" == "wsl" ]]; then
+                select_wsl2_deployment_method
+            else
+                select_vm_deployment_method
+            fi
             echo ""
             return
         fi
@@ -3104,7 +3457,12 @@ select_deploy_method() {
                 ;;
             2)
                 # VM - native installation only (Docker not supported in VMs)
-                select_vm_deployment_method
+                # Route WSL2 to dedicated handler even via manual fallback
+                if [[ "$detected_virt" == "wsl" ]]; then
+                    select_wsl2_deployment_method
+                else
+                    select_vm_deployment_method
+                fi
                 break
                 ;;
             *)
@@ -3192,6 +3550,134 @@ select_vm_deployment_method() {
     echo ""
     prompt_input "Press Enter to confirm your VM uses bridged networking..."; read
 }
+
+select_wsl2_deployment_method() {
+    # WSL2-specific install flow.
+    # WSL2 uses native installation (same deploy path as vm-native) but has
+    # important limitations that the user must understand before continuing.
+    echo ""
+    log_step "WSL2 Native Installation"
+
+    DEPLOY_METHOD="vm-native"
+    log "Selected: WSL2 Native Installation"
+
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  ⚠  WSL2 LIMITATIONS — READ BEFORE CONTINUING${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  Spiral Pool is being installed inside ${WHITE}WSL2 (Windows Subsystem for Linux 2)${NC}."
+    echo -e "  The installation will complete, but you will have the following limitations:"
+    echo ""
+    echo -e "  ${YELLOW}1. HA is non-functional${NC}"
+    echo -e "     keepalived (VIP), etcd, and Patroni multi-node HA require network features"
+    echo -e "     that WSL2 cannot provide. Full HA requires a native Linux server."
+    echo ""
+    echo -e "  ${YELLOW}2. No automatic start on Windows boot${NC}"
+    echo -e "     WSL2 does not launch when Windows starts. Services go offline on every"
+    echo -e "     reboot. Use ${WHITE}start-wsl2-proxy.bat${NC} (in the Spiral Pool repo on your Windows"
+    echo -e "     desktop) to set up auto-start via Windows Task Scheduler."
+    echo ""
+    echo -e "  ${YELLOW}3. ASIC miners require port forwarding${NC}"
+    echo -e "     WSL2 runs behind Windows NAT. External hardware (ASIC miners) cannot"
+    echo -e "     reach the stratum server directly. Run ${WHITE}start-wsl2-proxy.bat${NC} as"
+    echo -e "     Administrator on Windows to set up the required port forwarding."
+    echo -e "     (Software miners on the same Windows machine can use 127.0.0.1.)"
+    echo ""
+    echo -e "  ${YELLOW}4. I/O performance${NC}"
+    echo -e "     Blockchain sync uses the WSL2 virtual disk (.vhdx) and is 2-4x slower"
+    echo -e "     than native. Large chains (BTC ~600 GB, DGB ~60 GB) take significantly"
+    echo -e "     longer. PostgreSQL write performance under mining load is also reduced."
+    echo ""
+    echo -e "  ${YELLOW}5. Windows can kill WSL2 without warning${NC}"
+    echo -e "     Windows Updates, sleep, hibernate, and memory pressure can terminate"
+    echo -e "     the WSL2 instance mid-operation. This cannot happen on native Linux."
+    echo ""
+    echo -e "  ${YELLOW}6. Clock drift${NC}"
+    echo -e "     WSL2 clocks can drift after Windows sleep/hibernate, causing share"
+    echo -e "     timestamp issues until WSL2 re-syncs with the Windows clock."
+    echo ""
+    echo -e "  ${YELLOW}TL;DR${NC}  WSL2 support is ${YELLOW}EXPERIMENTAL${NC} and not recommended for production."
+    echo -e "         Use this path for evaluation and development only."
+    echo -e "         For 24/7 production mining, use native Ubuntu on dedicated hardware."
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    local wsl2_ack
+    read -rp "  Type YES to acknowledge the WSL2 limitations and continue: " wsl2_ack
+    echo ""
+    if [[ "$wsl2_ack" != "YES" ]]; then
+        log_error "WSL2 limitations not acknowledged. Installation aborted."
+        exit 1
+    fi
+    echo ""
+
+    # ── systemd check ─────────────────────────────────────────────────────────
+    # Spiral Pool relies entirely on systemd services. WSL2 requires explicit
+    # opt-in via /etc/wsl.conf [boot] systemd=true (Windows 11 22H2+).
+    local systemd_ok="false"
+    if grep -q 'systemd[[:space:]]*=[[:space:]]*true' /etc/wsl.conf 2>/dev/null; then
+        systemd_ok="true"
+    fi
+
+    if [[ "$systemd_ok" == "false" ]]; then
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  ⚠  systemd IS NOT ENABLED IN WSL2${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  Spiral Pool uses systemd to manage all services (spiralstratum,"
+        echo -e "  spiralsentinel, spiraldash, spiralpool-health, and blockchain daemons)."
+        echo -e "  Without systemd enabled, ${RED}no services will start after installation${NC}."
+        echo ""
+        echo -e "  ${WHITE}To enable systemd in WSL2, /etc/wsl.conf must contain:${NC}"
+        echo ""
+        echo -e "      [boot]"
+        echo -e "      systemd=true"
+        echo ""
+        echo -e "  After adding this, restart WSL2 from Windows PowerShell: ${WHITE}wsl --shutdown${NC}"
+        echo -e "  then reopen Ubuntu before continuing the installation."
+        echo ""
+        echo -e "  ${WHITE}Requires Windows 11 22H2 (Build 22621) or later.${NC}"
+        echo ""
+
+        local enable_sd
+        read -rp "  Enable systemd now by updating /etc/wsl.conf? [Y/n]: " enable_sd
+        enable_sd="${enable_sd:-Y}"
+        echo ""
+
+        if [[ "$enable_sd" =~ ^[Yy]$ ]]; then
+            if [[ ! -f /etc/wsl.conf ]]; then
+                printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf > /dev/null
+            elif ! grep -q '\[boot\]' /etc/wsl.conf; then
+                printf '\n[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf > /dev/null
+            elif ! grep -q 'systemd[[:space:]]*=' /etc/wsl.conf; then
+                sudo sed -i '/\[boot\]/a systemd=true' /etc/wsl.conf
+            else
+                sudo sed -i 's/^\([[:space:]]*\)systemd[[:space:]]*=.*/\1systemd=true/' /etc/wsl.conf
+            fi
+            log_success "systemd=true written to /etc/wsl.conf"
+            echo ""
+            echo -e "  ${YELLOW}You must restart WSL2 before the installation can continue:${NC}"
+            echo ""
+            echo -e "    1. Close this terminal."
+            echo -e "    2. In Windows PowerShell, run: ${WHITE}wsl --shutdown${NC}"
+            echo -e "    3. Reopen Ubuntu."
+            echo -e "    4. Re-run this installer — it will resume from where it left off."
+            echo ""
+            prompt_input "Press Enter to exit so you can restart WSL2..."; read
+            exit 0
+        else
+            echo -e "  ${YELLOW}Warning:${NC} systemd is not enabled. No services will start after"
+            echo -e "  installation. Enable it manually before starting Spiral Pool."
+            echo ""
+        fi
+    else
+        log_success "systemd is enabled in /etc/wsl.conf"
+        echo ""
+    fi
+}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DOCKER DEPLOYMENT FUNCTIONS
@@ -6264,6 +6750,18 @@ print_docker_completion_multicoin() {
     echo -e "  ${WHITE}Logs:${NC}             $SCRIPT_DIR/docker/logs"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}  SIMPLESWAP SWAP ALERTS${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    if [[ "$SIMPLESWAP_ENABLED" == "true" ]]; then
+        echo -e "  ${GREEN}✓${NC} SimpleSwap Swap Alerts: ${GREEN}Enabled${NC}"
+        echo -e "  ${DIM}When a coin rises 25%+ vs BTC, Sentinel sends a SimpleSwap link.${NC}"
+        echo -e "  ${DIM}Click the link and complete the swap on the SimpleSwap website.${NC}"
+    else
+        echo -e "  ${DIM}○  SimpleSwap Swap Alerts: Disabled${NC}"
+    fi
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}  Blockchain must fully sync before mining can begin.${NC}"
     echo -e "${YELLOW}  Mining will start automatically once sync completes.${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -6496,6 +6994,9 @@ docker_main() {
     # Select coin mode (reuses existing function)
     select_coin_mode
 
+    # SimpleSwap integration configuration (optional — prompts after coin selection)
+    configure_simpleswap
+
     # Validate requirements
     validate_docker_disk_requirements
     check_docker_port_availability
@@ -6561,8 +7062,8 @@ select_install_mode() {
     echo -e "     The full mining pool solution with everything included:"
     echo ""
     echo -e "     ${WHITE}Core Components:${NC}"
-    echo -e "       • Blockchain Node(s)    - 13 coins supported (choose next)"
-    echo -e "       •   SHA256d: BTC, BCH, BC2, DGB, FBTC, NMC, SYS, XMY"
+    echo -e "       • Blockchain Node(s)    - 14 coins supported (choose next)"
+    echo -e "       •   SHA256d: BTC, BCH, BC2, DGB, FBTC, NMC, QBX, SYS, XMY"
     echo -e "       •   Scrypt:  LTC, DOGE, DGB-SCRYPT, PEP, CAT"
     echo -e "       • Spiral Stratum        - High-performance mining pool server"
     echo -e "       • PostgreSQL 18         - Database for shares and blocks"
@@ -6580,8 +7081,8 @@ select_install_mode() {
     echo -e "     The mining pool with only what's needed to run it:"
     echo ""
     echo -e "     ${WHITE}Installs:${NC}"
-    echo -e "       • Blockchain Node(s)    - 13 coins supported (choose next)"
-    echo -e "       •   SHA256d: BTC, BCH, BC2, DGB, FBTC, NMC, SYS, XMY"
+    echo -e "       • Blockchain Node(s)    - 14 coins supported (choose next)"
+    echo -e "       •   SHA256d: BTC, BCH, BC2, DGB, FBTC, NMC, QBX, SYS, XMY"
     echo -e "       •   Scrypt:  LTC, DOGE, DGB-SCRYPT, PEP, CAT"
     echo -e "       • Spiral Stratum        - The pool server"
     echo -e "       • PostgreSQL 18         - Required database"
@@ -7821,6 +8322,45 @@ select_ha_mode() {
     clear
     log_step "High Availability Configuration"
 
+    # ── Cloud HA hard lock ──────────────────────────────────────────────────────
+    # HA is NOT supported on cloud/VPS deployments.
+    # Cloud nodes lack physical isolation — the provider can snapshot, clone, or
+    # migrate either VM at any time. VRRP (keepalived VIP) is blocked or filtered
+    # on most cloud networks. etcd split-brain risk is higher on shared
+    # infrastructure. Cloud security groups are an insufficient protection layer
+    # when all three stack components are exposed across a shared network boundary.
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}   ${WHITE}⚠  CLOUD DEPLOYMENT DETECTED — HA CLUSTER NOT SUPPORTED  ⚠${NC}        ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  HA Cluster modes (options 2 and 3) are ${RED}DISABLED${NC} on cloud/VPS.       ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  Reasons:                                                                ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}   ${YELLOW}• No physical node isolation${NC} — both HA VMs share the same          ${RED}║${NC}"
+        echo -e "${RED}║${NC}     hypervisor layer. A compromised hypervisor exposes all nodes.        ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}   ${YELLOW}• VRRP/Keepalived unreliable${NC} — most cloud providers block or       ${RED}║${NC}"
+        echo -e "${RED}║${NC}     filter VRRP multicast packets; VIP failover will silently fail.      ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}   ${YELLOW}• etcd split-brain risk${NC} — shared network and variable latency      ${RED}║${NC}"
+        echo -e "${RED}║${NC}     increase the probability of quorum loss.                             ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}   ${YELLOW}• etcd/Patroni control plane exposed${NC} — cloud security groups      ${RED}║${NC}"
+        echo -e "${RED}║${NC}     are the only protection; misconfiguration = exposed cluster.         ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}Standalone mode is the only supported option for cloud installs.${NC}    ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  ${DIM}Detected cloud provider: ${YELLOW}${CLOUD_DETECTED}${NC}"
+        echo ""
+    fi
+
     echo ""
     echo -e "${WHITE}Do you want to set up High Availability (HA) for this pool?${NC}"
     echo ""
@@ -7905,6 +8445,13 @@ select_ha_mode() {
                 break
                 ;;
             2)
+                if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+                    echo ""
+                    echo -e "  ${RED}✗ HA Cluster - Primary Node is not available on cloud/VPS deployments.${NC}"
+                    echo -e "  ${DIM}Select option 1 (Standalone) — HA requires physical node isolation.${NC}"
+                    echo ""
+                    continue
+                fi
                 HA_MODE="ha-master"
                 HA_ENABLED="true"
                 log "Selected: HA Cluster - Primary Node"
@@ -7913,6 +8460,13 @@ select_ha_mode() {
                 break
                 ;;
             3)
+                if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+                    echo ""
+                    echo -e "  ${RED}✗ HA Cluster - Backup Node is not available on cloud/VPS deployments.${NC}"
+                    echo -e "  ${DIM}Select option 1 (Standalone) — HA requires physical node isolation.${NC}"
+                    echo ""
+                    continue
+                fi
                 HA_MODE="ha-backup"
                 HA_ENABLED="true"
                 log "Selected: HA Cluster - Backup Node"
@@ -12285,6 +12839,23 @@ failregex = "msg":"IP banned".*"ip":"<HOST>"
 ignoreregex =
 FILTEREOF
 
+    # ── Filter: Prometheus metrics (kernel LOG via journald) ──────────────────
+    # Matches iptables LOG lines emitted by the hashlimit rate-limit rule in
+    # before.rules when an IP exceeds 120 requests/minute to the metrics port.
+    # Uses _TRANSPORT=kernel so journald delivers the raw kernel messages.
+    sudo tee /etc/fail2ban/filter.d/spiralpool-metrics.conf > /dev/null << 'FILTEREOF'
+[INCLUDES]
+before = common.conf
+
+[Definition]
+# Match kernel iptables LOG lines for Prometheus metrics rate-limit events.
+# Format: kernel: SPIRAL-METRICS-LIMIT: IN=eth0 ... SRC=1.2.3.4 ...
+# Generated when a source IP exceeds the hashlimit in /etc/ufw/before.rules.
+failregex = SPIRAL-METRICS-LIMIT: .*SRC=<HOST>
+
+ignoreregex =
+FILTEREOF
+
     # ── Jail configuration ────────────────────────────────────────────────────
     # Separate file under jail.d/ so it survives fail2ban package upgrades.
     sudo tee /etc/fail2ban/jail.d/spiralpool.conf > /dev/null << JAILEOF
@@ -12298,7 +12869,10 @@ FILTEREOF
 #              <NiceHash CIDR> <MRR CIDR>
 
 [DEFAULT]
-ignoreip    = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+# RFC-1918 ranges protect HA peer nodes and internal monitoring from accidental bans.
+# CLOUD_PUBLIC_IP is the admin's home/office IP — added here to prevent self-lockout
+# if the admin's SSH client has a misconfigured key and retries with passwords.
+ignoreip    = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16${CLOUD_PUBLIC_IP:+ ${CLOUD_PUBLIC_IP}}
 banaction   = ufw
 backend     = systemd
 
@@ -12334,6 +12908,34 @@ maxretry    = 1
 findtime    = 60
 bantime     = 259200
 port        = 0:65535
+
+# ── Metrics: ban IPs that hammer the Prometheus port beyond the rate limit ──
+# Fires when iptables hashlimit LOG lines appear in the kernel journal.
+# A legitimate Prometheus scraper (15-60s interval) never exceeds 120 req/min,
+# so this jail only triggers on scanners or denial-of-service attempts.
+# The default ignoreip list above protects Sentinel and Dash (localhost + RFC-1918).
+[spiralpool-metrics]
+enabled      = true
+filter       = spiralpool-metrics
+journalmatch = _TRANSPORT=kernel
+maxretry     = 30
+findtime     = 60
+bantime      = 3600
+port         = $METRICS_PORT
+
+# ── SSH: brute-force and credential-stuffing protection ──────────────────────
+# maxretry=5 matches MaxAuthTries=5 in sshd — ban fires on the first exhausted
+# connection so an attacker cannot reconnect and keep guessing.
+# 72-hour bantime matches the other pool jails (dashboard, API, stratum).
+# Admin IP (CLOUD_PUBLIC_IP) is in ignoreip above to prevent self-lockout.
+[sshd]
+enabled      = true
+filter       = sshd
+backend      = systemd
+maxretry     = 5
+findtime     = 600
+bantime      = 259200
+port         = ssh
 JAILEOF
 
     # Reload fail2ban with the new configuration
@@ -12345,7 +12947,7 @@ JAILEOF
     fi
 
     if systemctl is-active --quiet fail2ban 2>/dev/null; then
-        log_success "fail2ban configured (dashboard, API, stratum jails active)"
+        log_success "fail2ban configured (dashboard, API, stratum, metrics jails active)"
     else
         log_warn "fail2ban installed but service did not start — check: sudo systemctl status fail2ban"
     fi
@@ -12402,6 +13004,46 @@ JAILEOF
         # Reload UFW to activate the new rules
         sudo ufw --force reload > /dev/null 2>&1
         log_success "Stratum connlimit rules added (max 200 concurrent per IP per port)"
+    fi
+
+    # ── Prometheus metrics: connlimit + hashlimit in before.rules ─────────────
+    # Why before.rules (not after.rules):
+    #   UFW's ufw-user-input chain ACCEPTs allowed packets — those never reach
+    #   ufw-after-input.  Rules in ufw-before-input fire BEFORE the accept rules,
+    #   so rate limiting here applies to ALL traffic destined for the metrics port,
+    #   including traffic already covered by the subnet-restricted UFW allow rule.
+    #
+    # Defense layers:
+    #   1. connlimit — hard cap on SIMULTANEOUS open connections (max 10 per IP)
+    #   2. hashlimit — token-bucket rate limit (120 req/min, burst 20 per IP)
+    #      Within-rate traffic: RETURN → processed normally by UFW user rules
+    #      Over-rate traffic:   LOG (fail2ban pickup) → DROP
+    #   3. fail2ban  — bans the IP in UFW after 30 LOG hits within 60 seconds
+    #
+    # A Prometheus scraper polling every 15s sends ~4 req/min — well within 120.
+    # Sentinel and Dash scrape from 127.0.0.1/::1, which are in fail2ban ignoreip.
+    local before_rules="/etc/ufw/before.rules"
+    local metrics_before_marker="# spiralpool-metrics-ratelimit"
+
+    if ! grep -q "$metrics_before_marker" "$before_rules" 2>/dev/null; then
+        log "Adding metrics rate-limit rules to UFW before.rules..."
+
+        local metrics_rules_block
+        metrics_rules_block="${metrics_before_marker} — connlimit + hashlimit for port ${METRICS_PORT}\n"
+        metrics_rules_block+="# Max 10 concurrent connections per source IP\n"
+        metrics_rules_block+="-A ufw-before-input -p tcp --dport ${METRICS_PORT} -m connlimit --connlimit-above 10 --connlimit-mask 32 -j REJECT --reject-with tcp-reset\n"
+        metrics_rules_block+="# Token bucket: allow up to 120 req/min (burst 20); within-rate traffic passes through\n"
+        metrics_rules_block+="-A ufw-before-input -p tcp --dport ${METRICS_PORT} -m hashlimit --hashlimit-mode srcip --hashlimit-name spiral_metrics --hashlimit-upto 120/min --hashlimit-burst 20 -j RETURN\n"
+        metrics_rules_block+="# Over-rate: LOG for fail2ban pickup, then DROP\n"
+        metrics_rules_block+="-A ufw-before-input -p tcp --dport ${METRICS_PORT} -j LOG --log-prefix \"SPIRAL-METRICS-LIMIT: \" --log-level 4\n"
+        metrics_rules_block+="-A ufw-before-input -p tcp --dport ${METRICS_PORT} -j DROP\n"
+
+        # Insert before the final COMMIT in before.rules (filter table only has one COMMIT)
+        sudo sed -i "/^COMMIT$/i ${metrics_rules_block}" "$before_rules" 2>/dev/null || \
+            log_warn "Could not add metrics rate-limit rules to $before_rules — add them manually if needed"
+
+        sudo ufw --force reload > /dev/null 2>&1
+        log_success "Metrics rate-limit rules added (port ${METRICS_PORT}: max 10 concurrent, 120 req/min per IP; excess logged + dropped)"
     fi
 }
 
@@ -12508,6 +13150,69 @@ SSHDEOF
         fi
     fi
 
+    # ── Global SSH hardening ──────────────────────────────────────────────────
+    # Written to 00-spiralpool-hardening.conf (00- prefix so it sorts BEFORE
+    # the spiralpool.conf Match User block and global settings take effect first).
+    #
+    # VERIFIED SAFE:
+    #   - All automated SSH in this codebase uses spiraluser, not root
+    #   - X11Forwarding / AllowTcpForwarding not used by any pool script
+    #   - EXCEPTION: ha-setup-ssh.sh SSHes as root once during HA peer onboarding
+    #     to deploy the sudoers file. That step must run BEFORE this hardening is
+    #     applied, OR temporarily re-enable PermitRootLogin for that session only:
+    #       sudo sed -i 's/PermitRootLogin no/PermitRootLogin yes/' /etc/ssh/sshd_config.d/00-spiralpool-hardening.conf
+    #       sudo systemctl reload sshd
+    #       # ... run ha-setup-ssh.sh ...
+    #       sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config.d/00-spiralpool-hardening.conf
+    #       sudo systemctl reload sshd
+    local sshd_hardening_dropin="/etc/ssh/sshd_config.d/00-spiralpool-hardening.conf"
+    if [[ -d "/etc/ssh/sshd_config.d" ]] && grep -q 'Include.*/etc/ssh/sshd_config.d/' "$sshd_main" 2>/dev/null; then
+        if ! grep -q "Spiral Pool — global SSH hardening" "$sshd_hardening_dropin" 2>/dev/null; then
+            sudo tee "$sshd_hardening_dropin" > /dev/null << 'SSHDHARDENEOF'
+# Spiral Pool — global SSH hardening
+# Written by install.sh. Safe to adjust — do not delete this file.
+#
+# NOTE: ha-setup-ssh.sh SSHes as root once during HA peer onboarding.
+#       Temporarily set PermitRootLogin yes for that step, then restore no.
+
+# Disable root SSH logins — all pool operations run as spiraluser with sudo
+PermitRootLogin no
+
+# Limit auth attempts per connection — matches fail2ban maxretry=5 so the ban
+# fires on the first exhausted connection (attacker cannot reconnect and retry)
+MaxAuthTries 5
+LoginGraceTime 30
+
+# Remove unused SSH features (attack surface reduction)
+X11Forwarding no
+AllowTcpForwarding no
+UseDNS no
+SSHDHARDENEOF
+            log_success "Global SSH hardening applied (${sshd_hardening_dropin})"
+        else
+            log "Global SSH hardening drop-in already present — skipping"
+        fi
+    else
+        # Legacy sshd without drop-in support — prepend global settings to main config
+        # so they appear before any Match blocks (OpenSSH processes top-to-bottom)
+        if ! grep -q "Spiral Pool — global SSH hardening" "$sshd_main" 2>/dev/null; then
+            local tmp_sshd
+            tmp_sshd=$(mktemp)
+            printf '# Spiral Pool — global SSH hardening\nPermitRootLogin no\nMaxAuthTries 5\nLoginGraceTime 30\nX11Forwarding no\nAllowTcpForwarding no\nUseDNS no\n\n' | \
+                cat - "$sshd_main" | sudo tee "$tmp_sshd" > /dev/null
+            sudo cp "$tmp_sshd" "$sshd_main"
+            rm -f "$tmp_sshd"
+            log_success "Global SSH hardening prepended to ${sshd_main}"
+        fi
+    fi
+    sudo mkdir -p /run/sshd
+    if sudo sshd -t 2>/dev/null; then
+        sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true
+        log_success "sshd reloaded with global hardening"
+    else
+        log_warn "sshd config test failed after global hardening — check ${sshd_hardening_dropin} manually"
+    fi
+
     # Generate SSH keys for pool user (used for blockchain replication between nodes)
     # For HA backup, setup_ha_ssh_keys() handles dir creation + key gen + copy to primary
     if [[ "$HA_MODE" == "ha-backup" ]]; then
@@ -12543,6 +13248,136 @@ SSHDEOF
             log "Generating SSH key for ${POOL_USER}..."
             sudo -u "$POOL_USER" ssh-keygen -t ed25519 -f "$ssh_key_path" -N "" -C "spiralpool-replication" -q || log_warn "SSH key generation failed (non-critical)"
             log_success "SSH key generated for ${POOL_USER}"
+        fi
+
+        # ── Add public key to authorized_keys + offer SSH auth mode ──────────────
+        # This enables key-based login for the pool user and prompts the admin to
+        # choose between key-only (more secure) and password auth.
+        # Only applies to primary/standalone installs — ha-backup is handled above.
+        local pub_key_path="${ssh_key_path}.pub"
+        if [[ -f "$pub_key_path" ]]; then
+            local auth_keys="${ssh_dir}/authorized_keys"
+            local pub_key_content
+            pub_key_content=$(sudo cat "$pub_key_path" 2>/dev/null || true)
+
+            if [[ -n "$pub_key_content" ]]; then
+                if [[ ! -f "$auth_keys" ]]; then
+                    sudo -u "$POOL_USER" touch "$auth_keys"
+                    sudo chmod 600 "$auth_keys"
+                    sudo chown "${POOL_USER}:${POOL_USER}" "$auth_keys"
+                fi
+                if ! sudo grep -qF "$pub_key_content" "$auth_keys" 2>/dev/null; then
+                    echo "$pub_key_content" | sudo tee -a "$auth_keys" > /dev/null
+                    log_success "Public key added to ${POOL_USER} authorized_keys — key login enabled"
+                else
+                    log "Public key already present in authorized_keys"
+                fi
+
+                # ── Key download instructions ─────────────────────────────────────
+                echo ""
+                echo -e "${CYAN}${BOLD}┌──────────────────────────────────────────────────────────────────┐${NC}"
+                echo -e "${CYAN}${BOLD}│  SSH Key Login — How to Download Your Private Key                │${NC}"
+                echo -e "${CYAN}${BOLD}└──────────────────────────────────────────────────────────────────┘${NC}"
+                echo ""
+                echo -e "  ${WHITE}Private key location on this server:${NC}"
+                echo -e "    ${YELLOW}${ssh_key_path}${NC}"
+                echo ""
+                echo -e "  ${CYAN}── Windows (PowerShell / OpenSSH) ──────────────────────────────────${NC}"
+                echo -e "    # Run this on your Windows machine:"
+                echo -e "    scp ${POOL_USER}@<server-ip>:${ssh_key_path} \"\$env:USERPROFILE\\.ssh\\spiralpool_ed25519\""
+                echo -e "    # Then connect with:"
+                echo -e "    ssh -i \"\$env:USERPROFILE\\.ssh\\spiralpool_ed25519\" ${POOL_USER}@<server-ip>"
+                echo ""
+                echo -e "    ${DIM}PuTTY users: copy the key then convert it to .ppk format with PuTTYgen.${NC}"
+                echo ""
+                echo -e "  ${CYAN}── Linux / macOS ───────────────────────────────────────────────────${NC}"
+                echo -e "    # Run this on your local machine:"
+                echo -e "    scp ${POOL_USER}@<server-ip>:${ssh_key_path} ~/.ssh/spiralpool_ed25519"
+                echo -e "    chmod 600 ~/.ssh/spiralpool_ed25519"
+                echo -e "    ssh -i ~/.ssh/spiralpool_ed25519 ${POOL_USER}@<server-ip>"
+                echo ""
+                echo -e "    ${DIM}Optional: add to ~/.ssh/config for convenience:${NC}"
+                echo -e "    ${DIM}  Host spiralpool${NC}"
+                echo -e "    ${DIM}    HostName <server-ip>${NC}"
+                echo -e "    ${DIM}    User ${POOL_USER}${NC}"
+                echo -e "    ${DIM}    IdentityFile ~/.ssh/spiralpool_ed25519${NC}"
+                echo ""
+
+                # ── Private key security disclaimer ──────────────────────────────
+                echo -e "${RED}${BOLD}┌──────────────────────────────────────────────────────────────────┐${NC}"
+                echo -e "${RED}${BOLD}│  PRIVATE KEY SECURITY — READ CAREFULLY                           │${NC}"
+                echo -e "${RED}${BOLD}└──────────────────────────────────────────────────────────────────┘${NC}"
+                echo ""
+                echo -e "  ${RED}This private key grants full SSH access to this server as ${POOL_USER}.${NC}"
+                echo -e "  ${RED}Treat it exactly like a password — it IS a secret credential.${NC}"
+                echo ""
+                echo -e "  ${WHITE}Rules for safe key handling:${NC}"
+                echo -e "    ${YELLOW}•${NC} ${WHITE}NEVER share it${NC} — not via email, Slack, Discord, GitHub, or any chat"
+                echo -e "    ${YELLOW}•${NC} ${WHITE}NEVER store it${NC} in cloud storage (Dropbox, Google Drive, OneDrive, etc.)"
+                echo -e "    ${YELLOW}•${NC} ${WHITE}NEVER commit it${NC} to any git repository (public or private)"
+                echo -e "    ${YELLOW}•${NC} Store it only on ${WHITE}encrypted drives${NC} (BitLocker, LUKS, FileVault)"
+                echo -e "    ${YELLOW}•${NC} Add a ${WHITE}passphrase${NC} for extra protection:"
+                echo -e "       ${DIM}ssh-keygen -p -f ~/.ssh/spiralpool_ed25519${NC}"
+                echo -e "    ${YELLOW}•${NC} If the key is ever ${WHITE}lost or compromised — revoke it immediately:${NC}"
+                echo -e "       ${DIM}sudo -u ${POOL_USER} ssh-keygen -t ed25519 -f ${ssh_key_path} -N \"\"${NC}"
+                echo -e "       ${DIM}Then remove the old key from authorized_keys on ALL servers.${NC}"
+                echo ""
+                echo -e "  ${DIM}The public key (${pub_key_path}) is safe to share — it is not secret.${NC}"
+                echo ""
+
+                # ── SSH authentication mode choice ────────────────────────────────
+                # Cloud: key-only strongly recommended — disables password brute-force attacks
+                # Local: offer the choice without a strong default either way
+                # IMPORTANT: This only modifies the Match User block for ${POOL_USER}.
+                # It does NOT change the global PasswordAuthentication setting —
+                # the current SSH session and other users are completely unaffected.
+                local use_key_only=false
+                local auth_mode_input=""
+                if [[ -n "$CLOUD_DETECTED" ]]; then
+                    echo -e "  ${YELLOW}${BOLD}Cloud deployment: Key-only SSH is strongly recommended.${NC}"
+                    echo -e "  Disabling password auth eliminates brute-force and credential-stuffing."
+                    echo -e "  ${RED}WARNING:${NC} Download the private key BEFORE enabling key-only — if you"
+                    echo -e "  lose the key you will be locked out of ${POOL_USER} SSH access."
+                    echo ""
+                    read -rp "  Disable password auth for ${POOL_USER} (key-only SSH)? [Y/n]: " auth_mode_input
+                    auth_mode_input="${auth_mode_input:-Y}"
+                    [[ "$auth_mode_input" =~ ^[Yy]$ ]] && use_key_only=true
+                else
+                    echo -e "  ${WHITE}SSH Authentication Mode for ${POOL_USER}:${NC}"
+                    echo -e "    ${CYAN}[1]${NC} Key-only  — more secure; password login disabled for this user"
+                    echo -e "    ${CYAN}[2]${NC} Password  — password login still allowed (current behaviour)"
+                    echo ""
+                    read -rp "  Choose SSH auth mode [1=key-only / 2=password, default: 2]: " auth_mode_input
+                    [[ "$auth_mode_input" == "1" ]] && use_key_only=true
+                fi
+
+                if [[ "$use_key_only" == "true" ]]; then
+                    local key_only_content
+                    key_only_content="# Spiral Pool — SSH auth for pool user (key-only; set during install)
+Match User ${POOL_USER}
+    PasswordAuthentication no
+    AuthorizedKeysFile .ssh/authorized_keys"
+                    if [[ -d "/etc/ssh/sshd_config.d" ]] && grep -q 'Include.*/etc/ssh/sshd_config.d/' "$sshd_main" 2>/dev/null; then
+                        printf '%s\n' "$key_only_content" | sudo tee "$sshd_dropin" > /dev/null
+                    else
+                        # Legacy: patch the PasswordAuthentication line in the Match block we appended
+                        sudo sed -i "/^${sshd_marker}/,+2{s/PasswordAuthentication yes/PasswordAuthentication no/}" "$sshd_main" 2>/dev/null || true
+                    fi
+                    sudo mkdir -p /run/sshd
+                    if sudo sshd -t 2>/dev/null; then
+                        sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true
+                        log_success "Key-only SSH enabled for ${POOL_USER} — password login disabled"
+                        log_warn "This session is unaffected. Ensure private key is downloaded before closing."
+                    else
+                        log_warn "sshd config test failed after key-only change — reverting to password auth"
+                        # Revert to prevent lockout
+                        printf '# Spiral Pool — allow password auth for pool user\nMatch User %s\n    PasswordAuthentication yes\n' "${POOL_USER}" | sudo tee "$sshd_dropin" > /dev/null
+                        sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true
+                    fi
+                else
+                    log "Password authentication retained for ${POOL_USER}"
+                fi
+            fi
         fi
     fi
 
@@ -12673,6 +13508,52 @@ vm.dirty_background_ratio = 10
 # (e.g., keepalived VIP failover) and reduces attack surface.
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NETWORK SECURITY HARDENING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Reverse path filtering — drops packets whose source IP is unreachable via the
+# same interface. Prevents spoofed-source attacks (e.g. TCP amplification).
+# SAFE with keepalived VIP: the VIP is an interface alias on the same NIC, so
+# the return path is always symmetric and rp_filter does not drop VIP traffic.
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+
+# Reject ICMP redirect messages — prevents route-poisoning / MITM attacks
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+
+# Reject source-routed packets — source routing bypasses normal routing
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+
+# Ignore broadcast ping (ICMP echo to broadcast addresses) — prevents smurf
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+# Log packets with impossible source addresses (martians) for forensic review
+net.ipv4.conf.all.log_martians = 1
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KERNEL SECURITY HARDENING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Prevent unprivileged processes reading the kernel ring buffer.
+# Attackers with local access use dmesg output to find exploit gadgets.
+kernel.dmesg_restrict = 1
+
+# Hide kernel symbol addresses from /proc/kallsyms and /proc/modules.
+# Level 2: hidden even from root unless CAP_SYSLOG held.
+kernel.kptr_restrict = 2
+
+# Full ASLR — randomise base addresses of mmap, stack, vDSO, and heap.
+# Ubuntu default is already 2; explicit to prevent it being overridden.
+kernel.randomize_va_space = 2
+
+# Disable core dumps from setuid/setgid binaries.
+# Core files can contain sensitive in-memory data (keys, passwords, wallet data).
+fs.suid_dumpable = 0
 SYSCTL
 
     # Apply sysctl settings immediately
@@ -12888,14 +13769,26 @@ MINERDBEOF
     log "Configuring firewall..."
 
     # CRITICAL: Ensure SSH is allowed BEFORE any reset or enable
-    # This prevents SSH disconnection during firewall configuration
-    sudo ufw allow 22/tcp > /dev/null 2>&1          # SSH - MUST BE FIRST
+    # This prevents SSH disconnection during firewall configuration.
+    # SECURITY: On cloud deployments where the operator confirmed their admin IP
+    # (CLOUD_PUBLIC_IP), restrict SSH to that IP only instead of opening to all.
+    if [[ -n "$CLOUD_PUBLIC_IP" ]]; then
+        sudo ufw allow from "$CLOUD_PUBLIC_IP" to any port 22 proto tcp > /dev/null 2>&1   # SSH - cloud: operator IP only
+        log "SSH (port 22) restricted to operator IP: ${CLOUD_PUBLIC_IP}"
+    else
+        sudo ufw allow 22/tcp > /dev/null 2>&1      # SSH - allow all (bare metal / undetected cloud)
+    fi
 
     # Only reset if ufw is not already active with rules
     # This prevents disruption of existing SSH sessions
-    if ! sudo ufw status | grep -q "22/tcp.*ALLOW" 2>/dev/null; then
+    if ! sudo ufw status | grep -q "22.*ALLOW" 2>/dev/null; then
         sudo ufw --force reset > /dev/null 2>&1
-        sudo ufw allow 22/tcp > /dev/null 2>&1      # Re-add SSH after reset
+        # Re-add SSH after reset — preserve cloud restriction if set
+        if [[ -n "$CLOUD_PUBLIC_IP" ]]; then
+            sudo ufw allow from "$CLOUD_PUBLIC_IP" to any port 22 proto tcp > /dev/null 2>&1
+        else
+            sudo ufw allow 22/tcp > /dev/null 2>&1
+        fi
     fi
 
     sudo ufw default deny incoming > /dev/null 2>&1
@@ -12905,7 +13798,29 @@ MINERDBEOF
     [[ -n "$STRATUM_V2_PORT" ]] && sudo ufw allow $STRATUM_V2_PORT/tcp > /dev/null 2>&1 # Stratum V2 (miners)
     sudo ufw limit $API_PORT/tcp > /dev/null 2>&1         # Pool API (rate-limited: max 6 new conn/30s per IP)
     sudo ufw limit $DASHBOARD_PORT/tcp > /dev/null 2>&1  # Dashboard (rate-limited: max 6 new conn/30s per IP)
-    sudo ufw allow $METRICS_PORT/tcp > /dev/null 2>&1    # Prometheus metrics
+    # Prometheus metrics — restrict to local subnet + loopback.
+    # Sentinel and Dash scrape from localhost; an external Prometheus scraper
+    # only needs access from its own subnet.  Full internet exposure is never needed.
+    local metrics_iface="" metrics_subnet=""
+    metrics_iface=$(ip route get 1.1.1.1 2>/dev/null \
+        | awk '/dev/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}' || true)
+    if [[ -n "$metrics_iface" ]]; then
+        # 'ip route list dev <iface> scope link' returns the directly-connected
+        # network (e.g. "10.0.0.0/24"), which is the correct subnet to allow.
+        metrics_subnet=$(ip route list dev "$metrics_iface" scope link 2>/dev/null \
+            | awk '{print $1}' | head -1 || true)
+    fi
+    # Always allow loopback (Sentinel + Dash scrape locally)
+    sudo ufw allow from 127.0.0.1 to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
+    sudo ufw allow from ::1       to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
+    if [[ -n "$metrics_subnet" ]]; then
+        sudo ufw allow from "$metrics_subnet" to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
+        log "Prometheus metrics port ${METRICS_PORT}: restricted to loopback + local subnet ${metrics_subnet}"
+    else
+        # Fallback: open to all — subnet detection failed.  Rate limiting in before.rules still applies.
+        sudo ufw allow "$METRICS_PORT"/tcp > /dev/null 2>&1
+        log_warn "Prometheus metrics port ${METRICS_PORT}: subnet detection failed — opened to all. Restrict manually: sudo ufw allow from <prometheus-ip> to any port ${METRICS_PORT} proto tcp"
+    fi
 
     # Multi-coin P2P and Stratum ports (opened based on enabled coins)
     if [[ "$ENABLE_DGB" == "true" ]]; then
@@ -13161,7 +14076,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                        ${DIM}V1.0 - BLACK ICE${NC}"
+echo -e "                                       ${DIM}V1.1 - TITAN NODE${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -13180,7 +14095,7 @@ echo -e "    ${YELLOW}spiralctl ha${NC}             HA cluster     ${YELLOW}spir
 echo -e "    ${YELLOW}spiralctl add-coin${NC}       Add new coin   ${YELLOW}spiralctl remove-coin${NC}     Remove a coin"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB       ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
 echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  LTC+DOGE  LTC+PEP"
 echo ""
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -16894,6 +17809,21 @@ configure_etcd() {
         return 1
     fi
 
+    # SECURITY (etcd-auth): Derive etcd root password from HA_CLUSTER_TOKEN.
+    # Both nodes independently compute the same value from their shared token,
+    # so no out-of-band credential exchange is needed between nodes.
+    # A fixed salt "spiral-etcd:" scopes the derivation to etcd only, keeping it
+    # separate from keepalived and other per-component secrets.
+    ETCD_ROOT_PASS=$(printf '%s' "spiral-etcd:${HA_CLUSTER_TOKEN}" | sha256sum | awk '{print $1}' | head -c 32)
+
+    # BACKUP: Primary's etcd already has auth enabled by the time backup installs.
+    # Set ETCDCTL_USER immediately so all etcdctl calls to the primary cluster
+    # authenticate correctly without needing per-call --user flags.
+    if [[ "$HA_MODE" == "ha-backup" ]]; then
+        export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+        log "etcd auth credentials set for backup node (primary auth already active)"
+    fi
+
     local etcd_name=""
     local cluster_peers=""
     local etcd_hosts=""
@@ -17115,6 +18045,43 @@ EOF
         # etcd 3.4 outputs health status to stderr, not stdout — use 2>&1 so grep can read it
         if ETCDCTL_API=3 etcdctl --command-timeout=5s endpoint health 2>&1 | grep -q "is healthy"; then
             log_success "etcd is healthy"
+
+            # MASTER: Enable etcd RBAC authentication now that etcd is healthy.
+            # Done here (after healthy, before return 0) so all prior member-management
+            # calls (which ran before auth was enabled) succeed without credentials.
+            # After this point, ETCDCTL_USER is set and all subsequent calls authenticate.
+            if [[ "$HA_MODE" == "ha-master" ]]; then
+                log "Enabling etcd RBAC authentication..."
+                # Create root user (idempotent — logs "already exists" gracefully)
+                local _user_out
+                _user_out=$(ETCDCTL_API=3 etcdctl user add "root:${ETCD_ROOT_PASS}" 2>&1) || {
+                    if echo "$_user_out" | grep -q "already exists"; then
+                        log "etcd root user already exists"
+                    else
+                        log_warn "etcd user add: ${_user_out}"
+                    fi
+                }
+                # Grant superuser role (safe no-op if already granted)
+                ETCDCTL_API=3 etcdctl user grant-role root root 2>&1 | grep -v "^$" || true
+                # Enable auth (idempotent — "already enabled" is not a failure)
+                local _auth_out
+                _auth_out=$(ETCDCTL_API=3 etcdctl auth enable 2>&1) && \
+                    log_success "etcd RBAC authentication enabled" || {
+                    if echo "$_auth_out" | grep -q "already enabled"; then
+                        log "etcd auth already enabled"
+                    else
+                        log_warn "etcd auth enable: ${_auth_out}"
+                    fi
+                }
+                # Set credentials for any etcdctl calls after this point
+                export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+                # Write credential file (mode 640: root-owned, spiralpool-group-readable)
+                # Used by HA scripts (spiralctl, etcd-cluster-rejoin, etc.) on this node.
+                printf 'ETCD_ROOT_PASS=%s\n' "${ETCD_ROOT_PASS}" | sudo tee /spiralpool/config/etcd-auth.conf > /dev/null
+                sudo chmod 640 /spiralpool/config/etcd-auth.conf
+                sudo chown root:"${POOL_USER}" /spiralpool/config/etcd-auth.conf 2>/dev/null || true
+                log "etcd credentials written to /spiralpool/config/etcd-auth.conf"
+            fi
 
             # BACKUP: Promote learner to full voting member.
             # Until promoted, backup doesn't participate in Raft quorum.
@@ -17422,6 +18389,13 @@ configure_patroni() {
     # Same as bootstrap entries — local peer auth + all network entries
     local pg_hba_runtime_entries="${pg_hba_entries}"
 
+    # Derive Patroni REST API credentials from HA cluster token.
+    # sha256sum of the cluster token -> first 32 hex chars -> safe for YAML and HTTP Basic Auth.
+    # All cluster nodes share the same HA_CLUSTER_TOKEN so they all derive the same password.
+    local patroni_api_user="spiralpool"
+    local patroni_api_pass
+    patroni_api_pass=$(echo -n "${HA_CLUSTER_TOKEN}" | sha256sum | cut -c1-32)
+
     # Generate Patroni configuration
     sudo tee /etc/patroni/patroni.yml > /dev/null << EOF
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -17445,9 +18419,14 @@ restapi:
   # remote peer health checks. connect_address advertises the real IP to peers.
   listen: 0.0.0.0:8008
   connect_address: ${node_ip}:8008
+  authentication:
+    username: ${patroni_api_user}
+    password: ${patroni_api_pass}
 
 etcd3:
   hosts: ${etcd_hosts}
+  username: root
+  password: ${ETCD_ROOT_PASS}
 
 bootstrap:
   dcs:
@@ -17519,6 +18498,29 @@ tags:
   clonefrom: false
   nosync: false
 EOF
+
+    # Secure the patroni.yml (contains DB passwords)
+    sudo chmod 600 /etc/patroni/patroni.yml
+    sudo chown postgres:postgres /etc/patroni/patroni.yml
+
+    # Write Patroni REST API credential file (mode 600, root-only).
+    # Read by: ha-failback.sh, ha-validate.sh, ha-role-watcher.sh, spiralctl.sh,
+    #          patroni-force-bootstrap.sh (bash scripts source this for curl -u flag).
+    # Read by: spiralstratum Go binary via systemd EnvironmentFile= directive.
+    # PATRONI_API_USERNAME/PASSWORD naming matches what the Go binary expects
+    # via getEnvOrDefault("PATRONI_API_USERNAME", "").
+    sudo mkdir -p /spiralpool/config 2>/dev/null || true
+    sudo tee /spiralpool/config/patroni-api.conf > /dev/null << PATRONIEOF
+# Spiral Pool -- Patroni REST API credentials
+# Generated by installer on $(date)
+# Mode 600: root-only -- do NOT chmod to world-readable
+# Used by bash HA scripts (curl -u flag) and spiralstratum binary (EnvironmentFile)
+PATRONI_API_USERNAME="${patroni_api_user}"
+PATRONI_API_PASSWORD="${patroni_api_pass}"
+PATRONIEOF
+    sudo chown root:"${POOL_USER}" /spiralpool/config/patroni-api.conf 2>/dev/null || sudo chown root:root /spiralpool/config/patroni-api.conf
+    sudo chmod 640 /spiralpool/config/patroni-api.conf
+    log_success "Patroni REST API credentials written to /spiralpool/config/patroni-api.conf (mode 640, root:${POOL_USER})"
 
     # Create post-init script for database setup
     sudo tee /etc/patroni/post_init.sh > /dev/null << 'POSTINIT'
@@ -17699,7 +18701,7 @@ migrate_to_patroni() {
             local role="unknown"
             local role_retries=15
             while [[ "$role" == "unknown" ]] && [[ $role_retries -gt 0 ]]; do
-                role=$(curl -sf --connect-timeout 3 --max-time 5 http://localhost:8008/ 2>/dev/null | grep -oP '"role"\s*:\s*"\K[^"]+' || echo "unknown")
+                role=$(curl -sf --connect-timeout 3 --max-time 5 -u "${patroni_api_user}:${patroni_api_pass}" http://localhost:8008/ 2>/dev/null | grep -oP '"role"\s*:\s*"\K[^"]+' || echo "unknown")
                 if [[ "$role" != "unknown" ]]; then
                     break
                 fi
@@ -18536,7 +19538,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="1.0.0"
+    local BUILD_VERSION="1.1.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -19548,6 +20550,8 @@ TimeoutStopSec=120
 
 LimitNOFILE=65535
 Environment=GOMAXPROCS=0
+# Patroni REST API credentials for HA installs (no-op on standalone — file absent)
+EnvironmentFile=-/spiralpool/config/patroni-api.conf
 
 # Allow longer startup time for ExecStartPre (node wait script)
 TimeoutStartSec=1900
@@ -20516,6 +21520,8 @@ TimeoutStopSec=30
 
 LimitNOFILE=65535
 Environment=GOMAXPROCS=0
+# Patroni REST API credentials for HA installs (no-op on standalone -- file absent)
+EnvironmentFile=-/spiralpool/config/patroni-api.conf
 
 # Allow longer startup time for ExecStartPre (node wait script)
 TimeoutStartSec=1900
@@ -22790,7 +23796,7 @@ RESTARTEOF
 #!/bin/bash
 #
 # Multi-Coin Blockchain Sync Status with Pretty Progress Display
-# Supports: BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC (SHA256d) | LTC, DOGE, PEP, CAT (Scrypt)
+# Supports: BTC, BCH, BC2, DGB, NMC, QBX, SYS, XMY, FBTC (SHA256d) | LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
 #
 # Usage:
 #   spiralpool-sync                  - Show status for all enabled coins
@@ -26519,11 +27525,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V1.0-BLACKICE: Create backup command
+    # V1.1-TITAN_NODE: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V1.0-BLACKICE
+# Spiral Pool Backup Utility - V1.1-TITAN_NODE
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -26568,7 +27574,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}          SPIRAL POOL BACKUP UTILITY - V1.0-BLACKICE          ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}        SPIRAL POOL BACKUP UTILITY - V1.1-TITAN_NODE          ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -27184,7 +28190,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}                  SPIRAL POOL BACKUP - V1.0                   ${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}               SPIRAL POOL BACKUP - V1.1-TITAN_NODE            ${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -27237,11 +28243,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V1.0-BLACKICE: Create restore command
+    # V1.1-TITAN_NODE: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V1.0-BLACKICE
+# Spiral Pool Restore Utility - V1.1-TITAN_NODE
 # Restores backups created by spiralpool-backup
 #
 
@@ -27288,7 +28294,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL RESTORE UTILITY - V1.0              ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}          SPIRAL POOL RESTORE UTILITY - V1.1-TITAN_NODE        ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -27610,7 +28616,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}             SPIRAL POOL RESTORE - V1.0-BLACKICE              ${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.1-TITAN_NODE              ${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -30954,6 +31960,7 @@ EXPORTEOF
         log_success "Installed block-celebrate.sh (Avalon LED celebration)"
     fi
 
+
     # Copy HA replication scripts
     if [[ -f "${SCRIPTS_SRC}/ha-replicate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-replicate.sh" "${INSTALL_DIR}/scripts/"
@@ -32654,6 +33661,62 @@ start_services() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SIMPLESWAP INTEGRATION (OPTIONAL)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+configure_simpleswap() {
+    # ─────────────────────────────────────────────────────────────────────────
+    # Optional feature: SimpleSwap.io swap alerts.
+    # When a mined coin rises 25%+ against BTC over 7 days, Sentinel sends
+    # a notification with a SimpleSwap link (coin pre-selected). The operator
+    # clicks the link and completes the swap entirely on the SimpleSwap website.
+    # No API key, no wallet address, no pool server involvement in transactions.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    screen_clear
+    log_step "Optional Feature: SimpleSwap.io Swap Alerts"
+
+    echo -e "  ${WHITE}When a mined coin rises 25%+ against BTC over 7 days, Spiral Sentinel will${NC}"
+    echo -e "  ${WHITE}send a notification with a SimpleSwap.io link ready to go.${NC}"
+    echo ""
+    echo -e "  ${WHITE}Click the link → enter your BTC address on the SimpleSwap website →${NC}"
+    echo -e "  ${WHITE}send your coins to the deposit address they give you. That's it.${NC}"
+    echo ""
+    echo -e "  ${DIM}Everything happens on the SimpleSwap website in your browser.${NC}"
+    echo -e "  ${DIM}No API key. No wallet address stored. Pool server not involved.${NC}"
+    echo -e "  ${YELLOW}  You are responsible for AML/KYC compliance and tax obligations.${NC}"
+    echo ""
+    echo -e "  ${WHITE}Would you like to enable this feature?${NC}"
+    echo ""
+    echo -e "  ${DIM}1) No${NC}  ${DIM}(default)${NC}"
+    echo -e "  ${GREEN}2)${NC} ${WHITE}Yes${NC}"
+    echo ""
+    prompt_input "Enable SimpleSwap swap alerts? [1-2] (default: 1): "
+    read ss_enable_choice < /dev/tty
+
+    if [[ "$ss_enable_choice" != "2" ]]; then
+        SIMPLESWAP_ENABLED="false"
+        log "SimpleSwap: Disabled (skipped)"
+        return 0
+    fi
+
+    SIMPLESWAP_ENABLED="true"
+
+    sudo mkdir -p /etc/spiralpool
+    sudo tee /etc/spiralpool/simpleswap.conf > /dev/null << EOF
+# Spiral Pool - SimpleSwap.io Integration Configuration
+# Generated by installer on $(date)
+
+SIMPLESWAP_ENABLED="${SIMPLESWAP_ENABLED}"
+EOF
+    sudo chmod 600 /etc/spiralpool/simpleswap.conf
+    sudo chown root:root /etc/spiralpool/simpleswap.conf
+
+    log_success "SimpleSwap swap alerts enabled — link included in sats_surge notifications"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # COMPLETION
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -32907,6 +33970,23 @@ print_completion() {
     # Prevent the post-main sync watcher exec from clearing the screen after the banner
     WATCH_SYNC_ON_EXIT="done"
 
+    # SimpleSwap integration summary
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}  SIMPLESWAP SWAP ALERTS${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    if [[ "$SIMPLESWAP_ENABLED" == "true" ]]; then
+        echo -e "  ${GREEN}✓${NC} SimpleSwap Swap Alerts: ${GREEN}Enabled${NC}"
+        echo -e "  ${DIM}When a coin rises 25%+ vs BTC, Sentinel sends a SimpleSwap link.${NC}"
+        echo -e "  ${DIM}Click the link and complete the swap on the SimpleSwap website.${NC}"
+        echo -e "  ${DIM}Config: /etc/spiralpool/simpleswap.conf${NC}"
+    else
+        echo -e "  ${DIM}○  SimpleSwap Swap Alerts: Disabled${NC}"
+        echo -e "  ${DIM}   To enable later, set SIMPLESWAP_ENABLED=true in${NC}"
+        echo -e "  ${DIM}   /etc/spiralpool/simpleswap.conf (chmod 600)${NC}"
+    fi
+    echo ""
+
     # Final banner — last thing the user sees
     echo ""
     echo -e "${CYAN}  █████████             ███                      ████     ███████████                    ████${NC}"
@@ -32922,7 +34002,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                        ${DIM}V1.0 - BLACK ICE${NC}"
+    echo -e "                                       ${DIM}V1.1 - TITAN NODE${NC}"
     echo ""
 }
 
@@ -33469,6 +34549,9 @@ main() {
         select_coin_mode
     fi
 
+    # SimpleSwap integration configuration (optional — prompts after coin selection)
+    configure_simpleswap
+
     # High Availability mode selection
     select_ha_mode
 
@@ -33685,8 +34768,15 @@ main() {
         # SKIP on HA backup: Patroni replicates the password from the primary via
         # streaming replication. ALTER ROLE on a read-only replica fails with
         # "cannot execute in a read-only transaction" and aborts the entire install.
+        local _papi_user="" _papi_pass=""
+        if [[ -f /spiralpool/config/patroni-api.conf ]]; then
+            # shellcheck source=/dev/null
+            source /spiralpool/config/patroni-api.conf
+            _papi_user="${PATRONI_API_USERNAME:-}"
+            _papi_pass="${PATRONI_API_PASSWORD:-}"
+        fi
         if systemctl is-active --quiet patroni 2>/dev/null && \
-           curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | grep -q '"role".*"replica"'; then
+           curl -s ${_papi_user:+-u "${_papi_user}:${_papi_pass}"} --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | grep -q '"role".*"replica"'; then
             log "Patroni replica — skipping DB password re-sync (replicated from primary)"
         else
             if ! command -v psql &>/dev/null; then

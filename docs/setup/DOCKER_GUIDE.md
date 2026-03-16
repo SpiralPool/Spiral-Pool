@@ -14,7 +14,7 @@ Docker supports **V1 single-coin solo mining** only:
 - Dashboard, Sentinel monitoring, Prometheus, and Grafana included
 - Self-signed TLS certificates auto-generated
 
-**Partially supported in Docker:**
+**Partially supported in Docker (experimental, not validated for production):**
 
 - Database HA (Patroni/etcd/HAProxy/Redis) via `docker-compose.ha.yml` overlay — automatic PostgreSQL failover
 
@@ -42,7 +42,7 @@ sudo usermod -aG docker $USER
 # Log out and back in for group changes to take effect
 ```
 
-### ARM64 / aarch64 (Raspberry Pi, Apple Silicon, AWS Graviton)
+### ARM64 / aarch64 (Raspberry Pi, Apple Silicon, ARM bare-metal servers)
 
 > **EXPERIMENTAL / UNTESTED** — ARM64 Docker support is provided on a best-effort
 > basis. Upstream coin projects publish arm64 binaries and Docker will automatically
@@ -57,7 +57,13 @@ sudo usermod -aG docker $USER
 > If you encounter issues on ARM64, please report them with your architecture
 > (`dpkg --print-architecture`) and full error output.
 
-### Windows (WSL2)
+### Windows (WSL2) *(Experimental — not recommended for production)*
+
+> **EXPERIMENTAL.** The Windows/Docker Desktop deployment has not been validated for production use. Docker Desktop can be terminated by Windows updates, sleep, or memory pressure. For 24/7 production mining, use native Ubuntu on dedicated hardware.
+
+> **Two Windows paths exist.** This guide covers the **Docker Desktop path** (`install-windows.ps1`). If you installed Spiral Pool by running `install.sh` directly inside WSL2 Ubuntu, see the [WSL2 Native path](#wsl2-native-path-installsh-in-wsl2) below instead.
+
+**Docker Desktop path requirements:**
 
 - Windows 10/11 with WSL2 enabled
 - Docker Desktop with WSL2 backend
@@ -70,7 +76,10 @@ wsl --install -d Ubuntu
 # 2. Install Docker Desktop from https://www.docker.com/products/docker-desktop/
 #    Enable WSL2 backend in Docker Desktop > Settings > General
 
-# 3. Open Ubuntu WSL2 terminal for all remaining steps
+# 3. Run the automated installer (as Administrator):
+.\install-windows.ps1
+
+# 4. Or open Ubuntu WSL2 terminal and follow the Linux Docker steps
 ```
 
 **WSL2 limitations:**
@@ -454,6 +463,8 @@ docker compose --profile dgb up -d      # Fresh start
 
 ## Database High Availability (Optional)
 
+> **BARE METAL / SELF-HOSTED VMs ONLY** — Cloud/VPS deployments are not supported. This Docker HA overlay is intended for self-hosted infrastructure where you control the hardware. HA on cloud providers (AWS, GCP, Azure, DigitalOcean, etc.) is not supported.
+
 Docker supports PostgreSQL high availability via the `docker-compose.ha.yml` overlay. This provides automatic database failover using Patroni, etcd, and HAProxy.
 
 ### What HA Adds
@@ -481,6 +492,56 @@ The stratum automatically connects to HAProxy instead of standalone PostgreSQL. 
 ### Limitations
 
 Database HA does **not** provide stratum VIP failover (Keepalived) or multi-node stratum instances. For full HA with VIP failover, use native installation (`sudo ./install.sh`).
+
+---
+
+## WSL2 Native Path *(Experimental — not recommended for production)*
+
+> **WSL2 support is experimental.** Windows can terminate WSL2 without warning (updates, sleep, hibernate, memory pressure), systemd reliability is reduced, I/O is 2–4× slower due to the virtual disk, clocks drift after sleep, and HA is non-functional. Use this path for evaluation and development only. For 24/7 production mining, use native Ubuntu on dedicated hardware.
+
+An alternative to Docker Desktop is running `install.sh` directly inside WSL2 Ubuntu. This gives broader feature support than Docker — multi-coin, Stratum V2, and merge mining work. Note that keepalived/VIP HA and multi-node clustering require native Linux and will not function correctly inside WSL2.
+
+### Setup
+
+```powershell
+# 1. Install WSL2 + Ubuntu (PowerShell as Admin)
+wsl --install -d Ubuntu
+```
+
+```bash
+# 2. Open Ubuntu, then clone and run the Spiral Pool installer
+git clone https://github.com/SpiralPool/Spiral-Pool.git
+cd Spiral-Pool
+./install.sh    # self-elevates; no sudo needed
+```
+
+### ASIC / External Miner Port Forwarding
+
+WSL2 runs in NAT mode by default. Your Windows LAN IP (e.g. `192.168.1.x`) does **not** automatically reach the stratum server running inside WSL2. Software miners on the same Windows machine can use `127.0.0.1`, but **ASIC miners and external hardware require port forwarding**.
+
+Use [`start-wsl2-proxy.bat`](../../scripts/windows/start-wsl2-proxy.bat) to manage this:
+
+```
+Double-click start-wsl2-proxy.bat → Run as Administrator
+```
+
+What it does:
+- Installs WSL2 + Ubuntu if not already present
+- Detects all installed WSL2 distros; lets you pick one if multiple exist
+- Auto-detects your Windows LAN IP and WSL2 IP (with manual override)
+- Warns and exits cleanly if WSL2 mirrored networking is active (portproxy not needed)
+- Shows a coin selection menu (all 14 Spiral Pool coins, ALL, or custom port)
+- Adds `netsh portproxy` rules: `0.0.0.0:PORT → WSL2_IP:PORT`
+- Adds Windows Firewall inbound rules for the selected ports
+- Checks whether systemd is enabled in WSL2; offers to enable it if not
+- Optionally creates a Windows Task Scheduler task to start Spiral Pool services and re-apply portproxy rules automatically at every logon (elevated, hidden)
+- Monitors the WSL2 IP every 60 seconds and re-applies rules if the IP drifts after a WSL2 restart
+- Prints a heartbeat while running so you know it's alive
+- **Removes portproxy rules on Ctrl+C** (closing the window does not clean up — use Ctrl+C to stop)
+
+Point your ASIC at your Windows LAN IP with the standard stratum port (e.g. `192.168.1.161:20335` for QBX). The proxy handles the rest.
+
+> **Note:** The proxy must be running whenever miners need to connect. Portproxy rules are ephemeral — a reboot or `wsl --shutdown` wipes them. Firewall rules and the Task Scheduler entry persist. The auto-start task re-applies portproxy rules at next logon.
 
 ---
 

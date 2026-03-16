@@ -667,6 +667,8 @@ Pool ID validation: `^[a-zA-Z_][a-zA-Z0-9_]{0,62}$` (no hyphens — not valid Po
 
 ## 14. High Availability and Failover
 
+> **Bare metal / self-hosted VMs only.** HA is not supported on cloud or VPS deployments. Keepalived VRRP (used for VIP failover) requires broadcast/multicast MAC election, which is blocked by cloud hypervisors. Both the installer and `spiralctl ha enable` hard-block HA setup when a cloud environment is detected.
+
 ### HA Architecture
 
 ```
@@ -1086,4 +1088,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Black Ice 1.0*
+*Spiral Pool — Titan Node 1.1*

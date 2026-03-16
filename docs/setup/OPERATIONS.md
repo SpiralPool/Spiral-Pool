@@ -405,6 +405,30 @@ spiralctl mining merge enable doge,pep   # LTC parent
 | 1618 | Dashboard |
 | 9100 | Prometheus metrics |
 
+### SimpleSwap Swap Alerts (Optional)
+
+Spiral Sentinel can send swap recommendations when a mined coin rises 25%+ against BTC over a 7-day window. Alerts are delivered via your configured notification channels (Discord, Telegram, XMPP) and include a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected. **No automatic swaps are performed.**
+
+The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. All swap activity happens entirely on the SimpleSwap website in the operator's own browser — click the link in the alert, enter your BTC address on the site, and complete the swap there. This keeps the pool server completely out of any financial transaction.
+
+**Enable during installation** — the installer will prompt to enable or disable the feature.
+
+**Enable manually:**
+```bash
+sudo tee /etc/spiralpool/simpleswap.conf > /dev/null << 'EOF'
+SIMPLESWAP_ENABLED=true
+EOF
+sudo chmod 600 /etc/spiralpool/simpleswap.conf
+sudo chown root:root /etc/spiralpool/simpleswap.conf
+```
+
+**Disable:**
+```bash
+sudo sed -i 's/SIMPLESWAP_ENABLED=true/SIMPLESWAP_ENABLED=false/' /etc/spiralpool/simpleswap.conf
+```
+
+> **Operator responsibility:** You are solely responsible for compliance with SimpleSwap.io's Terms of Service, all AML/KYC requirements, fees, tax obligations, and financial regulations in your jurisdiction. See [TERMS.md](../../TERMS.md) section 5D and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
+
 ---
 
 ## 4. Operations
@@ -516,6 +540,8 @@ spiralctl webhook test                            # Test webhook
 ---
 
 ## 6. High Availability
+
+> **BARE METAL / SELF-HOSTED VMs ONLY** — HA is not supported on cloud or VPS deployments (AWS, GCP, Azure, DigitalOcean, Hetzner, Vultr, etc.). The installer and `spiralctl ha enable` both block HA setup when a cloud environment is detected. Keepalived VRRP requires broadcast/multicast MAC-based election which is blocked by cloud hypervisors — VIP failover will silently fail. Deploy on hardware you physically control.
 
 > **NOTE**: "High Availability" refers to architectural patterns designed to improve resilience. It does not guarantee any specific uptime percentage or SLA. Failover times, data consistency during transitions, and overall reliability depend on your specific configuration, network conditions, and infrastructure.
 
@@ -682,4 +708,4 @@ sudo ufw enable
 
 ---
 
-*Spiral Pool — Black Ice 1.0*
+*Spiral Pool — Titan Node 1.1*
