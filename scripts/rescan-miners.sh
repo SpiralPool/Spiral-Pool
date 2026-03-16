@@ -70,6 +70,29 @@ show_usage() {
 }
 
 get_local_subnet() {
+    # WSL2: auto-detection only sees the WSL NAT adapter, not the real Windows LAN.
+    # Prompt the user to enter their subnet manually.
+    if grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+        echo -e "${YELLOW}WSL2 detected.${NC} Auto-detection cannot see your Windows LAN subnet." >&2
+        echo -e "" >&2
+        echo -e "${WHITE}Before scanning, make sure Windows Firewall allows outbound connections from WSL2:${NC}" >&2
+        echo -e "  1. Open ${WHITE}Windows Defender Firewall${NC} > ${WHITE}Advanced Settings${NC}" >&2
+        echo -e "  2. Go to ${WHITE}Outbound Rules${NC} > ${WHITE}New Rule${NC}" >&2
+        echo -e "  3. Select ${WHITE}Port${NC}, then allow TCP ports ${WHITE}80, 4028, 4029, 8080${NC}" >&2
+        echo -e "  4. Apply to ${WHITE}All profiles${NC} and save" >&2
+        echo -e "" >&2
+        echo -e "Enter your subnet to scan (e.g. ${WHITE}192.168.1.0/24${NC}): " >&2
+        local user_subnet
+        read -r user_subnet </dev/tty
+        if [[ "$user_subnet" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+            echo "$user_subnet"
+        else
+            echo -e "${RED}Invalid subnet format. Expected format: 192.168.1.0/24${NC}" >&2
+            echo ""
+        fi
+        return
+    fi
+
     # Get the local subnet (e.g., 192.168.1.0/24)
     local ip=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)192\.168\.\d+\.\d+' | head -1)
     if [[ -z "$ip" ]]; then
