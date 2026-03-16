@@ -290,6 +290,7 @@ func (s *Server) Start(ctx context.Context) error {
 	handler := s.rateLimitMiddleware(mux)
 	handler = s.loggingMiddleware(handler)
 	handler = s.corsMiddleware(handler)
+	handler = s.securityHeadersMiddleware(handler)
 
 	s.server = &http.Server{
 		Addr:         s.cfg.Listen,
@@ -1659,6 +1660,16 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
