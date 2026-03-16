@@ -2182,20 +2182,59 @@ detect_available_disks() {
 
 detect_disk_type() {
     # Detect if a disk is SSD/NVMe or HDD (rotational)
-    # Args: $1 = device path (e.g., /dev/sda1)
+    # Args: $1 = device path (e.g., /dev/sda1, /dev/mapper/ubuntu--vg-ubuntu--lv)
     # Returns: "ssd" or "hdd"
 
     local device="$1"
-    local base_device
 
-    # Extract base device (e.g., /dev/sda from /dev/sda1)
+    # ── LVM / device-mapper devices (/dev/mapper/...) ────────────────────────
+    # These don't appear directly in /sys/block/ under their mapper name.
+    # Resolve via dm name → dm-N sysfs entry → slave physical devices.
+    if [[ "$device" == /dev/mapper/* ]]; then
+        local mapper_name="${device#/dev/mapper/}"
+        local dm_sysdir
+        for d in /sys/block/dm-*/dm/name; do
+            if [[ "$(cat "$d" 2>/dev/null)" == "$mapper_name" ]]; then
+                dm_sysdir="$(dirname "$(dirname "$d")")"   # /sys/block/dm-N
+                break
+            fi
+        done
+        if [[ -n "$dm_sysdir" ]]; then
+            # Walk slaves (the underlying physical/partition devices).
+            # If ANY slave is SSD, treat the LV as SSD.
+            for slave in "$dm_sysdir"/slaves/*/; do
+                local slave_name
+                slave_name=$(basename "$slave")
+                # Strip partition suffix to reach the block device row
+                local slave_base
+                if [[ "$slave_name" =~ nvme ]]; then
+                    slave_base=$(echo "$slave_name" | sed 's/p[0-9]*$//')
+                else
+                    slave_base=$(echo "$slave_name" | sed 's/[0-9]*$//')
+                fi
+                local rot
+                rot=$(cat "/sys/block/$slave_base/queue/rotational" 2>/dev/null)
+                if [[ "$rot" == "0" ]]; then
+                    echo "ssd"
+                    return
+                fi
+            done
+            echo "hdd"
+            return
+        fi
+        # dm device not found in sysfs — fall through to default (hdd)
+        echo "hdd"
+        return
+    fi
+
+    # ── Standard block devices (/dev/sdX, /dev/nvmeXnY, etc.) ───────────────
+    local base_device
     if [[ "$device" =~ nvme ]]; then
         base_device=$(echo "$device" | sed 's/p[0-9]*$//')
     else
         base_device=$(echo "$device" | sed 's/[0-9]*$//')
     fi
 
-    # Remove /dev/ prefix for sysfs lookup
     local dev_name
     dev_name=$(basename "$base_device")
 
