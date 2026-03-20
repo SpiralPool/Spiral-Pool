@@ -1,7 +1,7 @@
 # Terms of Use
 
 **Effective Date:** 2026-01-24
-**Last Updated:** 2026-03-16
+**Last Updated:** 2026-03-20
 
 ## 1. Acceptance of Terms
 
@@ -76,6 +76,27 @@ By using this Software, you acknowledge that:
 
 This Software has **NOT** been tested on ARM architecture (including Raspberry Pi, ARM64/aarch64, and ARMv7). All packages, build references, and binary dependencies target **x86_64 (amd64)** on Ubuntu 24.04 LTS. ARM deployments are **NOT supported** and issues arising from ARM-based installations may not be investigated.
 
+## 5D. SimpleSwap.io Integration
+
+This Software includes an optional integration with [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service. This feature is **disabled by default** and must be explicitly enabled by the operator during installation.
+
+When enabled, Spiral Sentinel monitors the sat value (coin/BTC ratio) of mined coins and sends a swap recommendation alert when a coin appreciates 25% or more against BTC over a 7-day baseline. The alert includes a SimpleSwap.io link with the source coin and BTC pre-selected. **No swap is performed automatically. The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys.** All swap activity occurs on the SimpleSwap.io website in the operator's own browser.
+
+By enabling or using the SimpleSwap integration, you:
+
+1. Acknowledge that **SimpleSwap.io is a third-party service** with its own Terms of Service, Privacy Policy, and operational policies, over which Spiral Pool has no control
+2. Accept **full responsibility** for complying with SimpleSwap.io's Terms of Service and all applicable requirements for using their platform
+3. Accept **full responsibility** for all applicable **AML (Anti-Money Laundering)** and **KYC (Know Your Customer)** requirements in your jurisdiction
+4. Accept **full responsibility** for all **tax obligations**, reporting requirements, and financial regulatory obligations arising from any currency exchange or conversion activity
+5. Acknowledge that exchange fees, rate spreads, minimum/maximum limits, and processing times are determined solely by SimpleSwap.io and may change at any time
+6. Acknowledge that Spiral Pool **does not process, hold, intermediate, or have any visibility into** any exchange or conversion you initiate through SimpleSwap.io
+7. Acknowledge that all transactions with SimpleSwap.io are **irreversible** and Spiral Pool accepts no responsibility for failed swaps, incorrect amounts, wrong destination addresses, or any other transaction outcome
+8. **Release** the Software authors and contributors from **all liability** related to your use of SimpleSwap.io or any third-party exchange service
+
+**If you do not agree with these terms, do not enable the SimpleSwap integration.**
+
+The authors make no representations about the availability, reliability, regulatory status, or legality of SimpleSwap.io in any jurisdiction. See WARNINGS.md for additional hazard disclosures related to third-party exchange services.
+
 ## 5E. Single-Operator Architecture
 
 This Software is designed for **single-operator use only**. A single wallet address per coin is configured at installation time by the operator. This is a fundamental architectural property, not a configurable option.
@@ -98,27 +119,6 @@ This Software is designed for **single-operator use only**. A single wallet addr
 **By installing and using this Software**, you confirm that you understand and accept this single-operator architecture, and that you will disclose the wallet control arrangement to any parties whose hashrate you use.
 
 **If you do not agree with these terms or intend to operate a multi-participant pool without proper disclosure, do not use this Software.**
-
-## 5D. SimpleSwap.io Integration
-
-This Software includes an optional integration with [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service. This feature is **disabled by default** and must be explicitly enabled by the operator during installation.
-
-When enabled, Spiral Sentinel monitors the sat value (coin/BTC ratio) of mined coins and sends a swap recommendation alert when a coin appreciates 25% or more against BTC over a 7-day baseline. The alert includes a SimpleSwap.io link with the source coin and BTC pre-selected. **No swap is performed automatically. The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys.** All swap activity occurs on the SimpleSwap.io website in the operator's own browser.
-
-By enabling or using the SimpleSwap integration, you:
-
-1. Acknowledge that **SimpleSwap.io is a third-party service** with its own Terms of Service, Privacy Policy, and operational policies, over which Spiral Pool has no control
-2. Accept **full responsibility** for complying with SimpleSwap.io's Terms of Service and all applicable requirements for using their platform
-3. Accept **full responsibility** for all applicable **AML (Anti-Money Laundering)** and **KYC (Know Your Customer)** requirements in your jurisdiction
-4. Accept **full responsibility** for all **tax obligations**, reporting requirements, and financial regulatory obligations arising from any currency exchange or conversion activity
-5. Acknowledge that exchange fees, rate spreads, minimum/maximum limits, and processing times are determined solely by SimpleSwap.io and may change at any time
-6. Acknowledge that Spiral Pool **does not process, hold, intermediate, or have any visibility into** any exchange or conversion you initiate through SimpleSwap.io
-7. Acknowledge that all transactions with SimpleSwap.io are **irreversible** and Spiral Pool accepts no responsibility for failed swaps, incorrect amounts, wrong destination addresses, or any other transaction outcome
-8. **Release** the Software authors and contributors from **all liability** related to your use of SimpleSwap.io or any third-party exchange service
-
-**If you do not agree with these terms, do not enable the SimpleSwap integration.**
-
-The authors make no representations about the availability, reliability, regulatory status, or legality of SimpleSwap.io in any jurisdiction. See WARNINGS.md for additional hazard disclosures related to third-party exchange services.
 
 ## 6. Data Loss Acknowledgment
 
