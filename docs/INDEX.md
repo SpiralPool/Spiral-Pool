@@ -9,6 +9,8 @@ Getting started, installation, and deployment guides.
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](setup/OPERATIONS.md) | Installation, configuration, monitoring, HA setup, upgrading, troubleshooting |
+| [CLOUD_OPERATIONS.md](setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment: dashboard SSH tunnel, firewall layout, SSH hardening, HTTPS options, provider-specific config |
+| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v1.1.0 (Phi Forge): compatibility, all coin types, step-by-step |
 | [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 single-coin mode) |
 
 ## Architecture
@@ -60,4 +62,4 @@ Legal documents are in the repository root:
 
 ---
 
-*Spiral Pool -- Black Ice 1.0*
+*Spiral Pool -- Phi Forge 1.1.0*

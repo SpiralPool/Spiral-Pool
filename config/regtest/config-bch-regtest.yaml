@@ -1,19 +1,16 @@
-# Spiral Pool - Syscoin (SYS) Regtest Integration Test Config
+# Spiral Pool - Bitcoin Cash (BCH) Regtest Integration Test Config
 #
-# This config runs the pool against a local syscoind in regtest mode.
+# This config runs the pool against a local bitcoind-bch in regtest mode.
 # Regtest = private local blockchain, difficulty 1, instant CPU mining.
 #
 # Purpose: End-to-end validation of the full block lifecycle:
 #   stratum subscribe/authorize -> getblocktemplate -> miner solves ->
 #   submitblock -> ZMQ hashblock notification -> DB insert -> status update
 #
-# Note: SYS supports AuxPoW (merge-mining with BTC parent). This config tests
-#       standalone mining only. Merge-mining tests require both BTC and SYS daemons.
-#
 # Usage:
-#   1. Start syscoind in regtest mode (see scripts/linux/regtest.sh sys)
-#   2. Start the pool:  ./spiralpool -config config-sys-regtest.yaml
-#   3. Connect cpuminer: minerd -a sha256d -o stratum+tcp://127.0.0.1:16345 -u TEST.worker1 -p x
+#   1. Start bitcoind-bch in regtest mode (see scripts/linux/regtest.sh bch)
+#   2. Start the pool:  ./spiralpool -config config/regtest/config-bch-regtest.yaml
+#   3. Connect cpuminer: minerd -a sha256d -o stratum+tcp://127.0.0.1:16339 -u TEST.worker1 -p x
 #   4. Watch pool logs for block found/submitted messages
 #
 version: 2
@@ -21,8 +18,8 @@ version: 2
 global:
   log_level: debug        # Verbose for integration testing
   log_format: text        # Human-readable during testing
-  metrics_port: 19112
-  api_port: 14012
+  metrics_port: 19106
+  api_port: 14006
   api_enabled: true
 
   sentinel:
@@ -52,23 +49,23 @@ database:
   port: 5432
   user: spiralstratum
   password: "spiralstratum"
-  database: spiralstratum_sys_regtest
+  database: spiralstratum_bch_regtest
   maxConnections: 50
   batching:
     size: 100
     interval: 2s
 
 coins:
-  - symbol: SYS
-    pool_id: sys_regtest
+  - symbol: BCH
+    pool_id: bch_regtest
     enabled: true
     address: "REGTEST_ADDRESS_PLACEHOLDER"
-    coinbase_text: "Spiral SYS Regtest"
+    coinbase_text: "Spiral BCH Regtest"
     skip_genesis_verify: true
 
     stratum:
-      port: 16345
-      port_v2: 17342
+      port: 16339
+      port_v2: 17340
       difficulty:
         initial: 0.01             # Low share diff for V2 Go test miner
         varDiff:
@@ -94,14 +91,14 @@ coins:
     nodes:
       - id: regtest-primary
         host: 127.0.0.1
-        port: 18558               # SYS regtest RPC port
+        port: 18552               # BCH regtest RPC port
         user: spiraltest
         password: "spiraltest"
         priority: 0
         weight: 1
         zmq:
           enabled: true
-          endpoint: "tcp://127.0.0.1:29350"
+          endpoint: "tcp://127.0.0.1:29344"
 
     payments:
       enabled: true

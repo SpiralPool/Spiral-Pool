@@ -39,7 +39,7 @@
     "mono": "'Fira Code', monospace"
   },
   "effects": {
-    "glowIntensity": 0.35,
+    "glowIntensity": 0.28,
     "animationSpeed": 1.2,
     "borderRadius": "16px",
     "useGlitchEffect": false,

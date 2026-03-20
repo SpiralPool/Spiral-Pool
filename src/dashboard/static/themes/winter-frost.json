@@ -40,7 +40,7 @@
     "mono": "'Roboto Mono', monospace"
   },
   "effects": {
-    "glowIntensity": 0.35,
+    "glowIntensity": 0.22,
     "animationSpeed": 1,
     "borderRadius": "12px",
     "useGlitchEffect": false,

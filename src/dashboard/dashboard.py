@@ -19,6 +19,8 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
+__version__ = "1.1.0-PHI_FORGE"
+
 import os
 import json
 import time
@@ -232,9 +234,14 @@ def api_key_or_login_required(f):
     """Decorator: Require either API key or login session."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Skip auth if disabled (NOT RECOMMENDED)
+        # SECURITY (F-03): AUTH_ENABLED=false is only honored for loopback connections.
+        # On external interfaces auth is always enforced, regardless of this setting,
+        # to prevent accidental public exposure if the env var is misconfigured.
         if not AUTH_ENABLED:
-            return f(*args, **kwargs)
+            client_ip = request.remote_addr or ''
+            if client_ip in ('127.0.0.1', '::1'):
+                return f(*args, **kwargs)
+            # Non-localhost: fall through to normal auth checks
 
         # Check API key in header only (SECURITY: Never accept from query params)
         # Query params are logged in server logs, browser history, and referrer headers
@@ -266,9 +273,12 @@ def admin_required(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Skip auth if disabled
+        # SECURITY (F-03): AUTH_ENABLED=false is only honored for loopback connections.
         if not AUTH_ENABLED:
-            return f(*args, **kwargs)
+            client_ip = request.remote_addr or ''
+            if client_ip in ('127.0.0.1', '::1'):
+                return f(*args, **kwargs)
+            # Non-localhost: fall through to normal auth checks
 
         # Only session login accepted for admin operations
         if not current_user.is_authenticated:
@@ -832,7 +842,7 @@ DEFAULT_CONFIG = {
 
 # Global state for caching miner data
 miner_cache = {
-    "last_update": 0,
+    "last_update": 0,  # Init to 0 so first request triggers immediate fetch
     "miners": {},
     "totals": {
         "hashrate_ths": 0,
@@ -877,6 +887,7 @@ for _cur in DASHBOARD_CURRENCIES.values():
 # Lifetime stats persistence
 lifetime_stats = {
     "total_shares": 0,
+    "total_pool_shares": 0,
     "total_blocks": 0,
     "best_share_difficulty": 0,
     "uptime_start": None,
@@ -1258,6 +1269,7 @@ BLOCKCHAIN_RPC_USER = ""
 BLOCKCHAIN_RPC_PASSWORD = ""
 ACTIVE_COIN_SYMBOL = None  # Must be detected from config - no default to avoid wrong coin
 POOL_CONFIG_PATH = "/spiralpool/config/config.yaml"
+_multi_coin_config_loaded = False  # One-shot flag: prevent lazy-init from firing on every call
 
 # Health cache
 health_cache = {
@@ -3479,7 +3491,8 @@ def get_primary_coin():
 
 def load_multi_coin_config():
     """Load RPC credentials for all configured coins from pool config.yaml"""
-    global MULTI_COIN_NODES
+    global MULTI_COIN_NODES, _multi_coin_config_loaded
+    _multi_coin_config_loaded = True  # Set before loading so concurrent calls don't pile up
 
     try:
         import yaml
@@ -4163,6 +4176,10 @@ def background_data_collection():
     last_audit_save = time.time()
     last_history_save = time.time()
 
+    # Give gunicorn worker time to accept first requests before starting
+    # heavy network I/O that competes for the GIL (fixes first-request timeout)
+    time.sleep(5)
+
     while True:
         try:
             # HA BACKUP NODE OPTIMIZATION: Keep role cache fresh, skip polling on BACKUP
@@ -4177,6 +4194,13 @@ def background_data_collection():
             fetch_pool_stats()
         except Exception as e:
             print(f"[BG] Pool stats fetch error: {e}")
+
+        # Refresh miner device cache in background so the /api/miners request handler
+        # rarely needs to do a slow synchronous fetch (which can block gunicorn workers).
+        try:
+            fetch_all_miners()
+        except Exception as e:
+            print(f"[BG] Miner fetch error: {e}")
 
         try:
             fetch_prometheus_metrics()
@@ -5205,10 +5229,22 @@ def identify_miner(ip, timeout=5):
                         else:
                             result["model"] = "NerdQAxe++"
 
-                    # NMaxe detection - boardVersion: "NMAxe"
-                    elif 'nmaxe' in board_version or 'nmax' in board_version:
+                    # NMaxe detection - boardVersion: "NMAxe", hwModel: "NMAxe",
+                    # or any known NMaxe board name (e.g., "BitRazor").
+                    # Also detect by nested stratum dict (NMaxe v2.9+ schema marker).
+                    elif ('nmaxe' in board_version or 'nmax' in board_version or
+                          str(data.get('hwModel', '')).upper() == 'NMAXE' or
+                          'bitrazor' in board_version or 'bitrazor' in hostname or
+                          isinstance(data.get('stratum'), dict)):
                         result["type"] = "nmaxe"
-                        result["model"] = "NMaxe"
+                        # Use the specific board/model name if available
+                        hw_model = data.get('hwModel', '')
+                        if 'bitrazor' in board_version or 'bitrazor' in hostname:
+                            result["model"] = "BitRazor"
+                        elif hw_model and hw_model.upper() != 'NMAXE':
+                            result["model"] = hw_model  # e.g., board-specific name
+                        else:
+                            result["model"] = "NMaxe"
 
                     elif 'gamma' in board_version:
                         result["type"] = "axeos"
@@ -6684,8 +6720,43 @@ def fetch_axeos(ip, timeout=5):
         response.raise_for_status()
         data = response.json()
 
-        # Parse AxeOS response format
-        # AxeOS/NerdQAxe++ reports hashRate in GH/s directly (e.g., 5051.922 = 5051 GH/s = 5.05 TH/s)
+        # NMAxe firmware (v2.9.x+) uses a completely different field schema from standard AxeOS.
+        # Detect by: hwModel == "NMAxe", OR has NMAxe-specific fields (asicTemp, fans array).
+        # NOTE: Cannot use isinstance(stratum, dict) alone — NerdQAxe++ v1.0.36+ also has a
+        # nested stratum object but uses standard AxeOS field names (temp, not asicTemp).
+        is_nmaxe = (
+            str(data.get('hwModel', '')).upper() == 'NMAXE' or
+            (isinstance(data.get('stratum'), dict) and 'asicTemp' in data)
+        )
+
+        if is_nmaxe:
+            stratum = data.get('stratum', {})
+            pool_url = stratum.get('used', {}).get('url', '')
+            fans_list = data.get('fans', [])
+            fan_rpm = fans_list[0].get('rpm', 0) if fans_list else 0
+            return {
+                "online": True,
+                "hashrate_ghs": data.get('hashRate', 0),
+                "power_watts": data.get('power', 0),
+                "temps": {
+                    "chip": data.get('asicTemp', 0),   # ASIC die temp
+                    "board": data.get('mcuTemp', 0),   # MCU/board temp
+                    "vr": data.get('vcoreTemp', 0)     # VCore regulator temp
+                },
+                "uptime": data.get('uptimeSeconds', 0),
+                "accepted": data.get('sharesAccepted', 0),
+                "rejected": data.get('sharesRejected', 0),
+                "best_diff": data.get('bestDiffEver', '0'),
+                "pool_url": pool_url,
+                "hostname": data.get('hostName', ip),          # capital N in NMAxe API
+                "version": data.get('fwVersion', 'Unknown'),   # NMAxe uses fwVersion not version
+                "fan_speed": fan_rpm,                          # fans[0].rpm
+                "frequency": data.get('freqReq', 0),           # NMAxe uses freqReq not frequency
+                "voltage": data.get('vcoreActual', data.get('vcoreReq', 0))  # core voltage in mV
+            }
+
+        # Standard AxeOS format (BitAxe, NerdQAxe, QAxe, etc.)
+        # hashRate reported in GH/s directly (e.g., 5051.922 = 5051 GH/s = 5.05 TH/s)
         hashrate_ghs = data.get('hashRate', 0)
 
         return {
@@ -8497,9 +8568,13 @@ def fetch_all_miners():
     # Update lifetime stats atomically with lock
     # Use max of Prometheus (session), database (all blocks), and current lifetime
     # so lifetime total never goes backwards on stratum restart
+    pool_accepted_total = int(prometheus_metrics.get("stratum_shares_accepted_total", 0))
     with _lifetime_stats_lock:
         if totals["accepted_shares"] > lifetime_stats.get("total_shares", 0):
             lifetime_stats["total_shares"] = totals["accepted_shares"]
+        # Track pool-accepted shares separately (authoritative — only shares THIS pool accepted)
+        if pool_accepted_total > lifetime_stats.get("total_pool_shares", 0):
+            lifetime_stats["total_pool_shares"] = pool_accepted_total
         db_blocks = pool_stats_cache.get("blocks_found", 0)
         best_blocks = max(totals["blocks_found"], db_blocks, lifetime_stats.get("total_blocks", 0))
         if best_blocks > lifetime_stats.get("total_blocks", 0):
@@ -8904,8 +8979,32 @@ def get_server_mode():
                 aux_chains_raw = mm.get("auxChains", [])
                 if isinstance(aux_chains_raw, list):
                     # SECURITY: Validate aux chain symbols through whitelist
-                    valid_aux = [normalize_coin(c) for c in aux_chains_raw
-                                 if isinstance(c, str) and normalize_coin(c) in COIN_WHITELIST]
+                    # auxChains is [{symbol, address}, ...] from stratum API
+                    valid_aux = []
+                    for aux in aux_chains_raw:
+                        if isinstance(aux, dict):
+                            sym = normalize_coin(aux.get("symbol", ""))
+                            addr = aux.get("address", "")
+                        elif isinstance(aux, str):
+                            # Backwards compat with older stratum binaries
+                            sym = normalize_coin(aux)
+                            addr = ""
+                        else:
+                            continue
+                        if sym not in COIN_WHITELIST:
+                            continue
+                        valid_aux.append(sym)
+                        # Add aux chain wallet to coins_config so frontend can pre-populate
+                        if sym not in detected_coins:
+                            detected_coins.append(sym)
+                        wallet_address = str(addr).strip() if addr else ""
+                        pool_addresses[sym] = wallet_address
+                        coins_config.append({
+                            "symbol": sym,
+                            "wallet_address": wallet_address,
+                            "pool_id": "",
+                            "stratum_port": 0
+                        })
                     if valid_aux:
                         merge_mining_info = {
                             "enabled": True,
@@ -9077,6 +9176,9 @@ def update_config():
                 app.logger.warning(f"Sentinel sync warnings: {sync_errors}")
         except Exception as e:
             app.logger.error(f"Failed to sync miners to Sentinel: {e}")
+
+        # Invalidate miner cache so next dashboard load fetches fresh data immediately
+        miner_cache["last_update"] = 0
 
     changed_keys = [k for k in new_config if k in allowed_keys]
     record_activity("config", f"Configuration updated: {', '.join(changed_keys)}", {"keys": changed_keys})
@@ -9250,7 +9352,7 @@ def get_miners():
     try:
         # HA BACKUP SAFETY NET: Don't trigger miner polling on BACKUP nodes
         is_backup = ha_status_cache.get("enabled") and ha_status_cache.get("local_role") not in ("MASTER", "STANDALONE", "UNKNOWN")
-        if not is_backup and time.time() - miner_cache["last_update"] > 10:
+        if not is_backup and time.time() - miner_cache["last_update"] > 90:
             fetch_all_miners()
 
         # Get current block reward info
@@ -9463,6 +9565,7 @@ def reset_stats():
         with _lifetime_stats_lock:
             lifetime_stats = {
                 "total_shares": 0,
+                "total_pool_shares": 0,
                 "total_blocks": 0,
                 "best_share_difficulty": 0,
                 "uptime_start": time.time(),
@@ -10042,7 +10145,12 @@ def restart_device():
 
     try:
         # AxeOS-based miners (BitAxe, NMaxe, NerdQAxe, Hammer, Lucky Miner, Jingle, Zyber) use /api/system/restart
-        if device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"] or "axe" in device_type.lower():
+        if (device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"]
+                or "axe" in device_type.lower()
+                or device_type.startswith("qaxe")
+                or device_type.startswith("lucky miner")
+                or device_type.startswith("jingle miner")
+                or device_type.startswith("zyber")):
             response = requests.post(f"http://{ip}/api/system/restart", timeout=5)
             if response.status_code == 200:
                 return jsonify({"success": True, "message": f"Restart command sent to {name}"})
@@ -10139,7 +10247,12 @@ def update_device_frequency():
 
     try:
         # AxeOS-based miners use PATCH /api/system with frequency parameter
-        if device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"] or "axe" in device_type.lower():
+        if (device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"]
+                or "axe" in device_type.lower()
+                or device_type.startswith("qaxe")
+                or device_type.startswith("lucky miner")
+                or device_type.startswith("jingle miner")
+                or device_type.startswith("zyber")):
             # First get current settings
             get_resp = requests.get(f"http://{ip}/api/system", timeout=5)
             if get_resp.status_code != 200:
@@ -10222,7 +10335,12 @@ def overclock_device():
 
     try:
         # AxeOS-based miners use PATCH /api/system
-        if device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"] or "axe" in device_type.lower():
+        if (device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"]
+                or "axe" in device_type.lower()
+                or device_type.startswith("qaxe")
+                or device_type.startswith("lucky miner")
+                or device_type.startswith("jingle miner")
+                or device_type.startswith("zyber")):
             # Get current settings first
             get_resp = requests.get(f"http://{ip}/api/system", timeout=5)
             if get_resp.status_code != 200:
@@ -10605,7 +10723,7 @@ def get_combined_stats():
     """
     # HA BACKUP SAFETY NET: Don't trigger miner polling on BACKUP nodes
     is_backup = ha_status_cache.get("enabled") and ha_status_cache.get("local_role") not in ("MASTER", "STANDALONE", "UNKNOWN")
-    if not is_backup and time.time() - miner_cache["last_update"] > 10:
+    if not is_backup and time.time() - miner_cache["last_update"] > 90:
         fetch_all_miners()
 
     pool_stats = fetch_pool_stats()
@@ -11249,6 +11367,11 @@ def get_stratum_address():
     """
     import socket
 
+    # Under gunicorn, __main__ is never executed, so load_multi_coin_config() is not
+    # called at startup. Lazy-init here so MULTI_COIN_NODES has RPC credentials loaded.
+    if not _multi_coin_config_loaded:
+        load_multi_coin_config()
+
     # Security: Log access for audit trail
     client_ip = request.remote_addr or "unknown"
     app.logger.info(f"Stratum address requested from {client_ip}")
@@ -11357,16 +11480,27 @@ def get_stratum_address():
         if os.path.exists(POOL_CONFIG_PATH):
             with open(POOL_CONFIG_PATH, 'r') as f:
                 config = yaml.safe_load(f)
-                pools = config.get('pools', [])
-                for pool in pools:
+                # config.yaml uses 'coins' key (written by save_pool_coin_config).
+                # Some stratum-native configs use 'pools' key — check both.
+                raw_entries = config.get('coins', []) or config.get('pools', [])
+                for pool in raw_entries:
                     if not isinstance(pool, dict):
                         continue
+                    # Dashboard 'coins' format: {symbol, address, ...}
+                    # Stratum 'pools' format: {coin: {type: "DGB"}, address: "..."}
                     coin_info_cfg = pool.get('coin', {})
-                    if isinstance(coin_info_cfg, dict):
-                        coin_type = coin_info_cfg.get('type', '').upper()
-                    elif isinstance(coin_info_cfg, str):
-                        coin_type = coin_info_cfg.upper()
+                    if coin_info_cfg:
+                        # Stratum-native format: coin.type
+                        if isinstance(coin_info_cfg, dict):
+                            coin_type = coin_info_cfg.get('type', '').upper()
+                        elif isinstance(coin_info_cfg, str):
+                            coin_type = coin_info_cfg.upper()
+                        else:
+                            continue
                     else:
+                        # Dashboard format: symbol key at top level
+                        coin_type = pool.get('symbol', '').upper()
+                    if not coin_type:
                         continue
 
                     # SECURITY: Validate coin type against whitelist (A03)
@@ -12256,7 +12390,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v1.0 BLACKICE"},
+        "footer": {"text": f"Spiral Pool v1.1.0 PHI FORGE"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -12656,8 +12790,12 @@ def get_axeos_stats():
     # Get system info from AxeOS API
     system_info = axeos_api_call(ip, "/api/system/info")
 
-    # Get current status
-    status = axeos_api_call(ip, "/api/system")
+    # Get current status (standard AxeOS only — NMAxe doesn't have /api/system)
+    is_nmaxe_device = (
+        str(system_info.get('hwModel', '')).upper() == 'NMAXE' or
+        isinstance(system_info.get('stratum'), dict)
+    )
+    status = system_info if is_nmaxe_device else axeos_api_call(ip, "/api/system")
 
     # Combine into unified response
     result = {
@@ -12668,71 +12806,93 @@ def get_axeos_stats():
         "status": status
     }
 
-    # Extract key metrics if available
+    # Extract key metrics — NMAxe uses different field names from standard AxeOS
     if not status.get("error"):
-        result["hashrate_ghs"] = status.get("hashRate", 0) / 1e9 if status.get("hashRate") else 0
-        result["temp"] = status.get("temp", 0)
-        # Use fanPercent if available, otherwise fanspeed (can't use `or` - 0 is valid)
-        fan_pct = status.get("fanPercent")
-        result["fan_percent"] = fan_pct if fan_pct is not None else status.get("fanspeed", 0)
-        # Use coreVoltage if available, otherwise voltage (can't use `or` - 0 is valid)
-        core_v = status.get("coreVoltage")
-        result["voltage"] = core_v if core_v is not None else status.get("voltage", 0)
-        result["frequency"] = status.get("frequency", 0)
-        result["best_diff"] = status.get("bestDiff", "0")
-        result["shares_accepted"] = status.get("sharesAccepted", 0)
-        result["shares_rejected"] = status.get("sharesRejected", 0)
-        result["uptime"] = status.get("uptimeSeconds", 0)
-        result["power_watts"] = status.get("power", 0)
-        result["efficiency"] = status.get("efficiency", 0)  # J/TH
+        if is_nmaxe_device:
+            result["hashrate_ghs"] = status.get("hashRate", 0)
+            result["temp"] = status.get("asicTemp", 0)
+            fans_list = status.get('fans', [])
+            result["fan_percent"] = fans_list[0].get('rpm', 0) if fans_list else 0
+            result["voltage"] = status.get("vcoreActual", status.get("vcoreReq", 0))
+            result["frequency"] = status.get("freqReq", 0)
+            result["best_diff"] = status.get("bestDiffEver", "0")
+            result["shares_accepted"] = status.get("sharesAccepted", 0)
+            result["shares_rejected"] = status.get("sharesRejected", 0)
+            result["uptime"] = status.get("uptimeSeconds", 0)
+            result["power_watts"] = status.get("power", 0)
+            result["efficiency"] = status.get("efficiency", 0)
+        else:
+            result["hashrate_ghs"] = status.get("hashRate", 0) / 1e9 if status.get("hashRate") else 0
+            result["temp"] = status.get("temp", 0)
+            # Use fanPercent if available, otherwise fanspeed (can't use `or` - 0 is valid)
+            fan_pct = status.get("fanPercent")
+            result["fan_percent"] = fan_pct if fan_pct is not None else status.get("fanspeed", 0)
+            # Use coreVoltage if available, otherwise voltage (can't use `or` - 0 is valid)
+            core_v = status.get("coreVoltage")
+            result["voltage"] = core_v if core_v is not None else status.get("voltage", 0)
+            result["frequency"] = status.get("frequency", 0)
+            result["best_diff"] = status.get("bestDiff", "0")
+            result["shares_accepted"] = status.get("sharesAccepted", 0)
+            result["shares_rejected"] = status.get("sharesRejected", 0)
+            result["uptime"] = status.get("uptimeSeconds", 0)
+            result["power_watts"] = status.get("power", 0)
+            result["efficiency"] = status.get("efficiency", 0)  # J/TH
 
     # Detect device type from system info
     if not system_info.get("error"):
-        hostname = (system_info.get("hostname") or "").lower()
-        version = (system_info.get("version") or "").lower()
-        board_version = (system_info.get("boardVersion") or system_info.get("board") or "").lower()
-        asic_model = (system_info.get("ASICModel") or "").lower()
-        # Check if stratum URL format gives us a hint - NerdQAxe uses hostname-only
-        stratum_url = (system_info.get("stratumURL") or "").lower()
-        is_hostname_only_stratum = stratum_url and not stratum_url.startswith("stratum")
-
-        # BitAxe GT (Gamma Turbo) 801 detection - MUST check BEFORE NerdQAxe
-        # GT uses BM1370 chips but is NOT a NerdQAxe device
-        # GT has 2x BM1370 chips, ~2.15 TH/s, 43W
-        if ('gt' in board_version or '801' in board_version or
-            'turbo' in board_version or 'gamma turbo' in board_version or
-            'gt' in hostname or '801' in hostname):
-            result["device_type"] = "axeos"
-            result["model"] = "BitAxe GT 801"
-        # NerdQAxe++ detection
-        # NerdQAxe++ uses hostname-only format (no stratum+tcp://)
-        # Check multiple fields for better detection:
-        # - boardVersion/hostname containing "nerd"
-        # - Stratum URL being hostname-only (no protocol prefix)
-        # Note: Do NOT use BM1370 chip alone - many non-NerdQAxe devices use BM1370
-        elif ("nerdqaxe" in hostname or "nerdqaxe" in version or
-            "nerd" in board_version or "nerdqaxe" in board_version or
-            "nerdqaxe" in asic_model or "nerd" in asic_model or
-            is_hostname_only_stratum):
-            result["device_type"] = "nerdqaxe"  # Lowercase for API matching
-            result["model"] = "NerdQAxe++"
-        elif "nmaxe" in hostname or "nmaxe" in version:
+        # NMAxe firmware exposes hwModel directly
+        if is_nmaxe_device:
             result["device_type"] = "NMaxe"
             result["model"] = "NMaxe"
-        elif "gamma" in hostname or "gamma" in version:
-            result["device_type"] = "BitAxe Gamma"
-            result["model"] = "BitAxe Gamma"
-        elif "supra" in hostname or "supra" in version:
-            result["device_type"] = "BitAxe Supra"
-            result["model"] = "BitAxe Supra"
-        elif "ultra" in hostname or "ultra" in version:
-            result["device_type"] = "BitAxe Ultra"
-            result["model"] = "BitAxe Ultra"
-        elif "hex" in hostname or "hex" in version:
-            result["device_type"] = "BitAxe Hex"
-            result["model"] = "BitAxe Hex"
+            result["version"] = system_info.get("fwVersion", "Unknown")
+            stratum = system_info.get('stratum', {})
+            result["pool_url"] = stratum.get('used', {}).get('url', '')
         else:
-            result["model"] = system_info.get("ASICModel", "Unknown AxeOS")
+            hostname = (system_info.get("hostname") or "").lower()
+            version = (system_info.get("version") or "").lower()
+            board_version = (system_info.get("boardVersion") or system_info.get("board") or "").lower()
+            asic_model = (system_info.get("ASICModel") or "").lower()
+            # Check if stratum URL format gives us a hint - NerdQAxe uses hostname-only
+            stratum_url = (system_info.get("stratumURL") or "").lower()
+            is_hostname_only_stratum = stratum_url and not stratum_url.startswith("stratum")
+
+            # BitAxe GT (Gamma Turbo) 801 detection - MUST check BEFORE NerdQAxe
+            # GT uses BM1370 chips but is NOT a NerdQAxe device
+            # GT has 2x BM1370 chips, ~2.15 TH/s, 43W
+            if ('gt' in board_version or '801' in board_version or
+                'turbo' in board_version or 'gamma turbo' in board_version or
+                'gt' in hostname or '801' in hostname):
+                result["device_type"] = "axeos"
+                result["model"] = "BitAxe GT 801"
+            # NerdQAxe++ detection
+            # NerdQAxe++ uses hostname-only format (no stratum+tcp://)
+            # Check multiple fields for better detection:
+            # - boardVersion/hostname containing "nerd"
+            # - Stratum URL being hostname-only (no protocol prefix)
+            # Note: Do NOT use BM1370 chip alone - many non-NerdQAxe devices use BM1370
+            elif ("nerdqaxe" in hostname or "nerdqaxe" in version or
+                "nerd" in board_version or "nerdqaxe" in board_version or
+                "nerdqaxe" in asic_model or "nerd" in asic_model or
+                is_hostname_only_stratum):
+                result["device_type"] = "nerdqaxe"  # Lowercase for API matching
+                result["model"] = "NerdQAxe++"
+            elif "nmaxe" in hostname or "nmaxe" in version:
+                result["device_type"] = "NMaxe"
+                result["model"] = "NMaxe"
+            elif "gamma" in hostname or "gamma" in version:
+                result["device_type"] = "BitAxe Gamma"
+                result["model"] = "BitAxe Gamma"
+            elif "supra" in hostname or "supra" in version:
+                result["device_type"] = "BitAxe Supra"
+                result["model"] = "BitAxe Supra"
+            elif "ultra" in hostname or "ultra" in version:
+                result["device_type"] = "BitAxe Ultra"
+                result["model"] = "BitAxe Ultra"
+            elif "hex" in hostname or "hex" in version:
+                result["device_type"] = "BitAxe Hex"
+                result["model"] = "BitAxe Hex"
+            else:
+                result["model"] = system_info.get("ASICModel", "Unknown AxeOS")
 
     return jsonify(result)
 
@@ -15537,7 +15697,7 @@ def get_power_stats():
     # Calculate efficiency (J/TH)
     efficiency_jth = (total_watts / total_hashrate_ths) if total_hashrate_ths > 0 else 0
 
-    # Get current coin info for profitability (dynamic, supports all 13 coins)
+    # Get current coin info for profitability (dynamic, supports all 14 coins)
     # Use power_cost currency for profitability calculations (or CAD fallback)
     power_currency = power_config.get("currency", "CAD").upper()
     cur_meta = DASHBOARD_CURRENCIES.get(power_currency, DASHBOARD_CURRENCIES["CAD"])
@@ -15652,6 +15812,11 @@ def get_power_efficiency():
 @socketio.on('connect')
 def handle_connect():
     """Handle WebSocket client connection"""
+    # SECURITY (F-01): Reject unauthenticated WebSocket connections.
+    # Flask-SocketIO does NOT automatically enforce Flask-Login sessions —
+    # auth must be checked explicitly here. Returning False disconnects the client.
+    if AUTH_ENABLED and not current_user.is_authenticated:
+        return False
     with _ws_lock:
         websocket_clients["count"] += 1
     emit('connected', {

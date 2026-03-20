@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v1.0 - BLACKICE EDITION                                    ║
+║  Spiral Sentinel v1.1.0 - PHI FORGE EDITION                                 ║
 ║  Autonomous SHA-256 Solo Mining Monitor (DGB/BTC/BCH/BC2)                   ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,10 +28,10 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "1.0-BLACKICE"
-__codename__ = "BLACKICE"
+__version__ = "1.1.0-PHI_FORGE"
+__codename__ = "PHI_FORGE"
 
-import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re
+import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
 from urllib.parse import urlparse, quote as url_quote
 import logging
 
@@ -733,6 +733,7 @@ DEFAULT_CONFIG = {
     "telegram_bot_token": "",          # Get from @BotFather on Telegram
     "telegram_chat_id": "",            # Your chat/group/channel ID
     "telegram_enabled": False,         # Enable Telegram notifications
+    "telegram_commands_enabled": True, # Enable /status /miners /hashrate /blocks bot commands (requires telegram_enabled)
     # XMPP notifications (optional) — requires slixmpp (pip install slixmpp)
     "xmpp_jid": "",                    # Bot's JID (e.g. sentinel@yourserver.com)
     "xmpp_password": "",               # Bot's password
@@ -740,6 +741,21 @@ DEFAULT_CONFIG = {
     "xmpp_use_tls": True,             # Use TLS encryption
     "xmpp_muc": False,                # True if recipient is a MUC (group chat) room
     "xmpp_enabled": False,            # Enable XMPP notifications
+    # ntfy notifications (optional) — free push notifications, no account required
+    "ntfy_url": "",                    # ntfy topic URL (e.g. https://ntfy.sh/your_topic or https://your-ntfy-server.com/your_topic)
+    "ntfy_token": "",                  # Optional auth token (required for private topics or self-hosted servers)
+    # Email / SMTP notifications (optional) — stored in config.json (chmod 600, spiraluser only)
+    "smtp_host": "",                   # SMTP server hostname (e.g. smtp.gmail.com)
+    "smtp_port": 587,                  # 587 = STARTTLS (recommended), 465 = SSL/TLS, 25 = plain
+    "smtp_username": "",               # SMTP login username / email address
+    "smtp_password": "",               # SMTP login password or app-specific password
+    "smtp_from": "",                   # From address (defaults to smtp_username if blank)
+    "smtp_to": "",                     # Recipient address(es) — comma-separated for multiple
+    "smtp_use_tls": True,              # Use STARTTLS (port 587). Set False for SSL (port 465)
+    "smtp_enabled": False,             # Enable email notifications
+    # Sentinel health endpoint — lightweight HTTP status on loopback
+    "sentinel_health_enabled": True,   # Expose GET /health and GET /cooldowns on localhost
+    "sentinel_health_port": 9191,      # Port for health endpoint (loopback only, not exposed externally)
     # General settings
     "wallet_address": "YOUR_DGB_ADDRESS",  # Legacy: single-coin DGB address
     "check_interval": 120,
@@ -791,7 +807,7 @@ DEFAULT_CONFIG = {
     # Set to 0 to disable throttling for a specific alert type
     # Values are in seconds (e.g., 3600 = 1 hour)
     "alert_cooldowns": {
-        "hashrate_crash": 3600,      # 1 hour - network crash alerts
+        "hashrate_crash": 21600,     # 6 hours - network crash alerts
         "miner_offline": 0,          # No cooldown - always alert immediately
         "miner_online": 0,           # No cooldown - always alert immediately
         "miner_reboot": 600,         # 10 min - reboot detection
@@ -804,6 +820,12 @@ DEFAULT_CONFIG = {
         "block_found": 0,            # No cooldown - always celebrate blocks!
         "sats_surge": 0,             # No cooldown - surge check has internal cooldown per coin
         "wallet_drop": 3600,         # 1 hour - prevent repeated alerts on fluctuating balance
+        "dry_streak": 21600,         # 6 hours - extended dry streak without blocks
+        "difficulty_change": 3600,   # 1 hour - network difficulty change alerts
+        "disk_warning": 3600,        # 1 hour - disk space warning
+        "disk_critical": 300,        # 5 min - disk space critical
+        "mempool_congestion": 3600,  # 1 hour - BTC mempool congestion
+        "backup_stale": 86400,       # 24 hours - stale backup alert (re-alert daily)
     },
     # Wallet balance drop alert - alerts when solo mining wallet loses funds unexpectedly
     "wallet_drop_alert_enabled": True,
@@ -862,6 +884,48 @@ DEFAULT_CONFIG = {
     "display_timezone": "America/New_York",    # IANA timezone for user-facing times
     # Alert theme: "cyberpunk" (skulls, choom, edgy) or "professional" (clean, enterprise)
     "alert_theme": "cyberpunk",
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SCHEDULED MAINTENANCE WINDOWS — Suppress alerts during planned downtime
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # Each window: {"start": "HH:MM", "end": "HH:MM", "days": [0-6], "reason": "..."}
+    # days: 0=Monday, 6=Sunday. Omit "days" key to apply every day.
+    # Example — weekly backup window every Sunday 02:00–04:00:
+    #   {"start": "02:00", "end": "04:00", "days": [6], "reason": "Weekly backup"}
+    "scheduled_maintenance_windows": [],
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # DRY STREAK ALERTING — Alert when no block found for an extended period
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "dry_streak_enabled": True,            # Alert when no block found for too long
+    "dry_streak_multiplier": 3,            # Alert after N × expected interval without a block
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # NETWORK DIFFICULTY CHANGE ALERTS — Alert on significant difficulty swings
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "difficulty_alert_enabled": True,      # Alert on large difficulty changes
+    "difficulty_alert_threshold_pct": 25,  # Alert when difficulty drifts this % from the baseline at last alert (not tick-to-tick)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # DISK SPACE MONITORING — Alert when disk usage exceeds thresholds
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "disk_monitor_enabled": True,          # Enable disk space monitoring
+    "disk_warn_pct": 85,                   # Warning threshold (%)
+    "disk_critical_pct": 95,              # Critical threshold (%)
+    "disk_monitor_paths": ["/", "/spiralpool", "/var"],  # Mount points to monitor
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # MEMPOOL CONGESTION ALERT (BTC) — Alert when Bitcoin mempool is congested
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "mempool_alert_enabled": True,         # Enable BTC mempool congestion alerting
+    "mempool_alert_threshold": 50000,      # Alert when mempool exceeds N transactions
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BACKUP STALENESS ALERT — Alert when no recent backup exists
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "backup_stale_enabled": True,          # Alert if newest backup is older than threshold
+    "backup_stale_days": 2,                # Days before backup is considered stale
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # HIGH AVAILABILITY (HA) TUNING
+    # ═══════════════════════════════════════════════════════════════════════════════
+    "ha_role_change_confirm_secs": 90,     # Seconds a role change must hold before alerting.
+                                           # Suppresses brief keepalived VRRP election blips
+                                           # (MASTER→BACKUP→MASTER within N seconds).
+                                           # Real failovers hold indefinitely; blips self-resolve.
     # ═══════════════════════════════════════════════════════════════════════════════
     # MULTI-COIN SUPPORT (V2) + AUTO-DETECTION
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -1232,6 +1296,14 @@ def load_config():
         "XMPP_JID": "xmpp_jid",
         "XMPP_PASSWORD": "xmpp_password",
         "XMPP_RECIPIENT": "xmpp_recipient",
+        "NTFY_URL": "ntfy_url",
+        "NTFY_TOKEN": "ntfy_token",
+        "SMTP_HOST": "smtp_host",
+        "SMTP_PORT": "smtp_port",
+        "SMTP_USERNAME": "smtp_username",
+        "SMTP_PASSWORD": "smtp_password",
+        "SMTP_FROM": "smtp_from",
+        "SMTP_TO": "smtp_to",
         "EXPECTED_FLEET_THS": "expected_fleet_ths",
         "WALLET_ADDRESS": "wallet_address",
         "DGB_WALLET_ADDRESS": "wallet_address",  # Alias for multi-coin
@@ -1246,10 +1318,15 @@ def load_config():
                     config[config_key] = float(env_value)
                 except ValueError:
                     pass
+            elif config_key == "smtp_port":
+                try:
+                    config[config_key] = int(env_value)
+                except ValueError:
+                    pass
             else:
                 config[config_key] = env_value
             # AUDIT FIX (CR-1): Never log credential values — mask sensitive env overrides
-            _sensitive_keys = {"pool_admin_api_key", "discord_webhook_url", "telegram_bot_token", "xmpp_password"}
+            _sensitive_keys = {"pool_admin_api_key", "discord_webhook_url", "telegram_bot_token", "xmpp_password", "smtp_password", "ntfy_token"}
             if config_key in _sensitive_keys:
                 logger.info(f"Config override from env: {config_key}=****")
             else:
@@ -1438,6 +1515,7 @@ def get_coin_emoji(symbol):
         "SYS": "⚙️",  # Syscoin - gear (platform)
         "XMY": "🌀",  # Myriad - spiral (multi-algo)
         "FBTC": "🔶",  # Fractal Bitcoin - orange diamond
+        "QBX": "⚛️",   # Q-BitX - atom (post-quantum)
         # Scrypt coins
         "LTC": "🥈",  # Litecoin - silver
         "DOGE": "🐕",  # Dogecoin - doge
@@ -1461,6 +1539,7 @@ def get_coin_name(symbol):
         "SYS": "Syscoin",
         "XMY": "Myriad",
         "FBTC": "Fractal Bitcoin",
+        "QBX": "Q-BitX",
         # Scrypt coins
         "LTC": "Litecoin",
         "DOGE": "Dogecoin",
@@ -1685,6 +1764,7 @@ def discover_active_aux_pools(parent_symbol):
             "PEPECOIN": "PEP", "CATCOIN": "CAT",
             "NAMECOIN": "NMC", "SYSCOIN": "SYS", "MYRIADCOIN": "XMY",
             "MYRIAD": "XMY", "FRACTALBITCOIN": "FBTC", "FRACTAL": "FBTC",
+            "QBITX": "QBX", "Q-BITX": "QBX",
         }
 
         # Build symbol -> pool_id from API response
@@ -2481,7 +2561,7 @@ def create_coin_change_embed(old_coin, new_coin, new_config=None):
             "stratum_v2": new_config.get("stratum_v2_port", "unknown")
         }
     else:
-        # Fallback defaults for all 13 supported coins (only used if no config available)
+        # Fallback defaults for all 14 supported coins (only used if no config available)
         default_ports = {
             # SHA-256d coins
             "DGB": {"stratum": 3333, "stratum_v2": 3334},
@@ -3145,6 +3225,552 @@ def handle_coin_health_alerts(health_results, state):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# STUCK SYNC DETECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+# Alert when a coin's blockchain hasn't advanced for STUCK_SYNC_THRESHOLD_SECS
+# while still in initial sync.  Catches bad peers, network failures, and hung
+# daemons that would otherwise be silent for hours on a fresh node.
+
+STUCK_SYNC_THRESHOLD_SECS = 1800   # 30 min with no block progress = stuck
+STUCK_SYNC_ALERT_COOLDOWN_SECS = 3600  # Re-alert at most once per hour per coin
+
+_sync_progress_history = {}
+# Per coin: {"blocks": int, "last_change": float, "alerted_at": float, "progress": float}
+
+_last_known_difficulty = {}
+# Per coin symbol: last observed network difficulty (float)
+
+_dry_streak_tracking = {}
+# Per coin symbol: {"last_block_time": float, "alerted_at": float}
+
+_stratum_down_since = None
+# float timestamp when pool API first became unreachable, or None when healthy
+_stratum_down_alerted = False
+# True after the initial stratum_down alert has fired (avoids repeat alerts per outage)
+
+
+def _get_coin_sync_state(coin_config):
+    """Return (blocks, progress) from getblockchaininfo for a coin, or (None, None) on error."""
+    rpc_port = coin_config.get("rpc_port")
+    if not rpc_port:
+        return None, None
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{rpc_port}",
+            data=json.dumps({"method": "getblockchaininfo", "params": [], "id": 1}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode())
+            r = result.get("result", {})
+            return r.get("blocks", 0), r.get("verificationprogress", 0.0)
+    except Exception:
+        return None, None
+
+
+def create_stuck_sync_embed(coin_symbol, coin_name, blocks, progress_pct, stuck_minutes):
+    """Discord embed for a coin whose initial sync has made no progress."""
+    coin_emoji = get_coin_emoji(coin_symbol)
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+
+    desc = f"""```diff
+- {coin_symbol} BLOCKCHAIN SYNC STALLED
+```
+
+{coin_emoji} **{coin_name}** initial sync has made **no progress for {stuck_minutes} minutes**.
+
+**Current block:** `{blocks:,}`
+**Sync progress:** `{progress_pct:.1f}%`
+
+This may indicate a network issue, bad peers, or a hung daemon.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Suggested actions:**
+• Check peers: `{coin_symbol.lower()}-cli getpeerinfo | grep synced`
+• Restart daemon: `spiralctl node restart {coin_symbol}`
+• Check logs: `journalctl -fu {coin_symbol.lower()}d --no-pager | tail -40`"""
+
+    fields = [
+        {"name": "Coin", "value": f"{coin_emoji} {coin_name}", "inline": True},
+        {"name": "Progress", "value": f"`{progress_pct:.1f}%`", "inline": True},
+        {"name": "Stalled", "value": f"`{stuck_minutes}m`", "inline": True},
+    ]
+
+    return _embed(
+        f"⏸️ {coin_symbol} Sync Stalled",
+        desc, COLORS["yellow"], fields,
+        footer=f"🌀 Spiral Sentinel v{__version__} • Detected at {ts}",
+    )
+
+
+def check_stuck_syncs(state):
+    """Check all enabled coins for stalled initial syncs and alert if stuck."""
+    now = time.time()
+    for coin in get_enabled_coins():
+        symbol = coin.get("symbol", "UNKNOWN").upper()
+        blocks, progress = _get_coin_sync_state(coin)
+
+        # Skip coins we can't reach or that are already fully synced
+        if blocks is None or progress is None:
+            continue
+        if progress >= 0.9999:
+            _sync_progress_history.pop(symbol, None)
+            continue
+
+        hist = _sync_progress_history.get(symbol)
+        if hist is None:
+            # First observation — record baseline, don't alert yet
+            _sync_progress_history[symbol] = {
+                "blocks": blocks, "last_change": now,
+                "alerted_at": 0.0, "progress": progress,
+            }
+            continue
+
+        if blocks > hist["blocks"]:
+            # Progress made — reset the clock
+            hist["blocks"] = blocks
+            hist["last_change"] = now
+            hist["progress"] = progress
+            continue
+
+        # No progress — check if we've been stuck long enough to alert
+        stuck_secs = now - hist["last_change"]
+        if stuck_secs < STUCK_SYNC_THRESHOLD_SECS:
+            continue
+
+        # Respect cooldown — don't spam
+        if now - hist.get("alerted_at", 0.0) < STUCK_SYNC_ALERT_COOLDOWN_SECS:
+            continue
+
+        stuck_minutes = int(stuck_secs // 60)
+        progress_pct = progress * 100
+        coin_name = get_coin_name(symbol)
+        embed = create_stuck_sync_embed(symbol, coin_name, blocks, progress_pct, stuck_minutes)
+        send_alert("coin_sync_behind", embed, state)
+        hist["alerted_at"] = now
+        logger.warning(f"Stuck sync alert: {symbol} at block {blocks:,} ({progress_pct:.1f}%) — no progress for {stuck_minutes}m")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DRY STREAK ALERTING — no block found for N × expected interval
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_dry_streak_embed(coin_symbol, coin_name, elapsed_hrs, expected_hrs, multiplier):
+    """Discord embed for a coin that hasn't found a block in an unusually long time."""
+    coin_emoji = get_coin_emoji(coin_symbol)
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    desc = (
+        f"```diff\n- {coin_symbol} DRY STREAK DETECTED\n```\n"
+        f"{coin_emoji} **{coin_name}** has not found a block in **{elapsed_hrs:.1f} hours**.\n\n"
+        f"Expected interval: ~**{expected_hrs:.1f}h** · Current streak: **{elapsed_hrs:.1f}h** "
+        f"(**{elapsed_hrs/expected_hrs:.1f}×** expected)\n\n"
+        f"This is statistical variance — keep mining! Your odds reset with every share."
+    )
+    fields = [
+        {"name": "Coin", "value": f"{coin_emoji} {coin_name}", "inline": True},
+        {"name": "Elapsed", "value": f"`{elapsed_hrs:.1f}h`", "inline": True},
+        {"name": "Threshold", "value": f"`{multiplier}× expected`", "inline": True},
+    ]
+    return _embed(
+        f"🌵 {coin_symbol} Dry Streak",
+        desc, COLORS["yellow"], fields,
+        footer=f"🌀 Spiral Sentinel v{__version__} • {ts}",
+    )
+
+
+def check_dry_streak(state):
+    """Alert when a coin has gone significantly longer than expected without finding a block."""
+    if not CONFIG.get("dry_streak_enabled", True):
+        return
+    multiplier = CONFIG.get("dry_streak_multiplier", 3)
+    now = time.time()
+    enabled_coins = get_enabled_coins()
+
+    for coin in enabled_coins:
+        symbol = coin.get("symbol", "UNKNOWN").upper()
+        try:
+            pool_data = fetch_pool_stats_for_coin(coin)
+            if not pool_data:
+                continue
+
+            # Get pool hashrate (H/s) and network difficulty
+            pool_stats = pool_data.get("poolStats", {})
+            pool_hashrate_hps = pool_stats.get("poolHashrate", 0)
+            network_diff = pool_data.get("networkDifficulty", 0)
+
+            if pool_hashrate_hps <= 0 or network_diff <= 0:
+                continue
+
+            # Expected time to block = (difficulty * 2^32) / pool_hashrate
+            expected_secs = (network_diff * (2 ** 32)) / pool_hashrate_hps
+            expected_hrs = expected_secs / 3600
+
+            # Determine last block time: prefer state.block_history per coin, else pool API
+            last_block_t = None
+            for entry in reversed(state.block_history):
+                if entry.get("coin", "").upper() == symbol:
+                    last_block_t = entry["t"]
+                    break
+
+            if last_block_t is None:
+                # Try pool API lastPoolBlockTime (Unix timestamp)
+                last_pool_block = pool_stats.get("lastPoolBlockTime") or pool_data.get("lastPoolBlockTime")
+                if last_pool_block:
+                    try:
+                        import datetime as _dt
+                        if isinstance(last_pool_block, str):
+                            # ISO format
+                            lb_dt = _dt.datetime.fromisoformat(last_pool_block.replace("Z", "+00:00"))
+                            last_block_t = lb_dt.timestamp()
+                        elif isinstance(last_pool_block, (int, float)):
+                            last_block_t = float(last_pool_block)
+                    except Exception:
+                        pass
+
+            # Track initial observation per coin
+            tracking = _dry_streak_tracking.get(symbol)
+            if last_block_t is None:
+                # No block data yet — record sentinel start time as baseline
+                if tracking is None:
+                    _dry_streak_tracking[symbol] = {"last_block_time": now, "alerted_at": 0.0}
+                continue
+
+            # Update last known block time if we have newer data
+            if tracking is None:
+                _dry_streak_tracking[symbol] = {"last_block_time": last_block_t, "alerted_at": 0.0}
+                tracking = _dry_streak_tracking[symbol]
+            elif last_block_t > tracking["last_block_time"]:
+                tracking["last_block_time"] = last_block_t
+                tracking["alerted_at"] = 0.0  # Reset alert when a new block is found
+
+            elapsed_secs = now - tracking["last_block_time"]
+            threshold_secs = expected_secs * multiplier
+
+            if elapsed_secs < threshold_secs:
+                continue
+
+            # Check cooldown
+            cooldown = ALERT_COOLDOWNS.get("dry_streak", 21600)
+            if now - tracking.get("alerted_at", 0.0) < cooldown:
+                continue
+
+            elapsed_hrs = elapsed_secs / 3600
+            coin_name = get_coin_name(symbol)
+            embed = create_dry_streak_embed(symbol, coin_name, elapsed_hrs, expected_hrs, multiplier)
+            # Pass state=None: cooldown is tracked per-coin via _dry_streak_tracking above,
+            # so we bypass the generic rate limiter which would block subsequent coins.
+            send_alert("dry_streak", embed, None)
+            tracking["alerted_at"] = now
+            logger.warning(f"Dry streak alert: {symbol} — {elapsed_hrs:.1f}h without a block ({multiplier}× threshold)")
+
+        except Exception as e:
+            logger.warning(f"Dry streak check error ({symbol}): {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NETWORK DIFFICULTY CHANGE ALERTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_difficulty_change_embed(coin_symbol, coin_name, old_diff, new_diff, pct_change):
+    """Discord embed for a significant network difficulty change."""
+    coin_emoji = get_coin_emoji(coin_symbol)
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    direction = "increased" if pct_change > 0 else "decreased"
+    direction_emoji = "📈" if pct_change > 0 else "📉"
+    impact = "harder to find blocks" if pct_change > 0 else "easier to find blocks — odds improved"
+    desc = (
+        f"{direction_emoji} **{coin_name}** network difficulty has {direction} by "
+        f"**{abs(pct_change):.1f}%**.\n\n"
+        f"Mining is now {impact}."
+    )
+    fields = [
+        {"name": "Previous", "value": f"`{format_difficulty(old_diff)}`", "inline": True},
+        {"name": "New", "value": f"`{format_difficulty(new_diff)}`", "inline": True},
+        {"name": "Change", "value": f"`{pct_change:+.1f}%`", "inline": True},
+    ]
+    return _embed(
+        f"{direction_emoji} {coin_symbol} Difficulty {direction.title()}",
+        desc, COLORS["yellow"] if pct_change > 0 else COLORS["green"], fields,
+        footer=f"🌀 Spiral Sentinel v{__version__} • {ts}",
+    )
+
+
+def check_difficulty_changes(state):
+    """Alert when network difficulty changes significantly for any enabled coin."""
+    if not CONFIG.get("difficulty_alert_enabled", True):
+        return
+    threshold_pct = CONFIG.get("difficulty_alert_threshold_pct", 25)
+    now = time.time()
+
+    for coin in get_enabled_coins():
+        symbol = coin.get("symbol", "UNKNOWN").upper()
+        try:
+            pool_data = fetch_pool_stats_for_coin(coin)
+            if not pool_data:
+                continue
+            network_diff = pool_data.get("networkDifficulty", 0)
+            if network_diff <= 0:
+                continue
+
+            old_diff = _last_known_difficulty.get(symbol)
+            if old_diff is None:
+                # First observation — store baseline, no alert
+                _last_known_difficulty[symbol] = network_diff
+                continue
+
+            pct_change = ((network_diff - old_diff) / old_diff) * 100
+
+            if abs(pct_change) < threshold_pct:
+                continue
+
+            alert_key = f"difficulty_change:{symbol}"
+            cooldown = ALERT_COOLDOWNS.get("difficulty_change", 3600)
+            if now - state.last_alerts.get(alert_key, 0) < cooldown:
+                continue
+
+            coin_name = get_coin_name(symbol)
+            embed = create_difficulty_change_embed(symbol, coin_name, old_diff, network_diff, pct_change)
+            # Pass state=None: cooldown is tracked per-coin above (alert_key includes symbol),
+            # so we bypass the generic rate limiter which uses a single key and would
+            # block alerts for subsequent coins in the same monitoring cycle.
+            send_alert("difficulty_change", embed, None)
+            state.last_alerts[alert_key] = now
+            # Update baseline only when alert fires — prevents tick-to-tick comparison spam
+            _last_known_difficulty[symbol] = network_diff
+            logger.info(f"Difficulty change alert: {symbol} {pct_change:+.1f}% "
+                        f"({format_difficulty(old_diff)} → {format_difficulty(network_diff)})")
+
+        except Exception as e:
+            logger.warning(f"Difficulty change check error ({symbol}): {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISK SPACE MONITORING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_disk_alert_embed(path, used_pct, used_gb, total_gb, level):
+    """Discord embed for disk space warning or critical alert."""
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    color = COLORS["red"] if level == "critical" else COLORS["yellow"]
+    emoji = "🚨" if level == "critical" else "⚠️"
+    desc = (
+        f"{emoji} Disk space on **`{path}`** is at **{used_pct:.1f}%**.\n\n"
+        f"Used: **{used_gb:.1f} GB** / **{total_gb:.1f} GB**\n\n"
+        + ("**CRITICAL**: Free space is dangerously low. Pool may stop accepting shares "
+           "if the database or chain data cannot grow." if level == "critical" else
+           "Consider cleaning up old logs or chain data before this becomes critical.")
+    )
+    fields = [
+        {"name": "Mount", "value": f"`{path}`", "inline": True},
+        {"name": "Used", "value": f"`{used_pct:.1f}%`", "inline": True},
+        {"name": "Free", "value": f"`{total_gb - used_gb:.1f} GB`", "inline": True},
+    ]
+    return _embed(
+        f"{emoji} Disk Space {level.title()}: {path}",
+        desc, color, fields,
+        footer=f"🌀 Spiral Sentinel v{__version__} • {ts}",
+    )
+
+
+def check_disk_space(state):
+    """Check monitored mount points for disk space warnings."""
+    if not CONFIG.get("disk_monitor_enabled", True):
+        return
+    warn_pct = CONFIG.get("disk_warn_pct", 85)
+    critical_pct = CONFIG.get("disk_critical_pct", 95)
+    monitor_paths = CONFIG.get("disk_monitor_paths", ["/", "/spiralpool", "/var"])
+    now = time.time()
+
+    for path in monitor_paths:
+        try:
+            st = os.statvfs(path)
+        except (OSError, AttributeError):
+            continue  # Path doesn't exist or OS doesn't support statvfs
+
+        total_bytes = st.f_frsize * st.f_blocks
+        free_bytes = st.f_frsize * st.f_bavail
+        used_bytes = total_bytes - free_bytes
+        if total_bytes <= 0:
+            continue
+
+        used_pct = (used_bytes / total_bytes) * 100
+        used_gb = used_bytes / (1024 ** 3)
+        total_gb = total_bytes / (1024 ** 3)
+
+        level = None
+        alert_key = None
+        if used_pct >= critical_pct:
+            level = "critical"
+            alert_key = f"disk_critical:{path}"
+            cooldown = ALERT_COOLDOWNS.get("disk_critical", 300)
+        elif used_pct >= warn_pct:
+            level = "warning"
+            alert_key = f"disk_warning:{path}"
+            cooldown = ALERT_COOLDOWNS.get("disk_warning", 3600)
+
+        if level is None:
+            continue
+
+        if now - state.last_alerts.get(alert_key, 0) < cooldown:
+            continue
+
+        embed = create_disk_alert_embed(path, used_pct, used_gb, total_gb, level)
+        alert_type = "disk_critical" if level == "critical" else "disk_warning"
+        # Pass state=None: cooldown is tracked per-path above, so we must bypass
+        # the generic rate limiter in send_alert which uses a single non-path key
+        # and would block alerts for subsequent paths in the same monitoring cycle.
+        send_alert(alert_type, embed, None)
+        state.last_alerts[alert_key] = now
+        logger.warning(f"Disk space {level}: {path} at {used_pct:.1f}% ({used_gb:.1f}/{total_gb:.1f} GB)")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MEMPOOL CONGESTION ALERT (BTC)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_btc_mempool_info():
+    """Fetch Bitcoin mempool info via direct JSON-RPC (no auth required on localhost)."""
+    btc_coin = get_coin_by_symbol("BTC")
+    if not btc_coin:
+        return None
+    rpc_port = btc_coin.get("rpc_port", 8332)
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{rpc_port}",
+            data=json.dumps({"method": "getmempoolinfo", "params": [], "id": 1}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode())
+            return result.get("result")
+    except Exception:
+        return None
+
+
+def create_mempool_embed(mempool_size, mempool_bytes, threshold):
+    """Discord embed for BTC mempool congestion alert."""
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    mempool_mb = mempool_bytes / (1024 * 1024) if mempool_bytes else 0
+    desc = (
+        f"₿ Bitcoin mempool has **{mempool_size:,} unconfirmed transactions** "
+        f"({mempool_mb:.1f} MB).\n\n"
+        f"This indicates high network congestion. Fee rates are likely elevated.\n"
+        f"Your mined blocks will earn above-average transaction fees."
+    )
+    fields = [
+        {"name": "Transactions", "value": f"`{mempool_size:,}`", "inline": True},
+        {"name": "Size", "value": f"`{mempool_mb:.1f} MB`", "inline": True},
+        {"name": "Threshold", "value": f"`{threshold:,} txns`", "inline": True},
+    ]
+    return _embed(
+        "🔴 BTC Mempool Congested",
+        desc, COLORS["orange"] if "orange" in COLORS else COLORS["yellow"], fields,
+        footer=f"🌀 Spiral Sentinel v{__version__} • {ts}",
+    )
+
+
+def check_mempool_congestion(state):
+    """Alert when BTC mempool is congested beyond threshold."""
+    if not CONFIG.get("mempool_alert_enabled", True):
+        return
+    threshold = CONFIG.get("mempool_alert_threshold", 50000)
+    now = time.time()
+
+    mempool = _get_btc_mempool_info()
+    if not mempool:
+        return
+
+    mempool_size = mempool.get("size", 0)
+    mempool_bytes = mempool.get("bytes", 0)
+
+    if mempool_size <= threshold:
+        return
+
+    alert_key = "mempool_congestion"
+    cooldown = ALERT_COOLDOWNS.get("mempool_congestion", 3600)
+    if now - state.last_alerts.get(alert_key, 0) < cooldown:
+        return
+
+    embed = create_mempool_embed(mempool_size, mempool_bytes, threshold)
+    send_alert("mempool_congestion", embed, state)
+    state.last_alerts[alert_key] = now
+    logger.info(f"BTC mempool congestion alert: {mempool_size:,} transactions (threshold: {threshold:,})")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKUP STALENESS CHECK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_newest_backup_time():
+    """Return mtime of the most recently modified file/directory under /spiralpool/backups/,
+    or None if the directory doesn't exist or is empty."""
+    backup_root = "/spiralpool/backups"
+    try:
+        entries = os.listdir(backup_root)
+    except OSError:
+        return None
+    if not entries:
+        return None
+    newest = max(
+        os.path.getmtime(os.path.join(backup_root, e))
+        for e in entries
+    )
+    return newest
+
+
+def create_backup_stale_embed(newest_mtime, stale_days):
+    """Yellow warning embed for stale (overdue) backup."""
+    import datetime as _dt
+    last_str = _dt.datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M") if newest_mtime else "never"
+    age_hours = (time.time() - newest_mtime) / 3600 if newest_mtime else None
+    if age_hours is None:
+        age_str = "never backed up"
+    elif age_hours >= 48:
+        age_str = f"{age_hours / 24:.1f} days ago"
+    else:
+        age_str = f"{age_hours:.1f} hours ago"
+    return _embed(
+        "⚠️ Backup Overdue",
+        f"No backup has completed in the last **{stale_days} day{'s' if stale_days != 1 else ''}**. "
+        f"Last backup: `{last_str}` ({age_str}).",
+        0xFFCC00,  # Yellow
+        fields=[
+            {"name": "📂 Backup Path", "value": "`/spiralpool/backups/`", "inline": True},
+            {"name": "🔧 Run Manual Backup", "value": "`sudo spiralctl backup`", "inline": True},
+        ],
+    )
+
+
+def check_backup_staleness(state):
+    """Alert if the newest backup is older than backup_stale_days."""
+    if not CONFIG.get("backup_stale_enabled", True):
+        return
+    # Only run if cron is installed (user opted in during install)
+    if not os.path.exists("/etc/cron.d/spiralpool-backup"):
+        return
+    stale_days = CONFIG.get("backup_stale_days", 2)
+    now = time.time()
+    alert_key = "backup_stale"
+    cooldown = ALERT_COOLDOWNS.get("backup_stale", 86400)
+    if now - state.last_alerts.get(alert_key, 0) < cooldown:
+        return
+
+    newest_mtime = _get_newest_backup_time()
+    if newest_mtime is None:
+        # No backups at all — also stale
+        send_alert("backup_stale", create_backup_stale_embed(None, stale_days), state)
+        state.last_alerts[alert_key] = now
+        logger.warning("Backup staleness alert: no backups found in /spiralpool/backups/")
+        return
+
+    age_days = (now - newest_mtime) / 86400
+    if age_days >= stale_days:
+        send_alert("backup_stale", create_backup_stale_embed(newest_mtime, stale_days), state)
+        state.last_alerts[alert_key] = now
+        logger.warning(f"Backup staleness alert: newest backup is {age_days:.1f} days old (threshold: {stale_days}d)")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HA/VIP CONNECTION ALERTS
 # ═══════════════════════════════════════════════════════════════════════════════
 # Monitor HA cluster status and VIP changes
@@ -3152,7 +3778,13 @@ def handle_coin_health_alerts(health_results, state):
 _last_ha_vip = None
 _last_ha_state = None
 _last_ha_role = None
-HA_VIP_CHECK_INTERVAL = 60  # Check HA/VIP every minute
+_pending_role_change = None  # {"old_role": str, "new_role": str, "detected_at": float} — awaiting confirmation
+HA_VIP_CHECK_INTERVAL = 30  # Check HA/VIP every 30s
+# Seconds a role change must persist before it is confirmed and alerted.
+# Suppresses brief keepalived VRRP election blips (MASTER→BACKUP→MASTER within N seconds).
+# Real failovers hold the new role indefinitely; blips self-resolve within seconds.
+# Default 90s: covers typical VRRP election re-convergence while still catching real outages promptly.
+HA_ROLE_CHANGE_CONFIRM_SECS = CONFIG.get("ha_role_change_confirm_secs", 90)
 _last_ha_vip_check = 0
 
 
@@ -3162,7 +3794,7 @@ def check_ha_vip_changes():
     Returns:
         dict: Change info or None if no changes
     """
-    global _last_ha_vip, _last_ha_state, _last_ha_role, _last_ha_vip_check
+    global _last_ha_vip, _last_ha_state, _last_ha_role, _last_ha_vip_check, _pending_role_change
 
     current_time = time.time()
     if current_time - _last_ha_vip_check < HA_VIP_CHECK_INTERVAL:
@@ -3201,23 +3833,71 @@ def check_ha_vip_changes():
                 "role": current_role,
             })
 
-        # Check for role change (MASTER <-> BACKUP, OBSERVER, etc.)
-        # Each node only tracks its own local_role — in a 3-4 node cluster,
-        # only nodes whose role actually changes will detect and alert.
-        if _last_ha_role is not None and current_role != _last_ha_role:
-            changes.append({
-                "type": "role_change",
+        # Check for role change — debounced to suppress brief VRRP blips.
+        # keepalived elections can cause MASTER→BACKUP→MASTER within seconds;
+        # alerting on these wakes operators for nothing.
+        #
+        # A role change is only confirmed (and alerted) once it has held for
+        # HA_ROLE_CHANGE_CONFIRM_SECS (default 90s). If the node reverts to its
+        # original role within that window, the blip is silently suppressed.
+        if _pending_role_change is not None:
+            elapsed = current_time - _pending_role_change["detected_at"]
+            if current_role == _pending_role_change["old_role"]:
+                # Reverted to original role — blip regardless of how long it took
+                logger.info(
+                    f"HA role blip suppressed: {_pending_role_change['old_role']} → "
+                    f"{_pending_role_change['new_role']} → {current_role} "
+                    f"(self-resolved in {elapsed:.0f}s)"
+                )
+                _pending_role_change = None
+            elif current_role != _pending_role_change["new_role"]:
+                # Changed to a third role while still pending — update target, reset timer
+                logger.info(
+                    f"HA role changed again while pending: "
+                    f"{_pending_role_change['new_role']} → {current_role} (resetting timer)"
+                )
+                _pending_role_change["new_role"] = current_role
+                _pending_role_change["detected_at"] = current_time
+            elif elapsed >= HA_ROLE_CHANGE_CONFIRM_SECS:
+                # Still at new_role and held long enough — confirmed real change
+                changes.append({
+                    "type": "role_change",
+                    "old_role": _pending_role_change["old_role"],
+                    "new_role": current_role,
+                })
+                logger.info(
+                    f"HA role change confirmed after {elapsed:.0f}s: "
+                    f"{_pending_role_change['old_role']} → {current_role}"
+                )
+                _pending_role_change = None
+            else:
+                # Still pending, debounce window not yet elapsed
+                logger.debug(
+                    f"HA role change pending: {_pending_role_change['old_role']} → {current_role} "
+                    f"({elapsed:.0f}s / {HA_ROLE_CHANGE_CONFIRM_SECS}s)"
+                )
+        elif _last_ha_role is not None and current_role != _last_ha_role:
+            # New role change detected — stage for timed confirmation, do not alert yet
+            logger.info(
+                f"HA role change detected (confirming in {HA_ROLE_CHANGE_CONFIRM_SECS}s): "
+                f"{_last_ha_role} → {current_role}"
+            )
+            _pending_role_change = {
                 "old_role": _last_ha_role,
                 "new_role": current_role,
-            })
+                "detected_at": current_time,
+            }
 
-        # Update tracked state
+        # Update tracked VIP and state immediately; role only advances when not
+        # in pending confirmation (keeps _last_ha_role at pre-change value so the
+        # next cycle can correctly detect a revert).
         old_vip = _last_ha_vip
         old_state = _last_ha_state
         old_role = _last_ha_role
         _last_ha_vip = current_vip
         _last_ha_state = current_state
-        _last_ha_role = current_role
+        if _pending_role_change is None:
+            _last_ha_role = current_role
 
         # Resolve local node's host IP from the cluster node list
         local_host = "unknown"
@@ -3419,6 +4099,37 @@ DEFAULT_BLOCK_REWARDS = {
     "LTC": 6.25, "DOGE": 10000, "DGB-SCRYPT": 277.38,
     "PEP": 50, "CAT": 25,
 }
+
+
+# Block explorer URL templates by coin.
+# {hash} is substituted with the block hash when available.
+# These are the canonical public explorers for each supported coin.
+BLOCK_EXPLORER_URLS = {
+    "BTC":       "https://mempool.space/block/{hash}",
+    "BCH":       "https://blockchair.com/bitcoin-cash/block/{hash}",
+    "BC2":       None,
+    "DGB":       "https://digiexplorer.info/block/{hash}",
+    "QBX":       None,
+    "NMC":       "https://bchain.info/NMC/block/{hash}",
+    "SYS":       "https://blockchair.com/syscoin/block/{hash}",
+    "XMY":       None,
+    "FBTC":      "https://explorer.fractalbitcoin.io/block/{hash}",
+    "LTC":       "https://blockchair.com/litecoin/block/{hash}",
+    "DOGE":      "https://blockchair.com/dogecoin/block/{hash}",
+    "DGB-SCRYPT": "https://digiexplorer.info/block/{hash}",
+    "PEP":       None,
+    "CAT":       None,
+}
+
+
+def get_block_explorer_url(coin_symbol, block_hash):
+    """Return a block explorer URL for the given coin and block hash, or None."""
+    if not block_hash or not coin_symbol:
+        return None
+    template = BLOCK_EXPLORER_URLS.get(coin_symbol.upper())
+    if not template:
+        return None
+    return template.format(hash=block_hash)
 
 
 def get_currency_meta(currency_code=None):
@@ -4245,6 +4956,41 @@ else:
 if CONFIG.get("xmpp_enabled") and not XMPP_AVAILABLE and bool(XMPP_JID and XMPP_PASSWORD and XMPP_RECIPIENT):
     logger.warning("XMPP enabled in config but slixmpp not installed. Run: pip install slixmpp")
 
+# ntfy configuration
+NTFY_URL   = CONFIG.get("ntfy_url", "").strip()
+NTFY_TOKEN = CONFIG.get("ntfy_token", "").strip()
+# Auto-enable if URL is configured
+NTFY_ENABLED = bool(NTFY_URL)
+
+# SMTP / email configuration
+SMTP_HOST     = CONFIG.get("smtp_host", "").strip()
+SMTP_PORT     = int(CONFIG.get("smtp_port", 587))
+SMTP_USERNAME = CONFIG.get("smtp_username", "").strip()
+SMTP_PASSWORD = CONFIG.get("smtp_password", "")
+SMTP_FROM     = CONFIG.get("smtp_from", "").strip() or SMTP_USERNAME
+SMTP_TO_RAW   = CONFIG.get("smtp_to", "").strip()
+SMTP_TO       = [addr.strip() for addr in SMTP_TO_RAW.split(",") if addr.strip()]
+SMTP_USE_TLS  = CONFIG.get("smtp_use_tls", True)
+_smtp_enabled_setting = CONFIG.get("smtp_enabled")
+if _smtp_enabled_setting is None:
+    SMTP_ENABLED = bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and SMTP_TO)
+else:
+    SMTP_ENABLED = bool(_smtp_enabled_setting) and bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and SMTP_TO)
+
+# Telegram bot commands configuration
+TELEGRAM_COMMANDS_ENABLED = (
+    TELEGRAM_ENABLED and
+    bool(CONFIG.get("telegram_commands_enabled", True))
+)
+_telegram_cmd_offset = 0   # getUpdates offset for long-poll dedup
+_tg_last_cmd_ts: float = 0.0  # rate-limit: earliest time next command is accepted
+
+# Sentinel health endpoint configuration
+SENTINEL_HEALTH_ENABLED = bool(CONFIG.get("sentinel_health_enabled", True))
+SENTINEL_HEALTH_PORT    = int(CONFIG.get("sentinel_health_port", 9191))
+SENTINEL_START_TIME     = time.time()   # Process start timestamp for uptime reporting
+_health_state_ref       = None          # Set in monitor_loop after state is initialized
+
 # Default miners - empty for fresh installations
 # Configure your miners via: spiralpool-scan, spiralpool-config, or edit miners.json
 DEFAULT_MINERS = {
@@ -4576,7 +5322,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V1-BLACKICE"
+                "sentinel_version": "V1.1.0-PHI_FORGE"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -4595,7 +5341,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V1-BLACKICE"
+                "sentinel_version": "V1.1.0-PHI_FORGE"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -4755,6 +5501,7 @@ COIN_CHECK_INTERVALS = {
     "BCH": 120,         # Bitcoin Cash: 10min block time
     "BC2": 120,         # Block Creator 2
     "NMC": 120,         # Namecoin: ~10min block time
+    "QBX": 60,          # Q-BitX: 150s block time, check every 60s
     # Other coins - use default
     "PEP": 60,          # Pepecoin
     "CAT": 60,          # Catcoin
@@ -5067,6 +5814,7 @@ COIN_NET_CRASH = {
     "SYS": {"floor": 1, "drop": 3, "reset": 5},         # SYS: small network
     "XMY": {"floor": 0.3, "drop": 0.5, "reset": 1},     # XMY: small multi-algo network
     "FBTC": {"floor": 80, "drop": 100, "reset": 150},   # FBTC: newer chain
+    "QBX": {"floor": 0.05, "drop": 0.08, "reset": 0.12},  # QBX: new small network
     # Scrypt coins (much smaller networks, values in PH/s)
     "LTC": {"floor": 0.8, "drop": 0.9, "reset": 1.1},   # LTC: ~1 PH/s network
     "DOGE": {"floor": 1.2, "drop": 1.4, "reset": 1.6},  # DOGE: ~1.5 PH/s network (merge-mined with LTC)
@@ -5133,6 +5881,7 @@ COIN_ZMQ_STALE_THRESHOLDS = {
     "CAT": 420,             # Catcoin: ~60s blocks × 7
     # Medium block coins (150s block time)
     "LTC": 1050,            # Litecoin: 150s blocks × 7 = 1050s (~17.5 min)
+    "QBX": 1050,            # Q-BitX: 150s blocks × 7 = 1050s (~17.5 min)
     # Slow block coins (600s block times)
     "BTC": 3600,            # Bitcoin: 600s blocks × 6 = 3600s (60 min, ~0.25% false positive)
     "BCH": 3600,            # Bitcoin Cash: 600s blocks × 6
@@ -5154,6 +5903,7 @@ def get_zmq_stale_threshold(coin=None):
 # Update checking settings
 UPDATE_CHECK_ENABLED = CONFIG.get("update_check_enabled", True)
 UPDATE_CHECK_INTERVAL = CONFIG.get("update_check_interval", 21600)  # 6 hours in seconds
+AUTO_UPDATE_MODE = CONFIG.get("auto_update_mode", "notify")  # "auto", "notify", or "disabled"
 
 # Alert batching/aggregation settings
 ALERT_BATCHING_ENABLED = CONFIG.get("alert_batching_enabled", True)
@@ -5254,16 +6004,31 @@ def fetch_nmaxe(ip, timeout=5):
         req = urllib.request.Request(f"http://{ip}/api/system/info", headers={"User-Agent": f"SpiralSentinel/{__version__}"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             d = json.loads(resp.read().decode())
-            # Extract worker name from stratumUser (format: wallet.worker)
-            stratum_user = d.get("stratumUser", "")
+            # NMAxe firmware (v2.9.x+) uses nested stratum object and different field names.
+            # pool URL: stratum.used.url  |  hostname: hostName  |  user: stratum.used.user
+            stratum = d.get("stratum", {})
+            used = stratum.get("used", {})
+            pool_url = used.get("url", d.get("stratumURLUSED", ""))  # fallback for older firmware
+            stratum_user = used.get("user", d.get("stratumUser", ""))
             worker_name = stratum_user.split(".")[-1] if "." in stratum_user else stratum_user
+            fans_list = d.get("fans", [])
+            fan_rpm = fans_list[0].get("rpm", 0) if fans_list else 0
             return {
                 "hashrate_ghs": d.get("hashRate", 0), "power_watts": d.get("power", 0),
-                "temps": {k2: d[k1] for k1, k2 in [("temp", "chip"), ("boardTemp", "board"), ("vrTemp", "vr")] if k1 in d},
+                "temps": {
+                    "chip": d.get("asicTemp", d.get("temp")),        # asicTemp in v2.9.x, temp in older
+                    "board": d.get("mcuTemp", d.get("boardTemp")),   # mcuTemp in v2.9.x
+                    "vr": d.get("vcoreTemp", d.get("vrTemp")),       # vcoreTemp in v2.9.x
+                },
                 "uptime": d.get("uptimeSeconds", d.get("uptime")),
                 "accepted": d.get("sharesAccepted", 0), "rejected": d.get("sharesRejected", 0), "stale": 0,
-                "pool_url": d.get("stratumURLUSED", ""), "hostname": d.get("hostname"),
+                "pool_url": pool_url, "hostname": d.get("hostName", d.get("hostname")),
                 "stratum_user": stratum_user, "worker_name": worker_name,
+                "fan_speed": fan_rpm,
+                "frequency": d.get("freqReq", d.get("frequency", 0)),
+                "voltage": d.get("vcoreActual", d.get("vcoreReq", d.get("coreVoltage", 0))),
+                "best_diff": d.get("bestDiffEver", d.get("bestDiff", "0")),
+                "version": d.get("fwVersion", d.get("version", "Unknown")),
             }
     except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout, json.JSONDecodeError, OSError):
         return None
@@ -8335,6 +9100,7 @@ def get_coin_volatility_threshold(symbol):
         "SYS": 4,   # Syscoin: relatively stable merge-mined chain
         "XMY": 6,   # Myriad: multi-algo, moderate volatility
         "FBTC": 8,  # Fractal Bitcoin: newer chain, higher volatility
+        "QBX": 10,  # Q-BitX: new chain, high volatility
         # Scrypt coins (generally more stable due to merge-mining)
         "LTC": 3,   # Litecoin: relatively stable, some merge-mining with DOGE
         "DOGE": 3,  # Dogecoin: stable due to merge-mining with LTC
@@ -9095,23 +9861,6 @@ def _get_nth_weekday_of_month(year, month, weekday, n):
         day = last_day - days_back
     return day
 
-def _get_easter(year):
-    """Calculate Easter Sunday using the Anonymous Gregorian algorithm."""
-    a = year % 19
-    b = year // 100
-    c = year % 100
-    d = b // 4
-    e = b % 4
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i = c // 4
-    k = c % 4
-    l = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * l) // 451
-    month = (h + l - 7 * m + 114) // 31
-    day = ((h + l - 7 * m + 114) % 31) + 1
-    return month, day
 
 def get_special_date_info():
     """Check if today is a special date for reports.
@@ -9130,8 +9879,6 @@ def get_special_date_info():
         (9, 23): {"name": "Autumn Equinox", "emoji": "🍂", "type": "equinox"},
         (12, 21): {"name": "Winter Solstice", "emoji": "❄️", "type": "solstice"},
         (12, 22): {"name": "Winter Solstice", "emoji": "❄️", "type": "solstice"},
-        # Christmas (both countries)
-        (12, 25): {"name": "Christmas Day", "emoji": "🎄", "type": "holiday"},
         # New Year's Day (both countries)
         (1, 1): {"name": "New Year's Day", "emoji": "🎆", "type": "holiday"},
     }
@@ -9161,15 +9908,6 @@ def get_special_date_info():
         # Family Day - 3rd Monday of February (most provinces)
         if month == 2 and day == _get_nth_weekday_of_month(year, 2, 0, 3):
             return {"name": "Family Day", "emoji": "👨‍👩‍👧‍👦", "type": "holiday"}
-        # Good Friday (Friday before Easter - 2 days before Sunday)
-        easter_month, easter_day = _get_easter(year)
-        # Use date for comparison (no timezone issues, just calendar date)
-        from datetime import date as dt_date
-        easter_date = dt_date(year, easter_month, easter_day)
-        # Good Friday is 2 days before Easter Sunday
-        good_friday = easter_date - timedelta(days=2)
-        if month == good_friday.month and day == good_friday.day:
-            return {"name": "Good Friday", "emoji": "✝️", "type": "holiday"}
 
     # === AMERICAN HOLIDAYS (power_currency = USD) ===
     elif POWER_CURRENCY == "USD":
@@ -9241,6 +9979,7 @@ def calc_odds(net_phs, fleet_ths, coin=None):
         "SYS": 1440,       # 86400 / 60 = 1440 (60s block time)
         "XMY": 1440,       # 86400 / 60 = 1440 (60s per algo, 5 algos)
         "FBTC": 2880,      # 86400 / 30 = 2880 (30s block time)
+        "QBX": 576,        # 86400 / 150 = 576 (150s block time)
         # Scrypt coins
         "LTC": 576,        # 86400 / 150 = 576
         "DOGE": 1440,      # 86400 / 60 = 1440
@@ -9274,6 +10013,43 @@ def is_quiet_hours():
     if QUIET_START < QUIET_END: return QUIET_START <= h < QUIET_END
     return h >= QUIET_START or h < QUIET_END
 
+
+def is_in_maintenance_window():
+    """Check if the current time falls within a scheduled maintenance window.
+
+    Returns (True, reason) if in a window, (False, None) otherwise.
+    Each window in config: {"start": "HH:MM", "end": "HH:MM", "days": [0-6], "reason": "..."}
+    days is optional; 0=Monday, 6=Sunday. Omit to apply every day.
+    Supports overnight windows (e.g., 23:00–01:00).
+    """
+    windows = CONFIG.get("scheduled_maintenance_windows", [])
+    if not windows:
+        return False, None
+    now = local_now()
+    current_dow = now.weekday()  # 0=Monday, 6=Sunday
+    current_hm = now.hour * 60 + now.minute
+    for window in windows:
+        try:
+            days = window.get("days")
+            if days is not None and current_dow not in days:
+                continue
+            start_h, start_m = map(int, window["start"].split(":"))
+            end_h, end_m = map(int, window["end"].split(":"))
+            start_min = start_h * 60 + start_m
+            end_min = end_h * 60 + end_m
+            reason = window.get("reason", "Scheduled maintenance")
+            if start_min <= end_min:
+                if start_min <= current_hm < end_min:
+                    return True, reason
+            else:
+                # Overnight window
+                if current_hm >= start_min or current_hm < end_min:
+                    return True, reason
+        except (KeyError, ValueError, AttributeError):
+            continue
+    return False, None
+
+
 def check_for_updates():
     """Check for Spiral Pool updates by calling upgrade.sh --check"""
     if not UPDATE_CHECK_ENABLED:
@@ -9292,6 +10068,68 @@ def check_for_updates():
     except Exception as e:
         logger.debug(f"Update check error: {e}")
     return None
+
+def perform_auto_update(update_info):
+    """Run upgrade.sh --auto when auto_update_mode is 'auto'. Returns True if launched."""
+    latest_ver = update_info.get("latest_version", "?")
+    current_ver = update_info.get("current_version", "?")
+    upgrade_script = str(INSTALL_DIR / "upgrade.sh")
+
+    logger.info(f"AUTO-UPDATE: Launching upgrade from v{current_ver} to v{latest_ver}")
+
+    # Notify before starting so the operator knows what's happening
+    pre_fields = [
+        {"name": "📦 Current Version", "value": f"`{current_ver}`", "inline": True},
+        {"name": "🆕 New Version",     "value": f"`{latest_ver}`", "inline": True},
+        {"name": "⚙️ Mode",            "value": "Automatic — services will restart", "inline": False},
+    ]
+    pre_embed = _embed(
+        "⬆️ Auto-Update Starting",
+        "Spiral Pool is applying an update automatically. Services will restart briefly.",
+        COLORS["cyan"],
+        pre_fields,
+    )
+    send_discord(pre_embed)
+    send_telegram(
+        f"⬆️ *Auto-Update Starting*\n"
+        f"Upgrading from `v{current_ver}` → `v{latest_ver}`\n"
+        f"Services will restart briefly."
+    )
+
+    try:
+        import subprocess
+        # upgrade.sh is installed at INSTALL_DIR/upgrade.sh and sudoers grants
+        # POOL_USER NOPASSWD for this exact path — no password prompt needed.
+        result = subprocess.run(
+            ["sudo", upgrade_script, "--auto"],
+            timeout=600,  # 10 min ceiling — should be well within any reasonable upgrade
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            logger.info(f"AUTO-UPDATE: Upgrade to v{latest_ver} completed successfully")
+            return True
+        else:
+            logger.error(f"AUTO-UPDATE: upgrade.sh exited {result.returncode}: {result.stderr[:500]}")
+            # Send failure alert
+            fail_embed = _embed(
+                "❌ Auto-Update Failed",
+                f"Upgrade to `v{latest_ver}` failed (exit {result.returncode}). "
+                f"Run manually: `sudo {upgrade_script}`",
+                COLORS["red"],
+                [{"name": "Error", "value": f"```{result.stderr[:800]}```", "inline": False}],
+            )
+            send_discord(fail_embed)
+            send_telegram(
+                f"❌ *Auto-Update Failed*\n"
+                f"Upgrade to `v{latest_ver}` exited with code {result.returncode}.\n"
+                f"Run manually: `sudo {upgrade_script}`"
+            )
+            return False
+    except Exception as e:
+        logger.error(f"AUTO-UPDATE: Exception running upgrade.sh: {e}")
+        return False
+
 
 def create_update_embed(update_info):
     """Create Discord embed for update notification"""
@@ -9607,41 +10445,652 @@ async def _xmpp_send(jid, password, recipient, message, use_tls, is_muc):
     return success[0]
 
 
+def send_ntfy(embed):
+    """Send notification via ntfy (https://ntfy.sh or self-hosted).
+
+    ntfy receives a plain-text message body with a title header.
+    Auth token is optional — required only for private topics or self-hosted servers
+    that have auth enabled.
+
+    ntfy URL must be the full topic URL, e.g.:
+      https://ntfy.sh/your_topic_name
+      https://ntfy.yourserver.com/alerts
+    """
+    if not NTFY_ENABLED:
+        return False
+
+    # Read config fresh to pick up runtime changes
+    current_config = load_config()
+    ntfy_url   = current_config.get("ntfy_url", "").strip()
+    ntfy_token = current_config.get("ntfy_token", "").strip()
+
+    if not ntfy_url:
+        return False
+
+    # SECURITY: Only allow https:// URLs
+    if not ntfy_url.startswith("https://"):
+        logger.error("SECURITY: ntfy_url must use https://")
+        return False
+
+    # Build plain-text message body from embed
+    title   = embed.get("title", "Spiral Pool Alert")
+    desc    = embed.get("description", "")
+    # Strip Discord markdown formatting (code blocks, bold, etc.) for plain-text channels
+    import re as _re
+    desc_plain = _re.sub(r"```[a-z]*\n?", "", desc).replace("```", "").strip()
+    fields_lines = []
+    for field in embed.get("fields", []):
+        fname  = field.get("name", "")
+        fvalue = field.get("value", "")
+        # Strip markdown from field values too
+        fvalue_plain = _re.sub(r"\*\*|`|\[([^\]]+)\]\([^\)]+\)", r"\1", fvalue).strip()
+        if fname and fvalue_plain:
+            fields_lines.append(f"{fname}: {fvalue_plain}")
+
+    body_parts = []
+    if desc_plain:
+        body_parts.append(desc_plain[:500])  # ntfy body limit is 4096 but keep it readable
+    if fields_lines:
+        body_parts.append("\n".join(fields_lines[:8]))  # Max 8 fields in body
+    body = "\n\n".join(body_parts) if body_parts else title
+
+    # ntfy priority based on embed colour
+    color = embed.get("color", 0)
+    if color == COLORS.get("red", 0):
+        priority = "high"
+    elif color == COLORS.get("yellow", 0) or color == COLORS.get("orange", 0):
+        priority = "default"
+    else:
+        priority = "default"
+
+    headers = {
+        "Title":    title[:250],   # ntfy title header limit
+        "Priority": priority,
+        "Content-Type": "text/plain",
+    }
+    if ntfy_token:
+        headers["Authorization"] = f"Bearer {ntfy_token}"
+
+    # Include explorer URL as an action button if present
+    explorer_url = embed.get("url")
+    if explorer_url:
+        headers["Actions"] = f"view, View Block, {explorer_url}"
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(
+                ntfy_url,
+                data=body.encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status in [200, 201]:
+                    logger.debug(f"ntfy notification sent (status {resp.status})")
+                    return True
+                else:
+                    logger.warning(f"ntfy unexpected status: {resp.status}")
+                    return False
+        except (urllib.error.URLError, socket.timeout, OSError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            logger.error(f"ntfy error after {max_retries} attempts: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"ntfy error: {e}")
+            return False
+    return False
+
+
+def _tg_send_text(text):
+    """Send a plain-text reply to the configured Telegram chat (for bot command responses)."""
+    if not TELEGRAM_ENABLED:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    # Telegram hard limit is 4096 chars. Truncate at 4000 so there's room for the ellipsis
+    # and to avoid cutting in the middle of a MarkdownV2 escape sequence (which causes
+    # Telegram to reject the entire message with a 400 parse error).
+    if len(text) > 4000:
+        text = text[:4000] + "\n\\.\\.\\."   # MarkdownV2-escaped "..."
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "MarkdownV2",
+        "disable_web_page_preview": True,
+    }
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except Exception as e:
+        err = str(e).replace(TELEGRAM_BOT_TOKEN, "***") if TELEGRAM_BOT_TOKEN else str(e)
+        logger.debug(f"Telegram command reply error: {err}")
+
+
+def _tg_escape(text):
+    """Escape text for Telegram MarkdownV2."""
+    for ch in r"\_*[]()~`>#+-=|{}.!":
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
+def _handle_telegram_command(cmd, state):
+    """Dispatch a Telegram bot command and reply with pool status information."""
+    raw_text = cmd.strip()  # preserve original for argument parsing in /pause
+    # Extract just the command word: "/pause 30" → "/pause", "/status@MyBot" → "/status"
+    cmd = raw_text.lower().split()[0].split("@")[0] if raw_text else ""
+
+    pool_url = CONFIG.get("pool_api_url", "http://localhost:4000")
+
+    if cmd == "/help":
+        lines = [
+            "*Spiral Pool — Bot Commands*",
+            "",
+            "`/status` — Service \\+ node overview",
+            "`/miners` — Connected miners table",
+            "`/hashrate` — Pool hashrate \\+ difficulty",
+            "`/blocks` — Last 5 blocks found",
+            "`/uptime` — Sentinel \\+ stratum uptime",
+            "`/pause [minutes]` — Pause alerts \\(default 30, max 1440 min\\)",
+            "`/resume` — Resume alerts immediately",
+            "`/cooldowns` — Show active alert cooldowns",
+            "`/help` — This message",
+        ]
+        _tg_send_text("\n".join(lines))
+        return
+
+    if cmd == "/status":
+        try:
+            data = _http(f"{pool_url}/api/pools", timeout=8)
+            pools = data if isinstance(data, list) else []
+            lines = ["*Pool Status*", ""]
+            for p in pools:
+                symbol = _tg_escape(p.get("coin", {}).get("symbol", "?"))
+                miners = p.get("poolStats", {}).get("connectedMiners", 0)
+                hr_raw = p.get("poolStats", {}).get("poolHashrate", 0)
+                hr_str = _tg_escape(format_hashrate(hr_raw) if hr_raw else "0 H/s")
+                lines.append(f"*{symbol}* — {miners} miner\\(s\\) — {hr_str}")
+            if not lines[2:]:
+                lines.append("No active pools")
+            # Show pause/maintenance status if active
+            if PAUSE_FILE.exists():
+                try:
+                    with open(PAUSE_FILE) as _pf:
+                        _pd = json.load(_pf)
+                    _pu = _pd.get("pause_until", 0)
+                    _pr = _pd.get("reason", "")
+                    _rem = _pu - time.time()
+                    if _rem > 0:
+                        _mins = int(_rem / 60) + 1
+                        lines.append("")
+                        lines.append(_tg_escape(f"⏸ Alerts paused — {_mins}m remaining"))
+                        if _pr:
+                            lines.append(_tg_escape(f"Reason: {_pr}"))
+                except Exception:
+                    pass
+            _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error fetching status: {e}"))
+        return
+
+    if cmd == "/hashrate":
+        try:
+            data = _http(f"{pool_url}/api/pools", timeout=8)
+            pools = data if isinstance(data, list) else []
+            lines = ["*Hashrate \\& Difficulty*", ""]
+            for p in pools:
+                symbol = _tg_escape(p.get("coin", {}).get("symbol", "?"))
+                hr_raw = p.get("poolStats", {}).get("poolHashrate", 0)
+                hr_str = _tg_escape(format_hashrate(hr_raw) if hr_raw else "0 H/s")
+                net_diff = p.get("networkStats", {}).get("networkDifficulty", 0)
+                diff_str = _tg_escape(f"{net_diff:,.0f}" if net_diff else "?")
+                lines.append(f"*{symbol}*: {hr_str} \\| Diff: {diff_str}")
+            if not lines[2:]:
+                lines.append("No data")
+            _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/miners":
+        try:
+            data = _http(f"{pool_url}/api/pools", timeout=8)
+            pools = data if isinstance(data, list) else []
+            lines = ["*Connected Miners*", ""]
+            found_any = False
+            nicknames = CONFIG.get("miner_nicknames", {})
+            for p in pools:
+                pool_id = p.get("id", "")
+                if not pool_id:
+                    continue
+                try:
+                    miners_data = _http(
+                        f"{pool_url}/api/pools/{url_quote(pool_id)}/miners", timeout=8
+                    )
+                    miners = miners_data if isinstance(miners_data, list) else []
+                    symbol = _tg_escape(p.get("coin", {}).get("symbol", "?"))
+                    for m in miners[:10]:  # Cap at 10 per coin to avoid truncation
+                        full_addr = str(m.get("address", "?"))
+                        nick = nicknames.get(full_addr)
+                        if nick:
+                            label = _tg_escape(nick)
+                        else:
+                            label = f"`{_tg_escape(full_addr[:12])}…`"
+                        hr_raw = m.get("hashrate", 0)
+                        hr_str = _tg_escape(format_hashrate(hr_raw) if hr_raw else "0 H/s")
+                        shares = m.get("sharesPerSecond", 0)
+                        lines.append(f"*{symbol}* {label} — {hr_str} \\({shares:.2f} sh/s\\)")
+                        found_any = True
+                except Exception:
+                    pass
+            if not found_any:
+                lines.append("No miners connected")
+            _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/blocks":
+        try:
+            data = _http(f"{pool_url}/api/pools", timeout=8)
+            pools = data if isinstance(data, list) else []
+            lines = ["*Last Blocks Found*", ""]
+            found_any = False
+            for p in pools:
+                pool_id = p.get("id", "")
+                if not pool_id:
+                    continue
+                try:
+                    blocks_data = _http(
+                        f"{pool_url}/api/pools/{url_quote(pool_id)}/blocks?pageSize=5", timeout=8
+                    )
+                    blocks = blocks_data if isinstance(blocks_data, list) else []
+                    symbol = _tg_escape(p.get("coin", {}).get("symbol", "?"))
+                    for b in blocks:
+                        height = _tg_escape(str(b.get("blockHeight", "?")))
+                        reward = b.get("reward", 0)
+                        reward_str = _tg_escape(f"{reward:.4f}" if reward else "?")
+                        ts = b.get("created", "")
+                        ts_str = _tg_escape(ts[:10] if ts else "?")
+                        lines.append(f"*{symbol}* Block {height} — {reward_str} — {ts_str}")
+                        found_any = True
+                except Exception:
+                    pass
+            if not found_any:
+                lines.append("No blocks found yet")
+            _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/uptime":
+        try:
+            def _tg_fmt_uptime(secs):
+                secs = max(0, int(secs))
+                d, r = divmod(secs, 86400)
+                h, r = divmod(r, 3600)
+                m = r // 60
+                if d:   return f"{d}d {h}h {m}m"
+                if h:   return f"{h}h {m}m"
+                return f"{m}m"
+
+            lines = ["*Uptime*", ""]
+            lines.append(f"Sentinel: `{_tg_fmt_uptime(time.time() - SENTINEL_START_TIME)}`")
+
+            # Stratum uptime from systemd
+            try:
+                import subprocess as _sp, datetime as _dt2
+                _r = _sp.run(
+                    ["systemctl", "show", "spiralstratum.service", "--property=ActiveEnterTimestamp"],
+                    capture_output=True, text=True, timeout=3
+                )
+                ts_line = _r.stdout.strip()
+                if _r.returncode == 0 and "=" in ts_line:
+                    ts_val = ts_line.split("=", 1)[1].strip()
+                    if ts_val and ts_val.lower() not in ("n/a", ""):
+                        parts = ts_val.split()
+                        if len(parts) >= 3:
+                            ts_str = " ".join(parts[1:])
+                            if ts_str.endswith(" UTC"):
+                                dt = _dt2.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S UTC")
+                                dt = dt.replace(tzinfo=_dt2.timezone.utc)
+                                stratum_secs = (datetime.now(timezone.utc) - dt).total_seconds()
+                            else:
+                                dt = _dt2.datetime.strptime(ts_str.rsplit(" ", 1)[0], "%Y-%m-%d %H:%M:%S")
+                                stratum_secs = time.time() - dt.timestamp()
+                            if stratum_secs > 0:
+                                lines.append(f"Stratum: `{_tg_fmt_uptime(stratum_secs)}`")
+            except Exception:
+                pass  # systemd unavailable — skip stratum line
+
+            _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/pause":
+        try:
+            # /pause [minutes] — default 30; use raw_text to get the argument
+            parts = raw_text.strip().split()
+            minutes = 30
+            if len(parts) >= 2:
+                try:
+                    minutes = max(1, min(int(parts[1]), 1440))  # 1 min – 24 hours
+                except ValueError:
+                    _tg_send_text(_tg_escape("Usage: /pause [minutes] (default: 30, max: 1440)"))
+                    return
+            pause_until = time.time() + minutes * 60
+            try:
+                with open(PAUSE_FILE, "w") as f:
+                    json.dump({"pause_until": pause_until, "reason": "Paused via Telegram bot"}, f)
+                _tg_send_text(_tg_escape(f"Alerts paused for {minutes} minute{'s' if minutes != 1 else ''}. Use /resume to cancel early."))
+            except OSError as e:
+                _tg_send_text(_tg_escape(f"Failed to write pause file: {e}"))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/resume":
+        try:
+            if PAUSE_FILE.exists():
+                PAUSE_FILE.unlink(missing_ok=True)
+                _tg_send_text(_tg_escape("Alerts resumed."))
+            else:
+                _tg_send_text(_tg_escape("Alerts are not currently paused."))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error: {e}"))
+        return
+
+    if cmd == "/cooldowns":
+        try:
+            health_port = CONFIG.get("sentinel_health_port", 9191)
+            cd_data = _http(f"http://127.0.0.1:{health_port}/cooldowns", timeout=3)
+            active = cd_data if isinstance(cd_data, list) else []
+            if not active:
+                _tg_send_text(_tg_escape("No active alert cooldowns."))
+            else:
+                lines = ["*Active Alert Cooldowns*", ""]
+                for entry in active[:15]:  # cap to avoid message truncation
+                    atype = _tg_escape(entry.get("type", "?"))
+                    mins = int(entry.get("expires_in_s", 0) / 60) + 1
+                    lines.append(f"`{atype}` — {mins}m remaining")
+                if len(active) > 15:
+                    lines.append(_tg_escape(f"…and {len(active) - 15} more"))
+                _tg_send_text("\n".join(lines))
+        except Exception as e:
+            _tg_send_text(_tg_escape(f"Error fetching cooldowns: {e}"))
+        return
+
+    # Unknown command — send help hint
+    _tg_send_text(_tg_escape("Unknown command. Send /help for available commands."))
+
+
+def _telegram_command_loop(state):
+    """Background thread: polls Telegram getUpdates and dispatches bot commands.
+
+    Only responds to messages from the configured telegram_chat_id — all other
+    chat IDs are silently ignored to prevent unauthorized access.
+    Long-polls with timeout=25s; reconnects on error with 5s backoff.
+    Rate-limited to one command per 3 seconds to prevent abuse.
+    """
+    global _telegram_cmd_offset, _tg_last_cmd_ts
+    poll_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+
+    while True:
+        try:
+            params = f"?timeout=25&offset={_telegram_cmd_offset}&allowed_updates=message"
+            req = urllib.request.Request(
+                poll_url + params,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                data = json.loads(resp.read().decode())
+
+            if not data.get("ok"):
+                time.sleep(5)
+                continue
+
+            for update in data.get("result", []):
+                _telegram_cmd_offset = update["update_id"] + 1
+                msg = update.get("message", {})
+                chat_id = str(msg.get("chat", {}).get("id", ""))
+                # SECURITY: only respond to the configured chat
+                if chat_id != str(TELEGRAM_CHAT_ID):
+                    continue
+                text = msg.get("text", "")
+                if text.startswith("/"):
+                    # Rate limit: one command per 3 seconds
+                    now = time.time()
+                    if now - _tg_last_cmd_ts < 3.0:
+                        logger.debug("Telegram command rate-limited, dropping")
+                        continue
+                    _tg_last_cmd_ts = now
+                    try:
+                        _handle_telegram_command(text, state)
+                    except Exception as e:
+                        logger.debug(f"Telegram command handler error: {e}")
+
+        except (urllib.error.URLError, socket.timeout, OSError):
+            time.sleep(5)
+        except Exception as e:
+            err = str(e).replace(TELEGRAM_BOT_TOKEN, "***") if TELEGRAM_BOT_TOKEN else str(e)
+            logger.debug(f"Telegram poll error: {err}")
+            time.sleep(5)
+
+
+class _HealthHandler(http.server.BaseHTTPRequestHandler):
+    """Minimal HTTP handler for the Sentinel health endpoint (loopback only).
+
+    GET /health   → {"alive": true, "uptime_s": N, "version": "<__version__>"}
+    GET /cooldowns → list of active alert cooldowns with time remaining, sorted by expiry
+    """
+
+    def log_message(self, format, *args):
+        pass  # Suppress access logs — already in journald
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._send_health()
+        elif self.path == "/cooldowns":
+            self._send_cooldowns()
+        else:
+            self.send_error(404)
+
+    def _write_json(self, data):
+        body = json.dumps(data, separators=(",", ":")).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_health(self):
+        self._write_json({
+            "alive": True,
+            "uptime_s": int(time.time() - SENTINEL_START_TIME),
+            "version": __version__,
+        })
+
+    def _send_cooldowns(self):
+        state = _health_state_ref
+        if state is None or not hasattr(state, "last_alerts"):
+            self._write_json([])
+            return
+
+        # Snapshot the dict before iterating — the monitor loop modifies last_alerts
+        # from its own thread and Python's GIL does NOT prevent RuntimeError from
+        # "dictionary changed size during iteration" on .items() view objects.
+        alerts_snapshot = dict(state.last_alerts)
+        now = time.time()
+        active = []
+        for alert_type, last_sent in alerts_snapshot.items():
+            cooldown = ALERT_COOLDOWNS.get(alert_type, 0)
+            if cooldown <= 0:
+                continue
+            remaining = (last_sent + cooldown) - now
+            if remaining > 0:
+                active.append({
+                    "type": alert_type,
+                    "expires_in_s": int(remaining),
+                    "cooldown_s": cooldown,
+                    "last_sent": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_sent)),
+                })
+        active.sort(key=lambda x: x["expires_in_s"], reverse=True)
+        self._write_json(active)
+
+
+def _health_server_loop(port):
+    """Background thread: runs the Sentinel health HTTP server on loopback.
+
+    Retries on error so a transient port conflict (e.g., old process still dying)
+    doesn't permanently take down the health endpoint.
+    """
+    import socketserver as _ss
+
+    class _ReuseServer(_ss.TCPServer):
+        allow_reuse_address = True
+
+    while True:
+        try:
+            with _ReuseServer(("127.0.0.1", port), _HealthHandler) as httpd:
+                logger.info(f"Sentinel health endpoint: http://127.0.0.1:{port}/health")
+                httpd.serve_forever()
+        except OSError as e:
+            logger.warning(f"Sentinel health endpoint error on port {port}: {e} — retrying in 30s")
+        except Exception as e:
+            logger.warning(f"Sentinel health endpoint crashed: {e} — retrying in 30s")
+        time.sleep(30)
+
+
+def send_email(embed):
+    """Send notification via SMTP email.
+
+    Uses STARTTLS (port 587, recommended) or SSL (port 465) depending on
+    smtp_use_tls config. Credentials are stored in config.json which is
+    chmod 600 owned by spiraluser — same hardening as Discord webhook and
+    Telegram bot token.
+    """
+    if not SMTP_ENABLED:
+        return False
+
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    # Build subject from embed title
+    title = embed.get("title", "Spiral Pool Alert")
+    # Strip Discord emoji/markdown from title for clean subject line
+    subject = re.sub(r"[*_`~]", "", title).strip()
+
+    # Build plain-text body
+    lines = [subject, ""]
+    desc = embed.get("description", "")
+    if desc:
+        lines.append(re.sub(r"\*\*(.+?)\*\*", r"\1", desc))
+        lines.append("")
+    for field in embed.get("fields", []):
+        name  = re.sub(r"[*_`]", "", field.get("name", "")).strip()
+        value = re.sub(r"\[(.+?)\]\(.+?\)", r"\1",
+                       re.sub(r"[*_`]", "", field.get("value", ""))).strip()
+        if name and value:
+            lines.append(f"{name}: {value}")
+    explorer_url = embed.get("url")
+    if explorer_url:
+        lines.append("")
+        lines.append(f"Block explorer: {explorer_url}")
+    lines.append("")
+    lines.append("— Spiral Pool Sentinel")
+
+    body_plain = "\n".join(lines)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = SMTP_FROM
+    msg["To"]      = ", ".join(SMTP_TO)
+    msg.attach(MIMEText(body_plain, "plain"))
+
+    import ssl as _ssl
+    _tls_context = _ssl.create_default_context()  # Verifies cert chain + hostname
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if SMTP_USE_TLS:
+                # STARTTLS on port 587 (recommended) — upgrades plain connection to TLS
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+                    s.ehlo()
+                    s.starttls(context=_tls_context)  # Cert-verified TLS upgrade
+                    s.ehlo()
+                    s.login(SMTP_USERNAME, SMTP_PASSWORD)
+                    s.sendmail(SMTP_FROM, SMTP_TO, msg.as_string())
+            else:
+                # SSL on port 465 — TLS from the first byte
+                with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15, context=_tls_context) as s:
+                    s.login(SMTP_USERNAME, SMTP_PASSWORD)
+                    s.sendmail(SMTP_FROM, SMTP_TO, msg.as_string())
+            return True
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP authentication failed: {e}")
+            return False  # No point retrying auth failures
+        except (smtplib.SMTPException, OSError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            logger.error(f"SMTP error after {max_retries} attempts: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"SMTP error: {e}")
+            return False
+    return False
+
+
 def send_notifications(embed):
-    """Send notification to all configured channels (Discord, Telegram, and/or XMPP)
+    """Send notification to all configured channels (Discord, Telegram, XMPP, ntfy, and/or email)
 
     If all remote notifications fail on first attempt, retries once after a brief
     delay to handle transient network blips. Falls back to logging the alert
     to syslog and a local file for later review.
     """
-    discord_sent = send_discord(embed)
+    discord_sent  = send_discord(embed)
     telegram_sent = send_telegram(embed)
-    xmpp_sent = send_xmpp(embed)
+    xmpp_sent     = send_xmpp(embed)
+    ntfy_sent     = send_ntfy(embed)
+    email_sent    = send_email(embed)
 
     # Retry once if all channels failed (transient network blips)
-    if not discord_sent and not telegram_sent and not xmpp_sent:
+    if not discord_sent and not telegram_sent and not xmpp_sent and not ntfy_sent and not email_sent:
         config = load_config()
         any_configured = (
             bool(config.get("discord_webhook_url")) or
             bool(config.get("telegram_bot_token") and config.get("telegram_chat_id")) or
-            bool(config.get("xmpp_jid") and config.get("xmpp_recipient"))
+            bool(config.get("xmpp_jid") and config.get("xmpp_recipient")) or
+            bool(config.get("ntfy_url")) or
+            bool(config.get("smtp_host") and config.get("smtp_to"))
         )
         if any_configured:
             logger.warning("All notification channels failed — retrying in 10s...")
             time.sleep(10)
-            discord_sent = send_discord(embed)
+            discord_sent  = send_discord(embed)
             telegram_sent = send_telegram(embed)
-            xmpp_sent = send_xmpp(embed)
+            xmpp_sent     = send_xmpp(embed)
+            ntfy_sent     = send_ntfy(embed)
+            email_sent    = send_email(embed)
 
     # If all remote notifications failed, log locally as fallback
-    if not discord_sent and not telegram_sent and not xmpp_sent:
+    if not discord_sent and not telegram_sent and not xmpp_sent and not ntfy_sent and not email_sent:
         # Only log fallback if at least one channel was configured
         config = load_config()
-        discord_configured = bool(config.get("discord_webhook_url"))
+        discord_configured  = bool(config.get("discord_webhook_url"))
         telegram_configured = bool(config.get("telegram_bot_token") and config.get("telegram_chat_id"))
-        xmpp_configured = bool(config.get("xmpp_jid") and config.get("xmpp_recipient"))
+        xmpp_configured     = bool(config.get("xmpp_jid") and config.get("xmpp_recipient"))
+        ntfy_configured     = bool(config.get("ntfy_url"))
+        email_configured    = bool(config.get("smtp_host") and config.get("smtp_to"))
 
-        if discord_configured or telegram_configured or xmpp_configured:
+        if discord_configured or telegram_configured or xmpp_configured or ntfy_configured or email_configured:
             # Convert embed to plain text for logging
             title = embed.get("title", "Alert")
             desc = embed.get("description", "")
@@ -9670,7 +11119,28 @@ def send_notifications(embed):
             except Exception as e:
                 logger.error(f"Failed to write fallback notification: {e}")
 
-    return discord_sent or telegram_sent or xmpp_sent
+    return discord_sent or telegram_sent or xmpp_sent or ntfy_sent or email_sent
+
+def kick_stratum_session(ip):
+    """Kick all stratum sessions from the given IP via the pool admin API.
+
+    Returns the number of sessions closed, or 0 on failure (no admin key,
+    API unavailable, or no active sessions for that IP).
+    """
+    pool_url = CONFIG.get("pool_api_url", "http://localhost:4000")
+    admin_key = CONFIG.get("pool_admin_api_key", "")
+    if not admin_key or not ip:
+        return 0
+    try:
+        url = f"{pool_url}/api/admin/kick?ip={url_quote(ip)}"
+        req = urllib.request.Request(url, method="POST", headers={"X-API-Key": admin_key})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+            return int(data.get("kicked", 0))
+    except Exception as e:
+        logger.debug(f"Stratum kick failed for {ip}: {e}")
+        return 0
+
 
 def is_in_startup_suppression():
     """Check if we're in the startup alert suppression window.
@@ -9856,6 +11326,14 @@ def send_alert(alert_type, embed, state=None, miner_name=None):
     if is_quiet_hours() and not bypass:
         logger.debug(f"Alert blocked by quiet hours: {alert_type}")
         return False
+
+    # Scheduled maintenance windows — suppress alerts during planned downtime
+    # Same bypass rules as quiet hours: scheduled reports and block_found always go through
+    in_maint_window, maint_window_reason = is_in_maintenance_window()
+    if in_maint_window and not bypass and alert_type not in SCHEDULED_REPORT_TYPES + ["block_found"]:
+        logger.debug(f"Alert blocked by scheduled maintenance window ({maint_window_reason}): {alert_type}")
+        return False
+
     if state and alert_type in ALERT_COOLDOWNS:
         last = state.last_alerts.get(alert_type, 0)
         if (time.time() - last) < ALERT_COOLDOWNS[alert_type]:
@@ -9904,6 +11382,53 @@ def _embed(title, desc, color, fields=None, footer=None):
     return e
 
 # === EMBED CREATORS ===
+
+def create_stratum_down_embed(down_since):
+    """Red alert embed for pool API going unreachable."""
+    import datetime as _dt
+    ts = _dt.datetime.fromtimestamp(down_since).strftime("%H:%M:%S")
+    return _embed(
+        "🔴 Pool Offline — Stratum Unreachable",
+        "The pool API has stopped responding. Mining may be interrupted.",
+        0xFF0000,  # Red
+        fields=[
+            {"name": "⏱️ Detected At", "value": f"`{ts}`", "inline": True},
+            {"name": "🔍 Check", "value": "`sudo spiralctl status`", "inline": True},
+        ],
+    )
+
+
+def create_stratum_recovered_embed(down_since, recovered_at):
+    """Green recovery embed when pool API comes back online."""
+    import datetime as _dt
+    outage_secs = int(recovered_at - down_since)
+    if outage_secs >= 3600:
+        dur_str = f"{outage_secs // 3600}h {(outage_secs % 3600) // 60}m"
+    elif outage_secs >= 60:
+        dur_str = f"{outage_secs // 60}m {outage_secs % 60}s"
+    else:
+        dur_str = f"{outage_secs}s"
+    return _embed(
+        "🟢 Pool Back Online",
+        "The pool API is responding again. Monitoring resumed.",
+        0x00CC44,  # Green
+        fields=[{"name": "⏱️ Outage Duration", "value": f"`{dur_str}`", "inline": True}],
+    )
+
+
+def create_config_warning_embed(issues):
+    """Yellow warning embed listing config validation issues found at startup."""
+    desc = ("The following configuration issues were detected at startup. "
+            "Some alerts or features may not work correctly until these are resolved.\n\n"
+            + "\n".join(f"• {issue}" for issue in issues))
+    return _embed(
+        "⚠️ Configuration Warning",
+        desc,
+        0xFFCC00,  # Yellow
+        fields=[{"name": "🔧 Action Required", "value": "Edit `~spiraluser/.spiralsentinel/config.json` (or `/spiralpool/config/sentinel/config.json`) and restart Sentinel.", "inline": False}],
+    )
+
+
 def create_startup_embed(fleet_ths, md, temps, status, net_phs=None, odds=None, coin_symbol=None, power=None):
     """Enhanced startup embed with rich formatting and visual hierarchy.
 
@@ -10132,6 +11657,16 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
     nv += f"{em} {net_trend_arrow}"
     if diff:
         nv += f"\n🎯 Diff: `{format_difficulty(diff)}`"
+    # Expected time to block (ETB) for this coin/hashrate combination
+    if odds and odds.get("days_per_block", 0) > 0:
+        etb_days = odds["days_per_block"]
+        if etb_days >= 1:
+            etb_str = f"{etb_days:.1f}d"
+        elif etb_days * 24 >= 1:
+            etb_str = f"{etb_days * 24:.1f}h"
+        else:
+            etb_str = f"{etb_days * 1440:.0f}m"
+        nv += f"\n⏱️ ETB: `{etb_str}`"
     if extremes:
         if extremes.get("best"):
             best_time = extremes['best'].get('time', '')
@@ -10276,6 +11811,12 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
             elif uptime_pct < 90:
                 line += " ⚠️"
 
+        # Add connection quality score (0-100 health score)
+        if health_scores and n in health_scores:
+            hs = health_scores[n]
+            hs_emoji = "💚" if hs >= 90 else "💛" if hs >= 75 else "🔴"
+            line += f" {hs_emoji}`{hs:.0f}`"
+
         rl.append(line)
 
     # Fleet summary line
@@ -10413,8 +11954,91 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
             infra_lines.append(f"🟢 Pipeline: Healthy | ZMQ: {infra_health.get_zmq_health_label()}")
             infra_lines.append(f"👥 Workers: `{infra_health.get_active_workers()}`")
 
+        # Service uptime — always shown so operators notice unexpected restarts
+        def _fmt_uptime(secs):
+            secs = int(secs)
+            d, r = divmod(secs, 86400)
+            h, r = divmod(r, 3600)
+            m = r // 60
+            if d:   return f"{d}d {h}h {m}m"
+            if h:   return f"{h}h {m}m"
+            return f"{m}m"
+
+        infra_lines.append(f"⏱️ Sentinel: `{_fmt_uptime(time.time() - SENTINEL_START_TIME)}`")
+
+        try:
+            import subprocess as _sp
+            _r = _sp.run(
+                ["systemctl", "show", "spiralstratum.service", "--property=ActiveEnterTimestamp"],
+                capture_output=True, text=True, timeout=3
+            )
+            ts_line = _r.stdout.strip()  # "ActiveEnterTimestamp=Mon 2026-01-01 12:00:00 UTC"
+            if _r.returncode == 0 and "=" in ts_line:
+                ts_val = ts_line.split("=", 1)[1].strip()
+                if ts_val and ts_val.lower() not in ("n/a", ""):
+                    import datetime as _dt2
+                    parts = ts_val.split()
+                    if len(parts) >= 3:
+                        ts_str = " ".join(parts[1:])   # "2026-01-01 12:00:00 UTC"
+                        try:
+                            if ts_str.endswith(" UTC"):
+                                dt = _dt2.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S UTC")
+                                dt = dt.replace(tzinfo=_dt2.timezone.utc)
+                                stratum_secs = (datetime.now(timezone.utc) - dt).total_seconds()
+                            else:
+                                dt = _dt2.datetime.strptime(ts_str.rsplit(" ", 1)[0], "%Y-%m-%d %H:%M:%S")
+                                stratum_secs = time.time() - dt.timestamp()
+                            if stratum_secs > 0:
+                                infra_lines.append(f"⏱️ Stratum: `{_fmt_uptime(stratum_secs)}`")
+                        except ValueError:
+                            pass
+        except Exception:
+            pass  # systemd not available or service not found — skip silently
+
         if infra_lines:
             fields.append({"name": "🔧 INFRASTRUCTURE", "value": "\n".join(infra_lines), "inline": True})
+
+    # ── Backup status (only when cron is installed — user opted in during setup) ──
+    if os.path.exists("/etc/cron.d/spiralpool-backup"):
+        try:
+            newest_mtime = _get_newest_backup_time()
+            import datetime as _dt
+            bv_lines = []
+            if newest_mtime:
+                age_secs = time.time() - newest_mtime
+                last_str = _dt.datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M")
+                if age_secs < 86400:
+                    age_str = f"{int(age_secs // 3600)}h ago"
+                else:
+                    age_str = f"{age_secs / 86400:.1f}d ago"
+                # Try to get backup size (sum top-level dir entries)
+                try:
+                    import subprocess as _sp
+                    _du = _sp.run(["du", "-sh", "/spiralpool/backups"], capture_output=True, text=True, timeout=5)
+                    size_str = _du.stdout.split()[0] if _du.returncode == 0 and _du.stdout else "?"
+                except Exception:
+                    size_str = "?"
+                status_em = "🟢" if age_secs < 86400 * CONFIG.get("backup_stale_days", 2) else "🔴"
+                bv_lines.append(f"{status_em} Last: `{last_str}` ({age_str})")
+                bv_lines.append(f"💾 Size: `{size_str}`")
+            else:
+                bv_lines.append("🔴 No backups found")
+            # Next scheduled run from cron expression
+            try:
+                with open("/etc/cron.d/spiralpool-backup") as _cf:
+                    for _line in _cf:
+                        _line = _line.strip()
+                        if _line and not _line.startswith("#"):
+                            _parts = _line.split()
+                            if len(_parts) >= 5:
+                                bv_lines.append(f"⏰ Schedule: `{' '.join(_parts[:5])}`")
+                            break
+            except Exception:
+                pass
+            if bv_lines:
+                fields.append({"name": "💿 BACKUPS", "value": "\n".join(bv_lines), "inline": True})
+        except Exception as _e:
+            logger.debug(f"Backup status in report error: {_e}")
 
     # Dynamic title and description based on report frequency and time of day
     if REPORT_FREQUENCY == "daily":
@@ -10460,7 +12084,7 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
 
     return _embed(title, desc, color, fields, footer=theme("report.footer", version=__version__, next_report=_next_report_label()))
 
-def create_block_embed(block_num, prices=None, bri=None, found_by=None, miner_details=None, pool_block_num=None, coin_symbol=None, time_since_last=None, effort_pct=None):
+def create_block_embed(block_num, prices=None, bri=None, found_by=None, miner_details=None, pool_block_num=None, coin_symbol=None, time_since_last=None, effort_pct=None, block_hash=None):
     """Cyberpunk block capture celebration with miner details - MAXIMUM HYPE EDITION!
 
     Supports multi-coin with appropriate emojis and formatting:
@@ -10583,7 +12207,19 @@ def create_block_embed(block_num, prices=None, bri=None, found_by=None, miner_de
     block_footer_text = theme("block.footer")
     footer = f"🌀 {coin_name} Block #{pool_block_num or '?'} • {local_now().strftime('%Y-%m-%d %H:%M:%S')} • {block_footer_text}"
 
-    return _embed(theme("block.title", coin=coin_display), desc, COLORS["purple"], fields, footer=footer)
+    # Explorer link — makes the embed title clickable in Discord; also shown as a field for Telegram/ntfy
+    explorer_url = get_block_explorer_url(coin, block_hash)
+    if explorer_url:
+        fields.append({
+            "name": "🔍 View Block",
+            "value": f"[Open on Explorer]({explorer_url})",
+            "inline": False
+        })
+
+    embed = _embed(theme("block.title", coin=coin_display), desc, COLORS["purple"], fields, footer=footer)
+    if explorer_url:
+        embed["url"] = explorer_url  # Makes Discord embed title a hyperlink
+    return embed
 
 
 def create_block_orphaned_embed(block_height, pool_block_num=None, coin_symbol=None, found_at=None, orphaned_at=None, block_reward=None, prices=None):
@@ -11459,29 +13095,16 @@ Block notification mode changed: **{old_name}** → **{new_name}**
 def create_ha_replica_embed(old_count, new_count):
     """Sentinel alert: HA replica count decreased."""
 
-    ha_bar = "⚠═══════════════════════════════⚠"
-    banner_text = theme("ha.replica_drop.banner")
-    desc = f"""```ansi
-\u001b[1;31m{ha_bar}
-{"🔗 " + banner_text + " 🔗":^{len(ha_bar)}}
-{ha_bar}\u001b[0m
-```
-
-HA replica count dropped from **{old_count}** to **{new_count}**
-
-⚠️ {theme("ha.replica_drop.body")}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    lost = old_count - new_count
+    desc = f"**{lost}** replica node(s) lost. {theme('ha.replica_drop.body')}"
 
     fields = [
-        {
-            "name": "🔗 HA Cluster Status",
-            "value": f"**Previous Replicas:** `{old_count}`\n**Current Replicas:** `{new_count}`\n**Lost:** `{old_count - new_count}` node(s)",
-            "inline": False
-        },
+        {"name": "📊 Was",  "value": f"`{old_count}` replica(s)", "inline": True},
+        {"name": "📊 Now",  "value": f"`{new_count}` replica(s)", "inline": True},
+        {"name": "❌ Lost", "value": f"`{lost}` node(s)",         "inline": True},
         {
             "name": "🔧 Check These",
-            "value": "• Replica node network connectivity\n• Replica process status\n• Database replication health\n• Check `spiralpool ha status`",
+            "value": "• Replica node connectivity\n• Replica process status\n• DB replication health\n• `spiralpool ha status`",
             "inline": False
         },
     ]
@@ -11493,33 +13116,17 @@ def create_ha_promoted_embed(node_ip, role, vip, reason=""):
     """Sentinel alert: Node promoted to MASTER - services starting."""
 
     hostname = _SENTINEL_HOSTNAME
-    ha_bar = "👑═══════════════════════════════👑"
-    banner_text = theme("ha.promoted.banner")
-    desc = f"""```ansi
-\u001b[1;32m{ha_bar}
-{banner_text:^{len(ha_bar)}}
-{ha_bar}\u001b[0m
-```
-
-`{hostname}` has been promoted to **MASTER**. All services starting.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    desc = f"**`{hostname}`** {theme('ha.promoted.body')}"
 
     fields = [
-        {
-            "name": "👑 Promotion Details",
-            "value": f"**Host:** `{hostname}`\n**Node IP:** `{node_ip}`\n**New Role:** `{role}`\n**VIP:** `{vip or 'N/A'}`",
-            "inline": False
-        },
+        {"name": "🖥️ Host",    "value": f"`{hostname}`",    "inline": True},
+        {"name": "🌐 Node IP", "value": f"`{node_ip}`",     "inline": True},
+        {"name": "📡 VIP",     "value": f"`{vip or 'N/A'}`","inline": True},
     ]
     if reason:
-        fields.append({
-            "name": "📋 Reason",
-            "value": reason,
-            "inline": False
-        })
+        fields.append({"name": "📋 Reason", "value": reason, "inline": False})
 
-    return _embed(f"👑 {hostname} PROMOTED TO MASTER", desc, COLORS["green"], fields,
+    return _embed(f"👑 Promoted to Master", desc, COLORS["green"], fields,
                   footer=f"🌀 {hostname} • {theme('ha.promoted.footer')}")
 
 
@@ -11527,33 +13134,17 @@ def create_ha_demoted_embed(node_ip, old_role, new_role, reason=""):
     """Sentinel alert: Node demoted to BACKUP - services stopping."""
 
     hostname = _SENTINEL_HOSTNAME
-    ha_bar = "🔄═══════════════════════════════🔄"
-    banner_text = theme("ha.demoted.banner")
-    desc = f"""```ansi
-\u001b[1;33m{ha_bar}
-{banner_text:^{len(ha_bar)}}
-{ha_bar}\u001b[0m
-```
-
-`{hostname}` has been demoted to **{new_role}**. Managed services stopping.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    desc = f"**`{hostname}`** {theme('ha.demoted.body')}"
 
     fields = [
-        {
-            "name": "🔄 Demotion Details",
-            "value": f"**Host:** `{hostname}`\n**Node IP:** `{node_ip}`\n**Previous Role:** `{old_role}`\n**New Role:** `{new_role}`",
-            "inline": False
-        },
+        {"name": "🖥️ Host",       "value": f"`{hostname}`",                    "inline": True},
+        {"name": "🌐 Node IP",    "value": f"`{node_ip}`",                     "inline": True},
+        {"name": "🔀 Role Change","value": f"`{old_role}` → `{new_role}`",     "inline": True},
     ]
     if reason:
-        fields.append({
-            "name": "📋 Reason",
-            "value": reason,
-            "inline": False
-        })
+        fields.append({"name": "📋 Reason", "value": reason, "inline": False})
 
-    return _embed(f"🔄 {hostname} DEMOTED TO {new_role}", desc, COLORS["yellow"], fields,
+    return _embed(f"🔄 Demoted to {new_role}", desc, COLORS["yellow"], fields,
                   footer=f"🌀 {hostname} • {theme('ha.demoted.footer')}")
 
 
@@ -11562,24 +13153,12 @@ def create_ha_replication_lag_embed(lag_bytes, lag_seconds, threshold):
 
     lag_mb = lag_bytes / (1024 * 1024) if lag_bytes else 0
 
-    ha_bar = "⏱️═══════════════════════════════⏱️"
-    banner_text = theme("ha.replication_lag.banner")
-    desc = f"""```ansi
-\u001b[1;33m{ha_bar}
-{banner_text:^{len(ha_bar)}}
-{ha_bar}\u001b[0m
-```
-
-{theme("ha.replication_lag.body")}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    desc = theme("ha.replication_lag.body")
 
     fields = [
-        {
-            "name": "⏱️ Replication Status",
-            "value": f"**Lag:** `{lag_mb:.1f} MB` (`{lag_bytes:,}` bytes)\n**Estimated Delay:** `{lag_seconds:.0f}s`\n**Threshold:** `{threshold / (1024 * 1024):.0f} MB`",
-            "inline": False
-        },
+        {"name": "📦 Lag",       "value": f"`{lag_mb:.1f} MB`",                            "inline": True},
+        {"name": "⏱️ Delay",     "value": f"`{lag_seconds:.0f}s`",                          "inline": True},
+        {"name": "📏 Threshold", "value": f"`{threshold / (1024 * 1024):.0f} MB`",          "inline": True},
         {
             "name": "⚠️ Impact",
             "value": "• Failover may result in data loss\n• Replica is behind the primary\n• Check network bandwidth and disk I/O",
@@ -11594,27 +13173,14 @@ def create_ha_replication_lag_embed(lag_bytes, lag_seconds, threshold):
 def create_ha_resync_embed(resync_type, progress_pct, eta_minutes, details=""):
     """Sentinel alert: Post-failover resync in progress."""
 
-    ha_bar = "🔄═══════════════════════════════🔄"
-    banner_text = theme("ha.resync.banner")
-    desc = f"""```ansi
-\u001b[1;36m{ha_bar}
-{banner_text:^{len(ha_bar)}}
-{ha_bar}\u001b[0m
-```
-
-{theme("ha.resync.body")}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
-
     eta_str = f"{eta_minutes:.0f} min" if eta_minutes and eta_minutes > 0 else "Estimating..."
     progress_bar = "█" * int(progress_pct / 10) + "░" * (10 - int(progress_pct / 10)) if progress_pct else "░" * 10
+    desc = theme("ha.resync.body")
 
     fields = [
-        {
-            "name": "🔄 Resync Status",
-            "value": f"**Type:** `{resync_type}`\n**Progress:** `{progress_bar}` `{progress_pct:.0f}%`\n**ETA:** `{eta_str}`",
-            "inline": False
-        },
+        {"name": "🔄 Type",     "value": f"`{resync_type}`",                    "inline": True},
+        {"name": "📊 Progress", "value": f"`{progress_bar}` `{progress_pct:.0f}%`", "inline": True},
+        {"name": "⏳ ETA",      "value": f"`{eta_str}`",                         "inline": True},
     ]
     if details:
         fields.append({
@@ -12291,7 +13857,7 @@ def create_monthly_earnings_embed(earnings, prices, wallet_balance=None, coin_sy
     # Get primary coin for wallet display
     primary_coin = coin_symbol or get_primary_coin() or "UNKNOWN"
 
-    # Multi-coin earnings display with code blocks - ALL 13 coins (alphabetically ordered)
+    # Multi-coin earnings display with code blocks - ALL 14 coins (alphabetically ordered)
     coins_mined = []
     # SHA-256d coins (alphabetically)
     if earnings.get('bc2', 0) > 0:
@@ -12460,7 +14026,7 @@ def create_quarterly_embed(stats, trends, prices, wallet_balance=None, coin_symb
     # Get primary coin for wallet display
     primary_coin = coin_symbol or get_primary_coin() or "UNKNOWN"
 
-    # Performance section with multi-coin - ALL 13 coins (alphabetically ordered)
+    # Performance section with multi-coin - ALL 14 coins (alphabetically ordered)
     perf = f"🏆 Blocks: **{stats.get('total_blocks', 0)}**\n"
 
     # Show each coin mined - SHA-256d coins (alphabetically)
@@ -12595,13 +14161,13 @@ def create_consolidated_report_embed(report_types, data):
         "weekly": "WEEKLY",
         "monthly": "MONTHLY",
         "quarterly": "QUARTERLY",
-        "special": data.get("special_info", {}).get("name", "SPECIAL").upper()
+        "special": (data.get("special_info") or {}).get("name", "SPECIAL").upper()
     }
     title_parts = [type_labels.get(t, t.upper()) for t in report_types]
     title = " + ".join(title_parts) + " " + theme("consolidated.title_suffix")
 
     # Add special date emoji if applicable
-    special_emoji = data.get("special_info", {}).get("emoji", "")
+    special_emoji = (data.get("special_info") or {}).get("emoji", "")
     if special_emoji:
         title = f"{special_emoji} {title}"
     else:
@@ -13326,7 +14892,7 @@ class AchievementTracker:
 
 # === MONITOR STATE ===
 class MonitorState:
-    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted"]
+    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted"]
 
     def __init__(self):
         self.data_dir = DATA_DIR
@@ -13348,6 +14914,7 @@ class MonitorState:
         self.last_alerts = {}
         self.miner_offline_since = {}
         self.miner_restart_times = {}
+        self.zombie_kick_times = {}   # name → timestamp of last stratum kick attempt
         self.temp_alert_sent = {}
         self.miner_offline_alert_sent = {}  # Separate from temp_alert_sent to avoid suppression
         self.miner_last_uptime = {}
@@ -13388,7 +14955,8 @@ class MonitorState:
         self.expected_fleet_ths = CONFIG.get("expected_fleet_ths", 22.0)  # Expected total fleet hashrate
         self.expected_fleet_ths_disabled = CONFIG.get("expected_fleet_ths_disabled", False)  # True if user skipped hashrate setting
 
-        # Pool block counter
+        # Pool block counter — initialised to 0 here; load() will restore from
+        # state.json and then re-seed from the database (whichever is higher wins).
         self.pool_blocks_found = 0
 
         # Personal bests tracking
@@ -13568,6 +15136,19 @@ class MonitorState:
                 self.high_odds_session_alerted = {}
         except (json.JSONDecodeError, IOError, OSError, KeyError, TypeError) as e:
             logger.warning(f"Could not load state file: {e}")
+
+        # Re-seed pool_blocks_found from the database if state.json has a stale
+        # (lower) value — handles database restores where historical blocks are
+        # imported but state.json still has the old count.
+        try:
+            _db_blocks = fetch_pool_blocks(limit=10000)
+            if _db_blocks:
+                db_count = len(_db_blocks)
+                if db_count > self.pool_blocks_found:
+                    logger.info(f"Pool block counter corrected: state had {self.pool_blocks_found}, DB has {db_count}")
+                    self.pool_blocks_found = db_count
+        except Exception:
+            pass  # API not ready — keep state.json value
 
     def save(self):
         """Save state to disk atomically.
@@ -14396,7 +15977,7 @@ class MonitorState:
         return new_miners
 
     def record_block(self, miner, block_num, network_phs, odds, coin_symbol=None):
-        """Record a block found. Supports all 13 coins including aux chains: NMC, SYS, XMY, FBTC."""
+        """Record a block found. Supports all 14 coins including aux chains: NMC, SYS, XMY, FBTC."""
         coin = coin_symbol.upper() if coin_symbol else (get_primary_coin() or "UNKNOWN")
         self.block_history.append({
             "t": time.time(), "miner": miner, "height": block_num,
@@ -14502,11 +16083,9 @@ class MonitorState:
                 )[:100]
                 self.known_block_statuses = {h: self.known_block_statuses[h] for h in sorted_hashes}
 
-            # Prune orphan_alerts_sent — keep recent block hashes only
-            # Use known_block_statuses keys as reference for which hashes are still relevant
-            if len(self.orphan_alerts_sent) > 200:
-                valid_hashes = set(self.known_block_statuses.keys())
-                self.orphan_alerts_sent = self.orphan_alerts_sent & valid_hashes
+            # Keep orphan_alerts_sent in sync with known_block_statuses — always prune
+            # so stale hashes evicted from known_block_statuses can't block future detection
+            self.orphan_alerts_sent = self.orphan_alerts_sent & set(self.known_block_statuses.keys())
 
         except Exception as e:
             logger.debug(f"check_for_orphans error: {e}")
@@ -14553,22 +16132,15 @@ class MonitorState:
                 if block_hash in self.seen_pool_block_hashes:
                     continue
 
-                # Skip stale blocks on startup recovery — prevents duplicate alerts
-                # when state file is lost/empty after restart. Blocks older than 1 hour
-                # are silently marked as seen without alerting.
-                # _fresh_start is set before the loop (True when seen_pool_block_hashes was empty).
-                block_created = block.get("created", "")
-                if block_created and _fresh_start:
-                    try:
-                        from datetime import datetime, timezone
-                        created_dt = datetime.fromisoformat(block_created.replace("Z", "+00:00"))
-                        age_seconds = (datetime.now(timezone.utc) - created_dt).total_seconds()
-                        if age_seconds > 3600:
-                            self.seen_pool_block_hashes.add(block_hash)
-                            logger.info(f"Skipping stale block {block.get('blockHeight', '?')} (age: {age_seconds/3600:.1f}h) — marking as seen")
-                            continue
-                    except (ValueError, TypeError):
-                        pass  # Can't parse timestamp, proceed normally
+                # On fresh state (state.json lost or first run), seed ALL existing blocks
+                # as seen without alerting. We have no record of what was already alerted,
+                # so re-alerting anything risks duplicates. Normal restarts with intact
+                # state.json have seen_pool_block_hashes populated (fresh_start=False) and
+                # handle missed blocks correctly via the normal path below.
+                if _fresh_start:
+                    self.seen_pool_block_hashes.add(block_hash)
+                    logger.info(f"Fresh state: seeding block {block.get('blockHeight', '?')} as seen (no alert)")
+                    continue
 
                 # Check if this block belongs to our wallet/workers
                 block_miner = block.get("miner", "")
@@ -14682,7 +16254,7 @@ class MonitorState:
         }
 
     def get_monthly_earnings(self, prices=None):
-        """Get monthly earnings with multi-coin support - ALL 13 supported coins."""
+        """Get monthly earnings with multi-coin support - ALL 14 supported coins."""
         all_prices = fetch_all_prices() or {}
 
         # Build result with per-coin amounts
@@ -15163,6 +16735,30 @@ class MonitorState:
         return None
 
 
+def _build_simpleswap_surge_field(coin_symbol):
+    """Build a Discord embed field with a SimpleSwap link for the surging coin.
+
+    The link opens SimpleSwap with the source coin and BTC pre-selected.
+    The operator enters their BTC address on the SimpleSwap website —
+    nothing is stored in Spiral Pool config.
+
+    Args:
+        coin_symbol: Coin ticker string (e.g. "DGB", "LTC")
+
+    Returns:
+        dict suitable for the embed 'fields' list
+    """
+    coin_lower = coin_symbol.lower()
+    swap_url = f"https://simpleswap.io/exchange?from={coin_lower}&to=btc"
+
+    value = (
+        f"🔄 [**Convert {coin_symbol} → BTC on SimpleSwap**]({swap_url})\n"
+        f"*Click the link — enter your BTC wallet address on the SimpleSwap website.*"
+    )
+
+    return {"name": "💱 SimpleSwap", "value": value, "inline": False}
+
+
 def create_sats_surge_embed(surge_info, all_prices=None):
     """Create Discord embed for sat value surge alert.
 
@@ -15215,14 +16811,16 @@ def create_sats_surge_embed(surge_info, all_prices=None):
 
     fields = []
 
-    # Magnitude-aware recommendation
+    # Magnitude-aware swap recommendation
     if change_pct >= 100:
-        recommendation = f"🚀 **Major surge!** {coin} has more than doubled in BTC value. Strongly consider converting to BTC if you don't plan to hold {coin} long-term."
+        recommendation = f"🚀 **Recommend to swap.** {coin} has more than doubled in BTC value — strong opportunity to convert to BTC."
     elif change_pct >= 50:
-        recommendation = f"📈 Significant {coin}/BTC increase. Good time to convert {coin} holdings to BTC while the ratio is favorable."
+        recommendation = f"📈 **Recommend to swap.** {coin} is up {change_pct:.0f}% vs BTC — good time to convert while the ratio is favorable."
     else:
-        recommendation = f"Consider converting {coin} to BTC while sat value is elevated. Check exchange rates and fees before trading."
+        recommendation = f"**Recommend to swap.** {coin} sat value is elevated +{change_pct:.0f}% vs {lookback_days}d ago — consider converting to BTC."
     fields.append({"name": "💡 Recommendation", "value": recommendation, "inline": False})
+
+    fields.append(_build_simpleswap_surge_field(coin))
 
     return _embed(
         theme("sats_surge.title", coin_emoji=coin_emoji, coin_name=coin_name),
@@ -15505,16 +17103,25 @@ def monitor_loop(state):
     logger.info("=" * 65)
     logger.info(f"  Spiral Sentinel v{__version__}")
     logger.info("  Autonomous Solo Mining Monitor")
-    logger.info("  BLACKICE EDITION")
+    logger.info("  PHI FORGE EDITION")
     logger.info("=" * 65)
     logger.info(f"Interval: {CHECK_INTERVAL}s | Alerts: {'ON' if ALERTS_ENABLED else 'OFF'} | Health: {'ON' if HEALTH_MONITORING_ENABLED else 'OFF'}")
 
-    # Show Discord webhook status
+    # Show notification channel status
     if DISCORD_WEBHOOK_URL and "YOUR" not in DISCORD_WEBHOOK_URL:
-        # Show webhook is configured without leaking the URL/token in logs
         logger.info(f"Discord: Configured (webhook ...{DISCORD_WEBHOOK_URL[-8:]})")
     else:
         logger.warning(f"Discord: NOT CONFIGURED - set discord_webhook_url in {CONFIG_FILE}")
+    if TELEGRAM_ENABLED:
+        logger.info("Telegram: Configured")
+    if XMPP_ENABLED:
+        logger.info("XMPP: Configured")
+    if NTFY_ENABLED:
+        # Log topic URL without auth token
+        ntfy_display = NTFY_URL.split("?")[0]
+        logger.info(f"ntfy: Configured ({ntfy_display})")
+    if SMTP_ENABLED:
+        logger.info(f"Email: Configured ({SMTP_HOST}:{SMTP_PORT} → {', '.join(SMTP_TO)})")
 
     # Initialize HA manager for alert coordination in multi-node setups
     # This ensures only the MASTER Sentinel sends alerts to prevent triple-alerting
@@ -15528,6 +17135,23 @@ def monitor_loop(state):
             logger.info("Mode: Standalone (no HA cluster detected)")
     else:
         logger.info("Mode: Standalone (HA manager not available)")
+
+    # Start Telegram bot command polling thread (background, daemon — exits with main process)
+    if TELEGRAM_COMMANDS_ENABLED:
+        tg_cmd_thread = threading.Thread(
+            target=_telegram_command_loop, args=(state,), daemon=True, name="tg-cmd-poll"
+        )
+        tg_cmd_thread.start()
+        logger.info("Telegram: Bot commands enabled (/status /miners /hashrate /blocks /help)")
+
+    # Start Sentinel health endpoint (loopback HTTP, GET /health + GET /cooldowns)
+    global _health_state_ref
+    _health_state_ref = state
+    if SENTINEL_HEALTH_ENABLED:
+        health_thread = threading.Thread(
+            target=_health_server_loop, args=(SENTINEL_HEALTH_PORT,), daemon=True, name="sentinel-health"
+        )
+        health_thread.start()
 
     # Initialize historical data manager for long-term trend tracking
     history = HistoricalDataManager()
@@ -15820,6 +17444,15 @@ def monitor_loop(state):
         logger.warning("Network stats unavailable, sending startup alert without odds")
         send_alert("startup_summary", create_startup_embed(fleet_ths, md, temps, miner_status, None, None, primary_coin, power), state)
 
+    # ── Config validation warning (fire once at startup if issues found) ─────────
+    try:
+        _cfg_issues = validate_config(CONFIG)
+        if _cfg_issues:
+            logger.warning(f"Sending config warning embed ({len(_cfg_issues)} issue(s))")
+            send_notifications(create_config_warning_embed(_cfg_issues))
+    except Exception as _e:
+        logger.debug(f"Config warning check error (non-critical): {_e}")
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # BLOCK RECOVERY — Detect blocks found while Sentinel was offline
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -15851,7 +17484,8 @@ def monitor_loop(state):
                     block["height"], startup_prices, startup_bri, worker,
                     miner_details=miner_details,
                     pool_block_num=state.pool_blocks_found,
-                    coin_symbol=block.get("coin", primary_coin)
+                    coin_symbol=block.get("coin", primary_coin),
+                    block_hash=block.get("hash")
                 ), state)
                 trigger_block_celebration(miner_details)
                 logger.info(f"BLOCK RECOVERED #{state.pool_blocks_found} by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
@@ -15892,7 +17526,8 @@ def monitor_loop(state):
                         block["height"], aux_prices, aux_bri, worker,
                         miner_details=miner_details,
                         pool_block_num=state.pool_blocks_found,
-                        coin_symbol=aux_coin
+                        coin_symbol=aux_coin,
+                        block_hash=block.get("hash")
                     ), state)
                     trigger_block_celebration(miner_details)
                     logger.info(f"AUX BLOCK RECOVERED #{state.pool_blocks_found} ({aux_coin}) by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
@@ -15900,6 +17535,16 @@ def monitor_loop(state):
                     state.save()
     except Exception as e:
         logger.warning(f"Block recovery scan error (non-critical): {e}")
+
+    # Seed orphan detection state so transitions that occurred while Sentinel was offline
+    # are detected on the first main-loop cycle. check_for_orphans() records all current
+    # pool blocks into known_block_statuses with their current status (no alerts fired for
+    # first sightings) — only future transitions to orphaned will trigger alerts.
+    try:
+        state.check_for_orphans()
+        logger.info("Orphan detection state seeded from current pool data")
+    except Exception as e:
+        logger.warning(f"Orphan seeding error (non-critical): {e}")
 
     # Initialize variables used by infrastructure checks before first assignment
     prices = None
@@ -15976,6 +17621,12 @@ def monitor_loop(state):
             if not in_startup_grace:
                 coin_health = check_all_coins_health()
                 handle_coin_health_alerts(coin_health, state)
+                check_stuck_syncs(state)
+                check_dry_streak(state)
+                check_difficulty_changes(state)
+                check_disk_space(state)
+                check_mempool_congestion(state)
+                check_backup_staleness(state)
 
             # Check HA/VIP changes every minute
             ha_vip_change = check_ha_vip_changes()
@@ -16319,9 +17970,29 @@ def monitor_loop(state):
 
             if not net:
                 logger.warning("Network unreachable...")
+                # ── Stratum-down detection ──────────────────────────────────────
+                global _stratum_down_since, _stratum_down_alerted
+                if _stratum_down_since is None:
+                    _stratum_down_since = current_time
+                    _stratum_down_alerted = False
+                    logger.warning("Pool API became unreachable — starting outage timer")
+                elif not _stratum_down_alerted and not in_startup_grace:
+                    outage_secs = current_time - _stratum_down_since
+                    if outage_secs >= 300:  # 5-minute grace before alerting
+                        send_notifications(create_stratum_down_embed(_stratum_down_since))
+                        _stratum_down_alerted = True
+                        logger.warning(f"Stratum-down alert sent (outage {outage_secs:.0f}s)")
                 # P1 AUDIT FIX: Use coin-aware interval even during errors
                 time.sleep(get_check_interval(primary_coin))
                 continue
+
+            # ── Stratum recovery ────────────────────────────────────────────────
+            if _stratum_down_since is not None:
+                if _stratum_down_alerted:
+                    send_notifications(create_stratum_recovered_embed(_stratum_down_since, current_time))
+                    logger.info(f"Stratum recovered after {current_time - _stratum_down_since:.0f}s outage")
+                _stratum_down_since = None
+                _stratum_down_alerted = False
 
             net_phs, diff = net["network_phs"], net.get("difficulty")
             odds = calc_odds(net_phs, fleet_ths, primary_coin)
@@ -16373,10 +18044,10 @@ def monitor_loop(state):
                                             cooldown = ALERT_COOLDOWNS.get("missing_payout", 86400)
                                             if (current_time - last_alert) >= cooldown:
                                                 embed = create_missing_payout_embed(primary_coin, int(days_since_check_start), current_balance)
-                                                send_alert("missing_payout", embed, state)
-                                                state.last_alerts[alert_key] = current_time
-                                                state.missing_payout_alerted = True
-                                                logger.warning(f"MISSING PAYOUT: No balance change in {int(days_since_check_start)} days")
+                                                if send_alert("missing_payout", embed, state):
+                                                    state.last_alerts[alert_key] = current_time
+                                                    state.missing_payout_alerted = True
+                                                    logger.warning(f"MISSING PAYOUT: No balance change in {int(days_since_check_start)} days")
                                     # If already alerted, do nothing — wait for actual balance change
 
                                 else:
@@ -16535,6 +18206,16 @@ def monitor_loop(state):
                                     send_alert("share_rejection_spike", create_rejection_spike_embed(name, reject_pct, total_acc, true_rej, total_stale, stale_pct), state, miner_name=name)
                                     state.last_alerts[rej_alert_key] = current_time
                                     logger.warning(f"REJECTION SPIKE: {sanitize_log_input(name)} {reject_pct:.1f}% reject + {stale_pct:.1f}% stale ({true_rej}+{total_stale}/{total_shares})")
+                                    # Kick the stratum session — forces a clean reconnect and difficulty
+                                    # re-negotiation, which resolves most rejection spikes without a reboot
+                                    rej_miner_ip = next(
+                                        (m.get("ip") for mt in ALL_MINER_TYPES for m in MINERS.get(mt, []) if m["name"] == name),
+                                        None
+                                    )
+                                    if rej_miner_ip:
+                                        kicked = kick_stratum_session(rej_miner_ip)
+                                        if kicked:
+                                            logger.info(f"REJECTION SPIKE: kicked {kicked} stratum session(s) for {sanitize_log_input(name)} @ {rej_miner_ip}")
 
                     # Track pool-side share verification (if enabled)
                     if CONFIG.get("pool_share_validation", True):
@@ -16560,20 +18241,54 @@ def monitor_loop(state):
                     ALL_MINER_TYPES = ["nerdqaxe", "nmaxe", "axeos", "avalon", "antminer", "antminer_scrypt", "whatsminer", "innosilicon", "futurebit", "hammer", "goldshell", "luckyminer", "jingleminer", "zyber", "esp32miner"]
 
                     # Zombie detection (only if health monitoring enabled, skip ESP32 lottery miners)
+                    # Remediation strategy: kick stratum session first (fast, ~5s recovery);
+                    # only escalate to a full miner reboot if the zombie condition persists
+                    # 15+ minutes after the kick was attempted.
                     if HEALTH_MONITORING_ENABLED and not is_esp32:
                         zombie = state.check_zombie_miner(name)
-                        if zombie and (time.time() - state.get_last_restart_time(name)) > 900 and uptimes.get(name, 0) > 900 and not in_startup_grace:  # 15 min cooldown
+                        if zombie and (time.time() - state.get_last_restart_time(name)) > 900 and uptimes.get(name, 0) > 900 and not in_startup_grace:
                             logger.warning(f"ZOMBIE: {sanitize_log_input(name)} - {sanitize_log_input(zombie['reason'])}")
                             send_alert("zombie_miner", create_zombie_embed(name, zombie), state, miner_name=name)
-                            state.track_chronic_issue(name, "zombie_miner")  # Track for chronic detection
-                            # Try restart for all miner types
-                            # Note: Don't record_miner_restart here - blip detection will record it
-                            # when the miner's uptime actually resets, avoiding false restart counts
+                            state.track_chronic_issue(name, "zombie_miner")
+
+                            last_kick = state.zombie_kick_times.get(name, 0)
+                            kick_age = time.time() - last_kick
+                            # ZOMBIE_KICK_WINDOW: how long to wait after a kick before escalating to reboot
+                            ZOMBIE_KICK_WINDOW = 900  # 15 minutes — enough time for miner to reconnect and reestablish shares
+
+                            # Find miner IP for stratum kick
+                            miner_ip = None
                             for miner_type in ALL_MINER_TYPES:
                                 for m in MINERS.get(miner_type, []):
                                     if m["name"] == name:
-                                        restart_miner(miner_type, m["ip"], m.get("port", 4028))
+                                        miner_ip = m.get("ip")
                                         break
+                                if miner_ip:
+                                    break
+
+                            if last_kick == 0:
+                                # First detection — kick stratum session first; reboot only if it
+                                # doesn't resolve within ZOMBIE_KICK_WINDOW (15 min)
+                                kicked = kick_stratum_session(miner_ip) if miner_ip else 0
+                                state.zombie_kick_times[name] = time.time()
+                                if kicked:
+                                    logger.info(f"ZOMBIE: kicked {kicked} stratum session(s) for {sanitize_log_input(name)} @ {miner_ip} — awaiting reconnect")
+                                else:
+                                    logger.info(f"ZOMBIE: stratum kick attempted for {sanitize_log_input(name)} (no active sessions or admin key not configured)")
+                            elif kick_age < ZOMBIE_KICK_WINDOW:
+                                # Kick was attempted recently — wait for miner to recover before escalating
+                                logger.debug(f"ZOMBIE: {sanitize_log_input(name)} — kick attempted {kick_age/60:.1f}m ago, waiting for reconnect ({ZOMBIE_KICK_WINDOW//60}m threshold)")
+                            else:
+                                # Kick attempted but zombie condition persists beyond the window — escalate
+                                logger.warning(f"ZOMBIE: kick did not resolve issue for {sanitize_log_input(name)} after {kick_age/60:.0f} min — escalating to miner reboot")
+                                state.zombie_kick_times.pop(name, None)  # Reset so next detection starts with a kick again
+                                # Note: Don't record_miner_restart here - blip detection will record it
+                                # when the miner's uptime actually resets, avoiding false restart counts
+                                for miner_type in ALL_MINER_TYPES:
+                                    for m in MINERS.get(miner_type, []):
+                                        if m["name"] == name:
+                                            restart_miner(miner_type, m["ip"], m.get("port", 4028))
+                                            break
 
                     # Get expected hashrate from any miner type
                     all_miners = []
@@ -16587,8 +18302,12 @@ def monitor_loop(state):
             # NOTE: This only works for industrial ASICs (Antminer, Whatsminer, Innosilicon)
             # BitAxe/AxeOS devices have has_blocks=False because their "found_blocks" counter
             # increments on personal best difficulty shares, not real network blocks.
-            # Track which workers we've alerted for in this cycle to avoid double alerts
+            # Track which workers and block hashes we've alerted for in this cycle to avoid
+            # double alerts. Worker-name dedup covers most cases; hash-based dedup covers
+            # the case where CGMiner reports a different worker name than the pool API source
+            # field (e.g. CGMiner says "q" but pool API source says "BG-03").
             alerted_workers_this_cycle = set()
+            alerted_hashes_this_cycle = set()
             if mblocks:
                 finders = state.check_new_blocks(mblocks, net_phs, odds, primary_coin)
                 for f in finders:
@@ -16615,16 +18334,19 @@ def monitor_loop(state):
                         expected_secs = odds["expected_days"] * 86400
                         _effort = (_time_since / expected_secs * 100) if expected_secs > 0 else None
                     send_alert("block_found", create_block_embed(
-                        f["total"], prices, bri, f["miner"],
+                        None, prices, bri, f["miner"],
                         miner_details=miner_details,
                         pool_block_num=state.pool_blocks_found,
                         coin_symbol=primary_coin,
                         time_since_last=_time_since,
-                        effort_pct=_effort
+                        effort_pct=_effort,
+                        block_hash=f.get("hash")
                     ), state)
                     trigger_block_celebration(miner_details)
                     logger.info(f"BLOCK #{state.pool_blocks_found} by {sanitize_log_input(f['miner'])}!")
                     alerted_workers_this_cycle.add(f["miner"])
+                    if f.get("hash"):
+                        alerted_hashes_this_cycle.add(f["hash"])
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # POOL-SIDE BLOCK DETECTION - Works for ALL miner types
@@ -16635,8 +18357,10 @@ def monitor_loop(state):
             pool_new_blocks = state.check_pool_for_new_blocks(net_phs, odds, primary_coin)
             for block in pool_new_blocks:
                 worker = block.get("worker") or block["miner"]
-                # Skip if already alerted via miner-reported detection
-                if worker in alerted_workers_this_cycle:
+                block_hash_pool = block.get("hash", "")
+                # Skip if already alerted via miner-reported detection — check both worker
+                # name and block hash since CGMiner may report a different name than pool API
+                if worker in alerted_workers_this_cycle or (block_hash_pool and block_hash_pool in alerted_hashes_this_cycle):
                     logger.debug(f"Pool block for {worker} already alerted via miner-reported detection")
                     continue
 
@@ -16656,7 +18380,8 @@ def monitor_loop(state):
                     block["height"], prices, bri, worker,
                     miner_details=miner_details,
                     pool_block_num=state.pool_blocks_found,
-                    coin_symbol=block.get("coin", primary_coin)
+                    coin_symbol=block.get("coin", primary_coin),
+                    block_hash=block.get("hash")
                 ), state)
                 trigger_block_celebration(miner_details)
                 logger.info(f"POOL BLOCK #{state.pool_blocks_found} by {sanitize_log_input(worker)} (height {block['height']})!")
@@ -16719,7 +18444,8 @@ def monitor_loop(state):
                             block["height"], aux_prices, aux_bri, worker,
                             miner_details=miner_details,
                             pool_block_num=state.pool_blocks_found,
-                            coin_symbol=aux_coin
+                            coin_symbol=aux_coin,
+                            block_hash=block.get("hash")
                         ), state)
                         trigger_block_celebration(miner_details)
                         logger.info(
@@ -17477,16 +19203,24 @@ def monitor_loop(state):
             # History is saved immediately after recording in record_sample block above
 
             # Check for updates every 6 hours
-            if UPDATE_CHECK_ENABLED and (time.time() - last_update_check) > UPDATE_CHECK_INTERVAL:
+            if UPDATE_CHECK_ENABLED and AUTO_UPDATE_MODE != "disabled" and \
+                    (time.time() - last_update_check) > UPDATE_CHECK_INTERVAL:
                 last_update_check = time.time()
                 update_info = check_for_updates()
                 if update_info and update_info.get("update_available"):
                     latest_ver = update_info.get("latest_version", "")
-                    # Only notify once per new version
                     if latest_ver and latest_ver != last_notified_version:
-                        logger.info(f"Update available: v{latest_ver}")
-                        send_alert("update_available", create_update_embed(update_info), state)
-                        last_notified_version = latest_ver
+                        logger.info(f"Update available: v{latest_ver} (mode={AUTO_UPDATE_MODE})")
+                        if AUTO_UPDATE_MODE == "auto":
+                            # Apply update immediately — notify before + after
+                            success = perform_auto_update(update_info)
+                            if success:
+                                last_notified_version = latest_ver
+                        else:
+                            # notify mode — send alert, let operator decide
+                            sent = send_alert("update_available", create_update_embed(update_info), state)
+                            if sent:
+                                last_notified_version = latest_ver
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # ALERT BATCH FLUSH - Send any batched alerts if window has expired
@@ -17565,7 +19299,7 @@ def show_help():
     help_text = f"""
 Spiral Sentinel v{__version__}
 Autonomous Solo Mining Monitor
-BLACKICE EDITION
+PHI FORGE EDITION
 
 Supported: SHA-256d (DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC)
            Scrypt   (LTC, DOGE, PEP, CAT)

@@ -348,7 +348,7 @@ func TestSOLO_Timing_MediumCoins_StandardProgression(t *testing.T) {
 // the stability window is satisfied.
 //
 // Risk vector: off-by-one at maturity boundary
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: 15s - 600s
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_AllCoins_MaturityBoundaryExact(t *testing.T) {
@@ -431,7 +431,7 @@ func TestSOLO_Timing_AllCoins_MaturityBoundaryExact(t *testing.T) {
 // and does NOT enter the stability window.
 //
 // Risk vector: off-by-one confirms block one confirmation too early
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: 15s - 600s
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_AllCoins_MaturityMinusOne_StaysPending(t *testing.T) {
@@ -506,7 +506,7 @@ func TestSOLO_Timing_AllCoins_MaturityMinusOne_StaysPending(t *testing.T) {
 // stability window and eventually confirms after StabilityWindowChecks cycles.
 //
 // Risk vector: maturity boundary not entering stability window
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: 15s - 600s
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_AllCoins_ExactMaturity_EntersStabilityWindow(t *testing.T) {
@@ -664,7 +664,7 @@ func TestSOLO_Timing_FastCoins_RapidSuccessiveBlocks(t *testing.T) {
 // higher custom maturity.
 //
 // Risk vector: custom maturity ignored, using default instead
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: varies
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_CustomMaturity_VsDefault(t *testing.T) {
@@ -739,7 +739,7 @@ func TestSOLO_Timing_CustomMaturity_VsDefault(t *testing.T) {
 // a block confirms at the custom maturity threshold, not the default.
 //
 // Risk vector: block never confirms because custom maturity is ignored
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: varies
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_CustomMaturity_ConfirmsAtCustomThreshold(t *testing.T) {
@@ -1033,7 +1033,7 @@ func TestSOLO_Timing_BTC_600sBlocks_ExtendedPendingPeriod(t *testing.T) {
 // coin. This is the final safety net to catch any coin-specific timing issue.
 //
 // Risk vector: any coin-specific behavior causing silent block loss
-// Coins: all 13 supported coins
+// Coins: all 14 supported coins
 // Block interval: 15s - 600s
 // Algorithm: sha256d / scrypt
 func TestSOLO_Timing_AllCoins_NoBlockLostDuringFullLifecycle(t *testing.T) {

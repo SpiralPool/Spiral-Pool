@@ -11,7 +11,7 @@
     Tests installation prerequisites, Docker configuration, container health,
     network connectivity, and basic pool functionality.
 
-    Supports all 13 coins via the -Coin parameter.
+    Supports all 14 coins via the -Coin parameter.
 
 .NOTES
     Version: 1.1.0
@@ -291,14 +291,14 @@ function Test-Docker {
             -Status "FAIL" -Message $_.Exception.Message
     }
 
-    # Test 4: Windows compose file exists
-    $composeFile = Join-Path $InstallDir "docker\docker-compose.windows.yml"
+    # Test 4: Compose file exists
+    $composeFile = Join-Path $InstallDir "docker\docker-compose.yml"
     if (Test-Path $composeFile) {
-        Add-TestResult -Category "Docker" -Test "Windows compose file exists" `
+        Add-TestResult -Category "Docker" -Test "Compose file exists" `
             -Status "PASS" -Message $composeFile
     } else {
-        Add-TestResult -Category "Docker" -Test "Windows compose file exists" `
-            -Status "FAIL" -Message "docker-compose.windows.yml not found"
+        Add-TestResult -Category "Docker" -Test "Compose file exists" `
+            -Status "FAIL" -Message "docker-compose.yml not found"
     }
 
     # Test 5: Bridge network created

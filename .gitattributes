@@ -10,6 +10,20 @@
 *.conf      text eol=lf
 *.template  text eol=lf
 *.env       text eol=lf
+*.sql       text eol=lf
+*.service   text eol=lf
+*.cfg       text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.mod       text eol=lf
+*.sum       text eol=lf
+*.txt       text eol=lf
+*.toml      text eol=lf
+Dockerfile* text eol=lf
+
+# Windows scripts - always CRLF
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
 
 # Treat these as binary (no line ending conversion)
 *.png       binary

@@ -37,7 +37,7 @@ type testCoinConfig struct {
 	ParentChain  string // Parent chain symbol (if aux)
 }
 
-// allTestCoins defines all 13 supported coins with their characteristics.
+// allTestCoins defines all 14 supported coins with their characteristics.
 // Source of truth: config/coins.manifest.yaml + internal/coin/*.go
 var allTestCoins = []testCoinConfig{
 	// SHA-256d coins
@@ -49,6 +49,7 @@ var allTestCoins = []testCoinConfig{
 	{Symbol: "SYS", Algorithm: "sha256d", BlockTimeSec: 60, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "XMY", Algorithm: "sha256d", BlockTimeSec: 60, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "FBTC", Algorithm: "sha256d", BlockTimeSec: 30, IsAux: true, ParentChain: "BTC"},
+	{Symbol: "QBX", Algorithm: "sha256d", BlockTimeSec: 150},
 
 	// Scrypt coins
 	{Symbol: "LTC", Algorithm: "scrypt", BlockTimeSec: 150, IsParent: true},

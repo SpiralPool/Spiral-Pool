@@ -1,4 +1,4 @@
-# Spiral Pool v1.0 - Regtest Configuration
+# Spiral Pool v1.1.0 - Regtest Configuration
 # Use this for LOCAL TESTING ONLY - never use in production!
 #
 # SECURITY WARNING: This file contains example credentials for testing purposes.
@@ -8,7 +8,7 @@
 # Quick Start:
 #   1. Start Bitcoin Knots in regtest: bitcoind -regtest -daemon -rpcuser=test -rpcpassword=test
 #   2. Generate blocks: bitcoin-cli -regtest generatetoaddress 101 $(bitcoin-cli -regtest getnewaddress)
-#   3. Run pool: ./spiralpool -config config/config.regtest.yaml
+#   3. Run pool: ./spiralpool -config config/regtest/config.regtest.yaml
 #   4. Connect miner: cpuminer -a sha256d -o stratum+tcp://localhost:3333 -u test.worker -p x
 
 version: 1

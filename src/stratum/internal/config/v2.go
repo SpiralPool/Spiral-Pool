@@ -47,6 +47,7 @@ type GlobalConfig struct {
 	MetricsPort      int    `yaml:"metrics_port"`       // Prometheus metrics port
 	MetricsAuthToken string `yaml:"metrics_auth_token,omitempty"` // SECURITY: Bearer token for /metrics endpoint
 	APIPort          int    `yaml:"api_port"`           // REST API port
+	APIBindAddress   string `yaml:"api_bind_address"`   // Bind address for API server (default: "0.0.0.0", use "127.0.0.1" for local-only)
 	APIEnabled       bool   `yaml:"api_enabled"`
 	AdminAPIKey      string `yaml:"admin_api_key"`      // SECURITY: API key for admin endpoints (device hints, etc.)
 	Sentinel    SentinelConfig `yaml:"sentinel,omitempty"` // API Sentinel monitoring (internal pool health)
@@ -608,6 +609,37 @@ func (c *ConfigV2) Validate() error {
 		}
 	}
 
+	// Reject negative numeric values that would bypass SetDefaults' == 0 checks
+	if c.Global.MetricsPort < 0 {
+		return fmt.Errorf("global.metrics_port cannot be negative")
+	}
+	if c.Global.APIPort < 0 {
+		return fmt.Errorf("global.api_port cannot be negative")
+	}
+	if c.Database.Port < 0 {
+		return fmt.Errorf("database.port cannot be negative")
+	}
+	if c.Database.MaxConnections < 0 {
+		return fmt.Errorf("database.max_connections cannot be negative")
+	}
+	for i, coin := range c.Coins {
+		if coin.Stratum.Difficulty.Initial < 0 {
+			return fmt.Errorf("coins[%d] (%s): stratum.difficulty.initial cannot be negative", i, coin.Symbol)
+		}
+		if coin.Stratum.Difficulty.VarDiff.MinDiff < 0 {
+			return fmt.Errorf("coins[%d] (%s): stratum.difficulty.vardiff.min_diff cannot be negative", i, coin.Symbol)
+		}
+		if coin.Stratum.Difficulty.VarDiff.MaxDiff < 0 {
+			return fmt.Errorf("coins[%d] (%s): stratum.difficulty.vardiff.max_diff cannot be negative", i, coin.Symbol)
+		}
+		if coin.Stratum.Connection.MaxConnections < 0 {
+			return fmt.Errorf("coins[%d] (%s): stratum.connection.max_connections cannot be negative", i, coin.Symbol)
+		}
+		if coin.Stratum.Banning.InvalidSharesThreshold < 0 {
+			return fmt.Errorf("coins[%d] (%s): stratum.banning.invalid_shares_threshold cannot be negative", i, coin.Symbol)
+		}
+	}
+
 	return nil
 }
 
@@ -749,6 +781,9 @@ func (c *ConfigV2) SetDefaults() {
 	}
 	if c.Global.APIPort == 0 {
 		c.Global.APIPort = 4000
+	}
+	if c.Global.APIBindAddress == "" {
+		c.Global.APIBindAddress = "0.0.0.0"
 	}
 
 	// Sentinel defaults

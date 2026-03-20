@@ -113,6 +113,7 @@ This software and its documentation reference third-party products, services, an
 | Cloudflare | Cloudflare, Inc. | Tunnel integration documentation |
 | Discord | Discord Inc. | Notification webhook integration |
 | Telegram | Telegram FZ-LLC | Notification bot integration |
+| SimpleSwap | SimpleSwap Inc. | Optional swap alert link in sats_surge notifications (operator uses SimpleSwap website independently) |
 | Google Fonts | Google LLC | Dashboard font loading (CDN) |
 | Prometheus | Cloud Native Computing Foundation | Metrics integration |
 | PostgreSQL | PostgreSQL Global Development Group | Database integration |
@@ -217,7 +218,7 @@ This software and its documentation reference third-party products, services, an
 | QNX | BlackBerry Limited (QNX Software Systems) | Installer VM detection (systemd-detect-virt) |
 | ACRN | The Linux Foundation | Installer VM detection (systemd-detect-virt) |
 
-This list includes the principal trademarks referenced in the codebase as of v1.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
+This list includes the principal trademarks referenced in the codebase as of v1.1. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
 
 ---
 
@@ -287,5 +288,5 @@ This project includes AI-generated visual assets (logo, images). AI-generated co
 
 *This notice is provided to clarify trademark ownership and usage. It is not legal advice.*
 
-*Spiral Pool v1.0 - Trademark Notice*
+*Spiral Pool v1.1.0 - Trademark Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

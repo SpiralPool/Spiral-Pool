@@ -12,11 +12,11 @@ Security controls implemented in Spiral Pool as documented below. Values shown a
 
 | Control | Value | Source |
 |---------|-------|--------|
-| TLS minimum version | TLS 1.2 | `internal/stratum/server.go:224` |
+| TLS minimum version | TLS 1.2 | `internal/stratum/server.go:244` |
 | TLS listener | Separate port per coin (V1+2 offset) | Per-coin config |
-| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go:552` |
+| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go:578` |
 | V2 message size limit | 1,048,576 bytes (1 MB) | `internal/stratum/v2/types.go:28` |
-| Ban persistence | Saved to `/spiralpool/data/bans.json` | `internal/config/config.go:1400` |
+| Ban persistence | Saved to `/spiralpool/data/bans.json` | `internal/config/config.go:1412` |
 | Keepalive monitoring | Idle connection detection | Configurable timeout |
 
 ## Protocol Security (FSM)
@@ -41,8 +41,8 @@ Source: `pkg/protocol/protocol.go:109-178` (connection FSM: `authorized`/`subscr
 
 | Control | Value | Source |
 |---------|-------|--------|
-| Max messages before auth | 20 | `internal/config/config.go:1396` |
-| Auth timeout | 10 seconds | `internal/config/config.go:1390` (default), `internal/stratum/server.go:464` (30s fallback, overridden by config) |
+| Max messages before auth | 20 | `internal/config/config.go:1408` |
+| Auth timeout | 10 seconds | `internal/config/config.go:1402` (default), `internal/stratum/server.go:490` (30s fallback, overridden by config) |
 
 These prevent subscribe-spam attacks and connection slot exhaustion. Connections that exceed either limit are dropped.
 
@@ -66,8 +66,8 @@ Rate limiting is **disabled by default** for compatibility with hashrate marketp
 |-----------|---------|---------------------------|--------|
 | `rateLimiting.enabled` | `false` | `true` | Config |
 | `connectionsPerIP` | 0 (disabled) | 100 | `internal/config/config.go:92` |
-| `sharesPerSecond` | 0 (disabled) | 50 | `internal/config/config.go:94` (struct), `:1380` (default comment) |
-| `workersPerIP` | 0 (disabled) | 100 | `internal/config/config.go:100` (struct), `:1381` (default comment) |
+| `sharesPerSecond` | 0 (disabled) | 50 | `internal/config/config.go:94` (struct), `:1391` (default comment) |
+| `workersPerIP` | 0 (disabled) | 100 | `internal/config/config.go:100` (struct), `:1392` (default comment) |
 
 Example configuration for private pools:
 
@@ -126,4 +126,4 @@ Prometheus metrics endpoint (`/metrics` on port 9100) is protected by `SPIRAL_ME
 
 ---
 
-*Spiral Pool — Black Ice 1.0*
+*Spiral Pool — Phi Forge 1.1.0*

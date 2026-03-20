@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v1.0
+    Spiral Pool - Windows Installer v1.1
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 1.0.0
+    Version: 1.1.0
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "1.0.0"
+$Script:Version = "1.1.0"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,9 +131,9 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                             v1.0" -ForegroundColor DarkGray
+    Write-Host "                           v1.1.0" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "           Solo Mining Pool - SHA256d & Scrypt (13 Coins)" -ForegroundColor Cyan
+    Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
     Write-Host ""
@@ -528,9 +528,9 @@ function Test-PortAvailability {
     $portsToCheck = @(
         @{ Port = [int]$coinInfo.StratumPort; Name = "$SelectedCoin Stratum V1" }
         @{ Port = [int]$coinInfo.TlsPort; Name = "$SelectedCoin Stratum TLS" }
-        @{ Port = [int]($Config.ApiPort ?? 4000); Name = "REST API" }
-        @{ Port = [int]($Config.DashboardPort ?? 1618); Name = "Dashboard" }
-        @{ Port = [int]($Config.MetricsPort ?? 9100); Name = "Prometheus" }
+        @{ Port = [int]$(if ($Config.ApiPort) { $Config.ApiPort } else { 4000 }); Name = "REST API" }
+        @{ Port = [int]$(if ($Config.DashboardPort) { $Config.DashboardPort } else { 1618 }); Name = "Dashboard" }
+        @{ Port = [int]$(if ($Config.MetricsPort) { $Config.MetricsPort } else { 9100 }); Name = "Prometheus" }
         @{ Port = 5432; Name = "PostgreSQL" }
         @{ Port = [int]$coinInfo.P2pPort; Name = "$SelectedCoin P2P" }
         @{ Port = [int]$coinInfo.RpcPort; Name = "$SelectedCoin RPC" }
@@ -934,7 +934,7 @@ function Configure-WSL2Networking {
             Write-Log "Port forwarding is automatic with bridge networking" "INFO"
 
             # Docker Desktop WSL2 integration handles port publishing automatically
-            # when using bridge mode with published ports (our docker-compose.windows.yml)
+            # when using bridge mode with published ports (our docker-compose.yml)
             # No manual netsh portproxy needed for standard operation
 
             # However, ensure WSL2 networking is enabled in Docker Desktop settings
@@ -1393,9 +1393,11 @@ function New-EnvironmentFile {
     $algoShort = if ($coinInfo.Algo -eq "SHA256d") { "sha256d" } else { "scrypt" }
     $poolId = "$($coinInfo.Profile)_${algoShort}_1"
     $grafanaPassword = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+    # Derive env key: DGB-SCRYPT → DGB (shares digibyte container), BC2 → BC2, etc.
+    $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v1.0 Docker Configuration
+# Spiral Pool v1.1.0 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 
@@ -1405,6 +1407,7 @@ function New-EnvironmentFile {
 POOL_COIN=$($coinInfo.PoolCoin)
 POOL_ID=$poolId
 POOL_ADDRESS=$($Config.PoolAddress)
+$($coinEnvKey)_POOL_ADDRESS=$($Config.PoolAddress)
 COINBASE_TEXT=$($Config.CoinbaseText)
 SERVER_IP=$($Config.ServerIP)
 
@@ -1417,6 +1420,19 @@ DAEMON_RPC_PORT=$($coinInfo.RpcPort)
 DAEMON_RPC_USER=$($coinInfo.RpcUser)
 DAEMON_RPC_PASSWORD=$($Config.RpcPassword)
 DAEMON_ZMQ_PORT=$($coinInfo.ZmqPort)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COIN NODE RPC CREDENTIALS (required by the $($Config.Coin) daemon container)
+# docker-compose.yml declares these with :? (hard error if unset)
+# ═══════════════════════════════════════════════════════════════════════════════
+$($coinEnvKey)_RPC_USER=$($coinInfo.RpcUser)
+$($coinEnvKey)_RPC_PASSWORD=$($Config.RpcPassword)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOCKCHAIN DATA DIRECTORY
+# Overrides docker-compose named volume: bind-mounts this Windows path instead.
+# ═══════════════════════════════════════════════════════════════════════════════
+$($coinEnvKey)_DATA_DIR=$storagePath
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STRATUM PORTS
@@ -1439,7 +1455,7 @@ DASHBOARD_PORT=$($Config.DashboardPort)
 METRICS_PORT=$($Config.MetricsPort)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DASHBOARD AUTHENTICATION (v1.0)
+# DASHBOARD AUTHENTICATION (v1.1.0)
 # ═══════════════════════════════════════════════════════════════════════════════
 DASHBOARD_AUTH_ENABLED=true
 DASHBOARD_SESSION_LIFETIME=24
@@ -1527,6 +1543,21 @@ function Initialize-DockerEnvironment {
         exit 1
     }
 
+    # Copy src/ — the Dockerfiles use 'context: ..' and COPY src/stratum, src/dashboard,
+    # src/sentinel from the build context (parent of docker/). Without this copy, docker
+    # build fails with "COPY failed: file not found in build context".
+    $sourceSrc = Join-Path $PSScriptRoot "src"
+    if (Test-Path $sourceSrc) {
+        if (-not (Test-Path "$Script:InstallDir\src")) {
+            New-Item -ItemType Directory -Path "$Script:InstallDir\src" -Force | Out-Null
+        }
+        Copy-Item -Path "$sourceSrc\*" -Destination "$Script:InstallDir\src\" -Recurse -Force
+        Write-Log "Source files copied for Docker build context" "OK"
+    } else {
+        Write-Log "Source directory not found: $sourceSrc" "ERROR"
+        exit 1
+    }
+
     # Note: Environment file is generated separately by New-EnvironmentFile in Main
 }
 
@@ -1541,7 +1572,7 @@ function Start-SpiralPool {
         Set-Location "$Script:InstallDir\docker"
 
         # Use Windows-specific docker-compose with bridge networking
-        $composeFile = "docker-compose.windows.yml"
+        $composeFile = "docker-compose.yml"
         Write-Log "Using Windows docker-compose: $composeFile --profile $Profile" "INFO"
 
         # Pull images
@@ -1596,7 +1627,7 @@ function Configure-Persistence {
         $healthScript = @"
 # Spiral Pool Health Check (profile: $Profile)
 `$logFile = "$installDir\logs\health-check.log"
-`$composeFile = "docker-compose.windows.yml"
+`$composeFile = "docker-compose.yml"
 `$profile = "$Profile"
 `$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
@@ -1635,7 +1666,7 @@ try {
         # Startup script (uses Windows-specific compose file + profile)
         $startupScript = @"
 # Spiral Pool Startup (profile: $Profile)
-`$composeFile = "docker-compose.windows.yml"
+`$composeFile = "docker-compose.yml"
 `$profile = "$Profile"
 Start-Sleep -Seconds 45  # Wait for Docker Desktop
 
@@ -1725,7 +1756,7 @@ function Show-Summary {
     Write-Host "  Password: x" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
-    Write-Host "    DASHBOARD AUTHENTICATION (v1.0)" -ForegroundColor White
+    Write-Host "    DASHBOARD AUTHENTICATION (v1.1.0)" -ForegroundColor White
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  On first access, you'll be prompted to create an admin password." -ForegroundColor DarkGray
@@ -1743,11 +1774,11 @@ function Show-Summary {
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
     Write-Host ""
     Write-Host "  cd $Script:InstallDir\docker" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.windows.yml --profile $profile logs -f   # View logs" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.windows.yml --profile $profile ps        # Status" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.windows.yml --profile $profile restart   # Restart" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.windows.yml --profile $profile down      # Stop" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.windows.yml --profile $profile up -d     # Start" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $profile logs -f   # View logs" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $profile ps        # Status" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $profile restart   # Restart" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $profile down      # Stop" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $profile up -d     # Start" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
     Write-Host "    LIMITATIONS (Docker deployment)" -ForegroundColor White

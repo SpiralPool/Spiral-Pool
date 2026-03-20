@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Black Ice 1.0 &mdash; Convergent difficulty. Minimal oscillation.</em>
+  <em>Phi Forge 1.1.0 &mdash; Convergent difficulty. Minimal oscillation.</em>
 </p>
 
 <p align="center">
@@ -42,20 +42,23 @@ In this documentation, "operator" means the individual or entity that installs a
 
 14 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
+> **⚠️ SINGLE-OPERATOR NOTICE:** Spiral Pool is designed for **one operator running their own miners**. One wallet address per coin is set at install time — **all block rewards go to that address**, regardless of which connected miner found the block. Miners connecting to your pool receive no direct payment from the software. If you allow others to mine on your pool, you must inform them that their hashrate contributes to your wallet, not their own. See [WARNINGS.md](WARNINGS.md) and [TERMS.md Section 5E](TERMS.md) for full details.
+
 ---
 
 ## Key Features
 
 | Feature | Details |
 |---------|---------|
-| **Spiral Router** | Classifies miners at connection time via 280+ user-agent patterns across 14 SHA-256d and 6 Scrypt difficulty profiles |
+| **Spiral Router** | Classifies miners at connection time via 280+ user-agent patterns across 15 SHA-256d and 8 Scrypt difficulty profiles |
 | **Lock-free vardiff** | Per-session atomic state, asymmetric limits (4x up / 0.75x down), 50% variance floor |
 | **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
 | **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
 | **Non-custodial solo payout** | Block reward embedded in coinbase transaction to miner's wallet &mdash; no pool wallet, no intermediate custody |
 | **High availability** | VIP failover, Patroni database replication, blockchain rsync, advisory lock payment fencing |
-| **Spiral Sentinel** | Autonomous monitoring: device discovery, health checks, temperature alerts, block notifications |
+| **Spiral Sentinel** | Autonomous monitoring: device discovery, health checks, temperature/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, BTC mempool congestion alerts. Notifications via Discord, Telegram, XMPP/Jabber, ntfy, and SMTP email. |
+| **SimpleSwap Swap Alerts** | Optional: Sentinel notifies when a mined coin rises 25%+ vs BTC over 7 days, with a pre-filled [SimpleSwap.io](https://simpleswap.io) conversion link. Operator-initiated only — no automatic swaps. |
 | **Spiral Dash** | Real-time web dashboard with multi-theme support (port 1618) |
 | **Share pipeline** | Lock-free ring buffer (1M capacity, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
 | **Prometheus metrics** | Per-session observability with worker-level labels |
@@ -156,7 +159,10 @@ QBX (standalone — no merge mining)
 - Operators seeking managed pool services or turnkey SaaS solutions
 - Users without Linux system administration experience
 - Mining operations requiring proportional payout splitting (Spiral Pool is solo-only)
-- **Cloud/VPS deployments** &mdash; Spiral Pool is **NOT** supported on any cloud provider (AWS, Azure, GCP, DigitalOcean, Hetzner, Vultr, Linode, OVH, etc.). The installer blocks cloud deployments. You do not own the physical hardware on cloud infrastructure, which can expose wallet credentials, private keys, and all operational data to the hosting provider. See [WARNINGS.md](WARNINGS.md)
+- **Cloud / VPS operators** &mdash; We do **not recommend** deploying Spiral Pool on cloud or VPS infrastructure. Two reasons:
+  - **Security:** The hosting provider has physical and hypervisor-level access to your server — your wallet credentials, RPC passwords, and admin API key are all visible to the provider. Tor does not mitigate this. `wallet.dat` files for locally generated wallets are stored on provider-managed disk.
+  - **Cost:** Mining workloads generate sustained high outbound bandwidth. Cloud bandwidth billing (typically $0.08–$0.12/GB) can reach hundreds or thousands of dollars per month depending on the number of coins and connected miners.
+  - Cloud installs are technically possible and the installer supports them with mandatory risk acknowledgment gates, but **bare metal or a self-hosted VM is strongly preferred**. See [WARNINGS.md](WARNINGS.md) and [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md).
 
 ---
 
@@ -165,7 +171,8 @@ QBX (standalone — no merge mining)
 | Platform | Status | Notes |
 |----------|--------|-------|
 | **Ubuntu 24.04.x LTS** (Noble Numbat) | **Primary** | Native installation (recommended). Docker available separately. **x86_64 (amd64) only.** |
-| **Windows 11 (Docker)** | **Experimental** | Docker Desktop with WSL2 required. Not for production. See [Docker Guide](docs/setup/DOCKER_GUIDE.md). |
+| **Windows 11 — Docker Desktop** | **Experimental** | Full installer via Docker Desktop + WSL2. Not for production. See [Docker Guide](docs/setup/DOCKER_GUIDE.md) and [`install-windows.ps1`](install-windows.ps1). |
+| **Windows 11 — WSL2 Native** | **Experimental** | Run `install.sh` directly inside WSL2 Ubuntu. Requires port forwarding for ASIC miners — use [`start-wsl2-proxy.bat`](scripts/windows/start-wsl2-proxy.bat). Not for production. |
 | **ARM / Raspberry Pi** | **Not Tested/Experimental** | All packages and binaries target x86_64. ARM may not work. See [WARNINGS.md](WARNINGS.md). |
 
 ---
@@ -181,7 +188,7 @@ QBX (standalone — no merge mining)
 - 10 GB RAM minimum (16 GB recommended)
 - 150 GB SSD minimum (Bitcoin: ~600 GB, DigiByte: ~45 GB &mdash; see [Storage Requirements](docs/setup/OPERATIONS.md#2-storage-requirements))
 - IPv4 network (IPv6 not supported)
-- Bare metal or self-hosted VM &mdash; **no cloud/VPS**
+- Bare metal or self-hosted VM strongly recommended — cloud/VPS is **not recommended** (security and bandwidth cost risks); see [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md)
 
 ```bash
 sudo apt-get -y update && sudo apt-get -y upgrade
@@ -223,7 +230,7 @@ See [REFERENCE.md](docs/reference/REFERENCE.md) for all coin-specific stratum po
 
 ## Notifications
 
-Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, and **XMPP/Jabber** for block discoveries, miner status changes, temperature warnings, and periodic hashrate reports.
+Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/Jabber**, **ntfy**, and **SMTP email** for block discoveries, miner status changes, temperature warnings, and periodic hashrate reports.
 
 **Telegram:** Message [@BotFather](https://t.me/BotFather) to create a bot &rarr; [@userinfobot](https://t.me/userinfobot) for your chat ID &rarr; add bot to your channel.
 
@@ -231,26 +238,72 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, and **X
 
 **XMPP/Jabber:** Configure JID, password, and recipient in Sentinel config. Requires optional `slixmpp` package.
 
+**ntfy:** Set `ntfy_url` in `config.json` to your ntfy topic URL. Self-hosted and ntfy.sh both supported.
+
+**Email (SMTP):** Set `smtp_enabled: true` and configure host, port, credentials, and recipients in `config.json`.
+
 Enter credentials during installation or configure in `~/.spiralsentinel/config.json`.
 
 ---
 
-## Docker Deployment (Optional)
+## SimpleSwap Swap Alerts (Optional)
 
-> **Note:** Docker is for **Windows/WSL2 only**. Native installation via `./install.sh` provides the best performance with zero container I/O overhead. Do not use Docker on bare metal or VM installations.
+When a mined coin's sat value rises **25% or more against BTC** over a 7-day baseline, Spiral Sentinel sends a swap recommendation alert via your configured notification channels (Discord, Telegram, XMPP, ntfy, or email). The alert includes a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected.
 
-Docker supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 14 configurations available: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
+**No automatic swaps — ever.** The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. Click the link in the alert, enter your BTC address on the SimpleSwap website, and complete the swap entirely in your browser. The pool server has no involvement in any transaction.
 
-```bash
-cd docker
-cp .env.example .env         # Configure POOL_COIN and POOL_ADDRESS
-./generate-secrets.sh        # Auto-generate all passwords
-docker compose --profile dgb up -d
+Enable during installation. To configure manually:
+```
+/etc/spiralpool/simpleswap.conf   (chmod 600)
+
+SIMPLESWAP_ENABLED=true
+```
+
+> **Operator Responsibility:** You are solely responsible for compliance with SimpleSwap.io's Terms of Service, all applicable AML/KYC requirements, exchange fees, tax obligations, and any financial regulations in your jurisdiction. See [TERMS.md](TERMS.md) section 5D and [WARNINGS.md](WARNINGS.md) for full disclosure.
+
+---
+
+## Windows Deployment (Experimental)
+
+> Windows support is experimental and not recommended for production mining. For production, use a dedicated Ubuntu 24.04 LTS server.
+
+There are two paths for running Spiral Pool on Windows. Both require WSL2.
+
+### Option A &mdash; Docker Desktop (automated, easier setup)
+
+Uses [`install-windows.ps1`](install-windows.ps1) to install Docker Desktop, configure WSL2, and deploy Spiral Pool containers automatically.
+
+Supports **V1 single-coin solo mining** with dashboard, Sentinel monitoring, Prometheus, and Grafana. 14 configurations: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
+
+```powershell
+# Run as Administrator
+.\install-windows.ps1
 ```
 
 For multi-coin, merge mining, Stratum V2, or full HA &mdash; use native installation (`./install.sh`).
 
 See [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) for the complete guide including WSL2 setup and database HA overlay.
+
+### Option B &mdash; WSL2 Native *(Experimental — not recommended for production)*
+
+> **WSL2 support is experimental.** Windows can terminate WSL2 without warning (updates, sleep, hibernate, memory pressure), systemd reliability is reduced, I/O is 2–4× slower due to the virtual disk, clocks drift after sleep, and HA is non-functional. Use this path for evaluation and development only. For 24/7 production mining, use native Ubuntu.
+
+Install Ubuntu in WSL2, then run `install.sh` as you would on a Linux server. WSL2 supports most Spiral Pool features — multi-coin, Stratum V2, and merge mining all work — but keepalived/VIP HA and multi-node clustering require native Linux.
+
+**ASIC miners require port forwarding** — WSL2 runs in NAT mode by default, so external hardware cannot reach the stratum server directly. Use [`start-wsl2-proxy.bat`](scripts/windows/start-wsl2-proxy.bat) to handle this:
+
+```
+Double-click start-wsl2-proxy.bat (Run as Administrator)
+```
+
+The proxy script:
+- Installs WSL2 + Ubuntu if not already present
+- Auto-detects your Windows LAN IP and WSL2 IP
+- Asks which coin to forward (or all coins / custom port)
+- Adds `netsh portproxy` rules to route miner traffic into WSL2
+- Adds Windows Firewall inbound rules for the selected ports
+- Optionally creates Windows Task Scheduler entries to auto-start services and portproxy rules at every logon
+- Removes portproxy rules on Ctrl+C (closing the window does not clean up)
 
 ---
 
@@ -269,6 +322,8 @@ See [OPERATIONS.md](docs/setup/OPERATIONS.md) for complete blockchain replicatio
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA setup, upgrading, troubleshooting |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v1.1 upgrade guide with all `upgrade.sh` flags |
+| [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security considerations |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment guide |
 
 ### Architecture
@@ -284,6 +339,8 @@ See [OPERATIONS.md](docs/setup/OPERATIONS.md) for complete blockchain replicatio
 |----------|-------------|
 | [REFERENCE.md](docs/reference/REFERENCE.md) | Ports, CLI commands, API endpoints, miner classes, configuration fields |
 | [spiralctl-reference.md](docs/reference/spiralctl-reference.md) | Complete spiralctl CLI &mdash; all commands, options, examples |
+| [SENTINEL.md](docs/reference/SENTINEL.md) | Spiral Sentinel configuration reference &mdash; all config keys, defaults, and examples |
+| [DASHBOARD.md](docs/reference/DASHBOARD.md) | Dashboard setup, themes, device types, and template system |
 | [MINER_SUPPORT.md](docs/reference/MINER_SUPPORT.md) | Mining hardware support: device APIs, auto-detection, monitoring |
 | [EXTERNAL_ACCESS.md](docs/reference/EXTERNAL_ACCESS.md) | Port forwarding, Cloudflare tunnels, hashrate marketplace integration |
 
@@ -375,4 +432,4 @@ This project is licensed under BSD-3-Clause. See [LICENSE](LICENSE) and [THIRD_P
 
 ---
 
-*Spiral Pool &mdash; Black Ice 1.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Forge 1.1.0 &mdash; Convergent difficulty. Minimal oscillation.*

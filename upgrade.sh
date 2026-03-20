@@ -3,6 +3,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
+# Self-heal execute permission (needed after SCP from Windows).
+chmod +x "${BASH_SOURCE[0]}" 2>/dev/null || true
+# CRLF self-heal: fix Windows line endings if present (single-line, tolerates \r at EOL)
+head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*.sh" -o -name "*.py" -o -name "*.sql" -o -name "*.conf" -o -name "*.yaml" -o -name "*.yml" -o -name "*.service" -o -name "*.template" \) -exec sed -i 's/\r$//' {} +;exec bash "$0" "$@"; } #
+
 #
 # Spiral Pool Unified Upgrade Script
 # Handles both local source updates and GitHub remote updates
@@ -103,55 +108,61 @@ UPGRADE_IN_PROGRESS="false"
 CURRENT_BACKUP_NAME=""
 AUTO_ROLLBACK_ENABLED="true"
 
-# Lock file for coordinating with installer/upgrade (GATE 4 compliance)
+# Lock file — prevents concurrent install.sh + upgrade.sh runs
 SPIRALPOOL_LOCK_FILE="/var/lock/spiralpool-operation.lock"
-SPIRALPOOL_LOCK_FD=200
 
-# Acquire exclusive lock to prevent concurrent operations
 acquire_operation_lock() {
     local operation="$1"
-    local timeout="${2:-5}"
 
-    # Create lock file directory if needed
     sudo mkdir -p /var/lock 2>/dev/null || true
 
-    # Clean up stale lock if the process that created it is no longer running
-    if [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]]; then
-        local lock_pid=$(grep -oP 'pid=\K[0-9]+' "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || echo "")
-        if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-            # Process is dead, clean up stale lock
+    # Always clean up stale lock before attempting to acquire.
+    # A lock is stale if: no .info file, no PID in .info, or that PID is no longer alive.
+    if [[ -f "$SPIRALPOOL_LOCK_FILE" ]]; then
+        local lock_pid=""
+        [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]] && \
+            lock_pid=$(grep -oP 'pid=\K[0-9]+' "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true)
+        if [[ -z "$lock_pid" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
             sudo rm -f "$SPIRALPOOL_LOCK_FILE" "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
         fi
     fi
 
-    # Try to acquire lock
-    exec 200>"$SPIRALPOOL_LOCK_FILE"
-    if ! flock -w "$timeout" -x 200 2>/dev/null; then
-        # Lock acquisition failed - check what's holding it
-        local lock_holder=""
-        if [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]]; then
-            lock_holder=$(cat "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || echo "unknown")
-        fi
-        log_error "Cannot acquire operation lock. Another Spiral Pool operation is in progress."
-        if [[ -n "$lock_holder" ]]; then
-            log_error "Current operation: $lock_holder"
-        fi
-        log_error "If no other operation is running, remove: $SPIRALPOOL_LOCK_FILE"
-        return 1
+    # Open the lock file — force-remove and retry once if permission denied
+    # (can happen if a previous root process left it with restrictive permissions)
+    if ! exec 200>"$SPIRALPOOL_LOCK_FILE" 2>/dev/null; then
+        sudo rm -f "$SPIRALPOOL_LOCK_FILE" 2>/dev/null || true
+        exec 200>"$SPIRALPOOL_LOCK_FILE" 2>/dev/null || {
+            log_warn "Could not create lock file — continuing without lock"
+            return 0
+        }
     fi
 
-    # Write lock info
-    echo "operation=$operation pid=$$ started=$(date -Iseconds)" | sudo tee "${SPIRALPOOL_LOCK_FILE}.info" > /dev/null
-    log_info "Acquired operation lock for: $operation"
+    # Try to acquire exclusive lock (5s timeout)
+    if ! flock -w 5 -x 200 2>/dev/null; then
+        # Lock is held — check if it's a live process
+        local lock_holder=""
+        [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]] && \
+            lock_holder=$(cat "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true)
+        local holder_pid=""
+        [[ -n "$lock_holder" ]] && \
+            holder_pid=$(echo "$lock_holder" | grep -oP 'pid=\K[0-9]+' || true)
+        if [[ -n "$holder_pid" ]] && kill -0 "$holder_pid" 2>/dev/null; then
+            log_error "Another Spiral Pool operation is in progress (pid $holder_pid: $lock_holder)"
+            log_error "Wait for it to finish or kill pid $holder_pid first."
+            return 1
+        fi
+        # PID is dead — stale flock, force clear and continue
+        sudo rm -f "$SPIRALPOOL_LOCK_FILE" "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
+        log_warn "Cleared stale lock — continuing"
+    fi
+
+    echo "operation=$operation pid=$$ started=$(date -Iseconds)" | \
+        sudo tee "${SPIRALPOOL_LOCK_FILE}.info" > /dev/null 2>&1 || true
     return 0
 }
 
-# Release operation lock
 release_operation_lock() {
-    if [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]]; then
-        sudo rm -f "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
-    fi
-    # Lock is automatically released when FD is closed or process exits
+    sudo rm -f "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
     exec 200>&- 2>/dev/null || true
 }
 
@@ -451,9 +462,9 @@ detect_current_version() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.0.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.1.0")
     elif [[ -f "/usr/local/bin/stratum" ]]; then
-        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.0.0")
+        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.1.0")
     else
         CURRENT_VERSION="unknown"
     fi
@@ -461,7 +472,7 @@ detect_current_version() {
     # Validate version format
     if [[ "$CURRENT_VERSION" != "unknown" ]]; then
         if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
-            CURRENT_VERSION="1.0.0"
+            CURRENT_VERSION="1.1.0"
         fi
     fi
 
@@ -529,9 +540,9 @@ check_for_updates() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.0.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.1.0")
     else
-        CURRENT_VERSION="1.0.0"
+        CURRENT_VERSION="1.1.0"
     fi
 
     local RELEASE_URL=""
@@ -573,7 +584,7 @@ check_for_updates() {
             --arg lv "$TARGET_CLEAN" \
             --argjson ua "$UPDATE_AVAILABLE" \
             --arg url "$RELEASE_URL" \
-            --arg cmd "cd /spiralpool && sudo ./upgrade.sh" \
+            --arg cmd "cd /spiralpool && chmod +x upgrade.sh && sudo ./upgrade.sh" \
             '{current_version: $cv, latest_version: $lv, update_available: $ua, release_url: $url, upgrade_command: $cmd}'
     else
         # Escape special JSON characters in URL (quotes, backslashes)
@@ -585,7 +596,7 @@ check_for_updates() {
     "latest_version": "${TARGET_CLEAN}",
     "update_available": ${UPDATE_AVAILABLE},
     "release_url": "${SAFE_URL}",
-    "upgrade_command": "cd /spiralpool && sudo ./upgrade.sh"
+    "upgrade_command": "cd /spiralpool && chmod +x upgrade.sh && sudo ./upgrade.sh"
 }
 EOF
     fi
@@ -732,7 +743,7 @@ create_backup() {
             if ! tail -5 "${BACKUP_PATH}/database.sql" | grep -q "PostgreSQL database dump complete" 2>/dev/null; then
                 db_backup_failed=true
                 log_error "DATABASE BACKUP INCOMPLETE (partial dump detected — possible disk full or timeout)"
-                rm -f "${BACKUP_PATH}/database.sql"
+                log_error "Incomplete dump kept at: ${BACKUP_PATH}/database.sql (review or delete manually)"
             elif gzip "${BACKUP_PATH}/database.sql" 2>/dev/null && [[ -f "${BACKUP_PATH}/database.sql.gz" ]]; then
                 log_success "  - database backed up ($(du -h "${BACKUP_PATH}/database.sql.gz" 2>/dev/null | cut -f1))"
             else
@@ -753,7 +764,7 @@ create_backup() {
         log_error "Cannot proceed without database backup."
         log_error "Please ensure PostgreSQL is running: sudo systemctl start postgresql"
         log_error "Or use --no-backup to skip (NOT RECOMMENDED - data loss possible)"
-        rm -rf "${BACKUP_PATH}"
+        log_error "Partial backup kept at: ${BACKUP_PATH} (review or delete manually)"
         exit 1
     fi
 
@@ -1316,20 +1327,32 @@ stop_services() {
                 # Send SIGTERM for graceful shutdown (stratum handles this with connection drain)
                 systemctl stop "$service" --no-block 2>/dev/null || true
 
-                # Wait for graceful shutdown with connection drain
+                # Wait for service to fully stop (inactive/failed), not just leave "active".
+                # Note: "deactivating" means SIGTERM was received but the process is still
+                # draining connections — is-active returns false for deactivating, so we
+                # must check the actual state string to avoid exiting the loop too early.
                 local wait_count=0
                 local drain_timeout=60  # Allow up to 60s for connection drain
-                while systemctl is-active --quiet "$service" 2>/dev/null && [[ $wait_count -lt $drain_timeout ]]; do
+                local svc_state=""
+                while [[ $wait_count -lt $drain_timeout ]]; do
+                    # systemctl is-active prints state to stdout even on non-zero exit
+                    # (e.g. "deactivating" exits 3). Use || true OUTSIDE $() to prevent
+                    # set -e from killing the script, without appending to stdout.
+                    svc_state=$(systemctl is-active "$service" 2>/dev/null) || true
+                    [[ -z "$svc_state" ]] && svc_state="unknown"
+                    [[ "$svc_state" == "inactive" || "$svc_state" == "failed" ]] && break
                     if [[ $((wait_count % 10)) -eq 0 ]] && [[ $wait_count -gt 0 ]]; then
-                        log_info "    Still draining connections... (${wait_count}s)"
+                        log_info "    Still draining connections... (${wait_count}s, state: ${svc_state})"
                     fi
                     sleep 1
                     ((++wait_count))
                 done
 
-                # Force stop if still running after drain timeout
-                if systemctl is-active --quiet "$service" 2>/dev/null; then
-                    log_warn "  - Connection drain timeout - forcing stop"
+                # Force stop if still running/deactivating after drain timeout
+                svc_state=$(systemctl is-active "$service" 2>/dev/null) || true
+                [[ -z "$svc_state" ]] && svc_state="unknown"
+                if [[ "$svc_state" != "inactive" && "$svc_state" != "failed" ]]; then
+                    log_warn "  - Connection drain timeout (state: ${svc_state}) — forcing stop"
                     systemctl kill "$service" 2>/dev/null || true
                     sleep 2
                 else
@@ -1656,6 +1679,88 @@ API_EOF
         unset recovered_api_key
         FIXES_APPLIED=$((FIXES_APPLIED + 1))
     fi
+
+    # Fix 7: Migrate admin API key from v1 format (api.adminApiKey) to v2 format (global.admin_api_key)
+    # v1 config: api: { adminApiKey: "..." }
+    # v2 config: global: { admin_api_key: "..." }
+    # The v2 stratum binary only reads global.admin_api_key — v1 location is ignored.
+    local v2_key=""
+    local v1_key=""
+    v2_key=$(grep -oP '^\s+admin_api_key:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    v1_key=$(grep -oP '^\s+adminApiKey:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+
+    if [[ -z "$v2_key" ]]; then
+        # v2 key missing — use v1 key if available, otherwise generate
+        local new_key=""
+        if [[ -n "$v1_key" ]]; then
+            new_key="$v1_key"
+            log_info "  - Migrating: adminApiKey (v1) → admin_api_key under global: (v2)"
+        else
+            local checkpoint_file="/var/lib/spiralpool/.checkpoint"
+            if [[ -f "$checkpoint_file" ]]; then
+                new_key=$(grep -oP '^ADMIN_API_KEY="\K[^"]+' "$checkpoint_file" 2>/dev/null || echo "")
+            fi
+            if [[ -z "$new_key" ]]; then
+                new_key=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32 || LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)
+                log_info "  - Generating: admin_api_key (missing from config)"
+                log_warn "  ┌──────────────────────────────────────────────────────────┐"
+                log_warn "  │  NEW API KEY GENERATED — save this for dashboard access: │"
+                log_warn "  │  $new_key  │"
+                log_warn "  └──────────────────────────────────────────────────────────┘"
+            else
+                log_info "  - Recovering: admin_api_key from checkpoint"
+            fi
+        fi
+        # Sanitize
+        new_key="${new_key//[$'\n\r']/}"
+        new_key="${new_key//\"/}"
+        new_key="${new_key//\$/}"
+        new_key="${new_key//\`/}"
+        # Inject under global: (v2 location)
+        if grep -q "^global:" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i "/^global:/a\\  admin_api_key: \"${new_key}\"" "$CONFIG_FILE" 2>/dev/null || true
+        else
+            # No global section — prepend it
+            sed -i "1s/^/global:\n  admin_api_key: \"${new_key}\"\n/" "$CONFIG_FILE" 2>/dev/null || true
+        fi
+        unset new_key
+        FIXES_APPLIED=$((FIXES_APPLIED + 1))
+    fi
+    unset v1_key v2_key
+
+    # Fix 8: Sync admin API key to sentinel config.json so stratum kick doesn't get 401
+    # Sentinel's config.json has its own pool_admin_api_key — if it holds a stale value
+    # from v1, the auto-discovery from config.yaml is skipped (non-empty = truthy).
+    local final_api_key=""
+    final_api_key=$(grep -oP '^\s+admin_api_key:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    if [[ -n "$final_api_key" ]]; then
+        for sentinel_cfg in \
+            "${INSTALL_DIR}/config/sentinel/config.json" \
+            "/home/${POOL_USER}/.spiralsentinel/config.json"; do
+            if [[ -f "$sentinel_cfg" ]]; then
+                local old_sentinel_key=""
+                old_sentinel_key=$(python3 -c "import json; d=json.load(open('$sentinel_cfg')); print(d.get('pool_admin_api_key',''))" 2>/dev/null || echo "")
+                if [[ "$old_sentinel_key" != "$final_api_key" ]]; then
+                    python3 -c "
+import json, sys
+cfg_path = '$sentinel_cfg'
+try:
+    with open(cfg_path) as f:
+        d = json.load(f)
+    d['pool_admin_api_key'] = '$final_api_key'
+    with open(cfg_path, 'w') as f:
+        json.dump(d, f, indent=2)
+except Exception as e:
+    print(f'Warning: could not update {cfg_path}: {e}', file=sys.stderr)
+" 2>/dev/null || true
+                    chown "${POOL_USER}:${POOL_USER}" "$sentinel_cfg" 2>/dev/null || true
+                    log_info "  - Synced admin_api_key to $(basename $(dirname $sentinel_cfg))/config.json"
+                    FIXES_APPLIED=$((FIXES_APPLIED + 1))
+                fi
+            fi
+        done
+    fi
+    unset final_api_key
 
     if [[ $FIXES_APPLIED -gt 0 ]]; then
         # Restore ownership after modifications (sed -i changes owner to root)
@@ -2051,7 +2156,9 @@ build_stratum() {
 
     # ZMQ support: The stratum uses go-zeromq/zmq4 (pure Go, no C library needed).
     # Always build with ZMQ enabled — the nozmq tag is only for minimal/test builds.
-    local build_tags=""
+    # -buildvcs=false: disable automatic VCS stamping — git commit is already set via
+    # ldflags above, and the source may be a zip extract with no .git directory.
+    local build_tags="-buildvcs=false"
     log_info "  - Building with ZMQ support (pure Go implementation)"
 
     # Build as non-root if possible (sandboxed)
@@ -2078,11 +2185,11 @@ build_stratum() {
     log_info "Building spiralctl..."
     SPIRALCTL_OUTPUT="${TEMP_DIR}/spiralctl-build"
     if [[ "$EUID" -eq 0 ]] && id "$POOL_USER" &>/dev/null; then
-        sudo -u "$POOL_USER" bash -c "cd '${STRATUM_SOURCE}' && CGO_ENABLED=0 go build -ldflags '${ldflags}' -o '${SPIRALCTL_OUTPUT}' ./cmd/spiralctl/" 2>/dev/null || \
-            ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
+        sudo -u "$POOL_USER" bash -c "cd '${STRATUM_SOURCE}' && CGO_ENABLED=0 go build -buildvcs=false -ldflags '${ldflags}' -o '${SPIRALCTL_OUTPUT}' ./cmd/spiralctl/" 2>/dev/null || \
+            ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -buildvcs=false -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
             log_warn "spiralctl build failed (non-fatal)"
     else
-        ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
+        ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -buildvcs=false -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
             log_warn "spiralctl build failed (non-fatal)"
     fi
 
@@ -2279,6 +2386,8 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart pepecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart catcoind
 # Fractal Bitcoin (AuxPoW merge-mineable with BTC)
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart fractald
+# Q-BitX
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart qbitxd
 SUDOERS_EOF
         chmod 440 "$DASH_SUDOERS"
         chown root:root "$DASH_SUDOERS"
@@ -2427,6 +2536,7 @@ update_systemd_services() {
             syscoin) DETECTED_DAEMON="syscoind" ;;
             myriad|myriadcoin) DETECTED_DAEMON="myriadcoind" ;;
             fractal|fractalbitcoin|fractal-bitcoin) DETECTED_DAEMON="fractald" ;;
+            qbitx|q-bitx|qbitxcoin) DETECTED_DAEMON="qbitxd" ;;
         esac
     fi
 
@@ -2456,12 +2566,14 @@ update_systemd_services() {
             DETECTED_DAEMON="fractald"
         elif grep -q "digibyted" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
             DETECTED_DAEMON="digibyted"
+        elif grep -q "qbitxd" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
+            DETECTED_DAEMON="qbitxd"
         fi
     fi
 
     # Ultimate fallback: check which daemon services exist
     if [[ -z "$DETECTED_DAEMON" ]]; then
-        for daemon in bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted; do
+        for daemon in bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted qbitxd; do
             if [[ -f "/etc/systemd/system/${daemon}.service" ]]; then
                 DETECTED_DAEMON="$daemon"
                 break
@@ -2469,8 +2581,8 @@ update_systemd_services() {
         done
     fi
 
-    # Final fallback to digibyted if nothing detected
-    [[ -z "$DETECTED_DAEMON" ]] && DETECTED_DAEMON="digibyted"
+    # No daemon detected — log a warning; upgrade continues but daemon-specific steps will be skipped
+    [[ -z "$DETECTED_DAEMON" ]] && log_warn "Could not detect installed coin daemon — daemon-specific steps will be skipped"
 
     log_info "Detected daemon: $DETECTED_DAEMON"
 
@@ -2523,8 +2635,11 @@ update_systemd_services() {
     WANTS_DEPS="${WANTS_DEPS//\\/}"
 
     # Update service files
+    if [[ -z "$DETECTED_DAEMON" ]]; then
+        log_warn "Skipping service file update — daemon unknown. Existing service files preserved."
+    fi
     for template in spiralstratum spiraldash spiralsentinel spiralpool-health spiralpool-ha-watcher; do
-        if [[ -f "$SYSTEMD_TEMPLATES/${template}.service" ]]; then
+        if [[ -f "$SYSTEMD_TEMPLATES/${template}.service" ]] && [[ -n "$DETECTED_DAEMON" ]]; then
             sed -e "s|{{INSTALL_DIR}}|$INSTALL_DIR|g" \
                 -e "s|{{POOL_USER}}|$POOL_USER|g" \
                 -e "s|{{DAEMON_SERVICE}}|$DETECTED_DAEMON|g" \
@@ -2561,8 +2676,10 @@ update_utility_scripts() {
     local updated=0
 
     mkdir -p "$SCRIPTS_DST"
-    chown "$POOL_USER:$POOL_USER" "$SCRIPTS_DST" 2>/dev/null || true
-    chmod 775 "$SCRIPTS_DST" 2>/dev/null || true
+    # SECURITY: Directory owned by root to prevent spiraluser from adding scripts
+    # that could be executed via sudoers NOPASSWD entries (privilege escalation).
+    chown root:root "$SCRIPTS_DST" 2>/dev/null || true
+    chmod 755 "$SCRIPTS_DST" 2>/dev/null || true
 
     # spiralctl control utility (shell dispatcher — always symlinked)
     # Note: /usr/local/bin/spiralctl is the shell wrapper that dispatches all commands.
@@ -2643,45 +2760,49 @@ update_utility_scripts() {
         ((++updated))
     fi
 
-    # etcd quorum recovery script (automatic failover for HA clusters)
+    # SECURITY: Sudoers-whitelisted scripts MUST be root-owned.
+    # These scripts run as root via NOPASSWD sudo — if spiraluser could modify them,
+    # it would be a privilege escalation vector.
+
+    # etcd quorum recovery script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "$SCRIPTS_SRC/linux/etcd-quorum-recover.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/etcd-quorum-recover.sh" "$SCRIPTS_DST/"
-        chmod +x "$SCRIPTS_DST/etcd-quorum-recover.sh"
+        chmod 755 "$SCRIPTS_DST/etcd-quorum-recover.sh"
+        chown root:root "$SCRIPTS_DST/etcd-quorum-recover.sh"
         ln -sf "$SCRIPTS_DST/etcd-quorum-recover.sh" /usr/local/bin/spiralpool-etcd-recover
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/etcd-quorum-recover.sh"
         ((++updated))
     fi
 
-    # Patroni force bootstrap script (nuclear recovery for WAL corruption / diverged timelines)
+    # Patroni force bootstrap script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "$SCRIPTS_SRC/linux/patroni-force-bootstrap.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/patroni-force-bootstrap.sh" "$SCRIPTS_DST/"
-        chmod +x "$SCRIPTS_DST/patroni-force-bootstrap.sh"
+        chmod 755 "$SCRIPTS_DST/patroni-force-bootstrap.sh"
+        chown root:root "$SCRIPTS_DST/patroni-force-bootstrap.sh"
         ln -sf "$SCRIPTS_DST/patroni-force-bootstrap.sh" /usr/local/bin/spiralpool-patroni-bootstrap
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/patroni-force-bootstrap.sh"
         ((++updated))
     fi
 
-    # etcd cluster rejoin script (returning node rejoins cluster after failback)
+    # etcd cluster rejoin script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "$SCRIPTS_SRC/linux/etcd-cluster-rejoin.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/etcd-cluster-rejoin.sh" "$SCRIPTS_DST/"
-        chmod +x "$SCRIPTS_DST/etcd-cluster-rejoin.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/etcd-cluster-rejoin.sh"
+        chmod 755 "$SCRIPTS_DST/etcd-cluster-rejoin.sh"
+        chown root:root "$SCRIPTS_DST/etcd-cluster-rejoin.sh"
         ((++updated))
     fi
 
-    # HA failback orchestrator (automatic return to preferred primary)
+    # HA failback orchestrator (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "$SCRIPTS_SRC/linux/ha-failback.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/ha-failback.sh" "$SCRIPTS_DST/"
-        chmod +x "$SCRIPTS_DST/ha-failback.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-failback.sh"
+        chmod 755 "$SCRIPTS_DST/ha-failback.sh"
+        chown root:root "$SCRIPTS_DST/ha-failback.sh"
         ((++updated))
     fi
 
-    # HA add peer script (called remotely when a new node joins the cluster)
+    # HA add peer script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "$SCRIPTS_SRC/linux/ha-add-peer.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/ha-add-peer.sh" "$SCRIPTS_DST/"
-        chmod +x "$SCRIPTS_DST/ha-add-peer.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-add-peer.sh"
+        chmod 755 "$SCRIPTS_DST/ha-add-peer.sh"
+        chown root:root "$SCRIPTS_DST/ha-add-peer.sh"
         ((++updated))
     fi
 
@@ -2751,9 +2872,9 @@ APTEOF
     fi
 
     # Update spiralpool-* commands from new install.sh heredocs
-    if [[ -f "$PROJECT_ROOT/update-commands.sh" && -f "$PROJECT_ROOT/install.sh" ]]; then
+    if [[ -f "$PROJECT_ROOT/scripts/linux/update-commands.sh" && -f "$PROJECT_ROOT/install.sh" ]]; then
         log_info "Updating spiralpool-* commands from new install.sh..."
-        if bash "$PROJECT_ROOT/update-commands.sh" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
+        if bash "$PROJECT_ROOT/scripts/linux/update-commands.sh" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
             log_success "spiralpool-* commands updated"
         else
             log_warn "Some spiralpool-* commands could not be updated (non-fatal)"
@@ -2833,22 +2954,25 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                        ${DIM}V1.0 - BLACK ICE${NC}"
+echo -e "                                     ${DIM}V1.1.0 - PHI FORGE${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
 echo -e "    Memory: ${GREEN}${MEM_USED} / ${MEM_TOTAL}${NC}    Disk: ${GREEN}${DISK_USED}${NC}"
 echo ""
 echo -e "${CYAN}━━━ COMMANDS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spiralctl logs${NC}            Stratum logs"
-echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl watch${NC}           Live monitor"
-echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl blocks${NC}          Block history"
-echo -e "    ${YELLOW}spiralctl scan${NC}           Find miners    ${YELLOW}spiralctl wallet${NC}          Addresses"
-echo -e "    ${YELLOW}spiralctl backup${NC}         Backup data    ${YELLOW}spiralctl restore${NC}         Restore"
-echo -e "    ${YELLOW}spiralctl config${NC}         Config         ${YELLOW}spiralctl test${NC}            Connectivity"
-echo -e "    ${YELLOW}spiralctl restart${NC}        Restart all    ${YELLOW}spiralctl mining${NC}          Mining mode"
-echo -e "    ${YELLOW}spiralctl chain export${NC}   Push chain     ${YELLOW}spiralctl chain restore${NC}   Pull chain"
-echo -e "    ${YELLOW}spiralctl ha${NC}             HA cluster     ${YELLOW}spiralctl help${NC}            All commands"
+echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spiralctl watch${NC}            Live monitor"
+echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl logs${NC}             Stratum logs"
+echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl test${NC}             Connectivity"
+echo -e "    ${YELLOW}spiralctl scan${NC}           Find miners    ${YELLOW}spiralctl restart${NC}          Restart all"
+echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl config${NC}           Configuration"
+echo -e "    ${YELLOW}spiralctl wallet${NC}         Addresses      ${YELLOW}spiralctl security${NC}         Security"
+echo -e "    ${YELLOW}spiralctl data backup${NC}    Backup         ${YELLOW}spiralctl data restore${NC}     Restore"
+echo -e "    ${YELLOW}spiralctl maintenance${NC}    Maintenance    ${YELLOW}spiralctl ha${NC}               HA cluster"
+echo -e "    ${YELLOW}spiralctl chain export${NC}  Push chain     ${YELLOW}spiralctl chain restore${NC}    Pull chain"
+echo -e "    ${YELLOW}spiralctl add-coin${NC}       Add new coin   ${YELLOW}spiralctl remove-coin${NC}      Remove a coin"
+echo -e "    ${YELLOW}spiralctl stats blocks${NC}   Block history  ${CYAN}coin-upgrade.sh${NC}             Upgrade daemons"
+echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference & man page"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
@@ -2923,6 +3047,16 @@ migrate_ha_sudoers() {
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start spiralpool-ha-watcher" >> "$DASH_SUDOERS"
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop spiralpool-ha-watcher" >> "$DASH_SUDOERS"
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart spiralpool-ha-watcher" >> "$DASH_SUDOERS"
+        changed=1
+    fi
+
+    # Add auto-update sudoers entry if missing — allows Sentinel to run upgrade.sh
+    # without a password when auto_update_mode is set to "auto" in config
+    if ! grep -q "upgrade\.sh" "$DASH_SUDOERS" 2>/dev/null; then
+        echo "" >> "$DASH_SUDOERS"
+        echo "# Auto-update: Sentinel runs upgrade.sh --auto as spiraluser via sudo" >> "$DASH_SUDOERS"
+        echo "# Trailing * allows --auto and other flags" >> "$DASH_SUDOERS"
+        echo "$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *" >> "$DASH_SUDOERS"
         changed=1
     fi
 
@@ -3072,6 +3206,63 @@ TMPEOF
     log_info "  Created tmpfiles.d config for /run/spiralpool/"
 }
 
+migrate_coin_version_cache() {
+    # Seed /spiralpool/config/coin-versions/<COIN>.ver for all installed coins.
+    # coin-upgrade.sh reads these files to display the installed version when a
+    # daemon's --version output does not include a version number (e.g. QBX).
+    # Files are only written if the binary exists and the cache is not already set.
+    #
+    # IMPORTANT: When seeding, we try --version detection first, then fall back to
+    # _VC_PREV (what v1.0 shipped) — NOT _VC_TARGET. Writing the target version
+    # would make coin-upgrade.sh think the coin is already upgraded.
+    local vc_dir="${INSTALL_DIR}/config/coin-versions"
+    mkdir -p "$vc_dir"
+
+    # Previous version map — what v1.0 (BlackICE) shipped for each coin.
+    # Used as fallback when --version detection fails (e.g. QBX).
+    declare -A _VC_PREV=(
+        [DGB]="8.26.2"          [DGB-SCRYPT]="8.26.2"
+        [BTC]="29.3.knots20260210"
+        [BCH]="29.0.0"          [BC2]="29.1.0"
+        [LTC]="0.21.4"          [DOGE]="1.14.9"
+        [PEP]="1.1.0"           [CAT]="2.1.1"
+        [NMC]="28.0"            [SYS]="5.0.5"
+        [XMY]="0.18.1.0"        [FBTC]="0.3.0"
+        [QBX]="0.1.0"
+    )
+    # Daemon binary map — must match COIN_DAEMON_CMD in coin-upgrade.sh
+    declare -A _VC_BIN=(
+        [DGB]="digibyted"       [DGB-SCRYPT]="digibyted"
+        [BTC]="bitcoind"        [BCH]="bitcoind-bch"
+        [BC2]="bitcoiniid"      [LTC]="litecoind"
+        [DOGE]="dogecoind"      [PEP]="pepecoind"
+        [CAT]="catcoind"        [NMC]="namecoind"
+        [SYS]="syscoind"        [XMY]="myriadcoind"
+        [FBTC]="fractald"       [QBX]="qbitx"
+    )
+
+    local coin ver_file bin_path detected_ver
+    for coin in "${!_VC_PREV[@]}"; do
+        ver_file="${vc_dir}/${coin}.ver"
+        [[ -f "$ver_file" ]] && continue   # already set — don't overwrite
+        bin_path=$(readlink -f "/usr/local/bin/${_VC_BIN[$coin]}" 2>/dev/null || echo "")
+        [[ -x "$bin_path" ]] || continue   # not installed on this node
+
+        # Try --version detection first (works for most daemons)
+        detected_ver=$("$bin_path" --version 2>/dev/null | head -1 \
+            | grep -oP '(?i)version\s+v?\K[\d]+\.[\d]+[\w.]*' | head -1 || echo "")
+        if [[ -n "$detected_ver" ]]; then
+            echo "$detected_ver" > "$ver_file"
+        else
+            # Fallback: use known previous version (e.g. QBX --version has no number)
+            echo "${_VC_PREV[$coin]}" > "$ver_file"
+        fi
+    done
+
+    chown -R "${POOL_USER}:${POOL_USER}" "$vc_dir" 2>/dev/null || true
+    log_info "  Coin version cache seeded (${vc_dir})"
+}
+
 migrate_ha_mode_file() {
     # Create ha-mode file for existing HA installations (enables automatic failback).
     # The ha-role-watcher reads this file to determine if this node should attempt
@@ -3114,6 +3305,61 @@ update_version_file() {
     log_info "Version updated to ${TARGET_VERSION}"
 }
 
+deploy_pg_maintenance_timer() {
+    # Idempotent: sets up (or re-creates) the PostgreSQL weekly VACUUM ANALYZE timer.
+    # Safe to run on every upgrade — systemctl enable is a no-op if already enabled.
+    log_info "  - Deploying PostgreSQL maintenance timer..."
+
+    sudo tee /usr/local/bin/spiralpool-pg-maintenance > /dev/null << 'PGMAINTEOF'
+#!/bin/bash
+LOG_FILE="/spiralpool/logs/pg-maintenance.log"
+DB_NAME="spiralstratum"
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+mkdir -p "$(dirname "$LOG_FILE")"
+log "Starting PostgreSQL maintenance (VACUUM ANALYZE)..."
+db_service="postgresql"
+systemctl is-enabled --quiet "patroni" 2>/dev/null && db_service="patroni"
+if ! systemctl is-active --quiet "$db_service" 2>/dev/null; then
+    log "ERROR: $db_service is not running — skipping maintenance"; exit 1
+fi
+if systemctl is-enabled --quiet "patroni" 2>/dev/null; then
+    ROLE=$(sudo -u postgres psql -tAc "SELECT pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]')
+    [[ "$ROLE" == "t" ]] && { log "Replica node — skipping VACUUM (master only)"; exit 0; }
+fi
+START_TS=$(date +%s)
+sudo -u postgres vacuumdb --analyze --dbname="$DB_NAME" 2>>"$LOG_FILE" && log "VACUUM ANALYZE complete on $DB_NAME" || log "WARNING: vacuumdb returned non-zero"
+sudo -u postgres reindexdb --dbname="$DB_NAME" 2>/dev/null || true
+log "Maintenance complete in $(( $(date +%s) - START_TS ))s"
+PGMAINTEOF
+    sudo chmod +x /usr/local/bin/spiralpool-pg-maintenance
+    sudo chown root:root /usr/local/bin/spiralpool-pg-maintenance
+
+    sudo tee /etc/systemd/system/spiralpool-pg-maintenance.service > /dev/null << 'SVCEOF'
+[Unit]
+Description=Spiral Pool PostgreSQL Maintenance (VACUUM ANALYZE)
+After=network.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spiralpool-pg-maintenance
+User=root
+SVCEOF
+
+    sudo tee /etc/systemd/system/spiralpool-pg-maintenance.timer > /dev/null << 'TIMEREOF'
+[Unit]
+Description=Spiral Pool PostgreSQL Weekly Maintenance Timer
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo systemctl enable --now spiralpool-pg-maintenance.timer 2>/dev/null || true
+    log_success "PostgreSQL maintenance timer deployed (weekly Sun 03:00)"
+}
+
 update_upgrade_script() {
     # Copy this script itself for future upgrades
     # Use atomic write (cp to temp + mv) to avoid corrupting the running script
@@ -3123,6 +3369,15 @@ update_upgrade_script() {
         chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/upgrade.sh.new"
         mv -f "${INSTALL_DIR}/upgrade.sh.new" "${INSTALL_DIR}/upgrade.sh"
         log_info "  - upgrade.sh updated"
+    fi
+
+    # Deploy coin-upgrade.sh alongside upgrade.sh (repo root → /spiralpool/scripts/)
+    if [[ -f "${PROJECT_ROOT}/coin-upgrade.sh" ]]; then
+        cp "${PROJECT_ROOT}/coin-upgrade.sh" "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
+        chmod +x "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
+        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
+        mv -f "${INSTALL_DIR}/scripts/coin-upgrade.sh.new" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
+        log_info "  - coin-upgrade.sh updated"
     fi
 }
 
@@ -3153,7 +3408,8 @@ verify_upgrade() {
     $UPDATE_STRATUM && [[ -n "$HEALTH_SERVICE" ]] && verify_services+=("$HEALTH_SERVICE")
 
     for service in "${verify_services[@]}"; do
-        local status; status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+        local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
+        [[ -z "$status" ]] && status="inactive"
         case "$status" in
             active)      log_info "  - ${service}: ${GREEN}RUNNING${NC}" ;;
             activating)  log_info "  - ${service}: ${CYAN}STARTING${NC}" ;;
@@ -3201,13 +3457,14 @@ show_summary() {
     local server_ip=$(ip -4 addr show scope global 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
     [[ -z "$server_ip" ]] && server_ip="localhost"
 
-    printf "  %-20s %s\n" "Version:" "${TARGET_VERSION}"
+    printf "  %-20s %s\n" "Version:" "${CURRENT_VERSION} → ${TARGET_VERSION}"
     printf "  %-20s %s\n" "Dashboard:" "http://${server_ip}:${DASHBOARD_PORT}"
     echo
     echo -e "${CYAN}Service Status:${NC}"
 
     for service in "$STRATUM_SERVICE" "$DASHBOARD_SERVICE" "$SENTINEL_SERVICE"; do
-        local status; status=$(systemctl is-active "$service" 2>/dev/null || echo "inactive")
+        local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
+        [[ -z "$status" ]] && status="inactive"
         case "$status" in
             active)     printf "  %-24s ${GREEN}%s${NC}\n" "$service" "Running" ;;
             activating) printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting" ;;
@@ -3222,7 +3479,136 @@ show_summary() {
     echo -e "${CYAN}Configuration files preserved:${NC}"
     echo "  - $INSTALL_DIR/config/config.yaml"
     echo "  - Sentinel settings ($INSTALL_DIR/config/sentinel/)"
+
+    # Check for available coin daemon upgrades and show a console hint
+    local coin_upgrade_script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
+    if [[ -x "$coin_upgrade_script" ]]; then
+        local upgrade_lines
+        upgrade_lines=$(bash "$coin_upgrade_script" --list 2>/dev/null)
+        if [[ -n "$upgrade_lines" ]]; then
+            echo
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${YELLOW}  COIN DAEMON UPGRADES AVAILABLE${NC}"
+            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo
+            while IFS=' ' read -r coin installed target risk; do
+                local risk_color
+                case "$risk" in
+                    PATCH) risk_color="${GREEN}" ;;
+                    MINOR) risk_color="${YELLOW}" ;;
+                    MAJOR) risk_color="${RED}" ;;
+                    *)     risk_color="${CYAN}" ;;
+                esac
+                printf "  %-6s  %s → %s  %b%s%b\n" \
+                    "$coin" "$installed" "$target" "$risk_color" "$risk" "${NC}"
+            done <<< "$upgrade_lines"
+            echo
+            echo -e "${CYAN}Coin daemon upgrades are NOT applied automatically — they may${NC}"
+            echo -e "${CYAN}require a chain resync. Run manually when ready:${NC}"
+            echo
+            echo "  sudo ${coin_upgrade_script}"
+            echo
+        fi
+    fi
     echo
+}
+
+# Send a Discord notification about available coin daemon upgrades.
+# Called after upgrade completes. Reads webhook from Sentinel config, sends
+# directly via curl (bypasses quiet hours by design).  Waits up to 45s for
+# spiralsentinel.service to be active — if it never comes up, skip silently.
+notify_coin_upgrades() {
+    local coin_upgrade_script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
+    [[ -x "$coin_upgrade_script" ]] || return 0
+
+    # Get machine-readable upgrade list (empty = nothing to do)
+    local upgrade_lines
+    upgrade_lines=$(bash "$coin_upgrade_script" --list 2>/dev/null)
+    [[ -z "$upgrade_lines" ]] && return 0
+
+    # Read Discord webhook URL from Sentinel config
+    local webhook
+    webhook=$(python3 - <<'PYEOF' 2>/dev/null
+import yaml, os, sys
+for path in [
+    "/spiralpool/config/sentinel/config.yaml",
+    os.path.expanduser("~spiraluser/.spiralsentinel/config.yaml"),
+]:
+    try:
+        data = yaml.safe_load(open(path))
+        url = (data or {}).get("discord_webhook_url", "")
+        if url and "YOUR" not in url and url.startswith("https://discord.com/api/webhooks/"):
+            print(url)
+            sys.exit(0)
+    except Exception:
+        pass
+PYEOF
+)
+    [[ -z "$webhook" ]] && return 0
+
+    # Wait for spiralsentinel to be active (up to 45s)
+    local waited=0
+    while [[ $waited -lt 45 ]]; do
+        if systemctl is-active --quiet "$SENTINEL_SERVICE" 2>/dev/null; then
+            break
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
+    if ! systemctl is-active --quiet "$SENTINEL_SERVICE" 2>/dev/null; then
+        log_warn "Sentinel not active after ${waited}s — skipping coin upgrade Discord notification"
+        return 0
+    fi
+
+    # Build embed fields: one field per upgradeable coin
+    local fields="[]"
+    local server_ip
+    server_ip=$(ip -4 addr show scope global 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+    [[ -z "$server_ip" ]] && server_ip="this server"
+
+    local coin_lines=""
+    while IFS=' ' read -r coin installed target risk; do
+        local risk_label
+        case "$risk" in
+            PATCH) risk_label="🟢 PATCH" ;;
+            MINOR) risk_label="🟡 MINOR" ;;
+            MAJOR) risk_label="🔴 MAJOR" ;;
+            *)     risk_label="⬆ UPDATE" ;;
+        esac
+        coin_lines+="**${coin}** — ${installed} → ${target} (${risk_label})\n"
+    done <<< "$upgrade_lines"
+
+    local embed
+    embed=$(python3 - "$coin_lines" <<'PYEOF' 2>/dev/null
+import json, sys
+lines = sys.argv[1]
+embed = {
+    "title": "🔧 Spiral Pool — Upgrade Complete",
+    "description": (
+        "**Spiral Pool stack upgraded successfully.**\n\n"
+        "Coin daemon upgrades are available and must be applied manually — "
+        "they are not part of the stack upgrade because they may require a chain resync.\n\n"
+        "**Available coin daemon upgrades:**\n"
+        + lines.replace("\\n", "\n") +
+        "\n\nTo upgrade, run on the server:\n"
+        "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
+    ),
+    "color": 0xFF6B35,
+    "footer": {"text": "Spiral Pool v1.1.0 — Phi Forge  •  coin-upgrade.sh handles the chain resync risk"}
+}
+print(json.dumps(embed))
+PYEOF
+)
+    [[ -z "$embed" ]] && return 0
+
+    # Send directly to Discord (quiet-hours bypass — this is an operator action prompt)
+    curl -s -o /dev/null -w "%{http_code}" \
+        -H "Content-Type: application/json" \
+        -d "{\"embeds\":[${embed}]}" \
+        "$webhook" \
+        --connect-timeout 10 --max-time 20 2>/dev/null | grep -qE "^20" \
+        && log_success "Discord: coin upgrade notification sent" \
+        || log_warn "Discord: coin upgrade notification failed (webhook unreachable?)"
 }
 
 # =============================================================================
@@ -3303,17 +3689,23 @@ main() {
         exit 0
     fi
 
+    # Safety: warn loudly when --no-backup + --auto are combined
+    if [[ "$SKIP_BACKUP" == "true" && "$AUTO_MODE" == "true" ]]; then
+        log_warn "╔══════════════════════════════════════════════════════════════╗"
+        log_warn "║  WARNING: --no-backup --auto skips ALL safety prompts.      ║"
+        log_warn "║  If the upgrade fails, there is NO backup to roll back to.  ║"
+        log_warn "╚══════════════════════════════════════════════════════════════╝"
+    fi
+
     print_banner
     check_root
 
-    # Acquire operation lock to prevent concurrent installer/upgrade (GATE 4)
+    # Acquire lock — prevents concurrent install.sh + upgrade.sh runs.
+    # Auto-clears stale locks; only blocks if a live process genuinely holds it.
     if ! acquire_operation_lock "upgrade"; then
-        log_error "Upgrade cannot proceed - another operation is in progress."
-        log_error "Wait for the other operation to complete, or remove the lock file if stale."
         exit 1
     fi
 
-    # Ensure lock is released on exit (preserve INT/TERM from initial trap at line 190)
     trap '_trap_exit_code=$?; release_operation_lock; (exit $_trap_exit_code); cleanup_on_exit' EXIT INT TERM
 
     # Detect install directory from existing service
@@ -3463,19 +3855,29 @@ SSHDEOF
     fi
 
     if [[ "$AUTO_MODE" == "false" ]] && [[ "$FORCE_UPGRADE" == "false" ]]; then
+        local confirm=""
         if [[ "$current_clean" == "$target_clean" ]]; then
-            read -p "Already on version ${CURRENT_VERSION}. Force reinstall? [y/N]: " confirm
+            printf "\n  Already on version %s. Force reinstall? [y/N]: " "${CURRENT_VERSION}"
+            read confirm
             [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { log_info "Upgrade cancelled."; exit 0; }
         else
-            # Detect downgrade — warn explicitly with default-N prompt
             local newest
             newest=$(printf '%s\n' "$current_clean" "$target_clean" | sort -V | tail -1)
             if [[ "$newest" == "$current_clean" ]]; then
-                log_warn "Target version ${target_clean} is OLDER than current ${current_clean}"
-                read -p "DOWNGRADE from ${CURRENT_VERSION} to ${TARGET_VERSION}? This is NOT recommended [y/N]: " confirm
-                [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { log_info "Downgrade cancelled."; exit 0; }
+                echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}  DOWNGRADE: ${CURRENT_VERSION} → ${TARGET_VERSION} (NOT recommended)${NC}"
+                echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+                printf "  Type 'yes' to confirm downgrade, or press ENTER to cancel: "
+                read confirm
+                [[ "$confirm" != "yes" ]] && { log_info "Downgrade cancelled."; exit 0; }
             else
-                read -p "Upgrade from ${CURRENT_VERSION} to ${TARGET_VERSION}? [Y/n]: " confirm
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${WHITE}  Ready to upgrade: ${CURRENT_VERSION} → ${TARGET_VERSION}${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+                printf "  Press ENTER to continue, or type 'n' to cancel: "
+                read confirm
                 [[ "$confirm" == "n" || "$confirm" == "N" ]] && { log_info "Upgrade cancelled."; exit 0; }
             fi
         fi
@@ -3555,6 +3957,15 @@ SSHDEOF
     update_motd
     update_version_file
     update_upgrade_script
+    deploy_pg_maintenance_timer || log_warn "PostgreSQL maintenance timer deploy failed (non-critical)"
+
+    # Strip CRLF from all deployed shell scripts and Python files.
+    # Required when source files are SCP'd from Windows (zip extract has \r\n).
+    log_info "Stripping CRLF from deployed scripts..."
+    find "$INSTALL_DIR/scripts" "$INSTALL_DIR/bin" /usr/local/bin \
+        -maxdepth 2 \( -name "*.sh" -o -name "*.py" \) \
+        -exec sed -i 's/\r//' {} \; 2>/dev/null || true
+    log_success "CRLF strip complete"
 
     # Cleanup temp directory (null after to prevent double-cleanup in cleanup_on_exit)
     [[ -n "$TEMP_DIR" ]] && [[ -d "$TEMP_DIR" ]] && rm -rf "$TEMP_DIR"
@@ -3572,6 +3983,7 @@ SSHDEOF
     migrate_disable_ipv6
     migrate_keepalived_config
     migrate_ha_mode_file
+    migrate_coin_version_cache
 
     # Mark upgrade complete BEFORE verification — prevents automatic rollback
     # on a completed upgrade. Rollback only protects the destructive upgrade
@@ -3582,6 +3994,20 @@ SSHDEOF
     verify_upgrade || true
 
     show_summary
+
+    # Notify operator via Discord if coin daemon upgrades are available.
+    # Runs after show_summary so the terminal output is always complete first.
+    # Skipped in --auto mode (unattended runs where a human may not be watching Discord).
+    if [[ "$AUTO_MODE" != "true" ]]; then
+        notify_coin_upgrades
+    fi
+
+    # Post-upgrade config sanity check — catches key mismatches or placeholder
+    # values that may surface after a config migration.
+    if command -v spiralctl &>/dev/null; then
+        echo ""
+        spiralctl config validate || true
+    fi
 }
 
 # Run main function

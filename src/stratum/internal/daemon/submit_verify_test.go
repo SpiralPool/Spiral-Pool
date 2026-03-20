@@ -392,7 +392,7 @@ func TestSubmitBlockWithVerification_DGBFastChain(t *testing.T) {
 	}
 }
 
-// TestSubmitTimeouts_AllCoinTiers verifies timeout computation for all 13 supported
+// TestSubmitTimeouts_AllCoinTiers verifies timeout computation for all 14 supported
 // coins grouped by block time tier. Fast chains (<30s) get tight RPC timeouts (3s/1s/500ms),
 // normal chains get standard timeouts (5s/3s/2s). Retries are computed from remaining budget.
 func TestSubmitTimeouts_AllCoinTiers(t *testing.T) {
@@ -407,7 +407,7 @@ func TestSubmitTimeouts_AllCoinTiers(t *testing.T) {
 		{"15s", 15, 2, 3 * time.Second, 5 * time.Second, "DGB, DGB-SCRYPT"},
 		{"30s", 30, 3, 5 * time.Second, 10 * time.Second, "FBTC"},
 		{"60s", 60, 5, 5 * time.Second, 10 * time.Second, "DOGE, XMY, PEP, SYS"},
-		{"150s", 150, 5, 5 * time.Second, 10 * time.Second, "LTC"},
+		{"150s", 150, 5, 5 * time.Second, 10 * time.Second, "LTC, QBX"},
 		{"600s", 600, 5, 5 * time.Second, 10 * time.Second, "BTC, BCH, BC2, CAT, NMC"},
 	}
 

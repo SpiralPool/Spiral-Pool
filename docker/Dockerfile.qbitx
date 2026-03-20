@@ -16,12 +16,12 @@ FROM ubuntu:24.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Q-BitX Node for Spiral Pool"
-LABEL version="0.1.0"
+LABEL version="0.2.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG QBX_VERSION=0.1.0
+ARG QBX_VERSION=0.2.0
 
 # Install dependencies
 # NOTE: Q-BitX requires libevent, libleveldb, and unzip (distributes as ZIP)

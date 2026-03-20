@@ -108,7 +108,36 @@ func NewSession(id string, conn *NoiseConn) *Session {
 	return s
 }
 
-// SetState updates the session state
+// validTransitions defines the allowed state machine transitions for Stratum V2 sessions.
+// A client must progress through the protocol in order: handshake → setup → channel → mining.
+// StateDisconnected is always reachable from any state (e.g., error path, explicit close).
+// StateMining allows re-opening channels (multiple channels per session is valid).
+var validTransitions = map[SessionState]map[SessionState]bool{
+	StateConnected:         {StateHandshakeComplete: true, StateDisconnected: true},
+	StateHandshakeComplete: {StateSetupComplete: true, StateDisconnected: true},
+	StateSetupComplete:     {StateChannelOpen: true, StateDisconnected: true},
+	StateChannelOpen:       {StateMining: true, StateDisconnected: true},
+	StateMining:            {StateChannelOpen: true, StateDisconnected: true}, // re-open channel is valid
+	StateDisconnected:      {}, // terminal state
+}
+
+// TransitionTo atomically validates and applies a state transition.
+// Returns an error if the transition is not permitted by the protocol state machine.
+// SECURITY (F-04): Prevents clients from skipping required handshake/setup phases
+// and eliminates the "safe by accident" reliance on per-handler state checks alone.
+func (s *Session) TransitionTo(next SessionState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if allowed := validTransitions[s.State]; !allowed[next] {
+		return fmt.Errorf("invalid V2 state transition %s → %s", s.State, next)
+	}
+	s.State = next
+	return nil
+}
+
+// SetState updates the session state without transition validation.
+// Prefer TransitionTo for all protocol-driven state changes.
+// SetState is retained for internal use (e.g., forced disconnect on error paths).
 func (s *Session) SetState(state SessionState) {
 	s.mu.Lock()
 	s.State = state

@@ -44,6 +44,7 @@ NAMECOIN_VERSION="28.0"
 SYSCOIN_VERSION="5.0.5"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.3.0"
+QBX_VERSION="0.2.0"
 GO_VERSION="1.25.6"
 POSTGRES_VERSION="18"
 
@@ -54,8 +55,9 @@ STRATUM_TLS_PORT=""
 API_PORT=4000
 DASHBOARD_PORT=1618
 METRICS_PORT=9100
-CLOUD_PUBLIC_IP=""         # Set during install when cloud deployment is detected; used to restrict SSH in UFW
-CLOUD_DETECTED=""          # Set to cloud provider name when detect_cloud_provider() fires; used by SSH setup
+ADMIN_SSH_IP=""            # Admin's home/office IP (connecting FROM) — used to restrict SSH in UFW and fail2ban ignoreip
+CLOUD_SERVER_IP=""         # Cloud server's public IP (connecting TO) — used in SSH tunnel instructions
+CLOUD_DETECTED=""          # Set to cloud provider name when detect_cloud_provider() fires
 RPC_PORT=""
 ZMQ_PORT=""
 BC2_RPC_PORT=8339
@@ -115,7 +117,6 @@ ADMIN_USER=""
 SERVER_IP=""
 POOL_ADDRESS=""
 BTC_ADDRESS=""  # Bitcoin address for multi-coin mode
-SIMPLESWAP_ENABLED="false"    # SimpleSwap.io integration (optional — alert only, no API key or address stored)
 BCH_ADDRESS=""  # Bitcoin Cash address for multi-coin mode
 BC2_ADDRESS=""  # Bitcoin II address for multi-coin mode
 LTC_ADDRESS=""  # Litecoin address for multi-coin mode
@@ -208,6 +209,9 @@ GENERATE_FBTC_WALLET="false" # FBTC wallet (merge mining)
 GENERATE_QBX_WALLET="false"  # QBX wallet (Q-BitX)
 GENERATE_PEP_WALLET="false"  # PEP wallet
 # CAT wallet generation not supported — user must provide their own address
+
+# Native install upgrade mode ("fresh" = clean install, "add" = add coins to existing install)
+NATIVE_UPGRADE_MODE="fresh"
 
 # Network privacy
 TOR_ENABLED="false"  # true to route blockchain nodes through Tor
@@ -465,7 +469,7 @@ log_step() {
 
 # Clear terminal between interactive config sections for readability
 screen_clear() {
-    printf '\033[2J\033[H'
+    clear
 }
 
 # Run command with animated progress spinner
@@ -572,10 +576,13 @@ acquire_operation_lock() {
     sudo mkdir -p /var/lock 2>/dev/null || true
 
     # Clean up stale lock if the process that created it is no longer running
-    if [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]]; then
-        local lock_pid=$(grep -oP 'pid=\K[0-9]+' "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || echo "")
-        if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-            # Process is dead, clean up stale lock
+    if [[ -f "$SPIRALPOOL_LOCK_FILE" ]]; then
+        local lock_pid=""
+        if [[ -f "${SPIRALPOOL_LOCK_FILE}.info" ]]; then
+            lock_pid=$(grep -oP 'pid=\K[0-9]+' "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || echo "")
+        fi
+        # Stale if: no .info file, no PID recorded, or the recorded PID is no longer alive
+        if [[ -z "$lock_pid" ]] || ! kill -0 "$lock_pid" 2>/dev/null; then
             sudo rm -f "$SPIRALPOOL_LOCK_FILE" "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
         fi
     fi
@@ -1352,7 +1359,9 @@ detect_virtualization() {
             *linode*|*akamai*)                  echo "linode"; return 0 ;;  # Linode rebranded to Akamai
             *hetzner*)                          echo "hetzner"; return 0 ;;
             *vultr*)                            echo "vultr"; return 0 ;;
-            *oracle*)                           echo "oci"; return 0 ;;    # Oracle Cloud Infrastructure
+            # Note: *oracle* intentionally omitted — "Oracle Corporation" is used by both
+            # OCI VMs and physical Oracle/Sun servers (Sun Fire, SPARC, Server X-series).
+            # OCI VMs are reliably caught by systemd-detect-virt returning "kvm".
             *ovh*)                              echo "ovh"; return 0 ;;
             *scaleway*)                         echo "scaleway"; return 0 ;;
             *upcloud*)                          echo "upcloud"; return 0 ;;
@@ -1381,7 +1390,7 @@ detect_virtualization() {
         case "$board" in
             *amazon*)                           echo "amazon"; return 0 ;;
             *google*)                           echo "google"; return 0 ;;
-            *oracle*)                           echo "oci"; return 0 ;;
+            # Note: *oracle* omitted — ambiguous with physical Oracle/Sun hardware
             *alibaba*)                          echo "alibaba"; return 0 ;;
         esac
     fi
@@ -1392,7 +1401,8 @@ detect_virtualization() {
         case "$chassis" in
             *qemu*|*bochs*)                     echo "qemu"; return 0 ;;
             *vmware*)                           echo "vmware"; return 0 ;;
-            *oracle*|*virtualbox*)              echo "oracle"; return 0 ;;
+            *virtualbox*)                       echo "oracle"; return 0 ;;
+            # Note: *oracle* omitted — ambiguous with physical Oracle/Sun chassis
             *microsoft*)                        echo "microsoft"; return 0 ;;
             *xen*)                              echo "xen"; return 0 ;;
             *amazon*)                           echo "amazon"; return 0 ;;
@@ -2936,7 +2946,7 @@ check_prerequisites() {
     fi
     if [[ "$VERSION_ID" != "24.04" ]]; then
         log_error "Ubuntu $VERSION_ID not supported. Requires Ubuntu 24.04 LTS."
-        log_error "Ubuntu 24.04 LTS is required for Go 1.25, PostgreSQL 16, and system dependencies."
+        log_error "Ubuntu 24.04 LTS is required for Go 1.25, PostgreSQL 18, and system dependencies."
         exit 1
     fi
     log_success "Operating System: Ubuntu $VERSION_ID LTS"
@@ -3088,18 +3098,35 @@ check_prerequisites() {
     # This is common on cloud VMs where the disk is larger than the default partition
     expand_lvm_if_needed
 
-    # Memory check - minimum 10GB to proceed
+    # Memory check — warn below 10GB, require confirmation to continue
     local total_mem=$(free -g | awk '/^Mem:/{print $2}' | tr -d ' ')
     if [[ $total_mem -lt 10 ]]; then
         echo ""
-        echo -e "${RED}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${RED}  INSUFFICIENT MEMORY: ${total_mem}GB detected (minimum 10GB required)${NC}"
-        echo -e "${RED}═══════════════════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  WARNING: LOW MEMORY — ${total_mem}GB detected (recommended minimum: 10GB)${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo -e "  ${YELLOW}This is spicy. 🌶️ Crashes may occur with low RAM.${NC}"
-        echo -e "  ${YELLOW}Proceed at your own risk - you've been warned!${NC}"
+        echo -e "  Running Spiral Pool with less than 10GB RAM may cause:"
         echo ""
-        exit 1
+        echo -e "    ${YELLOW}•${NC} Daemon crashes or OOM kills during initial block download"
+        echo -e "    ${YELLOW}•${NC} Slow block template generation under memory pressure"
+        echo -e "    ${YELLOW}•${NC} Increased orphan rate — stale templates submitted after the next"
+        echo -e "         block arrives because the daemon was too slow to respond"
+        echo -e "    ${YELLOW}•${NC} PostgreSQL eviction and share processing delays under load"
+        echo ""
+        echo -e "  If you proceed, monitor memory usage closely after install completes."
+        echo -e "  Adding swap space may help, but is not a substitute for physical RAM."
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        local ram_ack
+        read -rp "  Type YES to acknowledge the risks and continue anyway: " ram_ack
+        echo ""
+        if [[ "$ram_ack" != "YES" ]]; then
+            log_error "Low memory not acknowledged. Installation aborted."
+            exit 1
+        fi
+        log_warn "Low memory (${total_mem}GB) acknowledged by operator. Continuing."
     else
         log_success "Memory: ${total_mem}GB RAM"
     fi
@@ -3173,7 +3200,6 @@ select_deploy_method() {
             linode)                 virt_name="Linode/Akamai" ;;
             hetzner)                virt_name="Hetzner Cloud" ;;
             vultr)                  virt_name="Vultr" ;;
-            oci)                    virt_name="Oracle Cloud" ;;
             ovh)                    virt_name="OVHcloud" ;;
             scaleway)               virt_name="Scaleway" ;;
             upcloud)                virt_name="UpCloud" ;;
@@ -3193,27 +3219,62 @@ select_deploy_method() {
     fi
 
     # --- Cloud provider detection (warning + acknowledgement) ---
-    # This runs independently of systemd-detect-virt because many cloud VMs
-    # report generic hypervisor types (e.g., "kvm"). DMI strings reliably
-    # identify the actual cloud provider.
+    # Check virt type FIRST — bare metal and known local hypervisors are never
+    # cloud providers and don't need any further detection or prompting.
+    # Only ambiguous types (kvm, xen, Hyper-V) proceed to full cloud detection,
+    # because those hypervisors are used by real cloud/VPS providers too.
     local cloud_provider=""
-    cloud_provider=$(detect_cloud_provider 2>/dev/null) || true
 
-    # Failsafe: if auto-detection found nothing, ask the operator directly.
-    # This catches providers with generic DMI strings (OCI, IBM Cloud, bare-metal
-    # clouds) or setups where DMI files are restricted/missing.
-    if [[ -z "$cloud_provider" ]]; then
-        echo ""
-        echo -e "  ${DIM}Cloud provider auto-detection: no known provider matched.${NC}"
-        local cloud_failsafe_input=""
-        read -rp "  Is this machine hosted on a cloud or VPS provider? [y/N]: " cloud_failsafe_input
-        if [[ "$cloud_failsafe_input" =~ ^[Yy]$ ]]; then
-            local cloud_name_input=""
-            read -rp "  Enter provider name (e.g. OCI, IBM Cloud, Contabo): " cloud_name_input
-            cloud_provider="${cloud_name_input:-Unknown Cloud Provider}"
-        fi
-        echo ""
+    # --simulate-cloud: bypass DMI detection entirely and inject a fake provider.
+    # Use this to test all cloud-specific install paths (UFW rules, SSH tunnel notice,
+    # risk acknowledgment, post-install summary) on a local VM or bare-metal machine.
+    # Usage: ./install.sh --simulate-cloud "Hetzner Cloud"
+    if [[ -n "${CLI_SIMULATE_CLOUD:-}" ]]; then
+        cloud_provider="$CLI_SIMULATE_CLOUD (SIMULATED)"
+        log_warn "Cloud simulation active: treating this install as ${cloud_provider}"
     fi
+
+    local _virt_type=""
+    _virt_type=$(systemd-detect-virt 2>/dev/null) || _virt_type="unknown"
+
+    if [[ -n "$cloud_provider" ]]; then
+        : # Already set by --simulate-cloud; skip real detection
+    else
+    case "$_virt_type" in
+        none|oracle|parallels|bochs)
+            # Bare metal, VirtualBox, Parallels Desktop, Bochs emulator —
+            # none of these are used by cloud providers; skip detection entirely.
+            ;;
+        vmware|qemu)
+            # VMware and QEMU are mostly local, but cloud deployments on VMware
+            # (VMware Cloud on AWS, Azure VMware Solution, IBM Cloud VMware) and
+            # QEMU-based hosters always expose IMDS at 169.254.169.254, which
+            # detect_cloud_provider already probes. Run detection — if IMDS and
+            # DMI both find nothing, it's a local instance; no prompt needed.
+            cloud_provider=$(detect_cloud_provider 2>/dev/null) || true
+            ;;
+        *)
+            # kvm, xen, microsoft (Hyper-V), lxc, or unknown:
+            # these are the dominant hypervisors for cloud/VPS providers.
+            # Run full detection, and if nothing is found, ask the operator —
+            # OCI and IBM Cloud use generic DMI strings that slip past auto-detection.
+            cloud_provider=$(detect_cloud_provider 2>/dev/null) || true
+
+            if [[ -z "$cloud_provider" ]]; then
+                echo ""
+                echo -e "  ${DIM}Cloud provider auto-detection: no known provider matched.${NC}"
+                local cloud_failsafe_input=""
+                read -rp "  Is this machine hosted on a cloud or VPS provider? [y/N]: " cloud_failsafe_input
+                if [[ "$cloud_failsafe_input" =~ ^[Yy]$ ]]; then
+                    local cloud_name_input=""
+                    read -rp "  Enter provider name (e.g. OCI, IBM Cloud, Contabo): " cloud_name_input
+                    cloud_provider="${cloud_name_input:-Unknown Cloud Provider}"
+                fi
+                echo ""
+            fi
+            ;;
+    esac
+    fi  # end --simulate-cloud skip
 
     if [[ -n "$cloud_provider" ]]; then
         echo ""
@@ -3221,132 +3282,262 @@ select_deploy_method() {
         echo -e "${YELLOW}  WARNING: CLOUD DEPLOYMENT DETECTED — ${cloud_provider}${NC}"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo -e "  Spiral Pool is ${YELLOW}NOT${NC} designed or tested for cloud-based instances."
-        echo -e "  Cloud deployments are ${YELLOW}NOT supported${NC} and receive no official support."
-        echo ""
-        echo -e "  ${WHITE}Security risks of cloud deployment:${NC}"
-        echo ""
-        echo -e "    ${YELLOW}1.${NC} You do not own the physical hardware or hypervisor layer"
-        echo -e "    ${YELLOW}2.${NC} The cloud provider has unrestricted access to your server's"
-        echo -e "       memory, disk, and network traffic — including private keys,"
-        echo -e "       wallet credentials, and database contents"
-        echo -e "    ${YELLOW}3.${NC} Cloud instances can be snapshotted, cloned, or inspected"
-        echo -e "       by the hosting provider without your knowledge or consent"
-        echo -e "    ${YELLOW}4.${NC} No guarantee of data confidentiality or physical security"
-        echo -e "    ${YELLOW}5.${NC} Shared infrastructure exposes you to side-channel attacks"
-        echo -e "       and noisy-neighbor resource contention"
-        echo ""
-        echo -e "  ${WHITE}Strongly recommended before continuing:${NC}"
-        echo ""
-        echo -e "    ${CYAN}LOCK DOWN SSH TO YOUR IP ADDRESS ONLY${NC}"
-        echo ""
-        echo -e "    On a cloud VPS, your SSH port is exposed to the entire internet."
-        echo -e "    Find your real public IP (NOT a 10.x, 172.x, or 192.168.x address):"
-        echo ""
-        echo -e "      ${WHITE}curl -4 https://ifconfig.me${NC}    or"
-        echo -e "      ${WHITE}curl -4 https://icanhazip.com${NC}"
-        echo ""
-        echo -e "    Then restrict SSH to only that IP in UFW:"
-        echo ""
-        echo -e "      ${WHITE}sudo ufw allow from <YOUR_PUBLIC_IP> to any port 22 proto tcp${NC}"
-        echo -e "      ${WHITE}sudo ufw delete allow 22${NC}          # remove the open-to-all rule"
-        echo -e "      ${WHITE}sudo ufw reload${NC}"
-        echo ""
-        echo -e "    ${RED}Do this BEFORE proceeding.${NC} A publicly exposed SSH port on a"
-        echo -e "    pool server holding wallet keys is an immediate compromise risk."
-        echo ""
-        echo -e "  ${WHITE}Recommended deployment targets:${NC}"
-        echo ""
-        echo -e "    - Bare metal servers under your physical control"
-        echo -e "    - Virtual machines on hypervisors YOU own and operate"
-        echo ""
-        echo -e "  Issues from cloud-hosted installations will not be investigated."
-        echo -e "  See WARNINGS.md for complete details."
+        echo -e "  Spiral Pool has been detected running on ${YELLOW}${cloud_provider}${NC}."
+        echo -e "  Cloud/VPS deployments are ${YELLOW}supported but carry serious risks${NC} you must"
+        echo -e "  understand and accept before proceeding."
         echo ""
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  RISK 1: PROVIDER TERMS OF SERVICE${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        log_warn "Cloud deployment detected (${cloud_provider}). Proceeding with no-support warning."
+        echo -e "  Most cloud providers (AWS, GCP, Azure, DigitalOcean, Hetzner, Vultr,"
+        echo -e "  OVH, Linode, and others) ${RED}explicitly prohibit cryptocurrency mining${NC}"
+        echo -e "  in their Acceptable Use Policy or Terms of Service."
         echo ""
-        local cloud_ack
-        read -rp "  Type YES to acknowledge the risks and continue: " cloud_ack
+        echo -e "  Running pool infrastructure on a cloud instance — even if your miners"
+        echo -e "  are physically elsewhere — may be classified as mining by your provider."
         echo ""
-        if [[ "$cloud_ack" != "YES" ]]; then
-            log_error "Cloud deployment not acknowledged. Installation aborted."
+        echo -e "  ${RED}Violation may result in:${NC}"
+        echo -e "    - Immediate account termination WITHOUT notice"
+        echo -e "    - ALL data on the instance permanently deleted — no recovery"
+        echo -e "    - Forfeiture of prepaid credits or balance"
+        echo -e "    - Potential legal action under provider terms"
+        echo ""
+        echo -e "  You are solely responsible for reading your provider's Terms of Service"
+        echo -e "  before proceeding. Spiral Pool accepts no liability for ToS violations."
+        echo ""
+        local ack1
+        read -rp "  Type YES to acknowledge Risk 1 (Provider ToS) and continue: " ack1
+        if [[ "${ack1^^}" != "YES" ]]; then
+            log_error "Cloud deployment risks not accepted. Installation aborted."
             exit 1
         fi
-        log_warn "Cloud deployment acknowledged by operator. Continuing without support."
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  RISK 2: BANDWIDTH BILLING${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  Cloud providers charge for outbound (egress) network traffic."
+        echo -e "  Blockchain synchronization generates large egress immediately:"
+        echo ""
+        echo -e "    ${WHITE}Bitcoin (BTC)${NC}      ~600 GB sync   → ~\$54 at \$0.09/GB"
+        echo -e "    ${WHITE}Bitcoin Cash (BCH)${NC} ~250 GB sync   → ~\$23 at \$0.09/GB"
+        echo -e "    ${WHITE}Litecoin (LTC)${NC}     ~120 GB sync   → ~\$11 at \$0.09/GB"
+        echo -e "    ${WHITE}Dogecoin (DOGE)${NC}    ~90 GB sync    → ~\$8  at \$0.09/GB"
+        echo -e "    ${WHITE}DigiByte (DGB)${NC}     ~45 GB sync    → ~\$4  at \$0.09/GB"
+        echo ""
+        echo -e "  Multi-coin deployments multiply these costs. Ongoing P2P traffic adds"
+        echo -e "  1–10 GB/day after sync. ${RED}Set billing alerts before starting.${NC}"
+        echo ""
+        echo -e "  Check your provider's included transfer quota and per-GB overage price"
+        echo -e "  before proceeding. Spiral Pool accepts no liability for billing charges."
+        echo ""
+        local ack2
+        read -rp "  Type YES to acknowledge Risk 2 (Bandwidth Billing) and continue: " ack2
+        if [[ "${ack2^^}" != "YES" ]]; then
+            log_error "Cloud deployment risks not accepted. Installation aborted."
+            exit 1
+        fi
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  RISK 3: SECURITY — PROVIDER ACCESS TO YOUR DATA${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "    ${YELLOW}1.${NC} You do not own the physical hardware or hypervisor layer"
+        echo -e "    ${YELLOW}2.${NC} The provider has unrestricted access to your server's memory,"
+        echo -e "       disk, and network traffic — including wallet keys and credentials"
+        echo -e "    ${YELLOW}3.${NC} Instances can be snapshotted or inspected without your consent"
+        echo -e "    ${YELLOW}4.${NC} No guarantee of data confidentiality or physical security"
+        echo -e "    ${YELLOW}5.${NC} Shared hardware exposes you to side-channel attacks"
+        echo ""
+        echo -e "  ${WHITE}Hardening applied automatically on cloud installs:${NC}"
+        echo -e "    - SSH restricted to your operator IP only"
+        echo -e "    - Dashboard (port 1618) not opened — SSH tunnel access only"
+        echo -e "    - See docs/setup/CLOUD_OPERATIONS.md for full guidance"
+        echo ""
+        local ack3
+        read -rp "  Type YES to acknowledge Risk 3 (Security) and continue: " ack3
+        if [[ "${ack3^^}" != "YES" ]]; then
+            log_error "Cloud deployment risks not accepted. Installation aborted."
+            exit 1
+        fi
+        echo ""
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}  RISK 4: SINGLE-OPERATOR ARCHITECTURE — WALLET CONTROL${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ALL block rewards go to the single wallet address you configure."
+        echo -e "  Miners who connect to your pool receive NO direct payment."
+        echo ""
+        echo -e "  ${RED}If you allow other miners to connect, you MUST disclose that all${NC}"
+        echo -e "  ${RED}rewards go to your wallet. Failure to disclose may be fraud.${NC}"
+        echo ""
+        echo -e "  See WARNINGS.md and TERMS.md for complete details."
+        echo ""
+        local ack4
+        read -rp "  Type YES to acknowledge Risk 4 (Wallet Control) and continue: " ack4
+        if [[ "${ack4^^}" != "YES" ]]; then
+            log_error "Cloud deployment risks not accepted. Installation aborted."
+            exit 1
+        fi
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  RISK 5: IPv6 DISABLED AT THE KERNEL LEVEL${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  This installer ${RED}disables IPv6 at the kernel level${NC} via sysctl. This is"
+        echo -e "  required for correct operation of keepalived VIP failover in HA mode."
+        echo ""
+        echo -e "  ${RED}Consequences you must be aware of:${NC}"
+        echo -e "    - All IPv6 network interfaces on this server will stop functioning"
+        echo -e "    - IPv6-only services or APIs on this server will become unreachable"
+        echo -e "    - Any IPv6 tunnels (6in4, Teredo, AYIYA, etc.) will break"
+        echo -e "    - If your cloud provider assigns only an IPv6 address to this instance,"
+        echo -e "      SSH access and all external connectivity will be lost immediately"
+        echo -e "    - If miners or peers connect to this server via IPv6, those connections"
+        echo -e "      will stop working"
+        echo ""
+        echo -e "  ${WHITE}Before proceeding, confirm:${NC}"
+        echo -e "    - This server has a ${WHITE}static IPv4 address${NC} assigned by your provider"
+        echo -e "    - You do not rely on IPv6 for SSH access to this server"
+        echo -e "    - No IPv6 tunnels or services depend on this machine"
+        echo ""
+        echo -e "  ${DIM}IPv6 is disabled because it causes kernel routing cache corruption${NC}"
+        echo -e "  ${DIM}during keepalived VIP failover. See NOSEC.md for full rationale.${NC}"
+        echo ""
+        local ack5
+        read -rp "  Type YES to acknowledge Risk 5 (IPv6 Disabled) and continue: " ack5
+        if [[ "${ack5^^}" != "YES" ]]; then
+            log_error "Cloud deployment risks not accepted. Installation aborted."
+            exit 1
+        fi
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  NOTE: HIGH AVAILABILITY (HA) NOT SUPPORTED ON CLOUD INSTALLS${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  This installer will configure this server as ${WHITE}Standalone (single node)${NC} only."
+        echo -e "  HA Cluster modes (Primary / Backup) are ${RED}disabled${NC} for cloud deployments."
+        echo ""
+        echo -e "  ${WHITE}Why HA is not supported on cloud:${NC}"
+        echo -e "    - VRRP multicast (keepalived VIP failover) is blocked or filtered"
+        echo -e "      on most cloud provider networks — VIP will silently fail to float"
+        echo -e "    - Cloud VMs share a hypervisor layer — no physical node isolation"
+        echo -e "    - etcd split-brain risk is higher on shared network infrastructure"
+        echo -e "    - Both nodes exposed to the same provider snapshot/migration events"
+        echo ""
+        echo -e "  ${DIM}HA is supported on bare metal and self-hosted VMs on your own hardware.${NC}"
+        echo -e "  ${DIM}See docs/setup/CLOUD_OPERATIONS.md for details.${NC}"
+        echo ""
+        log_warn "Cloud deployment detected (${cloud_provider}). All 5 risks acknowledged by operator."
+        log_warn "Continuing with cloud hardening."
+        clear
         CLOUD_DETECTED="$cloud_provider"   # Track cloud detection for SSH auth setup below
         echo ""
 
-        # ── Detect public IP and offer SSH lockdown ──────────────────────────────
-        # On cloud VMs, ip route gives the private/NAT IP.  We query two reliable
-        # IP-echo services to find the real public address so the operator can
-        # (a) tell their miners the correct stratum address and
-        # (b) restrict SSH access to their own IP — a critical cloud hardening step.
-        echo -e "  ${WHITE}Detecting your public IP address...${NC}"
+        # ── Detect this server's public IP ───────────────────────────────────────
+        # On cloud VMs, ip route gives the private/NAT IP. Query two reliable
+        # IP-echo services to find the real public IPv4 address.
+        # NOTE: Spiral Pool does not support IPv6 — the installer disables it at
+        # the OS level. All addresses here are IPv4 only.
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}  IP Information${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${WHITE}Detecting this server's public IPv4 address...${NC}"
         local detected_public_ip local_ip
-        detected_public_ip=$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null \
-                          || curl -sf --max-time 5 https://icanhazip.com 2>/dev/null \
+        detected_public_ip=$(curl -sf -4 --max-time 5 https://ifconfig.me 2>/dev/null \
+                          || curl -sf -4 --max-time 5 https://icanhazip.com 2>/dev/null \
                           || true)
         local_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)
 
         if [[ -n "$detected_public_ip" && "$detected_public_ip" != "$local_ip" ]]; then
             echo ""
-            echo -e "  ${CYAN}Local (private) IP : ${WHITE}${local_ip}${NC}"
-            echo -e "  ${CYAN}Public IP detected : ${WHITE}${detected_public_ip}${NC}"
+            echo -e "  ${CYAN}Your server's internal IP : ${WHITE}${local_ip}${NC}  ${DIM}(LAN address — not reachable from outside)${NC}"
+            echo -e "  ${CYAN}Your server's public IP   : ${WHITE}${detected_public_ip}${NC}  ${DIM}(what miners and SSH clients connect to)${NC}"
             echo ""
-            echo -e "  ${YELLOW}Miners must connect to ${detected_public_ip}:${STRATUM_PORT:-<stratum_port>}${NC}"
-            echo -e "  ${YELLOW}NOT to the private address ${local_ip} — external miners cannot reach it.${NC}"
+            echo -e "  ${YELLOW}Miners connect to: ${detected_public_ip}:${STRATUM_PORT:-<stratum_port>}${NC}"
+            echo -e "  ${YELLOW}NOT the internal address ${local_ip} — external clients cannot reach it.${NC}"
+            CLOUD_SERVER_IP="$detected_public_ip"
         elif [[ -n "$detected_public_ip" ]]; then
             echo ""
-            echo -e "  ${CYAN}Detected IP: ${WHITE}${detected_public_ip}${NC} (matches routing interface — no NAT detected)"
+            echo -e "  ${CYAN}Server public IP: ${WHITE}${detected_public_ip}${NC}  ${DIM}(no NAT detected — public and private match)${NC}"
+            CLOUD_SERVER_IP="$detected_public_ip"
         else
             echo ""
-            echo -e "  ${YELLOW}Could not auto-detect public IP.${NC}"
-            echo -e "  Check manually: ${WHITE}curl -4 https://ifconfig.me${NC}"
-            detected_public_ip=""
+            echo -e "  ${YELLOW}Could not auto-detect server public IP.${NC}"
+            echo -e "  Run manually after install: ${WHITE}curl -4 https://ifconfig.me${NC}"
         fi
         echo ""
 
-        # Offer to restrict SSH to operator's IP only — single most effective
-        # cloud hardening step for a pool holding wallet keys.
-        # We detect the operator's CLIENT IP (the machine they are connecting FROM)
-        # via $SSH_CLIENT, which sshd sets to "<client_ip> <client_port> <server_port>".
-        # This is NOT the server's public IP — it is the admin's workstation/home IP.
+        # ── SSH lockdown — restrict SSH to the admin's home/office IP ────────────
+        # Two distinct IPs are involved here:
+        #   1. This SERVER's public IP (detected above in CLOUD_SERVER_IP) — what you SSH to
+        #   2. Your HOME/OFFICE IP (detected below from SSH_CLIENT) — what you SSH from
+        #
+        # The UFW rule restricts port 22 to your HOME IP only. Without this, port 22
+        # is open to the entire internet and will receive constant brute-force attempts.
+        #
+        # IMPORTANT CAVEATS:
+        #   • Your home IP is typically dynamic (changes when your router reboots).
+        #     If it changes, you will be locked out. Use your cloud provider's
+        #     web console / VNC / recovery console to regain access if this happens.
+        #   • If your ISP uses CG-NAT (carrier-grade NAT), multiple customers may
+        #     share your public IP. The restriction is still worthwhile but provides
+        #     slightly weaker isolation than a dedicated home IP.
+        #   • IPv6 addresses are NOT supported — this installer disables IPv6 at the
+        #     OS level. If your home connection is IPv6-only, SSH to this server will
+        #     not work. Contact your ISP for IPv4 access or use a VPN.
+        #
+        # SSH_CLIENT is set by sshd to "<client_ip> <client_port> <server_port>".
+        # This is the IP of the machine YOU are connecting FROM, not the server IP.
         local ssh_client_ip=""
         ssh_client_ip=$(awk '{print $1}' <<< "${SSH_CLIENT:-}" 2>/dev/null || true)
 
-        echo -e "  ${WHITE}SSH Lockdown (strongly recommended for cloud):${NC}"
-        echo -e "  Restricting SSH to your IP only prevents all other hosts from"
-        echo -e "  attempting to log in, even if fail2ban is misconfigured."
-        echo -e "  Enter the IP address of the machine you are connecting FROM."
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}  SSH LOCKDOWN — Restrict port 22 to your home/office IP${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  This restricts SSH to ${WHITE}your home or office IP only${NC} — the machine"
+        echo -e "  you are connecting FROM. All other IPs will be blocked from port 22."
+        echo ""
+        echo -e "  ${YELLOW}⚠ If your home or office external IP changes (dynamic IP), you will be locked out.${NC}"
+        echo -e "  ${DIM}Use your cloud provider's web console to recover if that happens.${NC}"
         echo ""
         if [[ -n "$ssh_client_ip" ]]; then
-            echo -e "  ${CYAN}Your current connection IP: ${WHITE}${ssh_client_ip}${NC}"
+            # Check if the connecting IP is a private/LAN address (simulation mode)
+            if [[ "$ssh_client_ip" =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.) ]]; then
+                echo -e "  ${CYAN}Your connecting IP:${NC} ${WHITE}${ssh_client_ip}${NC}  ${DIM}(LAN address — simulation mode)${NC}"
+                echo -e "  ${DIM}On a real cloud install this would show your ISP's public IP.${NC}"
+            else
+                echo -e "  ${CYAN}Your ISP's public IP (connecting FROM):${NC} ${WHITE}${ssh_client_ip}${NC}"
+                echo -e "  ${DIM}This is your home/office external IP as seen by this server.${NC}"
+            fi
         fi
         echo ""
         local cloud_ip_input=""
         if [[ -n "$ssh_client_ip" ]]; then
-            read -rp "  Enter your admin IP for SSH lockdown [${ssh_client_ip}] (or 'skip'): " cloud_ip_input
+            read -rp "  Enter your home/office IP [${ssh_client_ip}] (or 'skip'): " cloud_ip_input
             [[ -z "$cloud_ip_input" ]] && cloud_ip_input="$ssh_client_ip"
         else
-            read -rp "  Enter your admin IP for SSH lockdown (or 'skip'): " cloud_ip_input
+            read -rp "  Enter your home/office IP for SSH lockdown (or 'skip'): " cloud_ip_input
         fi
 
         if [[ "$cloud_ip_input" == "skip" || -z "$cloud_ip_input" ]]; then
             log_warn "SSH lockdown skipped — port 22 will remain open to all IPs."
-            log_warn "Apply manually after install: sudo ufw allow from <YOUR_IP> to any port 22 proto tcp && sudo ufw delete allow 22"
+            log_warn "Apply manually: sudo ufw allow from <HOME_IP> to any port 22 proto tcp && sudo ufw delete allow 22/tcp"
         elif [[ "$cloud_ip_input" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-            # SECURITY: CLOUD_PUBLIC_IP is a global — used later by the UFW section
-            # to restrict SSH to this address instead of opening port 22 to all.
-            CLOUD_PUBLIC_IP="$cloud_ip_input"
-            log "SSH will be restricted to ${CLOUD_PUBLIC_IP} during UFW configuration."
+            ADMIN_SSH_IP="$cloud_ip_input"
+            log "SSH port 22 will be restricted to admin home/office IP: ${ADMIN_SSH_IP}"
         else
-            log_warn "Invalid IP format '${cloud_ip_input}' — skipping SSH lockdown."
-            log_warn "Apply manually after install: sudo ufw allow from <YOUR_IP> to any port 22 proto tcp && sudo ufw delete allow 22"
+            log_warn "Invalid IPv4 format '${cloud_ip_input}' — skipping SSH lockdown."
+            log_warn "IPv6 addresses are not supported (IPv6 is disabled by this installer)."
+            log_warn "Apply manually: sudo ufw allow from <HOME_IP> to any port 22 proto tcp && sudo ufw delete allow 22/tcp"
         fi
         echo ""
     fi
+
+    # SSH restriction handled in collect_configuration() after hardware detection.
 
     # --- ARM architecture detection (warning, not a hard block) ---
     local arm_info=""
@@ -3768,14 +3959,28 @@ collect_docker_configuration() {
     log_success "Generated secure passwords for database, RPC, admin API, Grafana, and metrics"
 
     # Optional: Discord webhook
-    echo -e "${WHITE}Optional: Enter Discord webhook URL for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Discord${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter Discord webhook URL for block alerts and reports.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "Discord Webhook: "; read DISCORD_WEBHOOK_URL
     echo ""
 
     # Optional: Telegram
-    echo -e "${WHITE}Optional: Enter Telegram bot token for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Telegram${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter Telegram bot token for notifications.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "Telegram Bot Token: "; read TELEGRAM_BOT_TOKEN
 
     if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then
@@ -3784,8 +3989,15 @@ collect_docker_configuration() {
     echo ""
 
     # Optional: XMPP
-    echo -e "${WHITE}Optional: Enter XMPP Bot JID for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — XMPP${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter XMPP Bot JID for notifications.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "XMPP Bot JID: "; read XMPP_JID
 
     if [[ -n "$XMPP_JID" ]]; then
@@ -3797,9 +4009,70 @@ collect_docker_configuration() {
     fi
     echo ""
 
+    # Optional: ntfy
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — ntfy Push${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    NTFY_URL=""
+    NTFY_TOKEN=""
+    echo -e "${WHITE}Optional: Enter ntfy topic URL for push notifications.${NC}"
+    echo -e "${DIM}e.g. https://ntfy.sh/my-topic — press Enter to skip${NC}"
+    echo ""
+    prompt_input "ntfy URL: "; read NTFY_URL
+    if [[ -n "$NTFY_URL" ]]; then
+        prompt_input "ntfy auth token (or Enter if public topic): "; read NTFY_TOKEN
+    fi
+    echo ""
+
+    # Optional: SMTP email
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Email (SMTP)${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    SMTP_HOST=""
+    SMTP_PORT="587"
+    SMTP_USERNAME=""
+    SMTP_PASSWORD=""
+    SMTP_TO=""
+    SMTP_USE_TLS="true"
+    echo -e "${WHITE}Optional: Enter SMTP server hostname for email notifications.${NC}"
+    echo -e "${DIM}e.g. smtp.gmail.com — press Enter to skip${NC}"
+    echo ""
+    prompt_input "SMTP Host: "; read SMTP_HOST
+    if [[ -n "$SMTP_HOST" ]]; then
+        prompt_input "SMTP port [587 = STARTTLS / 465 = SSL, default 587]: "; read SMTP_PORT_INPUT
+        SMTP_PORT="${SMTP_PORT_INPUT:-587}"
+        prompt_input "SMTP username / from address: "; read SMTP_USERNAME
+        prompt_input "SMTP password (app-specific password recommended): "; read -s SMTP_PASSWORD; echo ""
+        prompt_input "Recipient email address(es) [comma-separated for multiple]: "; read SMTP_TO
+        if [[ -n "$SMTP_USERNAME" ]] && [[ -n "$SMTP_PASSWORD" ]] && [[ -n "$SMTP_TO" ]]; then
+            [[ "$SMTP_PORT" == "465" ]] && SMTP_USE_TLS="false" || SMTP_USE_TLS="true"
+            log_success "Email configured: $SMTP_USERNAME → $SMTP_TO via $SMTP_HOST:$SMTP_PORT"
+        else
+            log_warn "Email setup incomplete — skipping"
+            SMTP_HOST=""
+            SMTP_USERNAME=""
+            SMTP_PASSWORD=""
+            SMTP_TO=""
+        fi
+    fi
+    echo ""
+
     # Expected hashrate
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Fleet Configuration${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
     echo -e "${WHITE}Enter expected fleet hashrate in TH/s${NC}"
-    echo -e "${WHITE}(for efficiency reporting, default: 100):${NC}"
+    echo -e "${DIM}(for efficiency reporting, default: 100)${NC}"
+    echo ""
     prompt_input "Expected TH/s [100]: "; read EXPECTED_FLEET_THS
     EXPECTED_FLEET_THS=${EXPECTED_FLEET_THS:-100}
     echo ""
@@ -3930,15 +4203,28 @@ collect_docker_multicoin_configuration() {
 
 
     # Optional: Discord webhook
+    screen_clear
     echo ""
-    echo -e "${WHITE}Optional: Enter Discord webhook URL for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Discord${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter Discord webhook URL for block alerts and reports.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "Discord Webhook: "; read DISCORD_WEBHOOK_URL
     echo ""
 
     # Optional: Telegram
-    echo -e "${WHITE}Optional: Enter Telegram bot token for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Telegram${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter Telegram bot token for notifications.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "Telegram Bot Token: "; read TELEGRAM_BOT_TOKEN
 
     if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then
@@ -3947,8 +4233,15 @@ collect_docker_multicoin_configuration() {
     echo ""
 
     # Optional: XMPP
-    echo -e "${WHITE}Optional: Enter XMPP Bot JID for notifications${NC}"
-    echo -e "${WHITE}(press Enter to skip):${NC}"
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — XMPP${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${WHITE}Optional: Enter XMPP Bot JID for notifications.${NC}"
+    echo -e "${DIM}(press Enter to skip)${NC}"
+    echo ""
     prompt_input "XMPP Bot JID: "; read XMPP_JID
 
     if [[ -n "$XMPP_JID" ]]; then
@@ -3960,9 +4253,70 @@ collect_docker_multicoin_configuration() {
     fi
     echo ""
 
+    # Optional: ntfy
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — ntfy Push${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    NTFY_URL=""
+    NTFY_TOKEN=""
+    echo -e "${WHITE}Optional: Enter ntfy topic URL for push notifications.${NC}"
+    echo -e "${DIM}e.g. https://ntfy.sh/my-topic — press Enter to skip${NC}"
+    echo ""
+    prompt_input "ntfy URL: "; read NTFY_URL
+    if [[ -n "$NTFY_URL" ]]; then
+        prompt_input "ntfy auth token (or Enter if public topic): "; read NTFY_TOKEN
+    fi
+    echo ""
+
+    # Optional: SMTP email
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Notifications — Email (SMTP)${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    SMTP_HOST=""
+    SMTP_PORT="587"
+    SMTP_USERNAME=""
+    SMTP_PASSWORD=""
+    SMTP_TO=""
+    SMTP_USE_TLS="true"
+    echo -e "${WHITE}Optional: Enter SMTP server hostname for email notifications.${NC}"
+    echo -e "${DIM}e.g. smtp.gmail.com — press Enter to skip${NC}"
+    echo ""
+    prompt_input "SMTP Host: "; read SMTP_HOST
+    if [[ -n "$SMTP_HOST" ]]; then
+        prompt_input "SMTP port [587 = STARTTLS / 465 = SSL, default 587]: "; read SMTP_PORT_INPUT
+        SMTP_PORT="${SMTP_PORT_INPUT:-587}"
+        prompt_input "SMTP username / from address: "; read SMTP_USERNAME
+        prompt_input "SMTP password (app-specific password recommended): "; read -s SMTP_PASSWORD; echo ""
+        prompt_input "Recipient email address(es) [comma-separated for multiple]: "; read SMTP_TO
+        if [[ -n "$SMTP_USERNAME" ]] && [[ -n "$SMTP_PASSWORD" ]] && [[ -n "$SMTP_TO" ]]; then
+            [[ "$SMTP_PORT" == "465" ]] && SMTP_USE_TLS="false" || SMTP_USE_TLS="true"
+            log_success "Email configured: $SMTP_USERNAME → $SMTP_TO via $SMTP_HOST:$SMTP_PORT"
+        else
+            log_warn "Email setup incomplete — skipping"
+            SMTP_HOST=""
+            SMTP_USERNAME=""
+            SMTP_PASSWORD=""
+            SMTP_TO=""
+        fi
+    fi
+    echo ""
+
     # Expected hashrate
+    screen_clear
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Fleet Configuration${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
     echo -e "${WHITE}Enter expected fleet hashrate in TH/s${NC}"
-    echo -e "${WHITE}(for efficiency reporting, default: 100):${NC}"
+    echo -e "${DIM}(for efficiency reporting, default: 100)${NC}"
+    echo ""
     prompt_input "Expected TH/s [100]: "; read EXPECTED_FLEET_THS
     EXPECTED_FLEET_THS=${EXPECTED_FLEET_THS:-100}
     echo ""
@@ -4388,6 +4742,142 @@ detect_existing_docker_install() {
 
     DOCKER_UPGRADE_MODE="fresh"
     return 0
+}
+
+detect_existing_native_install() {
+    local COINS_ENV="$INSTALL_DIR/config/coins.env"
+
+    [[ ! -f "$COINS_ENV" ]] && NATIVE_UPGRADE_MODE="fresh" && return 0
+
+    # Parse existing coin enablement
+    local ex_coin_mode ex_solo_coin
+    ex_coin_mode=$(grep -oP '^COIN_MODE=\K(single|multi)$' "$COINS_ENV" 2>/dev/null || echo "")
+    ex_solo_coin=$(grep -oP '^SOLO_COIN=\K\S+$' "$COINS_ENV" 2>/dev/null || echo "")
+
+    local ex_dgb ex_btc ex_bch ex_bc2 ex_ltc ex_doge ex_pep ex_cat
+    local ex_nmc ex_sys ex_xmy ex_fbtc ex_qbx ex_dgb_scrypt
+    ex_dgb=$(grep -oP '^ENABLE_DGB=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_btc=$(grep -oP '^ENABLE_BTC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_bch=$(grep -oP '^ENABLE_BCH=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_bc2=$(grep -oP '^ENABLE_BC2=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_ltc=$(grep -oP '^ENABLE_LTC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_doge=$(grep -oP '^ENABLE_DOGE=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_pep=$(grep -oP '^ENABLE_PEP=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_cat=$(grep -oP '^ENABLE_CAT=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_nmc=$(grep -oP '^ENABLE_NMC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_sys=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_xmy=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_fbtc=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_qbx=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+    ex_dgb_scrypt=$(grep -oP '^ENABLE_DGB_SCRYPT=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+
+    # Build display list
+    local existing_coins=""
+    [[ "$ex_dgb" == "true" ]]       && existing_coins="${existing_coins}DGB "
+    [[ "$ex_btc" == "true" ]]       && existing_coins="${existing_coins}BTC "
+    [[ "$ex_bch" == "true" ]]       && existing_coins="${existing_coins}BCH "
+    [[ "$ex_bc2" == "true" ]]       && existing_coins="${existing_coins}BC2 "
+    [[ "$ex_ltc" == "true" ]]       && existing_coins="${existing_coins}LTC "
+    [[ "$ex_doge" == "true" ]]      && existing_coins="${existing_coins}DOGE "
+    [[ "$ex_dgb_scrypt" == "true" ]] && existing_coins="${existing_coins}DGB-SCRYPT "
+    [[ "$ex_pep" == "true" ]]       && existing_coins="${existing_coins}PEP "
+    [[ "$ex_cat" == "true" ]]       && existing_coins="${existing_coins}CAT "
+    [[ "$ex_nmc" == "true" ]]       && existing_coins="${existing_coins}NMC "
+    [[ "$ex_sys" == "true" ]]       && existing_coins="${existing_coins}SYS "
+    [[ "$ex_xmy" == "true" ]]       && existing_coins="${existing_coins}XMY "
+    [[ "$ex_fbtc" == "true" ]]      && existing_coins="${existing_coins}FBTC "
+    [[ "$ex_qbx" == "true" ]]       && existing_coins="${existing_coins}QBX "
+
+    [[ -z "$existing_coins" ]] && NATIVE_UPGRADE_MODE="fresh" && return 0
+
+    echo ""
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}  EXISTING INSTALLATION DETECTED${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  Currently enabled coins: ${GREEN}${existing_coins}${NC}"
+    echo ""
+    echo -e "  ${WHITE}Options:${NC}"
+    echo -e "    ${GREEN}1)${NC} Add coins to existing installation"
+    echo -e "    ${GREEN}2)${NC} Fresh install (will overwrite configuration)"
+    echo ""
+
+    local upgrade_choice
+    while true; do
+        prompt_input "Choose [1] or [2]: "; read upgrade_choice
+        case "$upgrade_choice" in
+            1)
+                NATIVE_UPGRADE_MODE="add"
+                log "Upgrade mode: Adding coins to existing installation"
+
+                # Preserve existing RPC passwords
+                DGB_RPC_PASSWORD=$(grep -oP '^DGB_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BTC_RPC_PASSWORD=$(grep -oP '^BTC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BCH_RPC_PASSWORD=$(grep -oP '^BCH_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BC2_RPC_PASSWORD=$(grep -oP '^BC2_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                LTC_RPC_PASSWORD=$(grep -oP '^LTC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                DOGE_RPC_PASSWORD=$(grep -oP '^DOGE_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                PEP_RPC_PASSWORD=$(grep -oP '^PEP_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                CAT_RPC_PASSWORD=$(grep -oP '^CAT_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                NMC_RPC_PASSWORD=$(grep -oP '^NMC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                SYS_RPC_PASSWORD=$(grep -oP '^SYS_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                XMY_RPC_PASSWORD=$(grep -oP '^XMY_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                FBTC_RPC_PASSWORD=$(grep -oP '^FBTC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                QBX_RPC_PASSWORD=$(grep -oP '^QBX_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                # DGB also uses the generic RPC_PASSWORD for single-coin mode
+                [[ -n "$DGB_RPC_PASSWORD" ]] && RPC_PASSWORD="$DGB_RPC_PASSWORD"
+
+                # Preserve existing pool addresses
+                DGB_POOL_ADDRESS=$(grep -oP '^DGB_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BTC_POOL_ADDRESS=$(grep -oP '^BTC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BCH_POOL_ADDRESS=$(grep -oP '^BCH_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                BC2_POOL_ADDRESS=$(grep -oP '^BC2_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                LTC_POOL_ADDRESS=$(grep -oP '^LTC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                DOGE_POOL_ADDRESS=$(grep -oP '^DOGE_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                PEP_POOL_ADDRESS=$(grep -oP '^PEP_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                CAT_POOL_ADDRESS=$(grep -oP '^CAT_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                NMC_POOL_ADDRESS=$(grep -oP '^NMC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                SYS_POOL_ADDRESS=$(grep -oP '^SYS_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                XMY_POOL_ADDRESS=$(grep -oP '^XMY_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                FBTC_POOL_ADDRESS=$(grep -oP '^FBTC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                QBX_POOL_ADDRESS=$(grep -oP '^QBX_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                # POOL_ADDRESS is the generic DGB address used in single-coin and multi-coin DGB prompts
+                POOL_ADDRESS=$(grep -oP '^POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                [[ -z "$POOL_ADDRESS" && -n "$DGB_POOL_ADDRESS" ]] && POOL_ADDRESS="$DGB_POOL_ADDRESS"
+
+                # Populate X_ADDRESS vars from pool addresses so prompt guards work
+                [[ -n "$DGB_POOL_ADDRESS" ]]  && DGB_ADDRESS="$DGB_POOL_ADDRESS"
+                [[ -n "$BTC_POOL_ADDRESS" ]]  && BTC_ADDRESS="$BTC_POOL_ADDRESS"
+                [[ -n "$BCH_POOL_ADDRESS" ]]  && BCH_ADDRESS="$BCH_POOL_ADDRESS"
+                [[ -n "$BC2_POOL_ADDRESS" ]]  && BC2_ADDRESS="$BC2_POOL_ADDRESS"
+                [[ -n "$LTC_POOL_ADDRESS" ]]  && LTC_ADDRESS="$LTC_POOL_ADDRESS"
+                [[ -n "$DOGE_POOL_ADDRESS" ]] && DOGE_ADDRESS="$DOGE_POOL_ADDRESS"
+                [[ -n "$PEP_POOL_ADDRESS" ]]  && PEP_ADDRESS="$PEP_POOL_ADDRESS"
+                [[ -n "$CAT_POOL_ADDRESS" ]]  && CAT_ADDRESS="$CAT_POOL_ADDRESS"
+                [[ -n "$NMC_POOL_ADDRESS" ]]  && NMC_ADDRESS="$NMC_POOL_ADDRESS"
+                [[ -n "$SYS_POOL_ADDRESS" ]]  && SYS_ADDRESS="$SYS_POOL_ADDRESS"
+                [[ -n "$XMY_POOL_ADDRESS" ]]  && XMY_ADDRESS="$XMY_POOL_ADDRESS"
+                [[ -n "$FBTC_POOL_ADDRESS" ]] && FBTC_ADDRESS="$FBTC_POOL_ADDRESS"
+                [[ -n "$QBX_POOL_ADDRESS" ]]  && QBX_ADDRESS="$QBX_POOL_ADDRESS"
+
+                # Preserve DB password and admin API key
+                local ex_db_pass ex_api_key
+                ex_db_pass=$(grep -oP '^DB_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                ex_api_key=$(grep -oP '^ADMIN_API_KEY=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                [[ -n "$ex_db_pass" ]] && DB_PASSWORD="$ex_db_pass"
+                [[ -n "$ex_api_key" ]] && ADMIN_API_KEY="$ex_api_key"
+                return 0
+                ;;
+            2)
+                NATIVE_UPGRADE_MODE="fresh"
+                log "Fresh install selected"
+                return 0
+                ;;
+            *)
+                echo -e "  ${RED}Please enter 1 or 2${NC}"
+                ;;
+        esac
+    done
 }
 
 merge_docker_configuration() {
@@ -5662,8 +6152,8 @@ rpcallowip=127.0.0.1
 rpcport=14022
 
 # ZMQ (block notifications) - DGB uses port 28532
-zmqpubhashblock=tcp://0.0.0.0:28532
-zmqpubrawtx=tcp://0.0.0.0:28532
+zmqpubhashblock=tcp://127.0.0.1:28532
+zmqpubrawtx=tcp://127.0.0.1:28532
 
 # Performance
 dbcache=8192
@@ -5705,9 +6195,9 @@ rpcworkqueue=128
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28332
-zmqpubrawtx=tcp://0.0.0.0:28332
-zmqpubrawblock=tcp://0.0.0.0:28332
+zmqpubhashblock=tcp://127.0.0.1:28332
+zmqpubrawtx=tcp://127.0.0.1:28332
+zmqpubrawblock=tcp://127.0.0.1:28332
 
 # Performance
 dbcache=8192
@@ -5757,12 +6247,12 @@ rpcworkqueue=128
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28432
-zmqpubrawtx=tcp://0.0.0.0:28432
-zmqpubrawblock=tcp://0.0.0.0:28432
+zmqpubhashblock=tcp://127.0.0.1:28432
+zmqpubrawtx=tcp://127.0.0.1:28432
+zmqpubrawblock=tcp://127.0.0.1:28432
 
 # Performance
-dbcache=2048
+dbcache=4096
 maxsigcachesize=250
 par=0
 maxconnections=125
@@ -5815,11 +6305,11 @@ rpcworkqueue=64
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28338
-zmqpubrawtx=tcp://0.0.0.0:28338
+zmqpubhashblock=tcp://127.0.0.1:28338
+zmqpubrawtx=tcp://127.0.0.1:28338
 
 # Performance
-dbcache=2048
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -5861,11 +6351,11 @@ rpcport=8336
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28336
-zmqpubrawtx=tcp://0.0.0.0:28336
+zmqpubhashblock=tcp://127.0.0.1:28336
+zmqpubrawtx=tcp://127.0.0.1:28336
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -5905,11 +6395,11 @@ rpcport=8370
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28370
-zmqpubrawtx=tcp://0.0.0.0:28370
+zmqpubhashblock=tcp://127.0.0.1:28370
+zmqpubrawtx=tcp://127.0.0.1:28370
 
 # Performance
-dbcache=1024
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -5949,11 +6439,11 @@ rpcport=10889
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28889
-zmqpubrawtx=tcp://0.0.0.0:28889
+zmqpubhashblock=tcp://127.0.0.1:28889
+zmqpubrawtx=tcp://127.0.0.1:28889
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -5993,11 +6483,11 @@ rpcport=8340
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28340
-zmqpubrawtx=tcp://0.0.0.0:28340
+zmqpubhashblock=tcp://127.0.0.1:28340
+zmqpubrawtx=tcp://127.0.0.1:28340
 
 # Performance
-dbcache=1024
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -6037,11 +6527,11 @@ rpcworkqueue=128
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28933
-zmqpubrawtx=tcp://0.0.0.0:28933
+zmqpubhashblock=tcp://127.0.0.1:28933
+zmqpubrawtx=tcp://127.0.0.1:28933
 
 # Performance
-dbcache=1024
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -6080,11 +6570,11 @@ rpcport=22555
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28555
-zmqpubrawtx=tcp://0.0.0.0:28555
+zmqpubhashblock=tcp://127.0.0.1:28555
+zmqpubrawtx=tcp://127.0.0.1:28555
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 par=0
 maxconnections=125
@@ -6120,11 +6610,11 @@ rpcport=33873
 rpcthreads=8
 
 # ZMQ: DISABLED — PepeCoin v1.1.0 compiled without ZMQ support (SIGABRT crash)
-# zmqpubhashblock=tcp://0.0.0.0:28873
-# zmqpubrawtx=tcp://0.0.0.0:28873
+# zmqpubhashblock=tcp://127.0.0.1:28873
+# zmqpubrawtx=tcp://127.0.0.1:28873
 
 # Performance
-dbcache=256
+dbcache=4096
 maxmempool=200
 par=0
 maxconnections=125
@@ -6160,11 +6650,11 @@ rpcport=9932
 rpcthreads=8
 
 # ZMQ (block notifications)
-zmqpubhashblock=tcp://0.0.0.0:28932
-zmqpubrawtx=tcp://0.0.0.0:28932
+zmqpubhashblock=tcp://127.0.0.1:28932
+zmqpubrawtx=tcp://127.0.0.1:28932
 
 # Performance
-dbcache=256
+dbcache=4096
 maxmempool=200
 par=0
 maxconnections=125
@@ -6248,6 +6738,60 @@ validate_docker_disk_requirements() {
         done
     else
         log_success "Disk space OK: ${AVAILABLE_GB} GB available, ${REQUIRED_GB} GB required"
+    fi
+
+    # RAM warning for multi-coin installs
+    # Each coin syncs sequentially during install, so peak RAM = largest single coin dbcache.
+    # However, after install, ALL daemons run simultaneously — UTXO sets stay hot in RAM.
+    local coin_count=0
+    local peak_sync_gb=0
+    local post_sync_ram_mb=0
+
+    [[ "$ENABLE_DGB" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 8 ))  && peak_sync_gb=8;  ((post_sync_ram_mb+=800)); }
+    [[ "$ENABLE_BTC" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 10 )) && peak_sync_gb=10; ((post_sync_ram_mb+=6000)); }
+    [[ "$ENABLE_BCH" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 10 )) && peak_sync_gb=10; ((post_sync_ram_mb+=1200)); }
+    [[ "$ENABLE_LTC" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=600)); }
+    [[ "$ENABLE_DOGE" == "true" ]] && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=800)); }
+    [[ "$ENABLE_BC2" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=200)); }
+    [[ "$ENABLE_SYS" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=500)); }
+    [[ "$ENABLE_FBTC" == "true" ]] && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=300)); }
+    [[ "$ENABLE_NMC" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=150)); }
+    [[ "$ENABLE_XMY" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
+    [[ "$ENABLE_PEP" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
+    [[ "$ENABLE_CAT" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
+    [[ "$ENABLE_QBX" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
+
+    local post_sync_ram_gb=$(( (post_sync_ram_mb + 1024) / 1024 ))  # round up to GB
+    local total_mem_mb=$(free -m | awk '/^Mem:/{print $2}')
+    local total_mem_gb=$(( total_mem_mb / 1024 ))
+
+    if [[ $coin_count -gt 1 ]]; then
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}${BOLD}  RAM USAGE — MULTI-COIN SYNC${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${WHITE}Your server:${NC}        ${total_mem_gb} GB RAM"
+        echo -e "  ${WHITE}Coins selected:${NC}     ${coin_count} coins"
+        echo ""
+        echo -e "  ${YELLOW}DURING SYNC${NC}"
+        echo -e "  Coins sync one at a time. Peak RAM per sync: ~${peak_sync_gb} GB"
+        echo -e "  ${DIM}(BTC/BCH use 8 GB dbcache + ~2 GB overhead during their sync)${NC}"
+        echo ""
+        echo -e "  ${YELLOW}AFTER ALL SYNCS COMPLETE${NC}"
+        echo -e "  All ${coin_count} daemons run simultaneously, holding UTXO sets in RAM."
+        echo -e "  Estimated steady-state RAM: ~${post_sync_ram_gb} GB"
+        echo -e "  ${DIM}(UTXO sets compress significantly after sync — dbcache is not held full-time)${NC}"
+        echo ""
+        if [[ $post_sync_ram_gb -gt $((total_mem_gb - 4)) ]]; then
+            echo -e "  ${RED}⚠ WARNING: Steady-state RAM (~${post_sync_ram_gb} GB) is close to or exceeds your${NC}"
+            echo -e "  ${RED}  available RAM (${total_mem_gb} GB). Consider fewer coins or more RAM.${NC}"
+        else
+            echo -e "  ${GREEN}✓ Your ${total_mem_gb} GB RAM should handle ${coin_count} coins comfortably.${NC}"
+        fi
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
     fi
 }
 
@@ -6750,18 +7294,6 @@ print_docker_completion_multicoin() {
     echo -e "  ${WHITE}Logs:${NC}             $SCRIPT_DIR/docker/logs"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}  SIMPLESWAP SWAP ALERTS${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    if [[ "$SIMPLESWAP_ENABLED" == "true" ]]; then
-        echo -e "  ${GREEN}✓${NC} SimpleSwap Swap Alerts: ${GREEN}Enabled${NC}"
-        echo -e "  ${DIM}When a coin rises 25%+ vs BTC, Sentinel sends a SimpleSwap link.${NC}"
-        echo -e "  ${DIM}Click the link and complete the swap on the SimpleSwap website.${NC}"
-    else
-        echo -e "  ${DIM}○  SimpleSwap Swap Alerts: Disabled${NC}"
-    fi
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}  Blockchain must fully sync before mining can begin.${NC}"
     echo -e "${YELLOW}  Mining will start automatically once sync completes.${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -6994,9 +7526,6 @@ docker_main() {
     # Select coin mode (reuses existing function)
     select_coin_mode
 
-    # SimpleSwap integration configuration (optional — prompts after coin selection)
-    configure_simpleswap
-
     # Validate requirements
     validate_docker_disk_requirements
     check_docker_port_availability
@@ -7152,7 +7681,7 @@ select_coin_mode() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${RED}⚠ IMPORTANT DISCLAIMER:${NC}"
+    echo -e "  ${RED}⚠  IMPORTANT DISCLAIMER:${NC}"
     echo ""
     echo -e "  ${WHITE}Merge mining requires syncing MULTIPLE full blockchains:${NC}"
     echo -e "    • Parent chain (BTC ~600GB or LTC ~180GB)"
@@ -8447,10 +8976,17 @@ select_ha_mode() {
             2)
                 if [[ -n "${CLOUD_DETECTED:-}" ]]; then
                     echo ""
-                    echo -e "  ${RED}✗ HA Cluster - Primary Node is not available on cloud/VPS deployments.${NC}"
-                    echo -e "  ${DIM}Select option 1 (Standalone) — HA requires physical node isolation.${NC}"
+                    echo -e "  ${RED}✗ HA Cluster is not supported on cloud/VPS deployments.${NC}"
+                    echo -e "  ${YELLOW}  Automatically selecting Standalone Mode (option 1).${NC}"
+                    echo -e "  ${DIM}  Reason: VRRP/keepalived VIP failover is blocked on most cloud networks.${NC}"
+                    echo -e "  ${DIM}  HA requires physical node isolation that cloud VMs cannot provide.${NC}"
                     echo ""
-                    continue
+                    HA_MODE="standalone"
+                    HA_ENABLED="false"
+                    log "Cloud install — HA not supported. Forced to Standalone Mode."
+                    echo -e "  ${GREEN}✓${NC} Standalone Mode selected. No HA configuration required."
+                    echo ""
+                    break
                 fi
                 HA_MODE="ha-master"
                 HA_ENABLED="true"
@@ -8462,10 +8998,17 @@ select_ha_mode() {
             3)
                 if [[ -n "${CLOUD_DETECTED:-}" ]]; then
                     echo ""
-                    echo -e "  ${RED}✗ HA Cluster - Backup Node is not available on cloud/VPS deployments.${NC}"
-                    echo -e "  ${DIM}Select option 1 (Standalone) — HA requires physical node isolation.${NC}"
+                    echo -e "  ${RED}✗ HA Cluster is not supported on cloud/VPS deployments.${NC}"
+                    echo -e "  ${YELLOW}  Automatically selecting Standalone Mode (option 1).${NC}"
+                    echo -e "  ${DIM}  Reason: VRRP/keepalived VIP failover is blocked on most cloud networks.${NC}"
+                    echo -e "  ${DIM}  HA requires physical node isolation that cloud VMs cannot provide.${NC}"
                     echo ""
-                    continue
+                    HA_MODE="standalone"
+                    HA_ENABLED="false"
+                    log "Cloud install — HA not supported. Forced to Standalone Mode."
+                    echo -e "  ${GREEN}✓${NC} Standalone Mode selected. No HA configuration required."
+                    echo ""
+                    break
                 fi
                 HA_MODE="ha-backup"
                 HA_ENABLED="true"
@@ -9779,6 +10322,33 @@ collect_configuration() {
     # This allows preserving passwords during re-installation
     load_existing_credentials
 
+    # --- Optional SSH restriction (non-cloud, SSH session only) ---
+    # Cloud installs already set ADMIN_SSH_IP (mandatory). For LAN/VM installs, only ask
+    # if the operator is actually connected via SSH — skip entirely on local console.
+    if [[ -z "$ADMIN_SSH_IP" ]]; then
+        local _ssh_client_ip=""
+        _ssh_client_ip=$(awk '{print $1}' <<< "${SSH_CLIENT:-}" 2>/dev/null || true)
+        if [[ -n "$_ssh_client_ip" ]]; then
+            echo ""
+            echo -e "  ${WHITE}Optional: Restrict SSH access to your IP only?${NC}"
+            echo -e "  ${DIM}Your LAN firewall already protects port 22. This is optional.${NC}"
+            echo -e "  ${DIM}Current session: ${WHITE}${_ssh_client_ip}${NC}"
+            echo ""
+            local _ssh_ip_input=""
+            read -rp "  Enter IP to lock SSH to (or press Enter to skip): " _ssh_ip_input
+            if [[ -z "$_ssh_ip_input" || "$_ssh_ip_input" == "skip" ]]; then
+                log "SSH restriction skipped."
+            elif [[ "$_ssh_ip_input" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                ADMIN_SSH_IP="$_ssh_ip_input"
+                log "SSH will be restricted to ${ADMIN_SSH_IP}."
+            else
+                log_warn "Invalid IP — skipping SSH restriction."
+            fi
+            echo ""
+        fi
+        unset _ssh_client_ip _ssh_ip_input
+    fi
+
     # SUDO_USER is the actual admin who ran sudo — $(whoami) is always "root" under sudo
     ADMIN_USER="${SUDO_USER:-$(whoami)}"
     log "Running as: $ADMIN_USER"
@@ -9945,11 +10515,29 @@ collect_configuration() {
     echo ""
 
     # Tor Network Configuration — clear screen so the legal disclaimer is unmissable
-    clear
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}Network Privacy: Tor Configuration${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    # Tor is blocked on cloud installs: most cloud provider AUPs prohibit Tor, and
+    # it does not protect against provider-level access to credentials (the primary
+    # cloud security concern). Binding daemons to localhost already restricts exposure.
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        TOR_ENABLED="false"
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  Tor: Disabled — not supported on cloud/VPS deployments${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  Most cloud providers explicitly prohibit Tor in their Acceptable Use Policy."
+        echo -e "  Enabling Tor on a cloud VPS would compound the ToS violation already acknowledged"
+        echo -e "  in Risk 1, and does ${RED}not${NC} protect against provider-level access to your data."
+        echo ""
+        echo -e "  ${DIM}Clearnet (direct IPv4) will be used for all blockchain node connections.${NC}"
+        echo ""
+        log "Cloud install — Tor disabled automatically. Using clearnet."
+    else
+        clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Network Privacy: Tor Configuration${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${WHITE}What is Tor?${NC}"
     echo "  Tor (The Onion Router) anonymizes your network traffic by routing"
@@ -10010,6 +10598,7 @@ collect_configuration() {
             log "Clearnet selected - using direct IPv4 connections (fastest)"
             ;;
     esac
+    fi  # end: cloud Tor skip / non-cloud Tor prompt
     echo ""
 
     # Timezone selection for reports
@@ -10252,6 +10841,38 @@ collect_configuration() {
     echo ""
 
     GENERATE_WALLET="false"
+
+    # ── Cloud wallet warning ──────────────────────────────────────────────────
+    # On cloud installs, "Generate one for me" creates wallet.dat files on the
+    # server disk. These contain unencrypted private keys. A cloud provider
+    # disk snapshot exposes those keys regardless of file permissions (chmod 600).
+    # The STRONGLY recommended approach for cloud is option [1]: provide an
+    # address from a hardware wallet or an air-gapped wallet. No wallet.dat is
+    # created in that case — no keys ever exist on the server.
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}⚠  CLOUD INSTALL — WALLET SECURITY WARNING  ⚠${NC}                         ${RED}║${NC}"
+        echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${RED}DO NOT use \"Generate one for me\" on a cloud/VPS server.${NC}               ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  If you auto-generate, a wallet.dat file is created on this server's    ${RED}║${NC}"
+        echo -e "${RED}║${NC}  disk containing your ${RED}unencrypted private keys${NC}. Your cloud provider    ${RED}║${NC}"
+        echo -e "${RED}║${NC}  can read this file via disk snapshots, live migration, or hypervisor   ${RED}║${NC}"
+        echo -e "${RED}║${NC}  inspection — regardless of file permissions.                           ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}Recommended:${NC} Use option ${GREEN}[1]${NC} — provide an address from a            ${RED}║${NC}"
+        echo -e "${RED}║${NC}  hardware wallet or air-gapped wallet. No keys will exist on this       ${RED}║${NC}"
+        echo -e "${RED}║${NC}  server. Block rewards go directly to your address on-chain.            ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}If you must generate here:${NC} after sync completes, run              ${RED}║${NC}"
+        echo -e "${RED}║${NC}    ${CYAN}sudo spiralctl wallet export${NC}  — dump and store keys offline      ${RED}║${NC}"
+        echo -e "${RED}║${NC}    ${CYAN}sudo spiralctl wallet purge${NC}   — delete wallet.dat from server     ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    fi
 
     # For single-coin mode, collect address based on SOLO_COIN
     if [[ "$COIN_MODE" == "single" ]]; then
@@ -10902,51 +11523,79 @@ collect_configuration() {
         # Multi-coin mode - collect addresses for each enabled coin
         # DGB address (if enabled)
         if [[ "$ENABLE_DGB" == "true" ]] || [[ "$ENABLE_DGB_SCRYPT" == "true" ]]; then
-            echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-            echo -e "${WHITE}DigiByte (DGB) Wallet Address${NC}"
-            echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-            echo ""
-            echo "Block rewards go to a DigiByte wallet address. You have two options:"
-            echo ""
-            echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
-            echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
-            echo ""
+            if [[ -n "$POOL_ADDRESS" ]]; then
+                log_success "DGB: preserving existing address from previous installation"
+            else
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${WHITE}DigiByte (DGB) Wallet Address${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                echo "Block rewards go to a DigiByte wallet address. You have two options:"
+                echo ""
+                echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
+                echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo ""
 
-            while true; do
-                prompt_input "Choose [1] or [2]: "; read wallet_choice
-                case "$wallet_choice" in
-                    1)
-                        echo ""
-                        echo "Enter your DigiByte wallet address (legacy format starting with 'D' or 'S')."
-                        while true; do
-                            prompt_input "DGB Address: "; read POOL_ADDRESS
-                            if validate_dgb_address "$POOL_ADDRESS"; then
-                                log_success "Valid address format"
-                                break
-                            else
-                                log_error "Invalid format. Must start with D or S, 25-34 characters."
-                            fi
-                        done
-                        break
-                        ;;
-                    2)
-                        GENERATE_WALLET="true"
-                        POOL_ADDRESS="PENDING_GENERATION"
-                        log_warn "DGB wallet generation deferred until blockchain sync completes"
-                        break
-                        ;;
-                    *)
-                        echo "Please enter 1 or 2"
-                        ;;
-                esac
-            done
+                while true; do
+                    prompt_input "Choose [1] or [2]: "; read wallet_choice
+                    case "$wallet_choice" in
+                        1)
+                            echo ""
+                            echo "Enter your DigiByte wallet address (legacy format starting with 'D' or 'S')."
+                            while true; do
+                                prompt_input "DGB Address: "; read POOL_ADDRESS
+                                if validate_dgb_address "$POOL_ADDRESS"; then
+                                    log_success "Valid address format"
+                                    break
+                                else
+                                    log_error "Invalid format. Must start with D or S, 25-34 characters."
+                                fi
+                            done
+                            break
+                            ;;
+                        2)
+                            GENERATE_WALLET="true"
+                            POOL_ADDRESS="PENDING_GENERATION"
+                            log_warn "DGB wallet generation deferred until blockchain sync completes"
+                            break
+                            ;;
+                        *)
+                            echo "Please enter 1 or 2"
+                            ;;
+                    esac
+                done
+            fi
             echo ""
         fi
     fi
 
     # Multi-coin wallet addresses (if multi-coin mode selected)
     if [[ "$COIN_MODE" == "multi" ]]; then
+        # Cloud wallet warning — show once before all per-coin address prompts
+        if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+            echo ""
+            echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${RED}║${NC}  ${WHITE}⚠  CLOUD INSTALL — WALLET SECURITY WARNING  ⚠${NC}                         ${RED}║${NC}"
+            echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
+            echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+            echo -e "${RED}║${NC}  ${RED}DO NOT use \"Generate one for me\" on a cloud/VPS server.${NC}               ${RED}║${NC}"
+            echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+            echo -e "${RED}║${NC}  If you auto-generate, wallet.dat files are created on this server's    ${RED}║${NC}"
+            echo -e "${RED}║${NC}  disk containing your ${RED}unencrypted private keys${NC}. Your cloud provider    ${RED}║${NC}"
+            echo -e "${RED}║${NC}  can read these files via disk snapshots, live migration, or            ${RED}║${NC}"
+            echo -e "${RED}║${NC}  hypervisor inspection — regardless of file permissions.                ${RED}║${NC}"
+            echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+            echo -e "${RED}║${NC}  ${WHITE}Recommended:${NC} Use option ${GREEN}[1]${NC} for every coin — provide addresses from  ${RED}║${NC}"
+            echo -e "${RED}║${NC}  a hardware wallet or air-gapped wallet. No keys will exist on          ${RED}║${NC}"
+            echo -e "${RED}║${NC}  this server. Block rewards go directly to your address on-chain.       ${RED}║${NC}"
+            echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+            echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+        fi
         if [[ "$ENABLE_BTC" == "true" ]]; then
+            if [[ -n "$BTC_ADDRESS" ]]; then
+                log_success "BTC: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Bitcoin (BTC) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11008,14 +11657,15 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            # Generate BTC RPC password
-            BTC_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure BTC RPC password"
+            fi
+            [[ -z "$BTC_RPC_PASSWORD" ]] && BTC_RPC_PASSWORD=$(generate_password) && log_success "Generated secure BTC RPC password"
             echo ""
         fi
 
         if [[ "$ENABLE_BCH" == "true" ]]; then
+            if [[ -n "$BCH_ADDRESS" ]]; then
+                log_success "BCH: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Bitcoin Cash (BCH) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11074,14 +11724,15 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            # Generate BCH RPC password
-            BCH_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure BCH RPC password"
+            fi
+            [[ -z "$BCH_RPC_PASSWORD" ]] && BCH_RPC_PASSWORD=$(generate_password) && log_success "Generated secure BCH RPC password"
             echo ""
         fi
 
         if [[ "$ENABLE_BC2" == "true" ]]; then
+            if [[ -n "$BC2_ADDRESS" ]]; then
+                log_success "BC2: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Bitcoin II (BC2) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11157,15 +11808,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            # Generate BC2 RPC password
-            BC2_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure BC2 RPC password"
+            fi
+            [[ -z "$BC2_RPC_PASSWORD" ]] && BC2_RPC_PASSWORD=$(generate_password) && log_success "Generated secure BC2 RPC password"
             echo ""
         fi
 
         # Litecoin wallet (if enabled)
         if [[ "$ENABLE_LTC" == "true" ]]; then
+            if [[ -n "$LTC_ADDRESS" ]]; then
+                log_success "LTC: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Litecoin (LTC) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11212,14 +11864,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            LTC_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure LTC RPC password"
+            fi
+            [[ -z "$LTC_RPC_PASSWORD" ]] && LTC_RPC_PASSWORD=$(generate_password) && log_success "Generated secure LTC RPC password"
             echo ""
         fi
 
         # Dogecoin wallet (if enabled)
         if [[ "$ENABLE_DOGE" == "true" ]]; then
+            if [[ -n "$DOGE_ADDRESS" ]]; then
+                log_success "DOGE: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Dogecoin (DOGE) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11263,14 +11917,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            DOGE_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure DOGE RPC password"
+            fi
+            [[ -z "$DOGE_RPC_PASSWORD" ]] && DOGE_RPC_PASSWORD=$(generate_password) && log_success "Generated secure DOGE RPC password"
             echo ""
         fi
 
         # PepeCoin wallet (if enabled)
         if [[ "$ENABLE_PEP" == "true" ]]; then
+            if [[ -n "$PEP_ADDRESS" ]]; then
+                log_success "PEP: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}PepeCoin (PEP) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11314,14 +11970,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            PEP_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure PEP RPC password"
+            fi
+            [[ -z "$PEP_RPC_PASSWORD" ]] && PEP_RPC_PASSWORD=$(generate_password) && log_success "Generated secure PEP RPC password"
             echo ""
         fi
 
         # Catcoin wallet (if enabled)
         if [[ "$ENABLE_CAT" == "true" ]]; then
+            if [[ -n "$CAT_ADDRESS" ]]; then
+                log_success "CAT: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Catcoin (CAT) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11346,9 +12004,8 @@ collect_configuration() {
                 fi
             done
             echo ""
-
-            CAT_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure CAT RPC password"
+            fi
+            [[ -z "$CAT_RPC_PASSWORD" ]] && CAT_RPC_PASSWORD=$(generate_password) && log_success "Generated secure CAT RPC password"
             echo ""
         fi
 
@@ -11357,6 +12014,9 @@ collect_configuration() {
 
         # Namecoin (NMC) - First AuxPoW coin, merge-mineable with BTC
         if [[ "$ENABLE_NMC" == "true" ]]; then
+            if [[ -n "$NMC_ADDRESS" ]]; then
+                log_success "NMC: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Namecoin (NMC) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11416,14 +12076,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            NMC_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure NMC RPC password"
+            fi
+            [[ -z "$NMC_RPC_PASSWORD" ]] && NMC_RPC_PASSWORD=$(generate_password) && log_success "Generated secure NMC RPC password"
             echo ""
         fi
 
         # Syscoin (SYS) - UTXO platform with AuxPoW, merge-mineable with BTC
         if [[ "$ENABLE_SYS" == "true" ]]; then
+            if [[ -n "$SYS_ADDRESS" ]]; then
+                log_success "SYS: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Syscoin (SYS) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11478,14 +12140,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            SYS_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure SYS RPC password"
+            fi
+            [[ -z "$SYS_RPC_PASSWORD" ]] && SYS_RPC_PASSWORD=$(generate_password) && log_success "Generated secure SYS RPC password"
             echo ""
         fi
 
         # Myriad (XMY) - Multi-algo coin, SHA256d algo merge-mineable with BTC
         if [[ "$ENABLE_XMY" == "true" ]]; then
+            if [[ -n "$XMY_ADDRESS" ]]; then
+                log_success "XMY: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Myriad (XMY) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11538,14 +12202,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            XMY_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure XMY RPC password"
+            fi
+            [[ -z "$XMY_RPC_PASSWORD" ]] && XMY_RPC_PASSWORD=$(generate_password) && log_success "Generated secure XMY RPC password"
             echo ""
         fi
 
         # Fractal Bitcoin (FBTC) - Recursive Bitcoin scaling with AuxPoW
         if [[ "$ENABLE_FBTC" == "true" ]]; then
+            if [[ -n "$FBTC_ADDRESS" ]]; then
+                log_success "FBTC: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Fractal Bitcoin (FBTC) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11599,14 +12265,16 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            FBTC_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure FBTC RPC password"
+            fi
+            [[ -z "$FBTC_RPC_PASSWORD" ]] && FBTC_RPC_PASSWORD=$(generate_password) && log_success "Generated secure FBTC RPC password"
             echo ""
         fi
 
         # Q-BitX (QBX) - Post-quantum Bitcoin fork (SHA-256d standalone)
         if [[ "$ENABLE_QBX" == "true" ]]; then
+            if [[ -n "$QBX_ADDRESS" ]]; then
+                log_success "QBX: preserving existing address from previous installation"
+            else
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
             echo -e "${WHITE}Q-BitX (QBX) Wallet Address${NC}"
             echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -11660,9 +12328,8 @@ collect_configuration() {
                 esac
             done
             echo ""
-
-            QBX_RPC_PASSWORD=$(generate_password)
-            log_success "Generated secure QBX RPC password"
+            fi
+            [[ -z "$QBX_RPC_PASSWORD" ]] && QBX_RPC_PASSWORD=$(generate_password) && log_success "Generated secure QBX RPC password"
             echo ""
         fi
 
@@ -11946,6 +12613,26 @@ collect_configuration() {
     SENTINEL_HEALTH_ENABLED="true"  # Enable/disable health monitoring (auto-restart, zombie detection)
     UPDATE_CHECK_ENABLED="true"     # Enable/disable update notifications
     AUTO_UPDATE_MODE="notify"       # "auto" (fully automatic), "notify" (alert only), "disabled"
+    # ntfy push notifications
+    NTFY_URL=""
+    NTFY_TOKEN=""
+    # Email / SMTP notifications
+    SMTP_HOST=""
+    SMTP_PORT="587"
+    SMTP_USERNAME=""
+    SMTP_PASSWORD=""
+    SMTP_TO=""
+    SMTP_USE_TLS="true"
+    # Telegram bot commands
+    TELEGRAM_COMMANDS_ENABLED="false"
+    # Individual alert type preferences
+    SENTINEL_DRY_STREAK_ENABLED="true"
+    SENTINEL_DIFFICULTY_ALERT_ENABLED="true"
+    SENTINEL_DISK_MONITOR_ENABLED="true"
+    SENTINEL_MEMPOOL_ENABLED="true"
+    SENTINEL_BACKUP_STALE_ENABLED="true"
+    SENTINEL_SATS_SURGE_ENABLED="true"
+    SENTINEL_WALLET_DROP_ENABLED="true"
     if [[ "$INSTALL_MODE" == "full" ]]; then
         screen_clear
         echo ""
@@ -11959,16 +12646,24 @@ collect_configuration() {
         echo "  - Temperature warnings occur"
         echo "  - 6-hour, weekly, and monthly reports"
         echo ""
-        echo "You can configure Discord, Telegram, XMPP, or any combination."
+        echo "You can configure Discord, Telegram, XMPP, ntfy, email (SMTP), or any combination."
         echo ""
         echo -e "${DIM}Tip: For Discord, you'll need a webhook URL from Server Settings > Webhooks.${NC}"
         echo -e "${DIM}     For Telegram, you'll need a bot token from @BotFather and a chat ID.${NC}"
         echo -e "${DIM}     For XMPP, you'll need a bot JID and the recipient's JID.${NC}"
+        echo -e "${DIM}     For ntfy, you'll need a topic URL (e.g. https://ntfy.sh/my-topic).${NC}"
+        echo -e "${DIM}     For email, you'll need SMTP server credentials (Gmail, Outlook, etc.).${NC}"
         echo -e "${DIM}     See README.md > Notifications for detailed setup instructions.${NC}"
         echo ""
         echo ""
 
         # Discord setup
+        screen_clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Notifications — Discord${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
         echo -e "${YELLOW}Discord Notifications${NC}"
         echo "To get a webhook URL:"
         echo "  1. Open Discord > Server Settings > Integrations > Webhooks"
@@ -11988,6 +12683,11 @@ collect_configuration() {
         echo ""
 
         # Telegram setup
+        screen_clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Notifications — Telegram${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo ""
         echo -e "${YELLOW}Telegram Notifications${NC}"
         echo "To set up Telegram notifications:"
@@ -12011,6 +12711,11 @@ collect_configuration() {
         echo ""
 
         # XMPP Direct Send
+        screen_clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Notifications — XMPP${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo ""
         echo -e "${YELLOW}XMPP Notifications${NC}"
         echo "Send alerts directly to any XMPP account or MUC room."
@@ -12039,8 +12744,100 @@ collect_configuration() {
         fi
         echo ""
 
+        # ntfy push notifications
+        screen_clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Notifications — ntfy Push${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "${YELLOW}ntfy Push Notifications${NC}"
+        echo "Free mobile/desktop push notifications — no account required for public topics."
+        echo "  1. Install the ntfy app on your phone (iOS/Android)"
+        echo "  2. Subscribe to any topic name you choose (e.g. my-spiral-pool-abc123)"
+        echo "  3. Use https://ntfy.sh/your_topic as the URL, or self-host ntfy"
+        echo -e "${DIM}  Private topics and self-hosted servers require an auth token.${NC}"
+        echo ""
+        prompt_input "ntfy topic URL (or Enter to skip): "; read NTFY_URL
+        if [[ -n "$NTFY_URL" ]]; then
+            if [[ "$NTFY_URL" =~ ^https:// ]]; then
+                prompt_input "ntfy auth token (or Enter if public topic): "; read NTFY_TOKEN
+                log_success "ntfy configured: $NTFY_URL"
+            else
+                log_warn "ntfy URL must start with https:// — skipping"
+                NTFY_URL=""
+            fi
+        else
+            log "ntfy notifications skipped"
+            NTFY_TOKEN=""
+        fi
+        echo ""
+
+        # Email / SMTP notifications
+        screen_clear
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}Notifications — Email (SMTP)${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "${YELLOW}Email / SMTP Notifications${NC}"
+        echo "Receive alerts by email via any SMTP server (Gmail, Outlook, your own)."
+        echo -e "${DIM}  Credentials are stored in config.json (chmod 600, spiraluser only).${NC}"
+        echo ""
+        prompt_input "SMTP server hostname (or Enter to skip, e.g. smtp.gmail.com): "; read SMTP_HOST
+        if [[ -n "$SMTP_HOST" ]]; then
+            prompt_input "SMTP port [587 = STARTTLS / 465 = SSL, default 587]: "; read SMTP_PORT_INPUT
+            SMTP_PORT="${SMTP_PORT_INPUT:-587}"
+            prompt_input "SMTP username / from address: "; read SMTP_USERNAME
+            prompt_input "SMTP password (app-specific password recommended): "; read -s SMTP_PASSWORD; echo ""
+            prompt_input "Recipient email address(es) [comma-separated for multiple]: "; read SMTP_TO
+            if [[ -n "$SMTP_USERNAME" ]] && [[ -n "$SMTP_PASSWORD" ]] && [[ -n "$SMTP_TO" ]]; then
+                if [[ "$SMTP_PORT" == "465" ]]; then
+                    SMTP_USE_TLS="false"
+                else
+                    SMTP_USE_TLS="true"
+                fi
+                log_success "Email configured: $SMTP_USERNAME → $SMTP_TO via $SMTP_HOST:$SMTP_PORT"
+            else
+                log_warn "Email setup incomplete — skipping"
+                SMTP_HOST=""
+                SMTP_USERNAME=""
+                SMTP_PASSWORD=""
+                SMTP_TO=""
+            fi
+        else
+            log "Email notifications skipped"
+            SMTP_HOST=""
+            SMTP_PORT="587"
+            SMTP_USERNAME=""
+            SMTP_PASSWORD=""
+            SMTP_TO=""
+            SMTP_USE_TLS="true"
+        fi
+        echo ""
+
+        # Telegram bot commands
+        if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then
+            echo ""
+            echo -e "${YELLOW}Telegram Bot Commands${NC}"
+            echo "Your Telegram bot can respond to commands from your chat:"
+            echo "  /status   /miners   /hashrate   /blocks   /help"
+            echo ""
+            prompt_input "Enable Telegram bot commands? [Y/n]: "; read tg_cmds_choice
+            if [[ "${tg_cmds_choice,,}" == "n" ]]; then
+                TELEGRAM_COMMANDS_ENABLED="false"
+                log "Telegram bot commands disabled"
+            else
+                TELEGRAM_COMMANDS_ENABLED="true"
+                log_success "Telegram bot commands enabled"
+            fi
+            echo ""
+        else
+            TELEGRAM_COMMANDS_ENABLED="false"
+        fi
+
         # Summary of notification setup
-        if [[ -z "$DISCORD_WEBHOOK" ]] && [[ -z "$TELEGRAM_BOT_TOKEN" ]] && [[ -z "$XMPP_JID" ]]; then
+        if [[ -z "$DISCORD_WEBHOOK" ]] && [[ -z "$TELEGRAM_BOT_TOKEN" ]] && [[ -z "$XMPP_JID" ]] && [[ -z "$NTFY_URL" ]] && [[ -z "$SMTP_HOST" ]]; then
             log "No notifications configured (can configure later in ~/.spiralsentinel/config.json)"
         fi
         echo ""
@@ -12089,7 +12886,7 @@ collect_configuration() {
         echo -e "${WHITE}Alert Theme${NC}"
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo "Choose the personality of your Discord/Telegram alerts:"
+        echo "Choose the personality of your alerts (Discord, Telegram, XMPP, ntfy, email):"
         echo ""
         echo -e "  ${GREEN}1)${NC} 🔥 Cyberpunk ${GREEN}(Default)${NC}"
         echo -e "     Neon-lit block alerts, netrunner lingo, corpo-smashing energy"
@@ -12119,147 +12916,127 @@ collect_configuration() {
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
         echo ""
         echo "Spiral Sentinel is your autonomous mining monitor. It provides:"
-        echo "  • Discord/Telegram/XMPP alerts (blocks, offline miners, temperature)"
+        echo "  • Discord/Telegram/XMPP/ntfy/email alerts (blocks, offline miners, temperature)"
         echo "  • Intel reports (network stats, earnings, miner status)"
         echo "  • Health monitoring (auto-restart, zombie detection)"
         echo ""
         echo -e "${DIM}All settings can be changed later in ~/.spiralsentinel/config.json${NC}"
         echo ""
 
-        # Question 1: Alerts
-        echo ""
-        echo -e "${WHITE}1. Alerts${NC}"
-        echo "   Receive notifications for blocks found, miners offline, temperature warnings, etc."
-        echo ""
-        echo -e "  ${GREEN}1)${NC} ✅ Enabled ${GREEN}(Recommended)${NC}"
-        echo -e "  ${DIM}2) ❌ Disabled${NC}"
-        echo ""
-        prompt_input "Enable alerts? [1-2] (default: 1): "; read alerts_choice
+        # ── Consolidated Sentinel Configuration Menu ──────────────────────────
+        # All Sentinel options in one toggle menu — enter a number to toggle,
+        # Enter with no input to confirm and continue.
+        local _s_alerts="true"
+        local _s_dry_streak="true"
+        local _s_difficulty="true"
+        local _s_disk="true"
+        local _s_mempool="true"
+        local _s_backup="true"
+        local _s_sats_surge="true"
+        local _s_wallet_drop="true"
+        local _s_health="true"
+        local _s_reports="6h"
+        local _s_updates="notify"
 
-        case "$alerts_choice" in
-            2)
-                SENTINEL_ALERTS_ENABLED="false"
-                log_warn "Alerts: Disabled"
-                ;;
-            *)
-                SENTINEL_ALERTS_ENABLED="true"
-                log_success "Alerts: Enabled"
-                ;;
-        esac
-        echo ""
+        local _sentinel_done=false
+        while [[ "$_sentinel_done" == "false" ]]; do
+            clear
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "  Spiral Sentinel — Monitoring Configuration"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            echo -e "  ${DIM}Enter a number to toggle. Press Enter to confirm.${NC}"
+            echo ""
 
-        # Question 2: Health Monitoring
-        echo ""
-        echo -e "${WHITE}2. Health Monitoring${NC}"
-        echo "   Auto-restart offline miners, detect zombie miners (online but not submitting shares)."
-        echo ""
-        echo -e "  ${GREEN}1)${NC} ✅ Enabled ${GREEN}(Recommended)${NC}"
-        echo -e "  ${DIM}2) ❌ Disabled${NC}"
-        echo ""
-        prompt_input "Enable health monitoring? [1-2] (default: 1): "; read health_choice
+            # Helper to print ON/OFF badge
+            _badge() { [[ "$1" == "true" ]] && echo -e "${GREEN}[ON] ${NC}" || echo -e "${RED}[OFF]${NC}"; }
 
-        case "$health_choice" in
-            2)
-                SENTINEL_HEALTH_ENABLED="false"
-                log_warn "Health Monitoring: Disabled"
-                ;;
-            *)
-                SENTINEL_HEALTH_ENABLED="true"
-                log_success "Health Monitoring: Enabled"
-                ;;
-        esac
-        echo ""
+            echo -e "  ${WHITE}── ALERTS ──────────────────────────────────────────────────────────────${NC}"
+            echo -e "   1  $(_badge "$_s_alerts")  All alerts master switch"
+            echo -e "      ${DIM}block found always fires; disabling mutes all other alerts${NC}"
+            echo ""
+            if [[ "$_s_alerts" == "true" ]]; then
+                echo -e "   2  $(_badge "$_s_dry_streak")  Dry streak           ${DIM}no block after 3× expected time${NC}"
+                echo -e "   3  $(_badge "$_s_difficulty")  Difficulty change    ${DIM}network diff shifts ≥25%${NC}"
+                echo -e "   4  $(_badge "$_s_disk")  Disk space           ${DIM}warn at 85% / critical at 95%${NC}"
+                echo -e "   5  $(_badge "$_s_mempool")  BTC mempool          ${DIM}exceeds 50,000 transactions${NC}"
+                echo -e "   6  $(_badge "$_s_backup")  Backup staleness     ${DIM}newest backup older than 2 days${NC}"
+                echo -e "   7  $(_badge "$_s_sats_surge")  Sats surge           ${DIM}coin up 25%+ vs BTC over 7 days${NC}"
+                echo -e "   8  $(_badge "$_s_wallet_drop")  Wallet drop          ${DIM}wallet loses funds unexpectedly${NC}"
+            else
+                echo -e "   ${DIM}2-8  (muted — master alerts is OFF)${NC}"
+            fi
+            echo ""
+            echo -e "  ${WHITE}── MONITORING ──────────────────────────────────────────────────────────${NC}"
+            echo -e "   9  $(_badge "$_s_health")  Health monitoring    ${DIM}auto-restart, zombie detection${NC}"
+            echo ""
+            echo -e "  ${WHITE}── REPORTS ─────────────────────────────────────────────────────────────${NC}"
+            local _reports_label
+            case "$_s_reports" in
+                6h)    _reports_label="${GREEN}[4x Daily] ${NC}" ;;
+                daily) _reports_label="${WHITE}[1x Daily] ${NC}" ;;
+                off)   _reports_label="${RED}[Off]      ${NC}" ;;
+            esac
+            echo -e "  10  ${_reports_label}  Intel reports        ${DIM}cycle: 4x daily → 1x daily → off${NC}"
+            echo ""
+            echo -e "  ${WHITE}── UPDATES ─────────────────────────────────────────────────────────────${NC}"
+            local _updates_label
+            case "$_s_updates" in
+                notify)   _updates_label="${GREEN}[Notify Only]  ${NC}" ;;
+                auto)     _updates_label="${YELLOW}[Auto-Update]  ${NC}" ;;
+                disabled) _updates_label="${RED}[Disabled]     ${NC}" ;;
+            esac
+            echo -e "  11  ${_updates_label}  Update mode          ${DIM}cycle: notify → auto → disabled${NC}"
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            prompt_input "  Toggle [1-11] or Enter to confirm: "; read _s_choice
 
-        # Question 3: Report Frequency
-        echo ""
-        echo -e "${WHITE}3. Intel Report Frequency${NC}"
-        echo "   Scheduled reports with network stats, earnings, miner status."
-        echo ""
-        echo -e "  ${GREEN}1)${NC} 📊 4x Daily ${GREEN}(Default)${NC}"
-        echo -e "     ${DIM}Reports at 06:00, 12:00, 18:00, and 21:55${NC}"
-        echo ""
-        echo -e "  ${WHITE}2)${NC} 📅 1x Daily Digest"
-        echo -e "     ${DIM}Single comprehensive report at your configured major report hour${NC}"
-        echo ""
-        echo -e "  ${DIM}3) ❌ Disabled${NC}"
-        echo -e "     ${DIM}No scheduled intel reports${NC}"
-        echo ""
-        echo -e "${DIM}Note: Weekly, Monthly, and Quarterly reports are always enabled.${NC}"
-        echo -e "${DIM}When multiple reports are due, they're consolidated into one message.${NC}"
-        echo ""
-        prompt_input "Select report frequency [1-3] (default: 1): "; read report_freq_choice
+            case "$_s_choice" in
+                1)  [[ "$_s_alerts"      == "true" ]] && _s_alerts="false"      || _s_alerts="true" ;;
+                2)  [[ "$_s_dry_streak"  == "true" ]] && _s_dry_streak="false"  || _s_dry_streak="true" ;;
+                3)  [[ "$_s_difficulty"  == "true" ]] && _s_difficulty="false"  || _s_difficulty="true" ;;
+                4)  [[ "$_s_disk"        == "true" ]] && _s_disk="false"        || _s_disk="true" ;;
+                5)  [[ "$_s_mempool"     == "true" ]] && _s_mempool="false"     || _s_mempool="true" ;;
+                6)  [[ "$_s_backup"      == "true" ]] && _s_backup="false"      || _s_backup="true" ;;
+                7)  [[ "$_s_sats_surge"  == "true" ]] && _s_sats_surge="false"  || _s_sats_surge="true" ;;
+                8)  [[ "$_s_wallet_drop" == "true" ]] && _s_wallet_drop="false" || _s_wallet_drop="true" ;;
+                9)  [[ "$_s_health"      == "true" ]] && _s_health="false"      || _s_health="true" ;;
+                10) case "$_s_reports" in
+                        6h)    _s_reports="daily" ;;
+                        daily) _s_reports="off" ;;
+                        off)   _s_reports="6h" ;;
+                    esac ;;
+                11) case "$_s_updates" in
+                        notify)   _s_updates="auto" ;;
+                        auto)     _s_updates="disabled" ;;
+                        disabled) _s_updates="notify" ;;
+                    esac ;;
+                "") _sentinel_done=true ;;
+            esac
+        done
 
-        case "$report_freq_choice" in
-            2)
-                REPORT_FREQUENCY="daily"
-                log_success "Reports: 1x Daily Digest"
-                ;;
-            3)
-                REPORT_FREQUENCY="off"
-                log_warn "Reports: Disabled"
-                ;;
-            *)
-                REPORT_FREQUENCY="6h"
-                log_success "Reports: 4x Daily"
-                ;;
-        esac
-        echo ""
-
-        # Update Notifications & Auto-Update
-        screen_clear
-        echo ""
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-        echo -e "${WHITE}Update Mode Configuration${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo "Sentinel checks for Spiral Pool updates every 6 hours."
-        echo "Choose how you want updates to be handled:"
-        echo ""
-        echo -e "  ${GREEN}1)${NC} 📢 Notify Only ${GREEN}(Recommended)${NC}"
-        echo -e "     ${DIM}Get Discord/Telegram alerts when updates are available${NC}"
-        echo -e "     ${DIM}You control when to upgrade manually${NC}"
-        echo ""
-        echo -e "  ${WHITE}2)${NC} 🤖 Fully Automatic Updates"
-        echo -e "     ${DIM}Automatically download and install updates when available${NC}"
-        echo -e "     ${DIM}Services will be stopped/restarted automatically${NC}"
-        echo -e "     ${DIM}Best for remote/unattended servers${NC}"
-        echo ""
-        echo -e "  ${DIM}3) ❌ Disable update checking${NC}"
-        echo -e "     ${DIM}No update notifications (check manually)${NC}"
-        echo ""
-        prompt_input "Select update mode [1-3] (default: 1): "; read update_choice
-
-        # SECURITY: Validate input is a single digit 1-3 or empty
-        if [[ -n "$update_choice" ]] && ! [[ "$update_choice" =~ ^[1-3]$ ]]; then
-            log_warn "Invalid choice '$update_choice', using default (1)"
-            update_choice="1"
+        # Apply selections to global variables
+        SENTINEL_ALERTS_ENABLED="$_s_alerts"
+        SENTINEL_DRY_STREAK_ENABLED="$_s_dry_streak"
+        SENTINEL_DIFFICULTY_ALERT_ENABLED="$_s_difficulty"
+        SENTINEL_DISK_MONITOR_ENABLED="$_s_disk"
+        SENTINEL_MEMPOOL_ENABLED="$_s_mempool"
+        SENTINEL_BACKUP_STALE_ENABLED="$_s_backup"
+        SENTINEL_SATS_SURGE_ENABLED="$_s_sats_surge"
+        SENTINEL_WALLET_DROP_ENABLED="$_s_wallet_drop"
+        SENTINEL_HEALTH_ENABLED="$_s_health"
+        REPORT_FREQUENCY="$_s_reports"
+        if [[ "$_s_updates" == "auto" ]]; then
+            UPDATE_CHECK_ENABLED="true"; AUTO_UPDATE_MODE="auto"
+        elif [[ "$_s_updates" == "disabled" ]]; then
+            UPDATE_CHECK_ENABLED="false"; AUTO_UPDATE_MODE="disabled"
+        else
+            UPDATE_CHECK_ENABLED="true"; AUTO_UPDATE_MODE="notify"
         fi
 
-        case "$update_choice" in
-            2)
-                UPDATE_CHECK_ENABLED="true"
-                AUTO_UPDATE_MODE="auto"
-                log_success "Update mode: Fully Automatic"
-                echo ""
-                echo -e "${YELLOW}⚠️  AUTOMATIC UPDATES ENABLED${NC}"
-                echo -e "${DIM}When a new version is detected:${NC}"
-                echo -e "${DIM}  1. Services will be gracefully stopped${NC}"
-                echo -e "${DIM}  2. Update will be downloaded and installed${NC}"
-                echo -e "${DIM}  3. Services will be automatically restarted${NC}"
-                echo -e "${DIM}  4. You'll receive a notification of the completed update${NC}"
-                echo ""
-                ;;
-            3)
-                UPDATE_CHECK_ENABLED="false"
-                AUTO_UPDATE_MODE="disabled"
-                log_warn "Update notifications: Disabled"
-                ;;
-            *)
-                UPDATE_CHECK_ENABLED="true"
-                AUTO_UPDATE_MODE="notify"
-                log_success "Update mode: Notify Only (every 6 hours)"
-                ;;
-        esac
+        log_success "Sentinel configuration saved"
         echo ""
 
         # Power Cost Configuration
@@ -12271,19 +13048,18 @@ collect_configuration() {
         echo ""
         echo "For profitability tracking, enter your electricity cost."
         echo ""
-        echo ""
         echo "What currency is your power bill in?"
         echo ""
-        echo -e "  ${GREEN}1)${NC}  🍁 CAD - Canadian Dollar ${GREEN}(Default)${NC}"
-        echo -e "  ${WHITE}2)${NC}  🦅 USD - US Dollar"
-        echo -e "  ${WHITE}3)${NC}  🌐 EUR - Euro"
-        echo -e "  ${WHITE}4)${NC}  🌐 GBP - British Pound"
-        echo -e "  ${WHITE}5)${NC}  🌐 JPY - Japanese Yen"
-        echo -e "  ${WHITE}6)${NC}  🌐 AUD - Australian Dollar"
-        echo -e "  ${WHITE}7)${NC}  🌐 CHF - Swiss Franc"
-        echo -e "  ${WHITE}8)${NC}  🌐 CNY - Chinese Yuan"
-        echo -e "  ${WHITE}9)${NC}  🌐 NZD - New Zealand Dollar"
-        echo -e "  ${WHITE}10)${NC} 🌐 SEK - Swedish Krona"
+        echo -e "  ${GREEN}1)${NC}   🍁 CAD - Canadian Dollar ${GREEN}(Default)${NC}"
+        echo -e "  ${WHITE}2)${NC}   🦅 USD - US Dollar"
+        echo -e "  ${WHITE}3)${NC}   🌐 EUR - Euro"
+        echo -e "  ${WHITE}4)${NC}   🌐 GBP - British Pound"
+        echo -e "  ${WHITE}5)${NC}   🌐 JPY - Japanese Yen"
+        echo -e "  ${WHITE}6)${NC}   🌐 AUD - Australian Dollar"
+        echo -e "  ${WHITE}7)${NC}   🌐 CHF - Swiss Franc"
+        echo -e "  ${WHITE}8)${NC}   🌐 CNY - Chinese Yuan"
+        echo -e "  ${WHITE}9)${NC}   🌐 NZD - New Zealand Dollar"
+        echo -e "  ${WHITE}10)${NC}  🌐 SEK - Swedish Krona"
         echo ""
         prompt_input "Select power currency [1-10] (default: 1): "; read power_currency_choice
 
@@ -12307,11 +13083,8 @@ collect_configuration() {
         log "Power currency: ${POWER_CURRENCY} ${POWER_EMOJI}"
 
         echo ""
-        echo ""
         echo -e "Enter your electricity rate per kWh in ${GREEN}${POWER_CURRENCY}${NC}"
-        echo ""
         echo -e "${DIM}Example: 0.12 for 12 cents per kWh${NC}"
-        echo ""
         echo ""
         prompt_input "Rate per kWh (default: 0.12): "; read power_rate_input
 
@@ -12398,8 +13171,7 @@ collect_configuration() {
         echo -e "${DIM}Supported: BitAxe, NerdQAxe, Antminer, Whatsminer, Avalon, Innosilicon${NC}"
         echo ""
         echo -e "  ${GREEN}1)${NC} 🔍 Scan network now ${GREEN}[Recommended - takes ~2 min]${NC}"
-        echo ""
-        echo -e "  ${DIM}2)${NC} ⏭️  Skip (you'll need to run 'spiralpool-scan' manually later)"
+        echo -e "  ${DIM}2)${NC} ⏭  Skip (you'll need to run 'spiralpool-scan' manually later)"
         echo ""
         prompt_input "Scan for miners? [1-2] (default: 1): "; read scan_choice
 
@@ -12870,9 +13642,9 @@ FILTEREOF
 
 [DEFAULT]
 # RFC-1918 ranges protect HA peer nodes and internal monitoring from accidental bans.
-# CLOUD_PUBLIC_IP is the admin's home/office IP — added here to prevent self-lockout
+# ADMIN_SSH_IP is the admin's home/office IP — added here to prevent self-lockout
 # if the admin's SSH client has a misconfigured key and retries with passwords.
-ignoreip    = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16${CLOUD_PUBLIC_IP:+ ${CLOUD_PUBLIC_IP}}
+ignoreip    = 127.0.0.1/8 ::1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16${ADMIN_SSH_IP:+ ${ADMIN_SSH_IP}}
 banaction   = ufw
 backend     = systemd
 
@@ -12927,7 +13699,7 @@ port         = $METRICS_PORT
 # maxretry=5 matches MaxAuthTries=5 in sshd — ban fires on the first exhausted
 # connection so an attacker cannot reconnect and keep guessing.
 # 72-hour bantime matches the other pool jails (dashboard, API, stratum).
-# Admin IP (CLOUD_PUBLIC_IP) is in ignoreip above to prevent self-lockout.
+# Admin IP (ADMIN_SSH_IP) is in ignoreip above to prevent self-lockout.
 [sshd]
 enabled      = true
 filter       = sshd
@@ -13094,11 +13866,14 @@ setup_system() {
             echo ""
             if [[ -z "$pool_pass" ]]; then
                 log_warn "Password cannot be empty."
-            elif [[ ${#pool_pass} -lt 15 ]]; then
-                log_warn "Password is too short. NIST recommends at least 15 characters for privileged accounts."
+            elif [[ ${#pool_pass} -lt 15 && -n "${CLOUD_DETECTED:-}" ]]; then
+                log_warn "Password is too short. Cloud installs require at least 15 characters (NIST SP 800-63B)."
             elif [[ "$pool_pass" != "$pool_pass_confirm" ]]; then
                 log_warn "Passwords do not match."
             else
+                if [[ ${#pool_pass} -lt 15 ]]; then
+                    log_warn "Password is short — NIST recommends at least 15 characters for privileged accounts."
+                fi
                 sudo chpasswd <<< "${POOL_USER}:${pool_pass}"
                 unset pool_pass pool_pass_confirm
                 log_success "Password set for ${POOL_USER}"
@@ -13751,12 +14526,32 @@ TMPEOF
 {
   "miners": {},
   "by_type": {
+    "axeos": [],
     "nmaxe": [],
     "nerdqaxe": [],
+    "qaxe": [],
+    "qaxeplus": [],
+    "luckyminer": [],
+    "jingleminer": [],
+    "zyber": [],
+    "esp32miner": [],
+    "hammer": [],
+    "goldshell": [],
     "avalon": [],
+    "canaan": [],
     "antminer": [],
+    "antminer_scrypt": [],
     "whatsminer": [],
-    "innosilicon": []
+    "innosilicon": [],
+    "futurebit": [],
+    "ebang": [],
+    "gekkoscience": [],
+    "ipollo": [],
+    "epic": [],
+    "elphapex": [],
+    "braiins": [],
+    "vnish": [],
+    "luxos": []
   },
   "last_scan": null
 }
@@ -13771,10 +14566,10 @@ MINERDBEOF
     # CRITICAL: Ensure SSH is allowed BEFORE any reset or enable
     # This prevents SSH disconnection during firewall configuration.
     # SECURITY: On cloud deployments where the operator confirmed their admin IP
-    # (CLOUD_PUBLIC_IP), restrict SSH to that IP only instead of opening to all.
-    if [[ -n "$CLOUD_PUBLIC_IP" ]]; then
-        sudo ufw allow from "$CLOUD_PUBLIC_IP" to any port 22 proto tcp > /dev/null 2>&1   # SSH - cloud: operator IP only
-        log "SSH (port 22) restricted to operator IP: ${CLOUD_PUBLIC_IP}"
+    # (ADMIN_SSH_IP), restrict SSH to that IP only instead of opening to all.
+    if [[ -n "$ADMIN_SSH_IP" ]]; then
+        sudo ufw allow from "$ADMIN_SSH_IP" to any port 22 proto tcp > /dev/null 2>&1   # SSH - cloud: operator IP only
+        log "SSH (port 22) restricted to operator IP: ${ADMIN_SSH_IP}"
     else
         sudo ufw allow 22/tcp > /dev/null 2>&1      # SSH - allow all (bare metal / undetected cloud)
     fi
@@ -13784,8 +14579,8 @@ MINERDBEOF
     if ! sudo ufw status | grep -q "22.*ALLOW" 2>/dev/null; then
         sudo ufw --force reset > /dev/null 2>&1
         # Re-add SSH after reset — preserve cloud restriction if set
-        if [[ -n "$CLOUD_PUBLIC_IP" ]]; then
-            sudo ufw allow from "$CLOUD_PUBLIC_IP" to any port 22 proto tcp > /dev/null 2>&1
+        if [[ -n "$ADMIN_SSH_IP" ]]; then
+            sudo ufw allow from "$ADMIN_SSH_IP" to any port 22 proto tcp > /dev/null 2>&1
         else
             sudo ufw allow 22/tcp > /dev/null 2>&1
         fi
@@ -13797,7 +14592,14 @@ MINERDBEOF
     [[ -n "$STRATUM_PORT" ]]    && sudo ufw allow $STRATUM_PORT/tcp > /dev/null 2>&1    # Stratum V1 (miners)
     [[ -n "$STRATUM_V2_PORT" ]] && sudo ufw allow $STRATUM_V2_PORT/tcp > /dev/null 2>&1 # Stratum V2 (miners)
     sudo ufw limit $API_PORT/tcp > /dev/null 2>&1         # Pool API (rate-limited: max 6 new conn/30s per IP)
-    sudo ufw limit $DASHBOARD_PORT/tcp > /dev/null 2>&1  # Dashboard (rate-limited: max 6 new conn/30s per IP)
+    # Dashboard — home: plain allow (LAN, minimal bot traffic); cloud: port stays CLOSED (use SSH tunnel)
+    # The dashboard is HTTP only. Exposing it on the public internet is insecure regardless of rate limiting.
+    # Cloud operators access it via: ssh -L 1618:localhost:1618 user@server  then  http://localhost:1618
+    # NOTE: Use CLOUD_DETECTED (not ADMIN_SSH_IP) — port must stay closed even if SSH lockdown was skipped.
+    if [[ -z "$CLOUD_DETECTED" ]]; then
+        sudo ufw allow $DASHBOARD_PORT/tcp > /dev/null 2>&1
+    fi
+    # Cloud: port 1618 intentionally not opened — see docs/setup/CLOUD_OPERATIONS.md
     # Prometheus metrics — restrict to local subnet + loopback.
     # Sentinel and Dash scrape from localhost; an external Prometheus scraper
     # only needs access from its own subnet.  Full internet exposure is never needed.
@@ -13813,7 +14615,17 @@ MINERDBEOF
     # Always allow loopback (Sentinel + Dash scrape locally)
     sudo ufw allow from 127.0.0.1 to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
     sudo ufw allow from ::1       to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
-    if [[ -n "$metrics_subnet" ]]; then
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        # Cloud: loopback only — the "local subnet" on a cloud provider is the provider's
+        # internal network, which may include other customers' VMs. Never expose metrics
+        # to the cloud internal network. Token auth applies, but network restriction is belt+suspenders.
+        log "Cloud install — Prometheus metrics port ${METRICS_PORT}: restricted to loopback only (127.0.0.1/::1)"
+        if [[ -z "$METRICS_TOKEN" ]]; then
+            log_warn "METRICS_TOKEN is empty — metrics endpoint will have NO authentication. Regenerate via: spiralctl config set metrics-token"
+        else
+            log_success "Prometheus metrics port ${METRICS_PORT}: loopback-only + token auth enforced"
+        fi
+    elif [[ -n "$metrics_subnet" ]]; then
         sudo ufw allow from "$metrics_subnet" to any port "$METRICS_PORT" proto tcp > /dev/null 2>&1
         log "Prometheus metrics port ${METRICS_PORT}: restricted to loopback + local subnet ${metrics_subnet}"
     else
@@ -14006,6 +14818,9 @@ EOF
             sudo swapon /swapfile
             echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
             log_success "4GB swap configured"
+            if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+                log_warn "Cloud install — swap is active. Memory pages (including credential data held in RAM) may be written to /swapfile on provider-managed disk. See CLOUD_OPERATIONS.md: Swap Security."
+            fi
         else
             sudo rm -f /swapfile 2>/dev/null
             log_warn "Could not create swap (filesystem may not support fallocate) — continuing without swap"
@@ -14058,10 +14873,17 @@ fi
 # Dashboard & Sentinel status
 DASH_STATUS=$(systemctl is-active spiraldash 2>/dev/null) || DASH_STATUS="inactive"
 SENT_STATUS=$(systemctl is-active spiralsentinel 2>/dev/null) || SENT_STATUS="inactive"
-DASH_ICON="○"; [ "$DASH_STATUS" = "active" ] && DASH_ICON="●"
-SENT_ICON="○"; [ "$SENT_STATUS" = "active" ] && SENT_ICON="●"
-DASH_COLOR="${YELLOW}"; [ "$DASH_STATUS" = "active" ] && DASH_COLOR="${GREEN}"
-SENT_COLOR="${YELLOW}"; [ "$SENT_STATUS" = "active" ] && SENT_COLOR="${GREEN}"
+
+# Status color/icon helpers
+si() { [ "$1" = "active" ] && echo -n "●" || echo -n "○"; }
+sc() { case "$1" in active) echo -n "${GREEN}" ;; failed) echo -n "${RED}" ;; *) echo -n "${YELLOW}" ;; esac; }
+POOL_C=$(sc "$POOL_STATUS"); POOL_I=$(si "$POOL_STATUS"); POOL_P=$(printf '%-8s' "$POOL_STATUS")
+DASH_C=$(sc "$DASH_STATUS"); DASH_I=$(si "$DASH_STATUS"); DASH_P=$(printf '%-8s' "$DASH_STATUS")
+SENT_C=$(sc "$SENT_STATUS"); SENT_I=$(si "$SENT_STATUS"); SENT_P=$(printf '%-8s' "$SENT_STATUS")
+
+# Column helpers — cmd padded to 24 chars, desc to 16 chars for grid alignment
+C() { printf '%-24s' "$1"; }
+D() { printf '%-16s' "$1"; }
 
 echo ""
 echo -e "${CYAN}  █████████             ███                      ████     ███████████                    ████${NC}"
@@ -14076,30 +14898,35 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                       ${DIM}V1.1 - TITAN NODE${NC}"
+echo -e "                                     ${DIM}V1.1.0 — PHI FORGE EDITION${NC}"
 echo ""
-echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
-echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
-echo -e "    Memory: ${GREEN}${MEM_USED} / ${MEM_TOTAL}${NC}    Disk: ${GREEN}${DISK_USED}${NC}"
+echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
+echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
 echo ""
 echo -e "${CYAN}━━━ COMMANDS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spiralctl logs${NC}            Stratum logs"
-echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl watch${NC}           Live monitor"
-echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl blocks${NC}          Block history"
-echo -e "    ${YELLOW}spiralctl scan${NC}           Find miners    ${YELLOW}spiralctl wallet${NC}          Addresses"
-echo -e "    ${YELLOW}spiralctl backup${NC}         Backup data    ${YELLOW}spiralctl restore${NC}         Restore"
-echo -e "    ${YELLOW}spiralctl config${NC}         Config         ${YELLOW}spiralctl test${NC}            Connectivity"
-echo -e "    ${YELLOW}spiralctl restart${NC}        Restart all    ${YELLOW}spiralctl mining${NC}          Mining mode"
-echo -e "    ${YELLOW}spiralctl chain export${NC}   Push chain     ${YELLOW}spiralctl chain restore${NC}   Pull chain"
-echo -e "    ${YELLOW}spiralctl ha${NC}             HA cluster     ${YELLOW}spiralctl help${NC}            All commands"
-echo -e "    ${YELLOW}spiralctl add-coin${NC}       Add new coin   ${YELLOW}spiralctl remove-coin${NC}     Remove a coin"
+echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 'spiralctl watch')${NC}  Live monitor"
+echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
+echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl test')${NC}  Connectivity"
+echo -e "  ${YELLOW}$(C 'spiralctl scan')${NC}  $(D 'Find miners')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart all"
+echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl config')${NC}  Configuration"
+echo -e "  ${YELLOW}$(C 'spiralctl wallet')${NC}  $(D 'Addresses')  ${YELLOW}$(C 'spiralctl security')${NC}  Security"
+echo -e "  ${YELLOW}$(C 'spiralctl data backup')${NC}  $(D 'Backup')  ${YELLOW}$(C 'spiralctl data restore')${NC}  Restore"
+echo -e "  ${YELLOW}$(C 'spiralctl maintenance')${NC}  $(D 'Maintenance')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
+echo -e "  ${YELLOW}$(C 'spiralctl chain export')${NC}  $(D 'Push chain')  ${YELLOW}$(C 'spiralctl chain restore')${NC}  Pull chain"
+echo -e "  ${YELLOW}$(C 'spiralctl coin enable')${NC}  $(D 'Add a coin')  ${YELLOW}$(C 'spiralctl coin disable')${NC}  Remove a coin"
+echo -e "  ${YELLOW}$(C 'spiralctl stats blocks')${NC}  $(D 'Block history')  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  Upgrade daemons"
 echo ""
+echo -e "  ${CYAN}▶  spiralctl help${NC}   —  Full command reference & man page"
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
-echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  LTC+DOGE  LTC+PEP"
-echo ""
+echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BC2  DGB  QBX    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  LTC+DOGE  LTC+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    Dashboard: ${GREEN}http://${IP_ADDR}:1618${NC}    API: ${GREEN}http://${IP_ADDR}:4000${NC}"
+if [[ -n "$CLOUD_DETECTED" ]]; then
+echo -e "  ${YELLOW}Dashboard${NC}  ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}  then  http://localhost:1618"
+else
+echo -e "  ${DIM}Dashboard${NC}  ${GREEN}http://${IP_ADDR}:1618${NC}    ${DIM}API${NC}  ${GREEN}http://${IP_ADDR}:4000${NC}"
+fi
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 MOTDEOF
 
@@ -14254,8 +15081,8 @@ externalip=
 # Enable DNS seeding through Tor for peer discovery
 dnsseed=1
 # Reduce connections for Tor (high latency network)
-maxconnections=32
-maxoutconnections=8
+maxconnections=60
+maxoutconnections=20
 # Increase timeouts for Tor latency (milliseconds)
 timeout=120000"
     else
@@ -14266,7 +15093,7 @@ timeout=120000"
 # Maximum peer connections for faster block propagation
 maxconnections=256
 # Prefer outbound connections for faster sync (more downloaders)
-maxoutconnections=24
+maxoutconnections=50
 # Increase receive buffer (KB) for faster block download
 maxreceivebuffer=25000
 # Increase send buffer (KB)
@@ -14369,22 +15196,25 @@ blockstallingtimeout=$(if [[ "$TOR_ENABLED" == "true" ]]; then echo "30"; else e
 # Skip transaction relay during initial block download (faster sync)
 $(if [[ "$TOR_ENABLED" != "true" ]]; then echo "# blocksonly=1 during IBD speeds sync but disabled for full node operation"; fi)
 
-# === SEED NODES (verified working - Jan 2026) ===
-$(if [[ "$TOR_ENABLED" != "true" ]]; then echo "# DigiByte DNS seeds (6 verified working via dig)
-seednode=seed.digibyte.io
-seednode=seed.digibyte.help
+# === SEED NODES (verified against DigiByte-Core/digibyte develop kernel/chainparams.cpp) ===
+$(if [[ "$TOR_ENABLED" != "true" ]]; then echo "seednode=seed.digibyte.io
 seednode=seed.diginode.tools
+seednode=seed.digibyteblockchain.org
+seednode=eu.digibyteseed.com
 seednode=seed.digibyte.link
 seednode=seed.quakeguy.com
 seednode=seed.aroundtheblock.app
+seednode=seed.digibyte.services
 
 # DNS seeds for peer discovery
 dnsseed=seed.digibyte.io
-dnsseed=seed.digibyte.help
 dnsseed=seed.diginode.tools
+dnsseed=seed.digibyteblockchain.org
+dnsseed=eu.digibyteseed.com
 dnsseed=seed.digibyte.link
 dnsseed=seed.quakeguy.com
-dnsseed=seed.aroundtheblock.app"; fi)
+dnsseed=seed.aroundtheblock.app
+dnsseed=seed.digibyte.services"; fi)
 EOF
     sudo chmod 640 "$DGB_DIR/digibyte.conf"  # 640 allows group read for CLI tools
     sudo chown -R "$POOL_USER:$POOL_USER" "$DGB_DIR"
@@ -14452,8 +15282,9 @@ EOF
 # mode and for its additional features (enhanced RPC, better policy options).
 # Bitcoin Knots is a derivative of Core maintained by Luke Dashjr.
 
-# Fallback version if auto-detection fails
-BITCOIN_KNOTS_FALLBACK_VERSION="29.3.knots20260210"
+# Pinned version — ensures reproducible installs.
+# Set BITCOIN_KNOTS_AUTO_DETECT=1 to fetch the latest from bitcoinknots.org instead.
+BITCOIN_KNOTS_PINNED_VERSION="29.3.knots20260210"
 
 # Auto-detect the latest Bitcoin Knots version from bitcoinknots.org
 detect_latest_knots_version() {
@@ -14468,7 +15299,7 @@ detect_latest_knots_version() {
 
     if [[ -z "$knots_page" ]]; then
         log_warn "Could not fetch bitcoinknots.org, using fallback version" >&2
-        echo "$BITCOIN_KNOTS_FALLBACK_VERSION"
+        echo "$BITCOIN_KNOTS_PINNED_VERSION"
         return
     fi
 
@@ -14478,7 +15309,7 @@ detect_latest_knots_version() {
 
     if [[ -z "$latest_major" ]]; then
         log_warn "Could not parse major version, using fallback" >&2
-        echo "$BITCOIN_KNOTS_FALLBACK_VERSION"
+        echo "$BITCOIN_KNOTS_PINNED_VERSION"
         return
     fi
 
@@ -14488,7 +15319,7 @@ detect_latest_knots_version() {
 
     if [[ -z "$version_page" ]]; then
         log_warn "Could not fetch version directory, using fallback" >&2
-        echo "$BITCOIN_KNOTS_FALLBACK_VERSION"
+        echo "$BITCOIN_KNOTS_PINNED_VERSION"
         return
     fi
 
@@ -14498,7 +15329,7 @@ detect_latest_knots_version() {
 
     if [[ -z "$latest_version" ]]; then
         log_warn "Could not parse version, using fallback" >&2
-        echo "$BITCOIN_KNOTS_FALLBACK_VERSION"
+        echo "$BITCOIN_KNOTS_PINNED_VERSION"
         return
     fi
 
@@ -14517,9 +15348,14 @@ install_bitcoin() {
         return 0
     fi
 
-    # Auto-detect the latest Bitcoin Knots version
+    # Use pinned version for reproducibility, or auto-detect if opted in
     local BITCOIN_KNOTS_VERSION
-    BITCOIN_KNOTS_VERSION=$(detect_latest_knots_version)
+    if [[ "${BITCOIN_KNOTS_AUTO_DETECT:-0}" == "1" ]]; then
+        BITCOIN_KNOTS_VERSION=$(detect_latest_knots_version)
+    else
+        BITCOIN_KNOTS_VERSION="$BITCOIN_KNOTS_PINNED_VERSION"
+        log "Using pinned Bitcoin Knots version: $BITCOIN_KNOTS_VERSION (set BITCOIN_KNOTS_AUTO_DETECT=1 to fetch latest)" >&2
+    fi
     local KNOTS_MAJOR_VERSION
     KNOTS_MAJOR_VERSION=$(get_knots_major_version "$BITCOIN_KNOTS_VERSION")
 
@@ -14671,7 +15507,7 @@ listen=0
 # Do NOT advertise any external IP
 externalip=
 # Reduce connections for Tor (high latency network)
-maxconnections=40
+maxconnections=60
 maxuploadtarget=5000
 # Increase timeouts for Tor latency
 peertimeout=120"
@@ -14684,7 +15520,7 @@ peertimeout=120"
 # Maximum peer connections for faster sync
 maxconnections=256
 # Prefer outbound connections for faster sync (more downloaders)
-maxoutconnections=24
+maxoutconnections=50
 # Increase receive buffer (KB) for faster block download
 maxreceivebuffer=25000
 # Increase send buffer (KB)
@@ -14766,9 +15602,11 @@ $(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "assumevalid=0000000000000000
 checkpoints=1
 
 # === SEED NODES (official Bitcoin Core DNS seeds) ===
-$(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "# Primary official seeds (Bitcoin Core)
+$(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "# Primary official seeds (Bitcoin Knots — verified against 29.x-knots kernel/chainparams.cpp)
 seednode=seed.bitcoin.sipa.be
 seednode=dnsseed.bluematt.me
+seednode=dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us
+seednode=seed.bitcoin.haf.ovh
 seednode=seed.bitcoin.jonasschnelli.ch
 seednode=seed.btc.petertodd.net
 seednode=seed.bitcoin.sprovoost.nl
@@ -14961,7 +15799,7 @@ onlynet=ipv4
 # Do NOT listen for incoming connections (hidden node)
 listen=0
 # Reduce connections for Tor
-maxconnections=40"
+maxconnections=60"
     else
         log "Configuring Bitcoin Cash for clearnet (fastest sync)..."
         BCH_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
@@ -14969,6 +15807,8 @@ maxconnections=40"
 
 # Maximum peer connections for faster sync
 maxconnections=256
+# Prefer outbound connections for faster sync
+maxoutconnections=50
 # Increase receive buffer (KB) for faster block download
 maxreceivebuffer=25000
 # Increase send buffer (KB)
@@ -15012,8 +15852,8 @@ zmqpubhashblock=tcp://127.0.0.1:28432
 zmqpubrawtx=tcp://127.0.0.1:28432
 
 # === PERFORMANCE OPTIMIZATION ===
-# Database cache (2GB - BCH has smaller chain)
-dbcache=2048
+# Database cache (8GB - maximizes UTXO cache for faster sync)
+dbcache=8192
 # Memory pool limit
 maxmempool=300
 # Par = parallel script verification threads (4 cores for stability)
@@ -15265,7 +16105,7 @@ onlynet=ipv4
 # Do NOT listen for incoming connections (hidden node)
 listen=0
 # Reduce connections for Tor
-maxconnections=40
+maxconnections=60
 # Increase timeouts for Tor latency
 peertimeout=120"
     else
@@ -15276,7 +16116,7 @@ peertimeout=120"
 # Maximum peer connections for faster sync
 maxconnections=256
 # Prefer outbound connections for faster sync (more downloaders)
-maxoutconnections=24
+maxoutconnections=50
 # Increase receive buffer (KB) for faster block download
 maxreceivebuffer=25000
 # Increase send buffer (KB)
@@ -15335,7 +16175,7 @@ zmqpubrawtx=tcp://127.0.0.1:$BC2_ZMQ_PORT
 
 # === PERFORMANCE OPTIMIZATION ===
 # Database cache (optimized for sync speed)
-dbcache=$(if [[ "$BC2_TOR_ENABLED" == "true" ]]; then echo "1024"; else echo "2048"; fi)
+dbcache=4096
 # Memory pool limit
 maxmempool=300
 # Par = parallel script verification threads (0 = auto-detect CPU cores)
@@ -15532,7 +16372,7 @@ onlynet=ipv4
 listen=0
 externalip=
 # Reduce connections for Tor (high latency network)
-maxconnections=32
+maxconnections=60
 # Increase timeouts for Tor latency (milliseconds)
 timeout=120000"
     else
@@ -15540,11 +16380,26 @@ timeout=120000"
         LTC_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
 # Direct IPv4 connections for fastest possible sync
 
-maxconnections=125
+maxconnections=256
+maxoutconnections=50
 listen=1
 bind=0.0.0.0
 onlynet=ipv4
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against litecoin-project/litecoin master chainparams.cpp) ===
+seednode=seed-a.litecoin.loshan.co.uk
+seednode=dnsseed.thrasher.io
+seednode=dnsseed.litecointools.com
+seednode=dnsseed.litecoinpool.org
+seednode=dnsseed.koin-project.com
+
+dnsseed=seed-a.litecoin.loshan.co.uk
+dnsseed=dnsseed.thrasher.io
+dnsseed=dnsseed.litecointools.com
+dnsseed=dnsseed.litecoinpool.org
+dnsseed=dnsseed.koin-project.com"
     fi
 
     # Create configuration
@@ -15574,7 +16429,7 @@ zmqpubrawtx=tcp://127.0.0.1:$LTC_ZMQ_PORT
 $LTC_NETWORK_CONFIG
 
 # Performance
-dbcache=$(if [[ "$TOR_ENABLED" == "true" ]]; then echo "512"; else echo "1024"; fi)
+dbcache=4096
 maxmempool=300
 
 # Logging
@@ -15729,15 +16584,24 @@ onlynet=onion
 # Do NOT listen for incoming connections (hidden node)
 listen=0
 # Reduce connections for Tor (high latency network)
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Dogecoin for clearnet (fast sync)..."
         DOGE_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
 # Direct IPv4 connections for fastest possible sync
 
-maxconnections=100
+maxconnections=256
+maxoutconnections=50
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against dogecoin/dogecoin master chainparams.cpp) ===
+seednode=seed.multidoge.org
+seednode=seed2.multidoge.org
+
+dnsseed=seed.multidoge.org
+dnsseed=seed2.multidoge.org"
     fi
 
     # Create configuration
@@ -15770,7 +16634,7 @@ port=$DOGE_P2P_PORT
 $DOGE_NETWORK_CONFIG
 
 # Performance
-dbcache=$(if [[ "$TOR_ENABLED" == "true" ]]; then echo "256"; else echo "512"; fi)
+dbcache=4096
 maxmempool=300
 
 # Logging
@@ -15926,15 +16790,24 @@ onlynet=onion
 # Do NOT listen for incoming connections (hidden node)
 listen=0
 # Reduce connections for Tor (high latency network)
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring PepeCoin for clearnet (fast sync)..."
         PEP_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
 # Direct IPv4 connections for fastest possible sync
 
-maxconnections=75
+maxconnections=150
+maxoutconnections=30
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against pepecoinppc/pepecoin master chainparams.cpp) ===
+seednode=seeds.pepecoin.org
+seednode=seeds.pepeblocks.com
+
+dnsseed=seeds.pepecoin.org
+dnsseed=seeds.pepeblocks.com"
     fi
 
     # Create configuration
@@ -15969,7 +16842,7 @@ port=$PEP_P2P_PORT
 $PEP_NETWORK_CONFIG
 
 # Performance
-dbcache=$(if [[ "$TOR_ENABLED" == "true" ]]; then echo "128"; else echo "256"; fi)
+dbcache=4096
 maxmempool=200
 
 # Logging
@@ -16122,15 +16995,37 @@ onlynet=onion
 # Do NOT listen for incoming connections (hidden node)
 listen=0
 # Reduce connections for Tor (high latency network)
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Catcoin for clearnet (fast sync)..."
         CAT_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
 # Direct IPv4 connections for fastest possible sync
 
-maxconnections=75
+maxconnections=150
+maxoutconnections=30
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against CatcoinCore/catcoincore main chainparams.cpp) ===
+seednode=catcoin.seeds.multicoin.co
+seednode=dnsseed.catalyst.ovh
+seednode=dnsseed.catcointomars.top
+seednode=dnsseed.wildcat.ovh
+seednode=dnsseed.ogcatcoin.org
+seednode=dnsseed.catcoin.ovh
+seednode=dnsseed.bcats.top
+seednode=dnsseed.jjcatcoin.top
+seednode=dnsseed.catsonmylap.top
+seednode=dnsseed.catcoin.party
+seednode=dnsseed.remembermeasyoupassby.top
+seednode=seed.catcoinwallets.com
+seednode=cat.geekhash.org
+
+dnsseed=catcoin.seeds.multicoin.co
+dnsseed=dnsseed.catalyst.ovh
+dnsseed=dnsseed.wildcat.ovh
+dnsseed=seed.catcoinwallets.com"
     fi
 
     # Create configuration
@@ -16163,7 +17058,7 @@ port=$CAT_P2P_PORT
 $CAT_NETWORK_CONFIG
 
 # Performance
-dbcache=$(if [[ "$TOR_ENABLED" == "true" ]]; then echo "128"; else echo "256"; fi)
+dbcache=4096
 maxmempool=200
 
 # Logging
@@ -16312,13 +17207,30 @@ install_namecoin() {
 proxy=127.0.0.1:9050
 onion=127.0.0.1:9050
 listen=0
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Namecoin for clearnet (fast sync)..."
         NMC_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
-maxconnections=125
+maxconnections=150
+maxoutconnections=30
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against namecoin/namecoin-core master kernel/chainparams.cpp) ===
+seednode=nmc.seed.quisquis.de
+seednode=seed.nmc.markasoftware.com
+seednode=dnsseed1.nmc.dotbit.zone
+seednode=dnsseed2.nmc.dotbit.zone
+seednode=dnsseed.nmc.testls.space
+seednode=namecoin.seed.cypherstack.com
+
+dnsseed=nmc.seed.quisquis.de
+dnsseed=seed.nmc.markasoftware.com
+dnsseed=dnsseed1.nmc.dotbit.zone
+dnsseed=dnsseed2.nmc.dotbit.zone
+dnsseed=dnsseed.nmc.testls.space
+dnsseed=namecoin.seed.cypherstack.com"
     fi
 
     # Create configuration
@@ -16351,7 +17263,7 @@ port=$NMC_P2P_PORT
 $NMC_NETWORK_CONFIG
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 
 # Wallet (enabled for address generation)
@@ -16500,13 +17412,26 @@ install_syscoin() {
 proxy=127.0.0.1:9050
 onion=127.0.0.1:9050
 listen=0
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Syscoin for clearnet (fast sync)..."
         SYS_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
-maxconnections=125
+maxconnections=200
+maxoutconnections=40
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against syscoin/syscoin master kernel/chainparams.cpp) ===
+seednode=seed1.syscoin.org
+seednode=seed2.syscoin.org
+seednode=seed3.syscoin.org
+seednode=seed4.syscoin.org
+
+dnsseed=seed1.syscoin.org
+dnsseed=seed2.syscoin.org
+dnsseed=seed3.syscoin.org
+dnsseed=seed4.syscoin.org"
     fi
 
     # Create configuration
@@ -16539,7 +17464,7 @@ port=$SYS_P2P_PORT
 $SYS_NETWORK_CONFIG
 
 # Performance (Syscoin 5.0 is larger - needs more resources)
-dbcache=1024
+dbcache=4096
 maxmempool=300
 
 # Wallet (descriptor wallets are default in Syscoin 5.0)
@@ -16698,13 +17623,32 @@ install_myriad() {
 proxy=127.0.0.1:9050
 onion=127.0.0.1:9050
 listen=0
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Myriad for clearnet (fast sync)..."
         XMY_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
-maxconnections=125
+maxconnections=150
+maxoutconnections=30
 listen=1
-dnsseed=1"
+dnsseed=1
+forcednsseed=1
+
+# === SEED NODES (verified against myriadteam/myriadcoin master chainparams.cpp) ===
+seednode=seed1.myriadcoin.org
+seednode=seed2.myriadcoin.org
+seednode=seed3.myriadcoin.org
+seednode=seed4.myriadcoin.org
+seednode=seed5.myriadcoin.org
+seednode=seed6.myriadcoin.org
+seednode=seed7.myriadcoin.org
+seednode=seed8.myriadcoin.org
+seednode=myriadseed1.cryptapus.org
+seednode=xmy-seed1.coinid.org
+
+dnsseed=seed1.myriadcoin.org
+dnsseed=seed2.myriadcoin.org
+dnsseed=seed3.myriadcoin.org
+dnsseed=seed4.myriadcoin.org"
     fi
 
     # Create configuration
@@ -16737,7 +17681,7 @@ port=$XMY_P2P_PORT
 $XMY_NETWORK_CONFIG
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 
 # Wallet (enabled for address generation)
@@ -16886,11 +17830,12 @@ install_fbtc() {
 proxy=127.0.0.1:9050
 onion=127.0.0.1:9050
 listen=0
-maxconnections=32"
+maxconnections=60"
     else
         log "Configuring Fractal Bitcoin for clearnet (fast sync)..."
         FBTC_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
-maxconnections=125
+maxconnections=200
+maxoutconnections=40
 listen=1
 dnsseed=1
 forcednsseed=1
@@ -16934,7 +17879,7 @@ port=$FBTC_P2P_PORT
 $FBTC_NETWORK_CONFIG
 
 # Performance
-dbcache=1024
+dbcache=4096
 maxmempool=300
 
 # Wallet (enabled for address generation)
@@ -17045,19 +17990,19 @@ install_qbx() {
     sudo apt-get install -y -qq unzip libevent-2.1-7 libleveldb1d libevent-pthreads-2.1-7t64 2>/dev/null || true
 
     # Q-BitX download from GitHub releases
-    local QBX_URL="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
+    local QBX_URL="https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86_64-v${QBX_VERSION}.zip"
 
     log "Downloading Q-BitX..."
-    if ! download_with_retry "qbitx-linux-x86.zip" "$QBX_URL"; then
+    if ! download_with_retry "qbitx-linux-x86_64-v0.2.0.zip" "$QBX_URL"; then
         log_error "Failed to download Q-BitX"
         log_error "Please download manually from: https://github.com/q-bitx/Source-/releases"
         return 1
     fi
 
     log "Extracting Q-BitX..."
-    if ! unzip -o qbitx-linux-x86.zip -d qbitx-extract; then
+    if ! unzip -o qbitx-linux-x86_64-v0.2.0.zip -d qbitx-extract; then
         log_error "Failed to extract Q-BitX archive"
-        rm -f qbitx-linux-x86.zip
+        rm -f qbitx-linux-x86_64-v0.2.0.zip
         return 1
     fi
 
@@ -17067,7 +18012,7 @@ install_qbx() {
     sudo cp qbitx-extract/qbitx-cli "$QBX_BIN_DIR/" 2>/dev/null || sudo cp qbitx-extract/*/qbitx-cli "$QBX_BIN_DIR/" 2>/dev/null || true
     sudo chmod +x "$QBX_BIN_DIR/qbitx" "$QBX_BIN_DIR/qbitx-cli"
     sudo chown -R "$POOL_USER:$POOL_USER" "$QBX_BIN_DIR"
-    rm -rf qbitx-linux-x86.zip qbitx-extract
+    rm -rf qbitx-linux-x86_64-v0.2.0.zip qbitx-extract
 
     # Create symlinks for CLI access
     sudo ln -sf "$QBX_BIN_DIR/qbitx" /usr/local/bin/qbitx
@@ -17106,11 +18051,12 @@ zmqpubrawtx=tcp://127.0.0.1:$QBX_ZMQ_PORT
 port=$QBX_P2P_PORT
 
 # === NETWORK CONFIGURATION ===
-maxconnections=32
+maxconnections=100
+maxoutconnections=20
 listen=1
 
 # Performance
-dbcache=512
+dbcache=4096
 maxmempool=300
 
 # Wallet (enabled for address generation)
@@ -20411,6 +21357,13 @@ stratum:
   versionRolling:
     enabled: true
     mask: 0x1FFFE000
+  rateLimiting:
+    enabled: true
+    # Per-IP limits intentionally left at 0 (unlimited) for NiceHash/MRR compatibility.
+    # The Go defaults activate: pre-auth timeout (10s), pre-auth message limit (20),
+    # ban threshold (10 violations), ban duration (30m), and ban persistence.
+    # Private pool operators can add connectionsPerIP, sharesPerSecond, workersPerIP
+    # to restrict per-IP behavior if no rented hashrate is expected.
 
 daemon:
   host: "127.0.0.1"
@@ -21735,6 +22688,7 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart namecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart syscoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart myriadcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart fractald
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart qbitxd
 
 # Health monitor - start/stop services and process control
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start spiraldash
@@ -22222,8 +23176,34 @@ with open('$SENTINEL_CONFIG', 'w') as f:
   "pool_id": "$PRIMARY_POOL_ID",
   "pool_share_validation": true,
   "pool_no_shares_threshold_min": 30,
+  "ntfy_url": "${NTFY_URL:-}",
+  "ntfy_token": "${NTFY_TOKEN:-}",
+  "smtp_host": "${SMTP_HOST:-}",
+  "smtp_port": ${SMTP_PORT:-587},
+  "smtp_username": "${SMTP_USERNAME:-}",
+  "smtp_password": "${SMTP_PASSWORD:-}",
+  "smtp_from": "${SMTP_USERNAME:-}",
+  "smtp_to": "${SMTP_TO:-}",
+  "smtp_use_tls": ${SMTP_USE_TLS:-true},
+  "smtp_enabled": ${SMTP_HOST:+true}${SMTP_HOST:-false},
+  "telegram_commands_enabled": ${TELEGRAM_COMMANDS_ENABLED:-false},
   "alerts_enabled": ${SENTINEL_ALERTS_ENABLED:-true},
   "health_monitoring_enabled": ${SENTINEL_HEALTH_ENABLED:-true},
+  "dry_streak_enabled": ${SENTINEL_DRY_STREAK_ENABLED:-true},
+  "dry_streak_multiplier": 3,
+  "difficulty_alert_enabled": ${SENTINEL_DIFFICULTY_ALERT_ENABLED:-true},
+  "difficulty_alert_threshold_pct": 25,
+  "disk_monitor_enabled": ${SENTINEL_DISK_MONITOR_ENABLED:-true},
+  "disk_warn_pct": 85,
+  "disk_critical_pct": 95,
+  "mempool_alert_enabled": ${SENTINEL_MEMPOOL_ENABLED:-true},
+  "mempool_alert_threshold": 50000,
+  "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
+  "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
+  "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
+  "backup_stale_days": 2,
+  "ha_role_change_confirm_secs": 90,
+  "scheduled_maintenance_windows": [],
   "report_frequency": "${REPORT_FREQUENCY:-6h}",
   "report_hours": [6, 12, 18],
   "major_report_hour": 6,
@@ -22499,8 +23479,34 @@ EOF
   "pool_id": "$PRIMARY_POOL_ID",
   "pool_share_validation": true,
   "pool_no_shares_threshold_min": 30,
+  "ntfy_url": "${NTFY_URL:-}",
+  "ntfy_token": "${NTFY_TOKEN:-}",
+  "smtp_host": "${SMTP_HOST:-}",
+  "smtp_port": ${SMTP_PORT:-587},
+  "smtp_username": "${SMTP_USERNAME:-}",
+  "smtp_password": "${SMTP_PASSWORD:-}",
+  "smtp_from": "${SMTP_USERNAME:-}",
+  "smtp_to": "${SMTP_TO:-}",
+  "smtp_use_tls": ${SMTP_USE_TLS:-true},
+  "smtp_enabled": ${SMTP_HOST:+true}${SMTP_HOST:-false},
+  "telegram_commands_enabled": ${TELEGRAM_COMMANDS_ENABLED:-false},
   "alerts_enabled": ${SENTINEL_ALERTS_ENABLED:-true},
   "health_monitoring_enabled": ${SENTINEL_HEALTH_ENABLED:-true},
+  "dry_streak_enabled": ${SENTINEL_DRY_STREAK_ENABLED:-true},
+  "dry_streak_multiplier": 3,
+  "difficulty_alert_enabled": ${SENTINEL_DIFFICULTY_ALERT_ENABLED:-true},
+  "difficulty_alert_threshold_pct": 25,
+  "disk_monitor_enabled": ${SENTINEL_DISK_MONITOR_ENABLED:-true},
+  "disk_warn_pct": 85,
+  "disk_critical_pct": 95,
+  "mempool_alert_enabled": ${SENTINEL_MEMPOOL_ENABLED:-true},
+  "mempool_alert_threshold": 50000,
+  "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
+  "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
+  "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
+  "backup_stale_days": 2,
+  "ha_role_change_confirm_secs": 90,
+  "scheduled_maintenance_windows": [],
   "report_frequency": "${REPORT_FREQUENCY:-6h}",
   "report_hours": [6, 12, 18],
   "major_report_hour": 6,
@@ -23039,11 +24045,15 @@ check_stratum_health() {
     fi
 
     # CRITICAL: Test actual stratum protocol handshake on first available port
-    # This catches the case where TCP port is open but stratum is not responding
+    # This catches the case where TCP port is open but stratum is not responding.
+    # NOTE: Do NOT pipe through head -1 — that causes nc to exit while stratum is still
+    # writing its job notification, producing "broken pipe" spam in stratum logs.
+    # Instead let nc drain all output until the idle timeout, then stratum gets a clean EOF.
     local test_port="${ports_to_check[0]}"
-    local stratum_response
+    local stratum_response stratum_first_line
     stratum_response=$(echo '{"id":1,"method":"mining.subscribe","params":["health-check/1.0"]}' | \
-        timeout 5 nc -w 3 127.0.0.1 $test_port 2>/dev/null | head -1)
+        timeout 5 nc -w 3 127.0.0.1 $test_port 2>/dev/null)
+    stratum_first_line=$(echo "$stratum_response" | head -1)
 
     if [[ -z "$stratum_response" ]]; then
         log "CRITICAL: Stratum not responding to mining.subscribe on port $test_port - protocol failure detected"
@@ -23058,8 +24068,8 @@ check_stratum_health() {
     fi
 
     # Verify response contains expected result (subscription confirmation)
-    if ! echo "$stratum_response" | grep -q '"result":\[\['; then
-        log "WARNING: Stratum returned unexpected response on port $test_port: $stratum_response"
+    if ! echo "$stratum_first_line" | grep -q '"result":\[\['; then
+        log "WARNING: Stratum returned unexpected response on port $test_port: $stratum_first_line"
         # Don't restart for malformed response, just log it
     fi
 
@@ -23397,9 +24407,13 @@ fi
 # Test first available port
 TEST_PORT="${ports_to_check[0]}"
 
-# Test stratum protocol handshake
+# Test stratum protocol handshake.
+# NOTE: Do NOT pipe through head -1 — that causes nc to exit while stratum is still
+# writing its job notification, producing "broken pipe" spam in stratum logs.
+# Let nc drain all output until idle timeout so stratum gets a clean EOF.
 stratum_response=$(echo '{"id":1,"method":"mining.subscribe","params":["health-check/1.0"]}' | \
-    timeout 5 nc -w 3 127.0.0.1 $TEST_PORT 2>/dev/null | head -1)
+    timeout 5 nc -w 3 127.0.0.1 $TEST_PORT 2>/dev/null)
+stratum_first_line=$(echo "$stratum_response" | head -1)
 
 if [[ -z "$stratum_response" ]]; then
     log "CRITICAL: Stratum not responding to mining.subscribe on port $TEST_PORT - protocol failure"
@@ -23413,7 +24427,7 @@ if [[ -z "$stratum_response" ]]; then
     exit 1
 fi
 
-if echo "$stratum_response" | grep -q '"result":\[\['; then
+if echo "$stratum_first_line" | grep -q '"result":\[\['; then
     echo "Stratum protocol healthy (port $TEST_PORT)"
     exit 0
 else
@@ -23482,6 +24496,10 @@ APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
+
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        log_warn "Cloud install — unattended-upgrades will automatically reboot this server at 04:00 UTC if kernel or security patches require it. Your pool (stratum, Sentinel, dashboard) will be offline for ~1-2 minutes during the reboot. Services resume automatically on boot. To disable auto-reboot: sudo sed -i 's/Automatic-Reboot \"true\"/Automatic-Reboot \"false\"/' /etc/apt/apt.conf.d/50unattended-upgrades"
+    fi
 
     # Create pre-reboot hook to gracefully stop pool services
     sudo mkdir -p /etc/systemd/system-shutdown
@@ -23607,6 +24625,23 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 DIM='\033[2m'
 NC='\033[0m'
+
+# Resolve blockchain data directory (multi-disk support)
+INSTALL_DIR="/spiralpool"
+_MULTI_DISK="false"; _CHAIN_MOUNT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    _MULTI_DISK=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    _CHAIN_MOUNT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() {
+    local c="$1"
+    if [[ "$_MULTI_DISK" == "true" && -n "$_CHAIN_MOUNT" && -d "$_CHAIN_MOUNT" ]]; then
+        echo "$_CHAIN_MOUNT/$c"
+    else
+        echo "$INSTALL_DIR/$c"
+    fi
+}
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
@@ -24835,7 +25870,11 @@ show_status() {
             echo -e " ${WHITE}What happens when sync completes:${NC}"
             echo -e "   ${GREEN}✓${NC} Spiral Stratum starts automatically (no action needed)"
             echo -e "   ${GREEN}✓${NC} Pool becomes ready to accept miner connections"
+            if [[ -n "$CLOUD_DETECTED" ]]; then
+            echo -e "   ${GREEN}✓${NC} Dashboard accessible via SSH tunnel: ${WHITE}ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}${NC}"
+            else
             echo -e "   ${GREEN}✓${NC} Dashboard goes live at ${WHITE}http://${LOCAL_IP}:1618${NC}"
+            fi
             echo ""
             echo -e " ${YELLOW}Everything is automated - just wait for sync to finish!${NC}"
             echo -e "${DIM}────────────────────────────────────────────────────────────────────────${NC}"
@@ -24917,7 +25956,11 @@ watch_sync() {
     echo -e " ${WHITE}What happens when sync completes:${NC}"
     echo -e "   ${GREEN}+${NC} Spiral Stratum starts automatically (no action needed)"
     echo -e "   ${GREEN}+${NC} Pool becomes ready to accept miner connections"
+    if [[ -n "$CLOUD_DETECTED" ]]; then
+    echo -e "   ${GREEN}+${NC} Dashboard: ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}  then  http://localhost:1618"
+    else
     echo -e "   ${GREEN}+${NC} Dashboard goes live at ${WHITE}http://${LOCAL_IP}:1618${NC}"
+    fi
     echo ""
     echo -e " ${YELLOW}Everything is automated - just wait for sync to finish!${NC}"
     echo -e "${DIM}------------------------------------------------------------------------${NC}"
@@ -26124,6 +27167,15 @@ if [[ -z "$COIN" ]] && [[ "$AUTO_MODE" != "true" ]]; then
             echo -e "  ${GREEN}No changes made.${NC}"
             echo ""
             exit 0
+            ;;
+        [0-9]*)
+            # Direct numeric selection — treat as selecting that coin number for wallet generation
+            if [[ "$dashboard_choice" =~ ^[0-9]+$ ]] && [[ "$dashboard_choice" -ge 1 ]] && [[ "$dashboard_choice" -le ${#INSTALLED_COINS[@]} ]]; then
+                COIN="${INSTALLED_COINS[$((dashboard_choice-1))]}"
+            else
+                echo -e "  ${RED}Invalid selection. Choose 1–${#INSTALLED_COINS[@]}, g, or q.${NC}"
+                exit 1
+            fi
             ;;
         *)
             echo -e "  ${RED}Invalid option.${NC}"
@@ -27525,11 +28577,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V1.1-TITAN_NODE: Create backup command
+    # V1.1.0-PHI_FORGE: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V1.1-TITAN_NODE
+# Spiral Pool Backup Utility - V1.1.0-PHI_FORGE
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -27574,7 +28626,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}        SPIRAL POOL BACKUP UTILITY - V1.1-TITAN_NODE          ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V1.1.0-PHI_FORGE${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -28190,7 +29242,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}               SPIRAL POOL BACKUP - V1.1-TITAN_NODE            ${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V1.1.0-PHI_FORGE${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -28243,11 +29295,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V1.1-TITAN_NODE: Create restore command
+    # V1.1.0-PHI_FORGE: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V1.1-TITAN_NODE
+# Spiral Pool Restore Utility - V1.1.0-PHI_FORGE
 # Restores backups created by spiralpool-backup
 #
 
@@ -28294,7 +29346,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}          SPIRAL POOL RESTORE UTILITY - V1.1-TITAN_NODE        ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V1.1.0-PHI_FORGE${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -28616,7 +29668,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.1-TITAN_NODE              ${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.1.0-PHI_FORGE${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -30367,9 +31419,13 @@ detect_miner_type() {
             elif echo "$axeos_response" | grep -qi "esp32miner\|nerd-miner\|nerd_miner"; then
                 echo "esp32miner"
                 return 0
-            # 9. NMaxe/BitAxe (generic AxeOS family)
-            elif echo "$axeos_response" | grep -qi "nmaxe\|bitaxe\|supra\|ultra\|gamma\|hex"; then
+            # 9. NMaxe (low-power variant, distinct from BitAxe)
+            elif echo "$axeos_response" | grep -qi "nmaxe"; then
                 echo "nmaxe"
+                return 0
+            # 10. BitAxe (Ultra, Supra, Hex, Gamma, GT 801)
+            elif echo "$axeos_response" | grep -qi "bitaxe\|supra\|ultra\|gamma\|hex"; then
+                echo "axeos"
                 return 0
             else
                 # Generic AxeOS device
@@ -30724,6 +31780,13 @@ except Exception as e:
     sys.exit(1)
 SETNICK
 
+    local py_rc=$?
+    if [[ $py_rc -ne 0 ]]; then
+        # Python already printed the error (e.g., "Miner not in database")
+        rm -f "$tmp_file" 2>/dev/null
+        return 1
+    fi
+
     # Move temp file to database location (use sudo if needed)
     if [[ -f "$tmp_file" ]]; then
         if ! mv -f "$tmp_file" "$MINER_DB" 2>/dev/null; then
@@ -30737,7 +31800,7 @@ SETNICK
         sudo chown "$POOL_USER:$POOL_USER" "$MINER_DB" 2>/dev/null || sudo chown "$USER:$USER" "$MINER_DB"
         sudo chmod 664 "$MINER_DB" 2>/dev/null
     else
-        echo "ERROR: Python failed to create temp file for nickname" >&2
+        echo "ERROR: Failed to write nickname temp file (check /tmp permissions)" >&2
         return 1
     fi
 }
@@ -31148,59 +32211,60 @@ case "${1:-}" in
             echo -e "${YELLOW}Could not auto-detect miner type. Please specify:${NC}"
             echo ""
             echo -e "  ${GREEN}AxeOS HTTP API devices:${NC}"
-            echo "   1) nmaxe (BitAxe/NMaxe/AxeOS)"
-            echo "   2) nerdqaxe (NerdQAxe++/NerdAxe/NerdOctaxe)"
-            echo "   3) luckyminer (Lucky Miner LV06/LV07/LV08)"
-            echo "   4) jingleminer (Jingle Miner BTC Solo Pro/Lite)"
-            echo "   5) zyber (Zyber 8G/8GP/8S TinyChipHub)"
-            echo "   6) hammer (PlebSource Hammer Miner)"
-            echo "   7) esp32miner (ESP32 Miners)"
+            echo "   1) axeos (BitAxe Ultra/Supra/Hex/Gamma)"
+            echo "   2) nmaxe (NMaxe low-power)"
+            echo "   3) nerdqaxe (NerdQAxe++/NerdAxe/NerdOctaxe)"
+            echo "   4) luckyminer (Lucky Miner LV06/LV07/LV08)"
+            echo "   5) jingleminer (Jingle Miner BTC Solo Pro/Lite)"
+            echo "   6) zyber (Zyber 8G/8GP/8S TinyChipHub)"
+            echo "   7) hammer (PlebSource Hammer Miner)"
+            echo "   8) esp32miner (ESP32 Miners)"
             echo ""
             echo -e "  ${GREEN}CGMiner API devices (port 4028):${NC}"
-            echo "   8) antminer (Bitmain S19/S21/T21)"
-            echo "   9) antminer_scrypt (Bitmain L3+/L7/L9)"
-            echo "  10) whatsminer (MicroBT M30/M50/M60)"
-            echo "  11) avalon (Avalon Nano 2/3/3S)"
-            echo "  12) canaan (Canaan AvalonMiner A12-A16)"
-            echo "  13) innosilicon (Innosilicon A10/A11/T3)"
-            echo "  14) futurebit (FutureBit Apollo/Apollo II)"
-            echo "  15) goldshell (Goldshell KD6/LT5/Mini DOGE)"
-            echo "  16) ebang (Ebang Ebit E9-E12+)"
-            echo "  17) gekkoscience (GekkoScience Compac F/NewPac/R606)"
-            echo "  18) ipollo (iPollo V1/V1 Mini/G1)"
-            echo "  19) epic (ePIC BlockMiner)"
-            echo "  20) elphapex (Elphapex DG1/DG Home)"
+            echo "   9) antminer (Bitmain S19/S21/T21)"
+            echo "  10) antminer_scrypt (Bitmain L3+/L7/L9)"
+            echo "  11) whatsminer (MicroBT M30/M50/M60)"
+            echo "  12) avalon (Avalon Nano 2/3/3S)"
+            echo "  13) canaan (Canaan AvalonMiner A12-A16)"
+            echo "  14) innosilicon (Innosilicon A10/A11/T3)"
+            echo "  15) futurebit (FutureBit Apollo/Apollo II)"
+            echo "  16) goldshell (Goldshell KD6/LT5/Mini DOGE)"
+            echo "  18) gekkoscience (GekkoScience Compac F/NewPac/R606)"
+            echo "  19) ipollo (iPollo V1/V1 Mini/G1)"
+            echo "  20) epic (ePIC BlockMiner)"
+            echo "  21) elphapex (Elphapex DG1/DG Home)"
             echo ""
             echo -e "  ${GREEN}Custom firmware (manual config):${NC}"
-            echo "  21) braiins (BraiinsOS/BOS+ on Antminers)"
-            echo "  22) vnish (Vnish firmware on Antminers)"
-            echo "  23) luxos (LuxOS firmware on Antminers)"
+            echo "  22) braiins (BraiinsOS/BOS+ on Antminers)"
+            echo "  23) vnish (Vnish firmware on Antminers)"
+            echo "  24) luxos (LuxOS firmware on Antminers)"
             echo ""
-            prompt_input "Select (1-23): "; read choice
+            prompt_input "Select (1-24): "; read choice
             case "$choice" in
-                1) mtype="nmaxe" ;;
-                2) mtype="nerdqaxe" ;;
-                3) mtype="luckyminer" ;;
-                4) mtype="jingleminer" ;;
-                5) mtype="zyber" ;;
-                6) mtype="hammer" ;;
-                7) mtype="esp32miner" ;;
-                8) mtype="antminer" ;;
-                9) mtype="antminer_scrypt" ;;
-                10) mtype="whatsminer" ;;
-                11) mtype="avalon" ;;
-                12) mtype="canaan" ;;
-                13) mtype="innosilicon" ;;
-                14) mtype="futurebit" ;;
-                15) mtype="goldshell" ;;
-                16) mtype="ebang" ;;
-                17) mtype="gekkoscience" ;;
-                18) mtype="ipollo" ;;
-                19) mtype="epic" ;;
-                20) mtype="elphapex" ;;
-                21) mtype="braiins" ;;
-                22) mtype="vnish" ;;
-                23) mtype="luxos" ;;
+                1) mtype="axeos" ;;
+                2) mtype="nmaxe" ;;
+                3) mtype="nerdqaxe" ;;
+                4) mtype="luckyminer" ;;
+                5) mtype="jingleminer" ;;
+                6) mtype="zyber" ;;
+                7) mtype="hammer" ;;
+                8) mtype="esp32miner" ;;
+                9) mtype="antminer" ;;
+                10) mtype="antminer_scrypt" ;;
+                11) mtype="whatsminer" ;;
+                12) mtype="avalon" ;;
+                13) mtype="canaan" ;;
+                14) mtype="innosilicon" ;;
+                15) mtype="futurebit" ;;
+                16) mtype="goldshell" ;;
+                17) mtype="ebang" ;;
+                18) mtype="gekkoscience" ;;
+                19) mtype="ipollo" ;;
+                20) mtype="epic" ;;
+                21) mtype="elphapex" ;;
+                22) mtype="braiins" ;;
+                23) mtype="vnish" ;;
+                24) mtype="luxos" ;;
                 *) echo "Invalid choice"; exit 1 ;;
             esac
         fi
@@ -31847,9 +32911,12 @@ EXPORTEOF
     sudo chmod +x /usr/local/bin/spiralpool-{status,logs,restart,sync,wallet,backup,restore,pause,stats,test,config,scan,watch,export}
 
     # Create scripts directory for additional utilities
+    # SECURITY: Directory owned by root to prevent spiraluser from adding scripts
+    # that could be executed via sudoers NOPASSWD entries (privilege escalation).
+    # Individual non-privileged scripts are chowned to POOL_USER after copy.
     sudo mkdir -p /spiralpool/scripts
-    sudo chown "$POOL_USER:$POOL_USER" /spiralpool/scripts 2>/dev/null || true
-    sudo chmod 775 /spiralpool/scripts
+    sudo chown root:root /spiralpool/scripts 2>/dev/null || true
+    sudo chmod 755 /spiralpool/scripts
 
     # Create data directory for miner database (used by spiralpool-scan and Sentinel)
     sudo mkdir -p /spiralpool/data
@@ -31872,69 +32939,83 @@ EXPORTEOF
         SCRIPTS_SRC="${SCRIPT_DIR}/scripts"
     fi
 
-    # Copy update checker script
+    # Copy update checker script (non-privileged — runs as spiraluser)
     if [[ -f "${SCRIPTS_SRC}/update-checker.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/update-checker.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/update-checker.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/update-checker.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/update-checker.sh" /usr/local/bin/spiralpool-update
     fi
 
-    # Copy maintenance mode script
+    # Copy maintenance mode script (non-privileged — called directly by upgrade.sh/update-checker)
     if [[ -f "${SCRIPTS_SRC}/maintenance-mode.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/maintenance-mode.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/maintenance-mode.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/maintenance-mode.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/maintenance-mode.sh" /usr/local/bin/spiralpool-maintenance
     fi
 
-    # Copy HA service control script (manages Sentinel/Dashboard based on HA role)
+    # Copy HA service control script (non-privileged — manages Sentinel/Dashboard based on HA role)
     if [[ -f "${SCRIPTS_SRC}/ha-service-control.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-service-control.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-service-control.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-service-control.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/ha-service-control.sh" /usr/local/bin/spiralpool-ha-service
     fi
 
-    # Copy HA role watcher script (monitors role changes and triggers service control)
+    # Copy HA role watcher script (non-privileged — monitors role changes and triggers service control)
     if [[ -f "${SCRIPTS_SRC}/ha-role-watcher.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-role-watcher.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-role-watcher.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-role-watcher.sh"
     fi
 
-    # Copy etcd quorum recovery script (automatic failover for HA clusters)
+    # SECURITY: Sudoers-whitelisted scripts MUST be root-owned.
+    # These scripts run as root via NOPASSWD sudo — if spiraluser could modify them,
+    # it would be a privilege escalation vector.
+
+    # Copy etcd quorum recovery script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "${SCRIPTS_SRC}/etcd-quorum-recover.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/etcd-quorum-recover.sh" "${INSTALL_DIR}/scripts/"
-        sudo chmod +x "${INSTALL_DIR}/scripts/etcd-quorum-recover.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/etcd-quorum-recover.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/etcd-quorum-recover.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/etcd-quorum-recover.sh" /usr/local/bin/spiralpool-etcd-recover
     fi
 
-    # Copy Patroni force bootstrap script (nuclear recovery for WAL corruption / diverged timelines)
+    # Copy Patroni force bootstrap script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "${SCRIPTS_SRC}/patroni-force-bootstrap.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/patroni-force-bootstrap.sh" "${INSTALL_DIR}/scripts/"
-        sudo chmod +x "${INSTALL_DIR}/scripts/patroni-force-bootstrap.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/patroni-force-bootstrap.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/patroni-force-bootstrap.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/patroni-force-bootstrap.sh" /usr/local/bin/spiralpool-patroni-bootstrap
     fi
 
-    # Copy etcd cluster rejoin script (returning node rejoins cluster after failback)
+    # Copy etcd cluster rejoin script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "${SCRIPTS_SRC}/etcd-cluster-rejoin.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/etcd-cluster-rejoin.sh" "${INSTALL_DIR}/scripts/"
-        sudo chmod +x "${INSTALL_DIR}/scripts/etcd-cluster-rejoin.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/etcd-cluster-rejoin.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/etcd-cluster-rejoin.sh"
     fi
 
-    # Copy HA failback orchestrator (automatic return to preferred primary)
+    # Copy HA failback orchestrator (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "${SCRIPTS_SRC}/ha-failback.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-failback.sh" "${INSTALL_DIR}/scripts/"
-        sudo chmod +x "${INSTALL_DIR}/scripts/ha-failback.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/ha-failback.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-failback.sh"
     fi
 
-    # Copy HA add peer script (called remotely when a new node joins the cluster)
+    # Copy HA add peer script (PRIVILEGED — in sudoers NOPASSWD)
     if [[ -f "${SCRIPTS_SRC}/ha-add-peer.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-add-peer.sh" "${INSTALL_DIR}/scripts/"
-        sudo chmod +x "${INSTALL_DIR}/scripts/ha-add-peer.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/ha-add-peer.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-add-peer.sh"
     fi
 
-    # Copy HA validation script (comprehensive HA testing)
+    # Copy HA validation script (non-privileged)
     if [[ -f "${SCRIPTS_SRC}/ha-validate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-validate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-validate.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-validate.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/ha-validate.sh" /usr/local/bin/spiralpool-ha-validate
     fi
 
@@ -31942,36 +33023,41 @@ EXPORTEOF
     if [[ -f "${SCRIPT_DIR}/scripts/spiralctl.sh" ]]; then
         sudo cp "${SCRIPT_DIR}/scripts/spiralctl.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/spiralctl.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/spiralctl.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/spiralctl.sh" /usr/local/bin/spiralctl
         log_success "Installed spiralctl"
     fi
 
 
-    # Copy pool-mode script
+    # Copy pool-mode script (non-privileged — called by spiralctl as root already)
     if [[ -f "${SCRIPTS_SRC}/pool-mode.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/pool-mode.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/pool-mode.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/pool-mode.sh"
     fi
 
-    # Copy block celebration script (Avalon LED flash on block found)
+    # Copy block celebration script (non-privileged — Avalon LED flash on block found)
     if [[ -f "${SCRIPTS_SRC}/block-celebrate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/block-celebrate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/block-celebrate.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/block-celebrate.sh"
         log_success "Installed block-celebrate.sh (Avalon LED celebration)"
     fi
 
 
-    # Copy HA replication scripts
+    # Copy HA replication scripts (non-privileged)
     if [[ -f "${SCRIPTS_SRC}/ha-replicate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-replicate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-replicate.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-replicate.sh"
         log_success "Installed ha-replicate.sh (HA cold-standby replication)"
     fi
 
-    # Copy blockchain export/restore scripts
+    # Copy blockchain export/restore scripts (non-privileged)
     if [[ -f "${SCRIPTS_SRC}/blockchain-export.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/blockchain-export.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/blockchain-export.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/blockchain-export.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/blockchain-export.sh" /usr/local/bin/spiralpool-chain-export
         log_success "Installed blockchain-export.sh"
     fi
@@ -31979,6 +33065,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/blockchain-restore.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/blockchain-restore.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/blockchain-restore.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/blockchain-restore.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/blockchain-restore.sh" /usr/local/bin/spiralpool-chain-restore
         log_success "Installed blockchain-restore.sh"
     fi
@@ -31986,6 +33073,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-setup-ssh.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-setup-ssh.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-setup-ssh.sh"
+        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-setup-ssh.sh"
     fi
 
     if [[ -f "${SCRIPTS_SRC}/install-patroni.sh" ]]; then
@@ -31998,6 +33086,14 @@ EXPORTEOF
         sudo cp "${SCRIPT_DIR}/upgrade.sh" "${INSTALL_DIR}/"
         sudo chmod +x "${INSTALL_DIR}/upgrade.sh"
         log_success "Installed upgrade.sh"
+    fi
+
+    # Copy coin daemon upgrade script
+    if [[ -f "${SCRIPT_DIR}/coin-upgrade.sh" ]]; then
+        sudo cp "${SCRIPT_DIR}/coin-upgrade.sh" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
+        sudo chmod +x "${INSTALL_DIR}/scripts/coin-upgrade.sh"
+        sudo chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
+        log_success "Installed coin-upgrade.sh"
     fi
 
     log_success "Helper scripts created"
@@ -32462,7 +33558,91 @@ EOF
 chmod -R 600 "${BACKUP_PATH}"/*
 chmod 700 "${BACKUP_PATH}"
 
-log "Backup complete: ${BACKUP_PATH}"
+# ── INTEGRITY VERIFICATION ────────────────────────────────────────────────────
+log "Verifying backup integrity..."
+INTEGRITY_OK=true
+INTEGRITY_NOTES=""
+
+# 1) Verify database dump is a valid gzip file
+if [[ -f "${BACKUP_PATH}/database.sql.gz" ]]; then
+    if gzip -t "${BACKUP_PATH}/database.sql.gz" 2>/dev/null; then
+        log "  ✓ database.sql.gz integrity OK"
+    else
+        log_error "  ✗ database.sql.gz failed integrity check!"
+        INTEGRITY_OK=false
+        INTEGRITY_NOTES="${INTEGRITY_NOTES} database.sql.gz:CORRUPT"
+    fi
+    # Compute and store SHA-256 checksum
+    sha256sum "${BACKUP_PATH}/database.sql.gz" > "${BACKUP_PATH}/database.sql.gz.sha256" 2>/dev/null
+fi
+
+# 2) SHA-256 checksums for any wallet backup files
+WALLET_COUNT=0
+for wfile in "${BACKUP_PATH}"/*.dat "${BACKUP_PATH}"/*.wallet 2>/dev/null; do
+    [[ -f "$wfile" ]] || continue
+    sha256sum "$wfile" >> "${BACKUP_PATH}/wallet_checksums.sha256" 2>/dev/null
+    WALLET_COUNT=$(( WALLET_COUNT + 1 ))
+done
+[[ "$WALLET_COUNT" -gt 0 ]] && log "  ✓ $WALLET_COUNT wallet file(s) checksummed"
+
+# 3) Verify config backup is readable
+if [[ -f "${BACKUP_PATH}/config.yaml" ]]; then
+    if python3 -c "import yaml,sys; yaml.safe_load(open('${BACKUP_PATH}/config.yaml'))" 2>/dev/null; then
+        log "  ✓ config.yaml readable"
+    else
+        log "  ⚠ config.yaml YAML parse warning (non-fatal)"
+    fi
+fi
+
+BACKUP_SIZE=$(du -sh "${BACKUP_PATH}" | cut -f1)
+log "Backup complete: ${BACKUP_PATH} (${BACKUP_SIZE})"
+
+# ── DISCORD NOTIFICATION ──────────────────────────────────────────────────────
+SENTINEL_CONFIG="/spiralpool/config/config.yaml"
+WEBHOOK_URL=""
+if [[ -f "$SENTINEL_CONFIG" ]] && command -v python3 &>/dev/null; then
+    WEBHOOK_URL=$(python3 -c "
+import yaml, sys
+try:
+    cfg = yaml.safe_load(open('$SENTINEL_CONFIG'))
+    print(cfg.get('discord_webhook_url',''))
+except Exception:
+    pass
+" 2>/dev/null || true)
+fi
+
+if [[ -n "$WEBHOOK_URL" ]]; then
+    if [[ "$INTEGRITY_OK" == "true" ]]; then
+        NOTIF_COLOR=3066993
+        NOTIF_TITLE="✅ Daily Backup Completed"
+        NOTIF_DESC="Backup verified successfully. Database dump integrity OK."
+    else
+        NOTIF_COLOR=15158332
+        NOTIF_TITLE="❌ Backup Integrity Check Failed"
+        NOTIF_DESC="One or more backup files failed integrity verification: ${INTEGRITY_NOTES}"
+    fi
+    NOTIF_PAYLOAD=$(python3 -c "
+import json
+payload = {
+  'embeds': [{
+    'title': '$NOTIF_TITLE',
+    'description': '$NOTIF_DESC',
+    'color': $NOTIF_COLOR,
+    'fields': [
+      {'name': 'Backup', 'value': '\`${BACKUP_NAME}\`', 'inline': True},
+      {'name': 'Size',   'value': '\`${BACKUP_SIZE}\`',  'inline': True},
+    ],
+    'footer': {'text': 'Spiral Pool Backup • \$(date +\"%Y-%m-%d %H:%M\")'}
+  }]
+}
+print(json.dumps(payload))
+" 2>/dev/null || true)
+    if [[ -n "$NOTIF_PAYLOAD" ]]; then
+        curl -s -X POST -H "Content-Type: application/json" \
+             -d "$NOTIF_PAYLOAD" "$WEBHOOK_URL" > /dev/null 2>&1 || true
+        log "Backup notification sent to Discord"
+    fi
+fi
 
 # Rotate old backups (keep last RETENTION_DAYS days)
 log "Rotating old backups (keeping ${RETENTION_DAYS} days)..."
@@ -32503,6 +33683,109 @@ CRONEOF
     log "  - Backup location: ${BACKUP_DIR}"
     log "  - Schedule: Daily at 2:00 AM"
     log "  - Retention: ${RETENTION_DAYS:-30} days"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POSTGRESQL AUTO-MAINTENANCE TIMER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+setup_pg_maintenance() {
+    log_step "Setting Up PostgreSQL Auto-Maintenance Timer"
+
+    # Create the maintenance script
+    sudo tee /usr/local/bin/spiralpool-pg-maintenance > /dev/null << 'PGMAINTEOF'
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPIRAL POOL - PostgreSQL Weekly Maintenance
+# ═══════════════════════════════════════════════════════════════════════════════
+# Runs VACUUM ANALYZE on all Spiral Pool databases to prevent table bloat.
+# Called by spiralpool-pg-maintenance.timer (weekly, Sunday 03:00).
+
+LOG_FILE="/spiralpool/logs/pg-maintenance.log"
+DB_NAME="spiralstratum"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+
+mkdir -p "$(dirname "$LOG_FILE")"
+
+log "Starting PostgreSQL maintenance (VACUUM ANALYZE)..."
+
+# Determine which service manages PostgreSQL
+db_service="postgresql"
+if systemctl is-enabled --quiet "patroni" 2>/dev/null; then
+    db_service="patroni"
+fi
+
+if ! systemctl is-active --quiet "$db_service" 2>/dev/null; then
+    log "ERROR: $db_service is not running — skipping maintenance"
+    exit 1
+fi
+
+# Check if we are the Patroni master (only master should run VACUUM)
+if systemctl is-enabled --quiet "patroni" 2>/dev/null; then
+    ROLE=$(sudo -u postgres psql -tAc "SELECT pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]')
+    if [[ "$ROLE" == "t" ]]; then
+        log "Running as Patroni replica — skipping VACUUM ANALYZE (master only)"
+        exit 0
+    fi
+fi
+
+START_TS=$(date +%s)
+
+# Run VACUUM ANALYZE on the pool database
+if sudo -u postgres vacuumdb --analyze --dbname="$DB_NAME" 2>>"$LOG_FILE"; then
+    log "VACUUM ANALYZE completed on $DB_NAME"
+else
+    log "WARNING: VACUUM ANALYZE returned non-zero — check PostgreSQL logs"
+fi
+
+# Also REINDEX system catalog periodically (suppress 'cannot be reindexed' noise)
+sudo -u postgres reindexdb --dbname="$DB_NAME" 2>/dev/null || true
+
+END_TS=$(date +%s)
+ELAPSED=$(( END_TS - START_TS ))
+log "PostgreSQL maintenance complete in ${ELAPSED}s"
+PGMAINTEOF
+
+    sudo chmod +x /usr/local/bin/spiralpool-pg-maintenance
+    sudo chown root:root /usr/local/bin/spiralpool-pg-maintenance
+
+    # Systemd service (one-shot, runs the maintenance script)
+    sudo tee /etc/systemd/system/spiralpool-pg-maintenance.service > /dev/null << 'SVCEOF'
+[Unit]
+Description=Spiral Pool PostgreSQL Maintenance (VACUUM ANALYZE)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spiralpool-pg-maintenance
+StandardOutput=journal
+StandardError=journal
+# Run as root so it can sudo -u postgres
+User=root
+SVCEOF
+
+    # Systemd timer (weekly, Sunday 03:00 — after nightly backup at 02:00)
+    sudo tee /etc/systemd/system/spiralpool-pg-maintenance.timer > /dev/null << 'TIMEREOF'
+[Unit]
+Description=Spiral Pool PostgreSQL Weekly Maintenance Timer
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+    sudo systemctl daemon-reload || true
+    sudo systemctl enable --now spiralpool-pg-maintenance.timer || true
+
+    log_success "PostgreSQL auto-maintenance timer enabled (weekly, Sunday 03:00)"
+    log "  - Script:  /usr/local/bin/spiralpool-pg-maintenance"
+    log "  - Log:     /spiralpool/logs/pg-maintenance.log"
+    log "  - Status:  systemctl status spiralpool-pg-maintenance.timer"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -33374,8 +34657,36 @@ ENABLE_SYS=$ENABLE_SYS
 ENABLE_XMY=$ENABLE_XMY
 ENABLE_FBTC=$ENABLE_FBTC
 ENABLE_QBX=$ENABLE_QBX
+# Per-coin RPC passwords (preserved for re-install / add-coin mode)
+DGB_RPC_PASSWORD=$DGB_RPC_PASSWORD
+BTC_RPC_PASSWORD=$BTC_RPC_PASSWORD
+BCH_RPC_PASSWORD=$BCH_RPC_PASSWORD
+BC2_RPC_PASSWORD=$BC2_RPC_PASSWORD
+LTC_RPC_PASSWORD=$LTC_RPC_PASSWORD
+DOGE_RPC_PASSWORD=$DOGE_RPC_PASSWORD
+PEP_RPC_PASSWORD=$PEP_RPC_PASSWORD
+CAT_RPC_PASSWORD=$CAT_RPC_PASSWORD
+NMC_RPC_PASSWORD=$NMC_RPC_PASSWORD
+SYS_RPC_PASSWORD=$SYS_RPC_PASSWORD
+XMY_RPC_PASSWORD=$XMY_RPC_PASSWORD
+FBTC_RPC_PASSWORD=$FBTC_RPC_PASSWORD
 QBX_RPC_PASSWORD=$QBX_RPC_PASSWORD
+# Per-coin pool addresses (preserved for re-install / add-coin mode)
+DGB_POOL_ADDRESS=$DGB_POOL_ADDRESS
+BTC_POOL_ADDRESS=$BTC_POOL_ADDRESS
+BCH_POOL_ADDRESS=$BCH_POOL_ADDRESS
+BC2_POOL_ADDRESS=$BC2_POOL_ADDRESS
+LTC_POOL_ADDRESS=$LTC_POOL_ADDRESS
+DOGE_POOL_ADDRESS=$DOGE_POOL_ADDRESS
+PEP_POOL_ADDRESS=$PEP_POOL_ADDRESS
+CAT_POOL_ADDRESS=$CAT_POOL_ADDRESS
+NMC_POOL_ADDRESS=$NMC_POOL_ADDRESS
+SYS_POOL_ADDRESS=$SYS_POOL_ADDRESS
+XMY_POOL_ADDRESS=$XMY_POOL_ADDRESS
+FBTC_POOL_ADDRESS=$FBTC_POOL_ADDRESS
 QBX_POOL_ADDRESS=$QBX_POOL_ADDRESS
+POOL_ADDRESS=$POOL_ADDRESS
+SOLO_COIN=$SOLO_COIN
 # Stratum ports (single-coin mode uses these, multi-coin uses predefined per-coin ports)
 STRATUM_PORT=$STRATUM_PORT
 STRATUM_V2_PORT=$STRATUM_V2_PORT
@@ -33661,62 +34972,6 @@ start_services() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SIMPLESWAP INTEGRATION (OPTIONAL)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-configure_simpleswap() {
-    # ─────────────────────────────────────────────────────────────────────────
-    # Optional feature: SimpleSwap.io swap alerts.
-    # When a mined coin rises 25%+ against BTC over 7 days, Sentinel sends
-    # a notification with a SimpleSwap link (coin pre-selected). The operator
-    # clicks the link and completes the swap entirely on the SimpleSwap website.
-    # No API key, no wallet address, no pool server involvement in transactions.
-    # ─────────────────────────────────────────────────────────────────────────
-
-    screen_clear
-    log_step "Optional Feature: SimpleSwap.io Swap Alerts"
-
-    echo -e "  ${WHITE}When a mined coin rises 25%+ against BTC over 7 days, Spiral Sentinel will${NC}"
-    echo -e "  ${WHITE}send a notification with a SimpleSwap.io link ready to go.${NC}"
-    echo ""
-    echo -e "  ${WHITE}Click the link → enter your BTC address on the SimpleSwap website →${NC}"
-    echo -e "  ${WHITE}send your coins to the deposit address they give you. That's it.${NC}"
-    echo ""
-    echo -e "  ${DIM}Everything happens on the SimpleSwap website in your browser.${NC}"
-    echo -e "  ${DIM}No API key. No wallet address stored. Pool server not involved.${NC}"
-    echo -e "  ${YELLOW}  You are responsible for AML/KYC compliance and tax obligations.${NC}"
-    echo ""
-    echo -e "  ${WHITE}Would you like to enable this feature?${NC}"
-    echo ""
-    echo -e "  ${DIM}1) No${NC}  ${DIM}(default)${NC}"
-    echo -e "  ${GREEN}2)${NC} ${WHITE}Yes${NC}"
-    echo ""
-    prompt_input "Enable SimpleSwap swap alerts? [1-2] (default: 1): "
-    read ss_enable_choice < /dev/tty
-
-    if [[ "$ss_enable_choice" != "2" ]]; then
-        SIMPLESWAP_ENABLED="false"
-        log "SimpleSwap: Disabled (skipped)"
-        return 0
-    fi
-
-    SIMPLESWAP_ENABLED="true"
-
-    sudo mkdir -p /etc/spiralpool
-    sudo tee /etc/spiralpool/simpleswap.conf > /dev/null << EOF
-# Spiral Pool - SimpleSwap.io Integration Configuration
-# Generated by installer on $(date)
-
-SIMPLESWAP_ENABLED="${SIMPLESWAP_ENABLED}"
-EOF
-    sudo chmod 600 /etc/spiralpool/simpleswap.conf
-    sudo chown root:root /etc/spiralpool/simpleswap.conf
-
-    log_success "SimpleSwap swap alerts enabled — link included in sats_surge notifications"
-    echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # COMPLETION
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -33766,8 +35021,24 @@ print_completion() {
         echo -e "  ${DIM}Dashboard and Sentinel run on the MASTER node. On failover, this node${NC}"
         echo -e "  ${DIM}will become MASTER and start them automatically.${NC}"
     else
-        echo -e "  ${WHITE}Dashboard:${NC}       http://$connect_ip:$DASHBOARD_PORT"
-        echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools"
+        if [[ -n "$CLOUD_DETECTED" ]]; then
+            echo -e "  ${YELLOW}⚠ CLOUD INSTALL: Dashboard is not exposed over the internet (HTTP is unencrypted)${NC}"
+            echo -e "  ${WHITE}Access via SSH tunnel from your local machine:${NC}"
+            echo ""
+            echo -e "  ${GREEN}  ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}${NC}"
+            echo -e "  ${WHITE}  Then open:${NC} ${GREEN}http://localhost:1618${NC}"
+            echo ""
+            echo -e "  ${DIM}Port 1618 is intentionally closed in the firewall. Traffic travels encrypted${NC}"
+            echo -e "  ${DIM}through your SSH session — no certificates or reverse proxy required.${NC}"
+            echo -e "  ${DIM}See: docs/setup/CLOUD_OPERATIONS.md${NC}"
+        else
+            echo -e "  ${WHITE}Dashboard:${NC}       http://$connect_ip:$DASHBOARD_PORT"
+        fi
+        if [[ -n "$CLOUD_DETECTED" ]]; then
+            echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools  ${DIM}(world-accessible — public stats; admin routes require API key)${NC}"
+        else
+            echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools"
+        fi
         echo ""
         echo -e "  ${YELLOW}⚠ IMPORTANT: Dashboard Authentication${NC}"
         echo -e "  ${WHITE}On first access, you'll be prompted to create an admin password.${NC}"
@@ -33804,6 +35075,12 @@ print_completion() {
             [[ -n "$TELEGRAM_BOT_TOKEN" ]] && echo -e "    ${GREEN}✓${NC} Telegram notifications enabled"
             [[ -n "$XMPP_JID" ]] && echo -e "    ${GREEN}✓${NC} XMPP notifications enabled"
             echo -e "  ${WHITE}You'll receive alerts for blocks, offline miners, and temperature warnings.${NC}"
+            if [[ -n "$TELEGRAM_BOT_TOKEN" ]] && [[ "${TELEGRAM_COMMANDS_ENABLED:-false}" == "true" ]]; then
+                echo ""
+                echo -e "  ${WHITE}Telegram Bot Commands:${NC}"
+                echo -e "    Type ${YELLOW}/help${NC} in your Telegram chat for interactive commands:"
+                echo -e "    ${DIM}/status  /miners  /hashrate  /blocks  /uptime  /pause  /resume  /cooldowns${NC}"
+            fi
         else
             echo -e "  ${YELLOW}○${NC} No notifications configured"
             echo -e "  ${WHITE}To enable later, edit: $INSTALL_DIR/config/sentinel/config.json${NC}"
@@ -33811,21 +35088,55 @@ print_completion() {
         fi
         echo ""
     fi
+    # When coins were added to an existing installation, remind user to configure wallets
+    if [[ "$NATIVE_UPGRADE_MODE" == "add" ]]; then
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${WHITE}  CONFIGURE WALLET ADDRESSES${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "  ${YELLOW}New coins have been added to your pool.${NC}"
+        echo -e "  ${WHITE}You need to set wallet addresses for the new coins in the Dashboard.${NC}"
+        echo ""
+        if [[ -n "$CLOUD_DETECTED" ]]; then
+            echo -e "  ${WHITE}1.${NC} SSH tunnel: ${GREEN}ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}${NC}"
+            echo -e "  ${WHITE}2.${NC} Open:       ${GREEN}http://localhost:1618/setup${NC}"
+        else
+            echo -e "  ${WHITE}Open:${NC}  ${GREEN}http://${connect_ip}:${DASHBOARD_PORT}/setup${NC}"
+        fi
+        echo ""
+        echo -e "  ${DIM}The setup wizard will detect your active coins and show wallet inputs for each.${NC}"
+        echo -e "  ${DIM}Existing wallet addresses are pre-populated from the stratum config.${NC}"
+        echo ""
+    fi
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}  COMMANDS${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${WHITE}spiralctl status${NC}         - Service & node overview"
-    echo -e "  ${WHITE}spiralctl stats${NC}          - Quick stats (hashrate, blocks)"
-    echo -e "  ${WHITE}spiralctl watch${NC}          - Live monitoring dashboard"
-    echo -e "  ${WHITE}spiralctl test${NC}           - Run diagnostic tests"
-    echo -e "  ${WHITE}spiralctl config${NC}         - View/edit configuration"
-    echo -e "  ${WHITE}spiralctl scan${NC}           - Scan network for miners"
-    echo -e "  ${WHITE}spiralctl wallet${NC}         - Show wallet addresses"
-    echo -e "  ${WHITE}spiralctl logs${NC}           - View stratum logs"
-    echo -e "  ${WHITE}spiralctl backup${NC}         - Backup pool data"
-    echo -e "  ${WHITE}spiralctl chain export${NC}   - Push blockchain to remote"
-    echo -e "  ${WHITE}spiralctl help${NC}           - All commands"
+    echo -e "  ${WHITE}spiralctl status${NC}              - Service & node overview"
+    echo -e "  ${WHITE}spiralctl stats${NC}               - Quick stats (hashrate, blocks)"
+    echo -e "  ${WHITE}spiralctl watch${NC}               - Live monitoring dashboard"
+    echo -e "  ${WHITE}spiralctl logs${NC}                - View stratum logs"
+    echo -e "  ${WHITE}spiralctl sync${NC}                - Blockchain sync progress"
+    echo -e "  ${WHITE}spiralctl test${NC}                - Run diagnostic tests"
+    echo -e "  ${WHITE}spiralctl scan${NC}                - Scan network for miners"
+    echo -e "  ${WHITE}spiralctl restart${NC}             - Restart all services"
+    echo -e "  ${WHITE}spiralctl mining${NC}              - Mining mode management"
+    echo -e "  ${WHITE}spiralctl config${NC}              - View/edit configuration"
+    echo -e "  ${WHITE}spiralctl config validate${NC}     - Validate config (dry-run check)"
+    echo -e "  ${WHITE}spiralctl wallet${NC}              - Show wallet addresses"
+    echo -e "  ${WHITE}spiralctl security${NC}            - Security status & fail2ban"
+    echo -e "  ${WHITE}spiralctl data backup${NC}         - Backup pool data"
+    echo -e "  ${WHITE}spiralctl ha${NC}                  - HA cluster management"
+    echo -e "  ${WHITE}spiralctl help${NC}                - Full command reference (all commands)"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}  MAINTENANCE${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${WHITE}spiralpool-pause 30${NC}           - Pause Sentinel alerts for 30 minutes"
+    echo -e "  ${WHITE}spiralpool-pause resume${NC}       - Resume alerts immediately"
+    echo -e "  ${WHITE}spiralpool-pause status${NC}       - Check if alerts are currently paused"
+    echo -e "  ${DIM}Use before planned maintenance to avoid alert noise.${NC}"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}  BLOCKCHAIN SYNC${NC}"
@@ -33852,6 +35163,7 @@ print_completion() {
         [[ "$ENABLE_QBX" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="QBX "; }
         [[ "$ENABLE_LTC" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="LTC "; }
         [[ "$ENABLE_DOGE" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="DOGE "; }
+        [[ "$ENABLE_DGB_SCRYPT" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="DGB-SCRYPT "; }
         [[ "$ENABLE_PEP" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="PEP "; }
         [[ "$ENABLE_CAT" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="CAT "; }
 
@@ -33967,25 +35279,40 @@ print_completion() {
         echo ""
     fi
 
+    # Cloud-specific credentials security notice
+    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
+        echo ""
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}  ⚠ CLOUD INSTALL: CREDENTIALS SECURITY${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  Your admin API key, metrics token, and RPC passwords are saved to:"
+        echo -e "  ${WHITE}$INSTALL_DIR/config/credentials.txt${NC}  ${DIM}(chmod 600 — readable by root only)${NC}"
+        echo ""
+        echo -e "  ${YELLOW}On a cloud VPS, your provider can snapshot or inspect disk contents.${NC}"
+        echo -e "  ${WHITE}Recommended actions:${NC}"
+        echo -e "    1. Copy the admin API key to a secure location offline (password manager)"
+        echo -e "    2. ${WHITE}Delete the credentials file after you have saved the key:${NC}"
+        echo -e "       ${GREEN}sudo rm $INSTALL_DIR/config/credentials.txt${NC}"
+        echo -e "    3. Clear your terminal history:"
+        echo -e "       ${GREEN}history -c && clear${NC}"
+        echo -e "    4. To retrieve the admin API key later without the file:"
+        echo -e "       ${GREEN}sudo grep admin_api_key $INSTALL_DIR/config/stratum/config.yaml${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Swap security:${NC} A 4GB swapfile is active at /swapfile. Memory pages (including"
+        echo -e "  in-use credential data) can be written to swap and persist on provider-managed disk."
+        echo -e "  If your provider offers encrypted-disk VMs, prefer those for sensitive workloads."
+        echo ""
+        echo -e "  ${YELLOW}Auto-reboot:${NC} Security patches that require a kernel update will trigger an"
+        echo -e "  automatic reboot at ${WHITE}04:00 UTC${NC}. Pool services stop gracefully and restart on boot"
+        echo -e "  (~1-2 min downtime). To disable: ${GREEN}sudo nano /etc/apt/apt.conf.d/50unattended-upgrades${NC}"
+        echo -e "  and set ${WHITE}Automatic-Reboot \"false\"${NC}."
+        echo ""
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    fi
+
     # Prevent the post-main sync watcher exec from clearing the screen after the banner
     WATCH_SYNC_ON_EXIT="done"
-
-    # SimpleSwap integration summary
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  SIMPLESWAP SWAP ALERTS${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    if [[ "$SIMPLESWAP_ENABLED" == "true" ]]; then
-        echo -e "  ${GREEN}✓${NC} SimpleSwap Swap Alerts: ${GREEN}Enabled${NC}"
-        echo -e "  ${DIM}When a coin rises 25%+ vs BTC, Sentinel sends a SimpleSwap link.${NC}"
-        echo -e "  ${DIM}Click the link and complete the swap on the SimpleSwap website.${NC}"
-        echo -e "  ${DIM}Config: /etc/spiralpool/simpleswap.conf${NC}"
-    else
-        echo -e "  ${DIM}○  SimpleSwap Swap Alerts: Disabled${NC}"
-        echo -e "  ${DIM}   To enable later, set SIMPLESWAP_ENABLED=true in${NC}"
-        echo -e "  ${DIM}   /etc/spiralpool/simpleswap.conf (chmod 600)${NC}"
-    fi
-    echo ""
 
     # Final banner — last thing the user sees
     echo ""
@@ -34002,7 +35329,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                       ${DIM}V1.1 - TITAN NODE${NC}"
+    echo -e "                                     ${DIM}V1.1.0 - PHI FORGE${NC}"
     echo ""
 }
 
@@ -34084,7 +35411,21 @@ show_usage() {
     echo "  --address <addr>      Wallet address for solo mode or DGB in multi mode"
     echo "  --btc-address <addr>  BTC wallet address (multi-coin mode)"
     echo "  --bch-address <addr>  BCH wallet address (multi-coin mode)"
-    echo "  --accept-terms        Accept Terms of Use and warnings (non-interactive)"
+    echo "  --bc2-address <addr>  BC2 wallet address (multi-coin mode)"
+    echo "  --nmc-address <addr>  NMC wallet address (multi-coin mode)"
+    echo "  --qbx-address <addr>  QBX wallet address (multi-coin mode)"
+    echo "  --pep-address <addr>  PEP wallet address (multi-coin mode)"
+    echo "  --cat-address <addr>  CAT wallet address (multi-coin mode)"
+    echo "  --sys-address <addr>  SYS wallet address (multi-coin mode)"
+    echo "  --xmy-address <addr>  XMY wallet address (multi-coin mode)"
+    echo "  --fbtc-address <addr> FBTC wallet address (multi-coin mode)"
+    echo "  --ltc-address <addr>  LTC wallet address (multi-coin mode)"
+    echo "  --doge-address <addr> DOGE wallet address (multi-coin mode)"
+    echo "  --simulate-cloud <provider>  Simulate a cloud deployment for testing cloud-specific"
+    echo "                        install paths (UFW rules, SSH tunnel notice, risk prompt)."
+    echo "                        E.g.: --simulate-cloud \"Hetzner Cloud\""
+    echo "                        For local/VM testing only. Does not affect real hardware."
+    echo "  --version             Print installer version and exit"
     echo "  --help, -h            Show this help message"
     echo ""
     echo "Examples:"
@@ -34101,7 +35442,7 @@ show_usage() {
     echo "  ./install.sh --multi dgb,btc --address D... --btc-address bc1..."
     echo ""
     echo "  # Multi-coin Scrypt"
-    echo "  ./install.sh --multi ltc,doge --address ltc1... --doge-address D..."
+    echo "  ./install.sh --multi ltc,doge --ltc-address ltc1... --doge-address D..."
     echo ""
 }
 
@@ -34113,12 +35454,26 @@ parse_cli_args() {
     CLI_ADDRESS=""
     CLI_BTC_ADDRESS=""
     CLI_BCH_ADDRESS=""
-    CLI_ACCEPT_TERMS="false"
+    CLI_BC2_ADDRESS=""
+    CLI_NMC_ADDRESS=""
+    CLI_QBX_ADDRESS=""
+    CLI_PEP_ADDRESS=""
+    CLI_CAT_ADDRESS=""
+    CLI_SYS_ADDRESS=""
+    CLI_XMY_ADDRESS=""
+    CLI_FBTC_ADDRESS=""
+    CLI_LTC_ADDRESS=""
+    CLI_DOGE_ADDRESS=""
+    CLI_SIMULATE_CLOUD=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h)
                 show_usage
+                exit 0
+                ;;
+            --version)
+                echo "$VERSION"
                 exit 0
                 ;;
             --solo)
@@ -34163,9 +35518,93 @@ parse_cli_args() {
                 CLI_BCH_ADDRESS="$2"
                 shift 2
                 ;;
-            --accept-terms)
-                CLI_ACCEPT_TERMS="true"
-                shift
+            --bc2-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--bc2-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_BC2_ADDRESS="$2"
+                shift 2
+                ;;
+            --nmc-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--nmc-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_NMC_ADDRESS="$2"
+                shift 2
+                ;;
+            --qbx-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--qbx-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_QBX_ADDRESS="$2"
+                shift 2
+                ;;
+            --pep-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--pep-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_PEP_ADDRESS="$2"
+                shift 2
+                ;;
+            --cat-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--cat-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_CAT_ADDRESS="$2"
+                shift 2
+                ;;
+            --sys-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--sys-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_SYS_ADDRESS="$2"
+                shift 2
+                ;;
+            --xmy-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--xmy-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_XMY_ADDRESS="$2"
+                shift 2
+                ;;
+            --fbtc-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--fbtc-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_FBTC_ADDRESS="$2"
+                shift 2
+                ;;
+            --ltc-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--ltc-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_LTC_ADDRESS="$2"
+                shift 2
+                ;;
+            --doge-address)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--doge-address requires a wallet address"
+                    exit 1
+                fi
+                CLI_DOGE_ADDRESS="$2"
+                shift 2
+                ;;
+            --simulate-cloud)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    log_error "--simulate-cloud requires a provider name (e.g. \"Hetzner Cloud\")"
+                    exit 1
+                fi
+                CLI_SIMULATE_CLOUD="$2"
+                shift 2
                 ;;
             *)
                 log_error "Unknown option: $1"
@@ -34381,6 +35820,7 @@ apply_cli_coin_config() {
                 dgb-scrypt)
                     ENABLE_DGB="true"  # Uses DGB node
                     ENABLE_DGB_SCRYPT="true"
+                    POOL_ADDRESS="${POOL_ADDRESS:-$CLI_ADDRESS}"
                     enabled_ports="$enabled_ports DGB-SCRYPT:3336"
                     ;;
                 pep)
@@ -34400,12 +35840,6 @@ apply_cli_coin_config() {
 }
 
 show_legal_acceptance() {
-    # Skip if --accept-terms was passed on CLI
-    if [[ "$CLI_ACCEPT_TERMS" == "true" ]]; then
-        log "Terms accepted via --accept-terms flag"
-        return 0
-    fi
-
     echo ""
     echo ""
     echo -e "${YELLOW}    .-----------------------------------------------------------------------.${NC}"
@@ -34436,20 +35870,61 @@ show_legal_acceptance() {
     echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
     echo -e "${YELLOW}    '-----------------------------------------------------------------------'${NC}"
     echo ""
+    read -r -p "  Press Enter to continue..." _legal_pause || true
     echo ""
 
-    echo -e "  ${WHITE}To accept these terms and continue, type:${NC} ${GREEN}I AGREE${NC}"
-    echo -e "  ${WHITE}To cancel installation, press Ctrl+C or type anything else.${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}  ⚠  SINGLE-OPERATOR ARCHITECTURE NOTICE${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    read -r -p "  Your response: " response || { echo ""; log_error "No input received (non-interactive mode requires --accept-terms)"; exit 1; }
+    echo -e "  Spiral Pool is designed for ${WHITE}one operator${NC} running their ${WHITE}own miners.${NC}"
+    echo ""
+    echo -e "  ${WHITE}One wallet per coin:${NC} A single wallet address is configured per coin"
+    echo -e "  during installation. All block rewards — regardless of which miner"
+    echo -e "  found the block — go to that address."
+    echo ""
+    echo -e "  ${WHITE}Operator controls the wallet:${NC} Miners connecting to your pool do NOT"
+    echo -e "  receive direct payment. All rewards go to the operator's wallet."
+    echo ""
+    echo -e "  ${WHITE}If you allow others to mine on your pool:${NC} You must inform them that"
+    echo -e "  their hashrate contributes to your wallet, not their own. Any"
+    echo -e "  compensation arrangement is entirely your responsibility. This"
+    echo -e "  software provides no payout mechanism to other parties."
+    echo -e "  See WARNINGS.md and TERMS.md Section 5E."
+    echo ""
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo ""
 
-    # Case-insensitive comparison
-    local response_upper
-    response_upper=$(echo "$response" | tr '[:lower:]' '[:upper:]')
-    if [[ "$response_upper" != "I AGREE" ]]; then
+    if [[ -n "$CLOUD_DETECTED" ]]; then
+        echo -e "  ${RED}⚠ CLOUD INSTALL DETECTED: ${WHITE}${CLOUD_DETECTED}${NC}"
+        echo -e "  ${WHITE}You have already acknowledged the provider ToS, bandwidth billing, and"
+        echo -e "  security risks above. This final step confirms you accept the full"
+        echo -e "  Spiral Pool terms of use covering all remaining legal obligations.${NC}"
         echo ""
-        log_error "Terms not accepted. Installation cancelled."
-        exit 1
+        echo -e "  ${WHITE}To accept these terms and continue, type:${NC} ${GREEN}YES${NC}"
+        echo -e "  ${WHITE}To cancel installation, press Ctrl+C or type anything else.${NC}"
+        echo ""
+        read -r -p "  Your response: " response || { echo ""; log_error "No input received. Interactive terminal required."; exit 1; }
+        local response_upper
+        response_upper=$(echo "$response" | tr '[:lower:]' '[:upper:]')
+        if [[ "$response_upper" != "YES" ]]; then
+            echo ""
+            log_error "Terms not accepted. Installation cancelled."
+            exit 1
+        fi
+    else
+        echo -e "  ${WHITE}To accept these terms and continue, type:${NC} ${GREEN}I AGREE${NC}"
+        echo -e "  ${WHITE}To cancel installation, press Ctrl+C or type anything else.${NC}"
+        echo ""
+        read -r -p "  Your response: " response || { echo ""; log_error "No input received. Interactive terminal required."; exit 1; }
+        local response_upper
+        response_upper=$(echo "$response" | tr '[:lower:]' '[:upper:]')
+        if [[ "$response_upper" != "I AGREE" ]]; then
+            echo ""
+            log_error "Terms not accepted. Installation cancelled."
+            exit 1
+        fi
     fi
 
     echo ""
@@ -34499,9 +35974,6 @@ main() {
         log_warn "Proceeding with fresh install — existing config will be overwritten"
     fi
 
-    # Show terms acceptance prompt (or skip with --accept-terms)
-    show_legal_acceptance
-
     # Acquire operation lock to prevent concurrent installer/upgrade (GATE 4)
     if ! acquire_operation_lock "install"; then
         log_error "Installation cannot proceed - another operation is in progress."
@@ -34520,6 +35992,10 @@ main() {
 
     detect_operating_system
     check_prerequisites
+
+    # Show terms acceptance prompt after cloud detection so CLOUD_DETECTED is available.
+    # Cloud operators get a YES gate (consistent with the cloud risk prompts above).
+    show_legal_acceptance
     select_deploy_method
 
     # Route based on deployment method selected
@@ -34540,6 +36016,7 @@ main() {
     esac
 
     # VM Native installation continues below
+    detect_existing_native_install
     select_install_mode
 
     # Use CLI coin config if provided, otherwise interactive selection
@@ -34548,9 +36025,6 @@ main() {
     else
         select_coin_mode
     fi
-
-    # SimpleSwap integration configuration (optional — prompts after coin selection)
-    configure_simpleswap
 
     # High Availability mode selection
     select_ha_mode
@@ -34749,6 +36223,28 @@ main() {
             install_catcoin
         fi
 
+        # Write version cache for coin-upgrade.sh — covers daemons whose --version
+        # output does not include a version number (e.g. QBX). Cache is stored at
+        # $INSTALL_DIR/config/coin-versions/<COIN>.ver and read by coin-upgrade.sh
+        # before falling back to --version parsing.
+        local _vc_dir="$INSTALL_DIR/config/coin-versions"
+        sudo mkdir -p "$_vc_dir"
+        [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]] && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB.ver"        > /dev/null
+        [[ "$ENABLE_DGB_SCRYPT" == "true" ]]                            && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB-SCRYPT.ver"  > /dev/null
+        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_KNOTS_VERSION:-29.3.knots20260210}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
+        [[ "$ENABLE_BCH" == "true" ]]   && echo "29.0.0"               | sudo tee "$_vc_dir/BCH.ver"  > /dev/null
+        [[ "$ENABLE_BC2" == "true" ]]   && echo "$BITCOINII_VERSION"   | sudo tee "$_vc_dir/BC2.ver"  > /dev/null
+        [[ "$ENABLE_LTC" == "true" ]]   && echo "0.21.4"               | sudo tee "$_vc_dir/LTC.ver"  > /dev/null
+        [[ "$ENABLE_DOGE" == "true" ]]  && echo "1.14.9"               | sudo tee "$_vc_dir/DOGE.ver" > /dev/null
+        [[ "$ENABLE_PEP" == "true" ]]   && echo "1.1.0"                | sudo tee "$_vc_dir/PEP.ver"  > /dev/null
+        [[ "$ENABLE_CAT" == "true" ]]   && echo "2.1.1"                | sudo tee "$_vc_dir/CAT.ver"  > /dev/null
+        [[ "$ENABLE_NMC" == "true" ]]   && echo "$NAMECOIN_VERSION"    | sudo tee "$_vc_dir/NMC.ver"  > /dev/null
+        [[ "$ENABLE_SYS" == "true" ]]   && echo "$SYSCOIN_VERSION"     | sudo tee "$_vc_dir/SYS.ver"  > /dev/null
+        [[ "$ENABLE_XMY" == "true" ]]   && echo "$MYRIAD_VERSION"      | sudo tee "$_vc_dir/XMY.ver"  > /dev/null
+        [[ "$ENABLE_FBTC" == "true" ]]  && echo "$FBTC_VERSION"        | sudo tee "$_vc_dir/FBTC.ver" > /dev/null
+        [[ "$ENABLE_QBX" == "true" ]]   && echo "0.2.0"                | sudo tee "$_vc_dir/QBX.ver"  > /dev/null
+        sudo chown -R "$POOL_USER:$POOL_USER" "$_vc_dir" 2>/dev/null || true
+
         # Ask if user wants to replicate blockchain data from another node (HA setup)
         # Must run AFTER all install_* functions so data directories and systemd services exist
         ask_blockchain_rsync
@@ -34846,6 +36342,9 @@ main() {
 
         # Ask user about automated daily database backups
         ask_automated_backups
+
+        # Set up PostgreSQL weekly auto-maintenance timer (VACUUM ANALYZE)
+        setup_pg_maintenance || log_warn "PostgreSQL maintenance timer setup failed (non-critical, install continues)"
 
         # Set up update checker with user preferences (if full mode)
         # Non-critical — must never abort the install

@@ -1,7 +1,7 @@
 # Privacy Notice
 
 **Effective Date:** 2026-01-24
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-18
 
 ## Overview
 
@@ -9,7 +9,7 @@ Spiral Pool is self-hosted software that runs on your own infrastructure. The au
 
 ## Non-Custodial Architecture
 
-Spiral Pool v1.0 operates as a **solo mining pool with a non-custodial payout model**. Block rewards are embedded directly in the coinbase transaction paying the miner's own wallet address. The pool operator never takes custody, control, or possession of miner funds. No financial transaction data (transfers, payouts, withdrawals) is generated or stored by the pool software, because no such transactions occur — the blockchain pays the miner directly.
+Spiral Pool v1.1.0 operates as a **solo mining pool with a non-custodial payout model**. Block rewards are embedded directly in the coinbase transaction paying the miner's own wallet address. The pool operator never takes custody, control, or possession of miner funds. No financial transaction data (transfers, payouts, withdrawals) is generated or stored by the pool software, because no such transactions occur — the blockchain pays the miner directly.
 
 ## Data Processed Locally
 
@@ -117,6 +117,7 @@ If you configure Spiral Pool to integrate with third-party services, data may be
 - **Telegram Bots**: Alert messages, miner statistics
 - **Cloudflare Tunnels**: Connection routing metadata
 - **Cryptocurrency Nodes**: Transaction and block data
+- **SimpleSwap.io** *(optional)*: If you enable the SimpleSwap swap alert feature, Sentinel includes a SimpleSwap.io link in `sats_surge` alerts. If you choose to act on the alert, your **browser** connects directly to SimpleSwap.io — you enter your BTC destination address and complete the swap on their website. Spiral Pool does not store any wallet address, API key, or exchange data. No data is transmitted to SimpleSwap.io by the pool software itself. You are responsible for reviewing [SimpleSwap.io's Privacy Policy](https://simpleswap.io/privacy-policy) before use.
 
 Review the privacy policies of any third-party services you integrate.
 
@@ -197,5 +198,5 @@ This software is provided by independent contributors. There is no centralized s
 
 *This Privacy Notice describes data handling by the Spiral Pool software. As a self-hosted application, you control all data processing.*
 
-*Spiral Pool v1.0 - Privacy Notice*
+*Spiral Pool v1.1.0 - Privacy Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

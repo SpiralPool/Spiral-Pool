@@ -4,7 +4,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
 """
-Coin Onboarding Script for Spiral Pool
+Coin Onboarding Script for Spiral Pool — NET NEW COINS ONLY
+
+This script is for adding coins that are NOT natively supported by Spiral Pool.
+The following coins ship with Spiral Pool and should be installed via the installer
+(sudo bash install.sh → "Add coins to existing installation"):
+
+    SHA-256d: BTC, BCH, BC2, DGB, FBTC, NMC, QBX, SYS, XMY
+    Scrypt:   LTC, DOGE, DGB-SCRYPT, PEP, CAT
+
+Use this script only for coins outside the above list.
 
 This script automates adding new cryptocurrency support with MINIMAL user interaction.
 It automatically:
@@ -18,6 +27,26 @@ It automatically:
 8. Saves parameters to JSON for reproducibility
 
 The goal is ZERO manual data entry when possible - just provide the symbol and GitHub URL.
+
+IMPORTANT — READ BEFORE USE:
+    This script is MOSTLY AUTOMATED but the output REQUIRES TESTING before deployment.
+    Coin implementations can differ in subtle ways even among SHA256d coins — block
+    header serialization, version bits, AuxPoW chain IDs, address encoding, and RPC
+    behaviour all vary by fork. The generated Go code is a template, not a finished
+    implementation.
+
+    Before deploying a generated coin:
+      1. Review the generated Go file and manifest entry carefully
+      2. Run the Spiral Pool test suite against the new coin
+      3. Test against the coin's actual daemon (devnet/testnet if available)
+      4. Understand how the coin's consensus rules differ from Bitcoin/DigiByte
+      5. Verify address validation, block template construction, and share checking
+
+    AI assistance (Claude, GPT-4, etc.) can help interpret chainparams.cpp, understand
+    fork-specific differences, and debug generated code — recommended for unfamiliar coins.
+
+    Do not deploy to production until you have confirmed correct share submission,
+    block discovery, and coinbase payout on a live or test node.
 
 Usage:
     # Fully automated (recommended)
@@ -33,8 +62,12 @@ Usage:
     python scripts/add-coin.py --symbol QUX --from-json qux_params.json
 
 Examples:
-    python scripts/add-coin.py -s DOGE -g https://github.com/dogecoin/dogecoin
-    python scripts/add-coin.py -s LTC -g https://github.com/litecoin-project/litecoin --algorithm scrypt
+    python scripts/add-coin.py -s FOO -g https://github.com/foocoin/foocoin
+    python scripts/add-coin.py -s BAR -g https://github.com/barcoin/bar --algorithm scrypt
+
+NOTE: Do not use this script for natively supported coins (BTC, BCH, LTC, DOGE, DGB,
+      BC2, FBTC, NMC, QBX, SYS, XMY, PEP, CAT, DGB-SCRYPT). Those are installed via
+      the Spiral Pool installer: sudo bash install.sh
 """
 
 import argparse

@@ -140,7 +140,7 @@ func (s *ServerV2) Start(ctx context.Context) error {
 	handler = s.loggingMiddleware(handler)
 	handler = s.corsMiddleware(handler)
 
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", s.cfg.Global.APIPort)
+	listenAddr := fmt.Sprintf("%s:%d", s.cfg.Global.APIBindAddress, s.cfg.Global.APIPort)
 	s.server = &http.Server{
 		Addr:         listenAddr,
 		Handler:      handler,
@@ -240,7 +240,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "1.0-BLACKICE-V2",
+		Version:  "1.1.0-PHI_FORGE-V2",
 		Pools:    pools,
 	}
 

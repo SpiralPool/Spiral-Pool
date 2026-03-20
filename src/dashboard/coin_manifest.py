@@ -4,8 +4,10 @@
 """
 Coin Manifest Loader for Dashboard
 
-This is a symlink/copy of the sentinel coin_manifest.py module.
+This is a stripped-down copy of the sentinel coin_manifest.py module.
 Both Sentinel and Dashboard use the same manifest loader.
+NOTE: This file must be kept in sync with src/sentinel/coin_manifest.py.
+The sentinel version is the canonical source; propagate changes from there.
 
 See src/sentinel/coin_manifest.py for full documentation.
 """

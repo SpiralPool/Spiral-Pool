@@ -51,7 +51,7 @@ The asymmetric limits prevent oscillation caused by miner firmware work-queue de
 
 ## 1. Installation
 
-> **Platform Requirements:** Ubuntu 24.04.x LTS on **x86_64 (amd64)** architecture. **Cloud/VPS deployments are NOT supported** — the installer blocks detected cloud providers (AWS, Azure, GCP, DigitalOcean, Hetzner, Vultr, etc.). Deploy on bare metal or self-hosted VMs only. ARM/Raspberry Pi has not been tested. See [WARNINGS.md](../../WARNINGS.md).
+> **Platform Requirements:** Ubuntu 24.04.x LTS on **x86_64 (amd64)** architecture. Bare metal or self-hosted VMs are recommended. Cloud/VPS deployments are supported but require written risk acknowledgment during install (provider ToS, bandwidth billing, data access risks). ARM/Raspberry Pi has not been tested. See [WARNINGS.md](../../WARNINGS.md) and [CLOUD_OPERATIONS.md](CLOUD_OPERATIONS.md).
 
 ### 0. Server Preparation — Ubuntu 24.04.x LTS (Noble Numbat)
 
@@ -131,6 +131,8 @@ cd Spiral-Pool
 chmod +x install.sh
 ./install.sh
 ```
+
+> **Note:** `chmod +x install.sh` is always required after unzipping — ZIP archives do not preserve Unix execute permissions regardless of the source OS. The same applies to `upgrade.sh` if you transfer it manually. Git clone preserves execute permissions automatically.
 
 Follow the prompts to select coins and enter wallet addresses.
 
@@ -228,17 +230,17 @@ docker compose --profile dgb up -d       # Start (replace dgb with your coin)
 
 ### How install.sh Works
 
-The installer is a single self-contained script (~28,000 lines) that handles the entire deployment. Here is the high-level flow:
+The installer is a single self-contained script (~36,500 lines) that handles the entire deployment. Here is the high-level flow:
 
 ```
 main()
- ├── parse_cli_args          # Parse --coin, --address, --accept-terms, etc.
+ ├── parse_cli_args          # Parse --coin, --address, --simulate-cloud, etc.
  ├── show_banner             # Print version and ASCII art
- ├── show_legal_acceptance   # Terms of use prompt (skip with --accept-terms)
+ ├── check_prerequisites     # Verify root/sudo, disk space, memory; detect cloud provider (sets CLOUD_DETECTED)
+ ├── show_legal_acceptance   # Terms of use prompt — cloud: YES gate; non-cloud: I AGREE gate
  ├── acquire_operation_lock  # Prevent concurrent install/upgrade
  ├── check_resume            # Resume from checkpoint if previous run was interrupted
  ├── detect_operating_system # Verify Ubuntu 24.04 LTS
- ├── check_prerequisites     # Verify root/sudo, disk space, memory
  ├── select_deploy_method    # Docker (bare metal) or VM Native (traditional)
  │
  ├── [Docker path] ──────────> docker_main() → build images → start compose
@@ -407,7 +409,7 @@ spiralctl mining merge enable doge,pep   # LTC parent
 
 ### SimpleSwap Swap Alerts (Optional)
 
-Spiral Sentinel can send swap recommendations when a mined coin rises 25%+ against BTC over a 7-day window. Alerts are delivered via your configured notification channels (Discord, Telegram, XMPP) and include a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected. **No automatic swaps are performed.**
+Spiral Sentinel can send swap recommendations when a mined coin rises 25%+ against BTC over a 7-day window. Alerts are delivered via your configured notification channels (Discord, Telegram, XMPP, ntfy, or email) and include a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected. **No automatic swaps are performed.**
 
 The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. All swap activity happens entirely on the SimpleSwap website in the operator's own browser — click the link in the alert, enter your BTC address on the site, and complete the swap there. This keeps the pool server completely out of any financial transaction.
 
@@ -450,6 +452,18 @@ spiralctl node stop dgb
 spiralctl node restart all
 spiralctl logs
 ```
+
+### Graceful Shutdown / Reboot
+
+Always use `spiralctl shutdown` instead of bare `shutdown` or `reboot`. It stops all pool services in the correct order before the OS halts, preventing dirty database state and abrupt miner disconnections.
+
+```bash
+sudo spiralctl shutdown             # Stop all services, then power off
+sudo spiralctl shutdown --reboot    # Stop all services, then reboot
+sudo spiralctl shutdown --yes       # Skip confirmation prompt
+```
+
+**Stop order:** spiralstratum → spiralsentinel → spiraldash → keepalived (HA) → patroni → etcd (HA)
 
 ### API Endpoints
 
@@ -590,13 +604,25 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for three-layer payme
 
 ```bash
 cd /spiralpool
-sudo ./upgrade.sh
+chmod +x upgrade.sh && sudo ./upgrade.sh
 ```
+
+> **Windows SCP users:** Windows does not preserve Unix execute permissions when transferring files via SCP. The `chmod +x` above is required if upgrade.sh was copied from a Windows machine. Git clone and Linux-to-Linux SCP both preserve execute permissions automatically.
 
 Options: `--check`, `--force`, `--no-backup`, `--local`, `--rollback`, `--auto`, `--update-services`, `--stratum-only`, `--dashboard-only`, `--sentinel-only`, `--skip-start`, `--full`, `--fix-config`
 
 **Preserved:** blockchain data, configs, wallets, database
 **Upgraded:** binaries, dashboard, sentinel, docs
+
+### Automated upgrades
+
+If `auto_update_mode: auto` is set in `config.yaml`, Sentinel handles upgrades automatically:
+- Checks GitHub for new releases every 6 hours (no auth token needed — repo is public)
+- Runs `sudo /spiralpool/upgrade.sh --auto` unattended
+- Suppresses Discord alerts during upgrade (maintenance mode)
+- Sends a completion or failure notification via Discord
+
+The Windows execute-permission issue does not affect automated upgrades — Sentinel calls the installed copy at `/spiralpool/upgrade.sh`, which has its permissions set by the installer.
 
 For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-upgradesh-works) in the Installation section.
 
@@ -708,4 +734,4 @@ sudo ufw enable
 
 ---
 
-*Spiral Pool — Titan Node 1.1*
+*Spiral Pool — Phi Forge 1.1.0*

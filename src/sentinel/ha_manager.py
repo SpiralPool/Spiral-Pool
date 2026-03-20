@@ -33,7 +33,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
-__version__ = "1.0-BLACKICE"
+__version__ = "1.1.0-PHI_FORGE"
 
 logger = logging.getLogger(__name__)
 

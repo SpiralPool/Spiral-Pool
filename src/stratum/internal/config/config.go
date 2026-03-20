@@ -209,8 +209,9 @@ type DatabaseConfig struct {
 	MaxConnections int            `yaml:"maxConnections"`
 	Batching       BatchingConfig `yaml:"batching"`
 
-	// SECURITY: SSL mode for database connections (default: "prefer")
-	// Recommended values: "require", "verify-ca", or "verify-full" for production
+	// SECURITY: SSL mode for database connections.
+	// When unset, the connection string builder defaults to "require" (see ConnectionString()).
+	// Set explicitly to "disable" only for localhost/loopback connections.
 	// Options: disable, allow, prefer, require, verify-ca, verify-full
 	SSLMode string `yaml:"sslMode,omitempty"`
 
@@ -490,7 +491,7 @@ type AuxChainConfig struct {
 }
 
 // SupportedCoins defines the coins supported by this pool.
-// V1.0-BLACKICE: Supports SHA-256d and Scrypt algorithms.
+// V1.1.0-PHI_FORGE: Supports SHA-256d and Scrypt algorithms.
 //
 // SHA-256d coins: BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC, QBX
 // Scrypt coins:   LTC, DOGE, DGB-SCRYPT, PEP, CAT

@@ -537,6 +537,30 @@ func (h *Handler) BuildShowMessage(message string) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// BuildReconnect creates a client.reconnect notification.
+// Pass empty host to reconnect to the same pool (miners use their stored config).
+// waitTime is in seconds — miners should wait this long before reconnecting.
+// Supported by cgminer, BMMiner, Avalon, and other stratum-compatible miners.
+func (h *Handler) BuildReconnect(host string, port int, waitTime int) ([]byte, error) {
+	// Always use an array (never null) — Stratum spec requires params to be an array.
+	// Empty array signals "reconnect to the same host" per common miner implementations.
+	params := []interface{}{}
+	if host != "" {
+		params = []interface{}{host, port, waitTime}
+	}
+	notification := Notification{
+		ID:     nil,
+		Method: protocol.Methods.Reconnect,
+		Params: params,
+	}
+
+	data, err := json.Marshal(notification)
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
 // successResponse creates a success response.
 func (h *Handler) successResponse(id interface{}, result interface{}) ([]byte, error) {
 	resp := Response{

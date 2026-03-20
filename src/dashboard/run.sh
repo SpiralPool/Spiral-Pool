@@ -133,7 +133,7 @@ run_dashboard() {
 
     # Run with gunicorn for production
     if [ -f "$VENV_DIR/bin/gunicorn" ]; then
-        "$VENV_DIR/bin/gunicorn" --bind 0.0.0.0:1618 --workers 1 --threads 4 --access-logfile - --error-logfile - dashboard:app
+        "$VENV_DIR/bin/gunicorn" --bind 0.0.0.0:1618 --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - dashboard:app
     else
         # Fallback to Flask if gunicorn not available
         "$VENV_DIR/bin/python" "$DASHBOARD"

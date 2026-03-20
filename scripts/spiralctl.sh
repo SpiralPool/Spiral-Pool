@@ -64,6 +64,17 @@ check_root() {
     fi
 }
 
+# Re-exec a spiralpool-* script as POOL_USER if not already running as that user.
+# Root can always sudo to spiraluser; other users will get a sudo password prompt.
+# Usage: as_pool_user /usr/local/bin/spiralpool-foo [args...]
+as_pool_user() {
+    local target="$1"; shift
+    if [[ "$(id -un)" != "$POOL_USER" ]]; then
+        exec sudo -u "$POOL_USER" "$target" "$@"
+    fi
+    exec "$target" "$@"
+}
+
 get_enabled_coins() {
     local coins=""
     local config_file="$INSTALL_DIR/config/config.yaml"
@@ -196,9 +207,59 @@ get_coin_cli() {
     esac
 }
 
+# Return the installed version of a coin daemon binary (e.g. "29.3.0").
+# Uses the binary's --version flag — fast, no RPC, works even when daemon is stopped.
+get_coin_daemon_version() {
+    local coin="$1"
+    local daemon_cmd
+    daemon_cmd=$(get_coin_daemon "$coin")
+    [[ -z "$daemon_cmd" ]] && echo "" && return
+    local bin
+    bin=$(readlink -f "/usr/local/bin/${daemon_cmd}" 2>/dev/null)
+    [[ -z "$bin" || ! -x "$bin" ]] && echo "" && return
+    "$bin" --version 2>&1 | grep -oP '\d+\.\d+[\.\d]*' | head -1
+}
+
 #===============================================================================
 # STATUS COMMAND
 #===============================================================================
+
+# Print the active-for duration of a systemd service (e.g. "3d 2h 15m").
+# Returns "" if the service is not active.
+_service_uptime() {
+    local svc="$1"
+    local ts
+    ts=$(systemctl show "$svc" --property=ActiveEnterTimestamp 2>/dev/null \
+        | sed 's/ActiveEnterTimestamp=//')
+    [[ -z "$ts" || "$ts" == "n/a" ]] && return
+    local epoch_start
+    epoch_start=$(date -d "$ts" +%s 2>/dev/null) || return
+    [[ -z "$epoch_start" || "$epoch_start" -eq 0 ]] && return
+    local now
+    now=$(date +%s)
+    local secs=$(( now - epoch_start ))
+    [[ "$secs" -le 0 ]] && return
+    local days=$(( secs / 86400 ))
+    local hours=$(( (secs % 86400) / 3600 ))
+    local mins=$(( (secs % 3600) / 60 ))
+    if [[ "$days" -gt 0 ]]; then
+        echo "${days}d ${hours}h ${mins}m"
+    elif [[ "$hours" -gt 0 ]]; then
+        echo "${hours}h ${mins}m"
+    else
+        echo "${mins}m"
+    fi
+}
+
+# Print the next OnCalendar trigger time for a systemd timer.
+# Returns "" if the timer is not found or not scheduled.
+_timer_next_run() {
+    local timer="$1"
+    systemctl show "$timer" --property=NextElapseUSecRealtime 2>/dev/null \
+        | sed 's/NextElapseUSecRealtime=//' \
+        | grep -v '^0$' \
+        | xargs -I{} date -d "@$(( {} / 1000000 ))" "+%Y-%m-%d %H:%M" 2>/dev/null
+}
 
 cmd_status() {
     echo ""
@@ -210,31 +271,94 @@ cmd_status() {
     echo -e "${WHITE}SERVICES${NC}"
     echo -e "────────────────────────────────────────"
 
+    local _ut _sv
+    [[ -n "$VERSION" ]] && printf "  %-24s %s\n" "Version" "v${VERSION}"
+    echo ""
     if systemctl is-active --quiet spiralstratum 2>/dev/null; then
-        printf "  %-24s ${GREEN}%-12s${NC}\n" "Pool (spiralstratum)" "Running"
+        _ut=$(_service_uptime spiralstratum)
+        printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Pool (spiralstratum)" "Running" "${_ut:+up $_ut}"
     else
         printf "  %-24s ${RED}%-12s${NC}\n" "Pool (spiralstratum)" "Stopped"
     fi
 
     if systemctl is-active --quiet patroni 2>/dev/null; then
-        printf "  %-24s ${GREEN}%-12s${NC}\n" "Database (patroni)" "Running"
+        _ut=$(_service_uptime patroni)
+        printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Database (patroni)" "Running" "${_ut:+up $_ut}"
     elif systemctl is-active --quiet postgresql 2>/dev/null; then
-        printf "  %-24s ${GREEN}%-12s${NC}\n" "Database (postgresql)" "Running"
+        _ut=$(_service_uptime postgresql)
+        printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Database (postgresql)" "Running" "${_ut:+up $_ut}"
     else
         printf "  %-24s ${RED}%-12s${NC}\n" "Database (postgresql)" "Stopped"
     fi
 
     if systemctl is-active --quiet spiraldash 2>/dev/null; then
-        printf "  %-24s ${GREEN}%-12s${NC}\n" "Dashboard" "Running"
+        _ut=$(_service_uptime spiraldash)
+        printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Dashboard" "Running" "${_ut:+up $_ut}"
     else
         printf "  %-24s ${YELLOW}%-12s${NC}\n" "Dashboard" "Not running"
     fi
 
     if systemctl is-active --quiet spiralsentinel 2>/dev/null; then
-        printf "  %-24s ${GREEN}%-12s${NC}\n" "Sentinel" "Running"
+        _ut=$(_service_uptime spiralsentinel)
+        _sv=$(curl -sf --max-time 1 http://127.0.0.1:9191/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
+        printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Sentinel" "Running" "${_ut:+up $_ut}${_sv:+ · v$_sv}"
     else
         printf "  %-24s ${YELLOW}%-12s${NC}\n" "Sentinel" "Not running"
     fi
+
+    # Miner Connection Info (shown early for quick reference)
+    echo ""
+    echo -e "${WHITE}MINER CONNECTION${NC}"
+    echo -e "────────────────────────────────────────"
+
+    # Determine which IP to show (HA VIP or server IP)
+    local _mc_ha_enabled="false"
+    local _mc_vip=""
+    if systemctl is-active --quiet keepalived 2>/dev/null; then
+        _mc_ha_enabled="true"
+        _mc_vip=$(grep '^\s*address:' "$INSTALL_DIR/config/ha.yaml" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+        if [[ -z "$_mc_vip" ]]; then
+            _mc_vip=$(grep -A2 'virtual_ipaddress' /etc/keepalived/keepalived.conf 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        fi
+        if [[ -z "$_mc_vip" ]]; then
+            _mc_vip=$(ip addr show 2>/dev/null | grep 'spiralpool-vip' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        fi
+    fi
+    local _mc_ip=""
+    if [[ "$_mc_ha_enabled" == "true" ]] && [[ -n "$_mc_vip" ]]; then
+        _mc_ip="$_mc_vip"
+        echo -e "  ${YELLOW}Using VIP address for HA failover${NC}"
+    else
+        _mc_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[\d.]+' | head -1)
+        [[ -z "$_mc_ip" ]] && _mc_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        [[ -z "$_mc_ip" ]] && _mc_ip="YOUR_SERVER_IP"
+    fi
+
+    local _mc_sha=""
+    systemctl is-enabled --quiet bitcoiniid 2>/dev/null   && _mc_sha="${_mc_sha}  BC2:        ${GREEN}stratum+tcp://$_mc_ip:6333${NC}  (V2: 6334)\n"
+    systemctl is-enabled --quiet bitcoind-bch 2>/dev/null && _mc_sha="${_mc_sha}  BCH:        ${GREEN}stratum+tcp://$_mc_ip:5333${NC}  (V2: 5334)\n"
+    systemctl is-enabled --quiet bitcoind 2>/dev/null     && _mc_sha="${_mc_sha}  BTC:        ${GREEN}stratum+tcp://$_mc_ip:4333${NC}  (V2: 4334)\n"
+    systemctl is-enabled --quiet digibyted 2>/dev/null    && _mc_sha="${_mc_sha}  DGB:        ${GREEN}stratum+tcp://$_mc_ip:3333${NC}  (V2: 3334)\n"
+    systemctl is-enabled --quiet fractald 2>/dev/null     && _mc_sha="${_mc_sha}  FBTC:       ${GREEN}stratum+tcp://$_mc_ip:18335${NC} (V2: 18336)\n"
+    systemctl is-enabled --quiet namecoind 2>/dev/null    && _mc_sha="${_mc_sha}  NMC:        ${GREEN}stratum+tcp://$_mc_ip:14335${NC} (V2: 14336)\n"
+    systemctl is-enabled --quiet qbitxd 2>/dev/null       && _mc_sha="${_mc_sha}  QBX:        ${GREEN}stratum+tcp://$_mc_ip:20335${NC} (V2: 20336)\n"
+    systemctl is-enabled --quiet syscoind 2>/dev/null     && _mc_sha="${_mc_sha}  SYS:        ${GREEN}stratum+tcp://$_mc_ip:15335${NC} (V2: 15336)\n"
+    systemctl is-enabled --quiet myriadcoind 2>/dev/null  && _mc_sha="${_mc_sha}  XMY:        ${GREEN}stratum+tcp://$_mc_ip:17335${NC} (V2: 17336)\n"
+    [[ -n "$_mc_sha" ]] && echo -e "  ${DIM}SHA-256d:${NC}" && echo -e "$_mc_sha"
+
+    local _mc_scrypt=""
+    systemctl is-enabled --quiet catcoind 2>/dev/null     && _mc_scrypt="${_mc_scrypt}  CAT:        ${GREEN}stratum+tcp://$_mc_ip:12335${NC} (V2: 12336)\n"
+    systemctl is-enabled --quiet digibyted 2>/dev/null    && _mc_scrypt="${_mc_scrypt}  DGB-SCRYPT: ${GREEN}stratum+tcp://$_mc_ip:3336${NC}  (V2: 3337)\n"
+    systemctl is-enabled --quiet dogecoind 2>/dev/null    && _mc_scrypt="${_mc_scrypt}  DOGE:       ${GREEN}stratum+tcp://$_mc_ip:8335${NC}  (V2: 8337)\n"
+    systemctl is-enabled --quiet litecoind 2>/dev/null    && _mc_scrypt="${_mc_scrypt}  LTC:        ${GREEN}stratum+tcp://$_mc_ip:7333${NC}  (V2: 7334)\n"
+    systemctl is-enabled --quiet pepecoind 2>/dev/null    && _mc_scrypt="${_mc_scrypt}  PEP:        ${GREEN}stratum+tcp://$_mc_ip:10335${NC} (V2: 10336)\n"
+    [[ -n "$_mc_scrypt" ]] && echo -e "  ${DIM}Scrypt:${NC}" && echo -e "$_mc_scrypt"
+
+    if [[ -z "$_mc_sha" && -z "$_mc_scrypt" ]]; then
+        echo -e "  ${DIM}No coin daemons enabled yet${NC}"
+    fi
+    [[ "$_mc_ha_enabled" == "true" && -n "$_mc_vip" ]] && \
+        echo -e "  ${YELLOW}Note: Use VIP address ($_mc_vip) for miners for HA failover${NC}"
 
     echo ""
     echo -e "${WHITE}BLOCKCHAIN NODES${NC}"
@@ -250,6 +374,9 @@ cmd_status() {
                 echo -e "  ${DIM}SHA-256d:${NC}"
                 sha256_shown=true
             fi
+            local ver label
+            ver=$(get_coin_daemon_version "$coin")
+            label="${coin}${ver:+ v${ver}}"
             if systemctl is-active --quiet "$daemon" 2>/dev/null; then
                 cli=$(get_coin_cli $coin)
                 if info=$($cli getblockchaininfo 2>/dev/null); then
@@ -258,15 +385,15 @@ cmd_status() {
                     progress=$(echo "$info" | grep -o '"verificationprogress":[^,]*' | cut -d: -f2 | tr -d ' ')
                     pct=$(echo "$progress * 100" | bc -l 2>/dev/null | cut -d. -f1)
                     if [[ "$blocks" == "$headers" ]] && [[ "${pct:-0}" -ge 99 ]]; then
-                        printf "    %-22s ${GREEN}%-12s${NC} (block %s)\n" "$coin" "Synced" "$blocks"
+                        printf "    %-26s ${GREEN}%-12s${NC} (block %s)\n" "$label" "Synced" "$blocks"
                     else
-                        printf "    %-22s ${YELLOW}%-12s${NC} (%s/%s - %s%%)\n" "$coin" "Syncing" "$blocks" "$headers" "${pct:-0}"
+                        printf "    %-26s ${YELLOW}%-12s${NC} (%s/%s - %s%%)\n" "$label" "Syncing" "$blocks" "$headers" "${pct:-0}"
                     fi
                 else
-                    printf "    %-22s ${YELLOW}%-12s${NC}\n" "$coin" "Starting..."
+                    printf "    %-26s ${YELLOW}%-12s${NC}\n" "$label" "Starting..."
                 fi
             else
-                printf "    %-22s ${RED}%-12s${NC}\n" "$coin" "Stopped"
+                printf "    %-26s ${RED}%-12s${NC}\n" "$label" "Stopped"
             fi
         fi
     done
@@ -281,6 +408,9 @@ cmd_status() {
                 echo -e "  ${DIM}Scrypt:${NC}"
                 scrypt_shown=true
             fi
+            local ver label
+            ver=$(get_coin_daemon_version "$coin")
+            label="${coin}${ver:+ v${ver}}"
             if systemctl is-active --quiet "$daemon" 2>/dev/null; then
                 cli=$(get_coin_cli $coin)
                 if info=$($cli getblockchaininfo 2>/dev/null); then
@@ -289,15 +419,15 @@ cmd_status() {
                     progress=$(echo "$info" | grep -o '"verificationprogress":[^,]*' | cut -d: -f2 | tr -d ' ')
                     pct=$(echo "$progress * 100" | bc -l 2>/dev/null | cut -d. -f1)
                     if [[ "$blocks" == "$headers" ]] && [[ "${pct:-0}" -ge 99 ]]; then
-                        printf "    %-22s ${GREEN}%-12s${NC} (block %s)\n" "$coin" "Synced" "$blocks"
+                        printf "    %-26s ${GREEN}%-12s${NC} (block %s)\n" "$label" "Synced" "$blocks"
                     else
-                        printf "    %-22s ${YELLOW}%-12s${NC} (%s/%s - %s%%)\n" "$coin" "Syncing" "$blocks" "$headers" "${pct:-0}"
+                        printf "    %-26s ${YELLOW}%-12s${NC} (%s/%s - %s%%)\n" "$label" "Syncing" "$blocks" "$headers" "${pct:-0}"
                     fi
                 else
-                    printf "    %-22s ${YELLOW}%-12s${NC}\n" "$coin" "Starting..."
+                    printf "    %-26s ${YELLOW}%-12s${NC}\n" "$label" "Starting..."
                 fi
             else
-                printf "    %-22s ${RED}%-12s${NC}\n" "$coin" "Stopped"
+                printf "    %-26s ${RED}%-12s${NC}\n" "$label" "Stopped"
             fi
         fi
     done
@@ -364,117 +494,62 @@ cmd_status() {
         fi
     fi
 
-    # Miner Connection Info
-    echo ""
-    echo -e "${WHITE}MINER CONNECTION${NC}"
-    echo -e "────────────────────────────────────────"
-
-    # Determine which IP to show
-    local connect_ip=""
-    if [[ "$ha_enabled" == "true" ]] && [[ -n "$vip_address" ]]; then
-        connect_ip="$vip_address"
-        echo -e "  ${YELLOW}Using VIP address for HA failover${NC}"
+    # ── ALERT PAUSE STATUS ────────────────────────────────────────────────────────
+    local _sentinel_home _pause_file _pause_until _pause_reason _now _mins_left
+    _sentinel_home=$(getent passwd spiraluser 2>/dev/null | cut -d: -f6)
+    _sentinel_home="${_sentinel_home:-/home/spiraluser}"
+    if [[ -d "${_sentinel_home}/.spiralsentinel" ]]; then
+        _pause_file="${_sentinel_home}/.spiralsentinel/maintenance_pause"
     else
-        # Get server's primary IP
-        connect_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[\d.]+' | head -1)
-        if [[ -z "$connect_ip" ]]; then
-            connect_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+        _pause_file="/spiralpool/config/sentinel/maintenance_pause"
+    fi
+    if [[ -f "$_pause_file" ]]; then
+        _pause_until=$(python3 -c "import json,sys; d=json.load(open('$_pause_file')); print(d['pause_until'])" 2>/dev/null)
+        _pause_reason=$(python3 -c "import json,sys; d=json.load(open('$_pause_file')); print(d.get('reason',''))" 2>/dev/null)
+        _now=$(date +%s)
+        if [[ -n "$_pause_until" ]] && (( _now < ${_pause_until%.*} )); then
+            _mins_left=$(python3 -c "import math; print(math.ceil((${_pause_until%.*} - $_now) / 60))" 2>/dev/null)
+            echo ""
+            echo -e "${WHITE}ALERT STATUS${NC}"
+            echo -e "────────────────────────────────────────"
+            printf "  %-24s ${YELLOW}%s${NC}\n" "Sentinel Alerts" "PAUSED — ${_mins_left}m remaining"
+            [[ -n "$_pause_reason" ]] && printf "  %-24s %s\n" "Reason" "$_pause_reason"
+            echo -e "  ${DIM}Run 'spiralpool-pause resume' to cancel${NC}"
         fi
-        if [[ -z "$connect_ip" ]]; then
-            connect_ip="YOUR_SERVER_IP"
+    fi
+
+    # ── SCHEDULED TASKS ──────────────────────────────────────────────────────────
+    local _shown_sched=0
+    local _next=""
+
+    # Backup cron (spiralpool-backup)
+    if [[ -f /etc/cron.d/spiralpool-backup ]]; then
+        [[ "$_shown_sched" -eq 0 ]] && echo "" && echo -e "${WHITE}SCHEDULED TASKS${NC}" && echo -e "────────────────────────────────────────"
+        _shown_sched=1
+        # Extract the cron schedule expression from the cron.d file
+        local _cron_expr
+        _cron_expr=$(grep -v '^#' /etc/cron.d/spiralpool-backup 2>/dev/null | grep -v '^[[:space:]]*$' | head -1 | awk '{print $1,$2,$3,$4,$5}')
+        if [[ -n "$_cron_expr" ]]; then
+            printf "  %-28s %s\n" "Backup (cron)" "schedule: ${_cron_expr}"
+        else
+            printf "  %-28s %s\n" "Backup (cron)" "enabled"
         fi
     fi
 
-    # Show stratum ports for enabled coins grouped by algorithm
-    # Uses same daemon names as get_coin_daemon()
-    local shown_any="false"
-
-    # SHA-256d coins
-    # Alphabetically ordered
-    local sha256_ports=""
-    if systemctl is-enabled --quiet bitcoiniid 2>/dev/null; then
-        sha256_ports="${sha256_ports}  BC2:        ${GREEN}stratum+tcp://$connect_ip:6333${NC}  (V2: 6334)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet bitcoind-bch 2>/dev/null; then
-        sha256_ports="${sha256_ports}  BCH:        ${GREEN}stratum+tcp://$connect_ip:5333${NC}  (V2: 5334)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet bitcoind 2>/dev/null; then
-        sha256_ports="${sha256_ports}  BTC:        ${GREEN}stratum+tcp://$connect_ip:4333${NC}  (V2: 4334)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet digibyted 2>/dev/null; then
-        sha256_ports="${sha256_ports}  DGB:        ${GREEN}stratum+tcp://$connect_ip:3333${NC}  (V2: 3334)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet fractald 2>/dev/null; then
-        sha256_ports="${sha256_ports}  FBTC:       ${GREEN}stratum+tcp://$connect_ip:18335${NC} (V2: 18336)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet namecoind 2>/dev/null; then
-        sha256_ports="${sha256_ports}  NMC:        ${GREEN}stratum+tcp://$connect_ip:14335${NC} (V2: 14336)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet qbitxd 2>/dev/null; then
-        sha256_ports="${sha256_ports}  QBX:        ${GREEN}stratum+tcp://$connect_ip:20335${NC} (V2: 20336)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet syscoind 2>/dev/null; then
-        sha256_ports="${sha256_ports}  SYS:        ${GREEN}stratum+tcp://$connect_ip:15335${NC} (V2: 15336)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet myriadcoind 2>/dev/null; then
-        sha256_ports="${sha256_ports}  XMY:        ${GREEN}stratum+tcp://$connect_ip:17335${NC} (V2: 17336)\n"
-        shown_any="true"
-    fi
-
-    if [[ -n "$sha256_ports" ]]; then
-        echo -e "  ${DIM}SHA-256d:${NC}"
-        echo -e "$sha256_ports"
-    fi
-
-    # Scrypt coins
-    # Alphabetically ordered
-    local scrypt_ports=""
-    if systemctl is-enabled --quiet catcoind 2>/dev/null; then
-        scrypt_ports="${scrypt_ports}  CAT:        ${GREEN}stratum+tcp://$connect_ip:12335${NC} (V2: 12336)\n"
-        shown_any="true"
-    fi
-    # DGB-SCRYPT uses same daemon as DGB but different port
-    if systemctl is-enabled --quiet digibyted 2>/dev/null; then
-        scrypt_ports="${scrypt_ports}  DGB-SCRYPT: ${GREEN}stratum+tcp://$connect_ip:3336${NC}  (V2: 3337)\n"
-    fi
-    if systemctl is-enabled --quiet dogecoind 2>/dev/null; then
-        scrypt_ports="${scrypt_ports}  DOGE:       ${GREEN}stratum+tcp://$connect_ip:8335${NC}  (V2: 8337)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet litecoind 2>/dev/null; then
-        scrypt_ports="${scrypt_ports}  LTC:        ${GREEN}stratum+tcp://$connect_ip:7333${NC}  (V2: 7334)\n"
-        shown_any="true"
-    fi
-    if systemctl is-enabled --quiet pepecoind 2>/dev/null; then
-        scrypt_ports="${scrypt_ports}  PEP:        ${GREEN}stratum+tcp://$connect_ip:10335${NC} (V2: 10336)\n"
-        shown_any="true"
-    fi
-
-    if [[ -n "$scrypt_ports" ]]; then
-        echo -e "  ${DIM}Scrypt:${NC}"
-        echo -e "$scrypt_ports"
-    fi
-
-    # If no daemons found, show generic info
-    if [[ "$shown_any" == "false" ]]; then
-        echo -e "  ${DIM}No coin daemons enabled yet${NC}"
-        echo -e "  ${DIM}Run installer to enable coins and configure stratum ports${NC}"
-    fi
-
-    if [[ "$ha_enabled" == "true" ]] && [[ -n "$vip_address" ]]; then
-        echo ""
-        echo -e "  ${YELLOW}Note: Use VIP address ($vip_address) for miners for HA failover${NC}"
+    # PostgreSQL maintenance timer
+    if systemctl list-timers --all 2>/dev/null | grep -q 'spiralpool-pg-maintenance'; then
+        [[ "$_shown_sched" -eq 0 ]] && echo "" && echo -e "${WHITE}SCHEDULED TASKS${NC}" && echo -e "────────────────────────────────────────"
+        _shown_sched=1
+        _next=$(_timer_next_run spiralpool-pg-maintenance.timer)
+        if [[ -n "$_next" ]]; then
+            printf "  %-28s next: %s\n" "PG Maintenance (timer)" "$_next"
+        else
+            printf "  %-28s %s\n" "PG Maintenance (timer)" "scheduled"
+        fi
     fi
 
     echo ""
+
 }
 
 #===============================================================================
@@ -911,7 +986,7 @@ EOF
     fi
 
     echo -e "${WHITE}Miners should connect to VIP:${NC}"
-    echo -e "  ${GREEN}$vip_address${NC} (use 'spiralctl ports' for stratum ports)"
+    echo -e "  ${GREEN}$vip_address${NC} (use 'spiralctl status' to see stratum ports)"
     echo ""
 }
 
@@ -1198,8 +1273,12 @@ cmd_ha() {
             shift
             exec /usr/local/bin/spiralpool-ha-service "$@"
             ;;
+        vip)
+            shift
+            cmd_vip "$@"
+            ;;
         *)
-            echo "Usage: spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|service]"
+            echo "Usage: spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|service|vip]"
             echo ""
             echo "Commands:"
             echo "  status                    Show HA cluster status"
@@ -1211,6 +1290,8 @@ cmd_ha() {
             echo "  promote                   Promote this standby to primary"
             echo "  validate                  Validate HA configuration"
             echo "  service                   Manage HA service lifecycle"
+            echo "  vip [status|enable|disable|failover]"
+            echo "                            Virtual IP for miner failover"
             echo ""
             echo "Enable Options:"
             echo "  --vip <ip>                Virtual IP address (required)"
@@ -3461,7 +3542,7 @@ ha_enable() {
     fi
 
     echo -e "${WHITE}Miners should connect to VIP:${NC}"
-    echo -e "  ${GREEN}$vip_address${NC} (use 'spiralctl ports' for stratum ports)"
+    echo -e "  ${GREEN}$vip_address${NC} (use 'spiralctl status' to see stratum ports)"
     echo ""
 }
 
@@ -4058,12 +4139,82 @@ cmd_coin() {
                 fi
             done
             echo ""
-            echo -e "${DIM}Use 'spiralctl mining' to switch mining modes:${NC}"
-            echo -e "${DIM}  spiralctl mining solo <coin>        Switch to solo mining${NC}"
-            echo -e "${DIM}  spiralctl mining multi <coins>      Switch to multi-coin mining${NC}"
-            echo -e "${DIM}  spiralctl mining merge enable       Enable merge mining${NC}"
+            echo -e "${DIM}Use 'spiralctl coin enable <coin>' to add a supported coin${NC}"
             echo -e "${DIM}Use 'spiralctl coin disable <coin>' to disable a coin${NC}"
+            echo -e "${DIM}Use 'spiralctl mining' to switch mining modes (solo/multi/merge)${NC}"
             echo ""
+            ;;
+        enable)
+            # Enable a supported coin — launches the installer in "add coin" mode
+            check_root
+            if [[ -z "$coin" ]]; then
+                echo ""
+                echo -e "${WHITE}USAGE${NC}"
+                echo "    spiralctl coin enable <SYMBOL>"
+                echo ""
+                echo -e "${WHITE}SUPPORTED COINS${NC}"
+                echo "    SHA-256d: BC2, BCH, BTC, DGB, FBTC, NMC, QBX, SYS, XMY"
+                echo "    Scrypt:   CAT, DGB-SCRYPT, DOGE, LTC, PEP"
+                echo ""
+                echo -e "${WHITE}EXAMPLES${NC}"
+                echo "    spiralctl coin enable BTC       Enable Bitcoin"
+                echo "    spiralctl coin enable LTC       Enable Litecoin"
+                echo "    spiralctl coin enable NMC       Enable Namecoin (merge-mine with BTC)"
+                echo ""
+                echo -e "${DIM}This launches the installer in 'Add coins to existing installation' mode.${NC}"
+                echo -e "${DIM}Wallet generation, config, firewall, and services are handled automatically.${NC}"
+                echo ""
+                return 0
+            fi
+            coin="${coin^^}"
+
+            # Validate it's a supported coin
+            local -A SUPPORTED_COINS=(
+                [BC2]=1 [BCH]=1 [BTC]=1 [CAT]=1 [DGB]=1 [DGB-SCRYPT]=1 [DOGE]=1
+                [FBTC]=1 [LTC]=1 [NMC]=1 [PEP]=1 [QBX]=1 [SYS]=1 [XMY]=1
+            )
+            if [[ -z "${SUPPORTED_COINS[$coin]+x}" ]]; then
+                log_error "Unknown coin: ${coin}"
+                echo ""
+                echo -e "  ${DIM}Supported: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XMY${NC}"
+                echo -e "  ${DIM}For unsupported/custom coins, use: spiralctl add-coin <SYMBOL> --github <URL>${NC}"
+                exit 1
+            fi
+
+            # Check if already enabled
+            local daemon
+            daemon=$(get_coin_daemon "$coin" 2>/dev/null || echo "")
+            if [[ -n "$daemon" ]] && systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
+                echo ""
+                log_info "${coin} is already enabled."
+                if ! systemctl is-active --quiet "$daemon" 2>/dev/null; then
+                    echo -e "  ${DIM}Daemon is stopped. Start it with: ${NC}${CYAN}sudo systemctl start ${daemon}${NC}"
+                fi
+                echo ""
+                return 0
+            fi
+
+            echo ""
+            echo -e "${WHITE}  Enabling ${coin}...${NC}"
+            echo ""
+            echo -e "  This will launch the Spiral Pool installer to add ${coin}."
+            echo -e "  It will install the daemon, generate a wallet address, update"
+            echo -e "  config.yaml, open firewall ports, and restart services."
+            echo ""
+            prompt_input "Continue? [Y/n]: "
+            read -r answer
+            if [[ "${answer,,}" == "n" ]]; then
+                log_info "Cancelled."
+                return 0
+            fi
+
+            local installer="${INSTALL_DIR}/install.sh"
+            if [[ ! -f "$installer" ]]; then
+                log_error "Installer not found at ${installer}"
+                echo -e "  ${DIM}Download it from: https://github.com/SpiralPool/Spiral-Pool${NC}"
+                exit 1
+            fi
+            exec sudo bash "$installer"
             ;;
         disable)
             check_root
@@ -4089,7 +4240,11 @@ cmd_coin() {
             log_success "$coin disabled."
             ;;
         *)
-            echo "Usage: spiralctl coin [status|disable] <coin>"
+            echo "Usage: spiralctl coin [status|list|enable|disable] <coin>"
+            echo ""
+            echo "  spiralctl coin status               Show all coins and their state"
+            echo "  spiralctl coin enable <SYMBOL>      Add a supported coin to the pool"
+            echo "  spiralctl coin disable <SYMBOL>     Stop and disable a coin daemon"
             echo ""
             echo "For mining mode changes, use 'spiralctl mining':"
             echo "  spiralctl mining solo <coin>        Switch to solo mining"
@@ -4162,20 +4317,176 @@ cmd_sync() {
 # The underlying scripts remain unchanged — spiralctl is a unified entry point.
 #===============================================================================
 
-cmd_logs()        { exec /usr/local/bin/spiralpool-logs "$@"; }
+cmd_logs()        { as_pool_user /usr/local/bin/spiralpool-logs "$@"; }
 cmd_restart_all() { check_root; exec /usr/local/bin/spiralpool-restart "$@"; }
-cmd_wallet()      { exec /usr/local/bin/spiralpool-wallet "$@"; }
+cmd_wallet()      { as_pool_user /usr/local/bin/spiralpool-wallet "$@"; }
 cmd_backup()      { check_root; exec /usr/local/bin/spiralpool-backup "$@"; }
 cmd_restore_pool(){ check_root; exec /usr/local/bin/spiralpool-restore "$@"; }
-cmd_pause()       { exec /usr/local/bin/spiralpool-pause "$@"; }
-cmd_stats()       { exec /usr/local/bin/spiralpool-stats "$@"; }
-cmd_blocks()      { exec /usr/local/bin/spiralpool-blocks "$@"; }
-cmd_test()        { exec /usr/local/bin/spiralpool-test "$@"; }
-cmd_scan()        { exec /usr/local/bin/spiralpool-scan "$@"; }
-cmd_watch()       { exec /usr/local/bin/spiralpool-watch "$@"; }
-cmd_export()      { exec /usr/local/bin/spiralpool-export "$@"; }
-cmd_update()      { exec /usr/local/bin/spiralpool-update "$@"; }
-cmd_maintenance() { exec /usr/local/bin/spiralpool-maintenance "$@"; }
+cmd_pause()       { as_pool_user /usr/local/bin/spiralpool-pause "$@"; }
+cmd_stats() {
+    if [[ "${1:-}" == "blocks" ]]; then
+        shift
+        as_pool_user /usr/local/bin/spiralpool-blocks "$@"
+    fi
+    as_pool_user /usr/local/bin/spiralpool-stats "$@"
+}
+cmd_blocks()      { as_pool_user /usr/local/bin/spiralpool-blocks "$@"; }
+cmd_test()        { as_pool_user /usr/local/bin/spiralpool-test "$@"; }
+cmd_scan()        { as_pool_user /usr/local/bin/spiralpool-scan "$@"; }
+cmd_watch()       { as_pool_user /usr/local/bin/spiralpool-watch "$@"; }
+cmd_export()      { as_pool_user /usr/local/bin/spiralpool-export "$@"; }
+cmd_update()      { as_pool_user /usr/local/bin/spiralpool-update "$@"; }
+cmd_maintenance() { as_pool_user /usr/local/bin/spiralpool-maintenance "$@"; }
+
+#===============================================================================
+# SHUTDOWN COMMAND
+#===============================================================================
+
+cmd_shutdown() {
+    check_root
+
+    local action="shutdown"  # "shutdown" or "reboot"
+    local force=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reboot|-r)   action="reboot"; shift ;;
+            --yes|-y)      force=1; shift ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Usage: spiralctl shutdown [--reboot] [--yes]"
+                echo "  --reboot, -r    Reboot instead of power off"
+                echo "  --yes, -y       Skip confirmation prompt"
+                exit 1
+                ;;
+        esac
+    done
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    if [[ "$action" == "reboot" ]]; then
+        echo -e "  ${WHITE}SPIRAL POOL — GRACEFUL REBOOT${NC}"
+    else
+        echo -e "  ${WHITE}SPIRAL POOL — GRACEFUL SHUTDOWN${NC}"
+    fi
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  Services will be stopped in order:"
+    echo -e "    1. ${DIM}spiralstratum${NC}   (drops miner connections cleanly)"
+    echo -e "    2. ${DIM}spiralsentinel${NC}  (flush monitoring state)"
+    echo -e "    3. ${DIM}spiraldash${NC}      (dashboard)"
+    if systemctl is-enabled --quiet keepalived 2>/dev/null; then
+        echo -e "    4. ${DIM}keepalived${NC}     (release VIP)"
+        echo -e "    5. ${DIM}patroni${NC}        (flush PostgreSQL)"
+        echo -e "    6. ${DIM}etcd${NC}           (HA consensus)"
+    else
+        echo -e "    4. ${DIM}patroni${NC}        (flush PostgreSQL)"
+    fi
+    echo ""
+
+    if [[ $force -eq 0 ]]; then
+        if [[ "$action" == "reboot" ]]; then
+            echo -ne "  ${YELLOW}Reboot this machine now? [y/N]${NC} "
+        else
+            echo -ne "  ${YELLOW}Shut down this machine now? [y/N]${NC} "
+        fi
+        local answer
+        read -r answer
+        echo ""
+        if [[ ! "$answer" =~ ^[yY]$ ]]; then
+            log_info "Cancelled."
+            exit 0
+        fi
+    fi
+
+    # ── Step 1: Stratum ──
+    if systemctl is-active --quiet spiralstratum 2>/dev/null; then
+        log_info "Stopping spiralstratum (miners will disconnect)..."
+        systemctl stop spiralstratum
+        log_success "spiralstratum stopped"
+    else
+        echo -e "  ${DIM}spiralstratum already stopped${NC}"
+    fi
+
+    # ── Step 2: Sentinel ──
+    if systemctl is-active --quiet spiralsentinel 2>/dev/null; then
+        log_info "Stopping spiralsentinel..."
+        systemctl stop spiralsentinel
+        log_success "spiralsentinel stopped"
+    else
+        echo -e "  ${DIM}spiralsentinel already stopped${NC}"
+    fi
+
+    # ── Step 3: Dashboard ──
+    if systemctl is-active --quiet spiraldash 2>/dev/null; then
+        log_info "Stopping spiraldash..."
+        systemctl stop spiraldash
+        log_success "spiraldash stopped"
+    else
+        echo -e "  ${DIM}spiraldash already stopped${NC}"
+    fi
+
+    # ── Step 4: HA stack (keepalived → Patroni → etcd), if present ──
+    if systemctl is-enabled --quiet keepalived 2>/dev/null; then
+        if systemctl is-active --quiet keepalived 2>/dev/null; then
+            log_info "Stopping keepalived (releasing VIP)..."
+            systemctl stop keepalived
+            log_success "keepalived stopped"
+        fi
+    fi
+
+    if systemctl is-active --quiet patroni 2>/dev/null; then
+        log_info "Stopping patroni (flushing PostgreSQL)..."
+        systemctl stop patroni
+        log_success "patroni stopped"
+    elif systemctl is-active --quiet postgresql 2>/dev/null; then
+        log_info "Stopping postgresql..."
+        systemctl stop postgresql
+        log_success "postgresql stopped"
+    fi
+
+    if systemctl is-active --quiet etcd 2>/dev/null; then
+        log_info "Stopping etcd..."
+        systemctl stop etcd
+        log_success "etcd stopped"
+    fi
+
+    echo ""
+    echo -e "${CYAN}────────────────────────────────────────────────────────────────────────${NC}"
+
+    if [[ "$action" == "reboot" ]]; then
+        log_success "All services stopped — rebooting now..."
+        echo ""
+        systemctl reboot
+    else
+        log_success "All services stopped — shutting down now..."
+        echo ""
+        systemctl poweroff
+    fi
+}
+
+#===============================================================================
+# DATA COMMAND (backup / restore / export — consolidated)
+#===============================================================================
+
+cmd_data() {
+    local action="${1:-}"
+    shift || true
+
+    case "$action" in
+        backup)  check_root; exec /usr/local/bin/spiralpool-backup "$@" ;;
+        restore) check_root; exec /usr/local/bin/spiralpool-restore "$@" ;;
+        export)  as_pool_user /usr/local/bin/spiralpool-export "$@" ;;
+        *)
+            echo "Usage: spiralctl data [backup|restore|export]"
+            echo ""
+            echo "  backup    Backup pool data and configuration (requires root)"
+            echo "  restore   Restore pool data from backup (requires root)"
+            echo "  export    Export mining history to CSV"
+            exit 1
+            ;;
+    esac
+}
 
 #===============================================================================
 # CHAIN COMMAND (Blockchain export/restore)
@@ -4291,6 +4602,72 @@ cmd_config() {
     local SENTINEL_CONFIG="${pool_home}/.spiralsentinel/config.json"
 
     case "$action" in
+        validate)
+            cmd_config_validate
+            return
+            ;;
+        notify-test)
+            cmd_config_notify_test
+            return
+            ;;
+        list-cooldowns)
+            # Query the Sentinel health endpoint for active alert cooldowns.
+            # Read the configured port from sentinel config.json (falls back to 9191).
+            local health_port
+            health_port=$(python3 - << 'PYEOF' 2>/dev/null
+import json, sys
+paths = [
+    f"/home/spiraluser/.spiralsentinel/config.json",
+    "/spiralpool/config/sentinel/config.json",
+]
+for p in paths:
+    try:
+        cfg = json.load(open(p))
+        print(cfg.get("sentinel_health_port", 9191))
+        sys.exit(0)
+    except Exception:
+        pass
+print(9191)
+PYEOF
+)
+            health_port="${health_port:-9191}"
+            local result
+            result=$(curl -sf --max-time 5 "http://127.0.0.1:${health_port}/cooldowns" 2>/dev/null || echo "")
+            if [[ -z "$result" ]]; then
+                log_error "Sentinel health endpoint unavailable — is spiralsentinel running? (port ${health_port})"
+                exit 1
+            fi
+            local count
+            count=$(echo "$result" | jq 'length' 2>/dev/null || echo 0)
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "  ${WHITE}ACTIVE ALERT COOLDOWNS${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            if [[ "$count" == "0" ]]; then
+                echo ""
+                echo -e "  ${GREEN}✓ No active cooldowns — all alert types ready to fire${NC}"
+            else
+                printf "  %-32s %12s %12s  %s\n" "ALERT TYPE" "EXPIRES IN" "COOLDOWN" "LAST SENT"
+                echo "  ────────────────────────────────────────────────────────────────────────"
+                echo "$result" | jq -r '.[] | [.type, .expires_in_s, .cooldown_s, .last_sent] | @tsv' 2>/dev/null \
+                | while IFS=$'\t' read -r atype exp_s cool_s last; do
+                    local exp_str
+                    local exp_i; exp_i=$((exp_s + 0))
+                    if   (( exp_i >= 3600 )); then exp_str=$(printf "%dh %dm" $((exp_i / 3600)) $(((exp_i % 3600) / 60)))
+                    elif (( exp_i >= 60   )); then exp_str=$(printf "%dm %ds"  $((exp_i / 60))  $((exp_i % 60)))
+                    else                           exp_str=$(printf "%ds"      "$exp_i")
+                    fi
+                    local cool_str; cool_i=$((cool_s + 0))
+                    if   (( cool_i >= 3600 )); then cool_str=$(printf "%dh"  $((cool_i / 3600)))
+                    elif (( cool_i >= 60   )); then cool_str=$(printf "%dm"  $((cool_i / 60)))
+                    else                           cool_str=$(printf "%ds"   "$cool_i")
+                    fi
+                    printf "  ${YELLOW}%-32s${NC} %12s %12s  %s\n" "$atype" "$exp_str" "$cool_str" "$last"
+                done
+            fi
+            echo ""
+            return
+            ;;
         get)
             if [[ -z "$key" ]]; then
                 echo "Usage: spiralctl config get <key>"
@@ -4498,6 +4875,12 @@ with open(sys.argv[1], 'w') as f:
 #===============================================================================
 
 cmd_security() {
+    # Route fail2ban and tor as subcommands
+    case "${1:-}" in
+        fail2ban) shift; cmd_fail2ban "$@"; return ;;
+        tor)      shift; cmd_tor "$@"; return ;;
+    esac
+
     local period="${1:-24h}"
 
     local NC='\033[0m'    CYAN='\033[0;36m' WHITE='\033[1;37m'
@@ -4677,7 +5060,7 @@ cmd_security() {
         echo ""
     fi
 
-    echo -e "  ${DIM}spiralctl fail2ban unban <IP>   spiralctl fail2ban whitelist-add <CIDR>${NC}"
+    echo -e "  ${DIM}spiralctl security fail2ban unban <IP>   spiralctl security fail2ban whitelist-add <CIDR>${NC}"
     echo ""
 }
 
@@ -5113,13 +5496,19 @@ cmd_add_coin() {
         echo "    spiralctl add-coin <SYMBOL> --from-json <file>"
         echo ""
         echo -e "${WHITE}EXAMPLES${NC}"
-        echo "    spiralctl add-coin DOGE --github https://github.com/dogecoin/dogecoin"
-        echo "    spiralctl add-coin LTC  --github https://github.com/litecoin-project/litecoin --algorithm scrypt"
+        echo "    spiralctl add-coin FOO  --github https://github.com/foocoin/foocoin"
+        echo "    spiralctl add-coin BAR  --github https://github.com/barcoin/bar --algorithm scrypt"
         echo "    spiralctl add-coin FOO  --interactive"
         echo ""
-        echo -e "${DIM}Fetches chain parameters from the GitHub repo, queries CoinGecko for metadata,${NC}"
+        echo -e "${DIM}For adding net-new coins that are NOT natively supported by Spiral Pool.${NC}"
+        echo -e "${DIM}Fetches chain parameters from GitHub, queries CoinGecko for metadata,${NC}"
         echo -e "${DIM}detects the mining algorithm, and generates a complete coin implementation${NC}"
         echo -e "${DIM}and manifest entry with minimal manual input.${NC}"
+        echo ""
+        echo -e "${YELLOW}NOTE:${NC} ${DIM}The following coins are natively supported and installed via the installer:${NC}"
+        echo -e "${DIM}  SHA-256d: BTC, BCH, BC2, DGB, FBTC, NMC, QBX, SYS, XMY${NC}"
+        echo -e "${DIM}  Scrypt:   LTC, DOGE, DGB-SCRYPT, PEP, CAT${NC}"
+        echo -e "${DIM}  Run ${NC}${CYAN}sudo bash ${INSTALL_DIR}/install.sh${NC}${DIM} to enable them.${NC}"
         echo ""
         return 0
     fi
@@ -5134,6 +5523,57 @@ cmd_add_coin() {
     local symbol_lower="${symbol,,}"
     shift
     extra_args=("--symbol" "$symbol")
+
+    # ── Built-in coin check ───────────────────────────────────────────────────
+    # These coins ship with Spiral Pool and are installed via the installer.
+    # add-coin is only for net-new coins not natively supported.
+    local -A BUILTIN_COINS=(
+        [DGB]="DigiByte"
+        [BTC]="Bitcoin"
+        [BCH]="Bitcoin Cash"
+        [BC2]="Bitcoin II"
+        [LTC]="Litecoin"
+        [DOGE]="Dogecoin"
+        [DGB-SCRYPT]="DigiByte (Scrypt)"
+        [PEP]="Pepecoin"
+        [CAT]="Catcoin"
+        [NMC]="Namecoin"
+        [SYS]="Syscoin"
+        [XMY]="Myriadcoin"
+        [FBTC]="FreeBitcoin"
+        [QBX]="QbitX"
+    )
+    if [[ -n "${BUILTIN_COINS[$symbol]+x}" ]]; then
+        local coin_name="${BUILTIN_COINS[$symbol]}"
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}  ${coin_name} (${symbol}) is natively supported by Spiral Pool${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${DIM}spiralctl add-coin is for net-new coins that are NOT natively supported${NC}"
+        echo -e "  ${DIM}by Spiral Pool. ${coin_name} already has a full, tested implementation${NC}"
+        echo -e "  ${DIM}built in — no onboarding script is needed.${NC}"
+        echo ""
+        echo -e "  To install ${WHITE}${coin_name}${NC}, re-run the installer and choose"
+        echo -e "  ${GREEN}\"Add coins to existing installation\"${NC} when prompted."
+        echo ""
+        prompt_input "Would you like to run the installer now? [y/N]: "
+        read -r run_installer
+        if [[ "${run_installer,,}" == "y" || "${run_installer,,}" == "yes" ]]; then
+            local installer="${INSTALL_DIR}/install.sh"
+            if [[ ! -f "$installer" ]]; then
+                log_error "Installer not found at ${installer}"
+                exit 1
+            fi
+            exec sudo bash "$installer"
+        else
+            echo ""
+            echo -e "  Run ${CYAN}sudo bash ${INSTALL_DIR}/install.sh${NC} when ready."
+            echo ""
+        fi
+        return 0
+    fi
+    # ─────────────────────────────────────────────────────────────────────────
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -5274,6 +5714,18 @@ cmd_add_coin() {
         echo "  cd ${src_dir} && sudo -u ${POOL_USER} go build -o ${bin} ./cmd/spiralpool"
         echo "  sudo systemctl restart spiralstratum"
     fi
+
+    # Remind user to configure wallet address in the dashboard
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}  CONFIGURE WALLET ADDRESS${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${YELLOW}After stratum restarts, set the ${symbol} wallet address in the Dashboard:${NC}"
+    local dash_ip; dash_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo -e "  ${GREEN}http://${dash_ip:-<your-server-ip>}:1618/setup${NC}"
+    echo ""
+    echo -e "  ${DIM}The setup wizard auto-detects active coins and shows wallet inputs for each.${NC}"
     echo ""
 }
 
@@ -5293,6 +5745,7 @@ cmd_remove_coin() {
         echo ""
         echo -e "${DIM}Removes the Go implementation, Dockerfile, node config template,${NC}"
         echo -e "${DIM}native installer, params JSON, and manifest entry for the coin.${NC}"
+        echo -e "${DIM}Wallet data and blockchain data are NEVER deleted.${NC}"
         echo ""
         return 0
     fi
@@ -5456,6 +5909,17 @@ PYEOF
 
     echo ""
     log_success "Coin ${symbol} removed."
+    echo ""
+    echo -e "  ${GREEN}Wallet data and blockchain data are preserved.${NC}"
+    echo -e "  ${DIM}To re-add this coin later, re-run: sudo bash install.sh${NC}"
+
+    # Remind user to update dashboard
+    echo ""
+    echo -e "  ${YELLOW}After restarting stratum, update wallet config in the Dashboard:${NC}"
+    local dash_ip; dash_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo -e "  ${GREEN}http://${dash_ip:-<your-server-ip>}:1618/setup${NC}"
+    echo -e "  ${DIM}The setup wizard will reflect the updated coin list automatically.${NC}"
+
     local src_dir="${INSTALL_DIR}/stratum-src"
     local bin="${INSTALL_DIR}/bin/spiralstratum"
     if [[ -d "$src_dir" ]] && command -v go &>/dev/null; then
@@ -5500,6 +5964,7 @@ show_help() {
     echo "    update              Check for Spiral Pool updates"
     echo "    maintenance         Enter or leave maintenance mode"
     echo "    pause [minutes]     Pause Sentinel alerts temporarily"
+    echo "    shutdown [--reboot] Gracefully stop all services, then power off (or reboot)"
     echo ""
     echo -e "${WHITE}BLOCKCHAIN${NC}"
     echo "    sync [--watch|-w] [--coin <coin>]"
@@ -5508,34 +5973,42 @@ show_help() {
     echo "    chain restore       Pull blockchain data from a remote machine"
     echo "    node [status|start|stop|restart] [coin|all]"
     echo "                        Manage blockchain node daemons"
-    echo "    coin [status|disable] <coin>"
-    echo "                        Show or disable cryptocurrency support"
+    echo "    coin [status|list|enable|disable] <coin>"
+    echo "                        Manage cryptocurrency support"
+    echo "    coin enable <SYMBOL>"
+    echo "                        Add a supported coin (installs daemon, generates wallet)"
     echo "    add-coin <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
-    echo "                        Add a new coin from its GitHub repository"
+    echo "                        Add a CUSTOM coin from its GitHub repository (advanced)"
     echo "    remove-coin <SYMBOL> [--yes]"
     echo "                        Remove a coin and all its generated files"
+    echo "    coin-upgrade [--check] [--coin <TICKER>] [--reindex]"
+    echo "                        Upgrade coin daemon binaries (run after upgrade.sh if prompted)"
     echo ""
     echo -e "${WHITE}MINING${NC}"
     echo "    mining [status|solo|multi|merge] [options]"
     echo "                        Mining mode management"
     echo "    pool stats          Pool hashrate and worker statistics"
-    echo "    stats               Quick pool stats (hashrate, blocks)"
-    echo "    blocks [count]      Show last N blocks found (default: 5)"
+    echo "    stats [blocks [N]]  Quick pool stats; 'stats blocks' shows last N blocks"
+    echo "    miners [list]       Show connected miners with hashrate and shares"
+    echo "    miners kick <IP>    Disconnect all sessions from a miner IP"
+    echo "    workers             Per-worker breakdown (miner → rig → hashrate + acceptance)"
+    echo "    miner nick [list | <IP> <name> | clear <IP>]"
+    echo "                        View or set miner nicknames in Sentinel"
     echo "    scan                Scan network for miners"
     echo "    wallet              Show or generate wallet addresses"
     echo "    external [setup|enable|disable|status|test]"
     echo "                        External access / hashrate rental"
     echo ""
     echo -e "${WHITE}DATA${NC}"
-    echo "    backup              Backup pool data and configuration"
-    echo "    restore             Restore pool data from backup"
-    echo "    export              Export mining history to CSV"
+    echo "    data backup         Backup pool data and configuration"
+    echo "    data restore        Restore pool data from backup"
+    echo "    data export         Export mining history to CSV"
     echo "    gdpr-delete         Delete miner data (GDPR/CCPA)"
     echo ""
     echo -e "${WHITE}HA / FAILOVER${NC}"
     echo "    ha [status|enable|disable|credentials|setup|failback|promote|validate|service]"
     echo "                        High Availability cluster management"
-    echo "    vip [status|enable|disable|failover]"
+    echo "    ha vip [status|enable|disable|failover]"
     echo "                        Virtual IP for miner failover"
     echo "    sync-addresses [--apply] [--force] [--dry-run]"
     echo "                        Sync pool addresses from HA master"
@@ -5543,9 +6016,21 @@ show_help() {
     echo -e "${WHITE}CONFIGURATION${NC}"
     echo "    config [show|list|get|set] [key] [value]"
     echo "                        View or update Sentinel configuration"
+    echo "    config validate     Dry-run config check (no restart required)"
+    echo "    config notify-test  Send a test notification to every configured channel"
+    echo "    config list-cooldowns"
+    echo "                        Show active alert cooldowns with time remaining"
+    echo "    log [errors] [service] [window]"
+    echo "                        Filter service logs for errors/warnings (default: 1h)"
+    echo "                        Services: stratum, sentinel, dash, patroni, ha"
     echo "    webhook [status|set|clear|test]"
     echo "                        Manage Discord & Telegram notifications"
-    echo "    tor [status|enable|disable]"
+    echo ""
+    echo -e "${WHITE}SECURITY${NC}"
+    echo "    security [period]   Security status overview (default: 24h)"
+    echo "    security fail2ban [status|banned|unban|whitelist-add|whitelist-show|reload|logs]"
+    echo "                        Manage fail2ban jails"
+    echo "    security tor [status|enable|disable]"
     echo "                        Manage Tor privacy settings"
     echo ""
     echo -e "${WHITE}EXAMPLES${NC}"
@@ -5555,14 +6040,30 @@ show_help() {
     echo "    spiralctl restart                          Restart all pool services"
     echo "    spiralctl wallet --coin btc                Show BTC wallet address"
     echo "    spiralctl scan                             Discover miners on the network"
-    echo "    spiralctl backup                           Backup pool data"
+    echo "    spiralctl data backup                      Backup pool data"
+    echo "    spiralctl stats blocks                     Show recent blocks"
     echo "    spiralctl chain export --host 10.0.0.2     Push blockchain to remote"
     echo "    spiralctl mining solo dgb                  Switch to solo DGB mining"
     echo "    spiralctl ha enable --vip 192.168.1.100    Enable HA on this node"
+    echo "    spiralctl ha vip status                    Check VIP / keepalived state"
+    echo "    spiralctl security                         Security overview (last 24h)"
+    echo "    spiralctl security fail2ban unban 1.2.3.4  Remove a ban"
     echo "    spiralctl config set expected_hashrate 50  Update expected TH/s"
-    echo "    spiralctl add-coin DOGE --github https://github.com/dogecoin/dogecoin"
-    echo "                                               Add a new coin from GitHub"
-    echo "    spiralctl remove-coin DOGE                 Remove DOGE and all generated files"
+    echo "    spiralctl config validate                  Check config for issues (no restart)"
+    echo "    spiralctl config notify-test               Send test notification to all channels"
+    echo "    spiralctl config list-cooldowns            Show which alerts are on cooldown"
+    echo "    spiralctl log errors                       Errors in the last 1h across all services"
+    echo "    spiralctl log errors sentinel              Sentinel errors only, last 1h"
+    echo "    spiralctl log errors stratum 24h           Stratum errors, last 24h"
+    echo "    spiralctl miners                           List connected miners + hashrate"
+    echo "    spiralctl miners kick 192.168.1.50         Disconnect a miner"
+    echo "    spiralctl workers                          Per-worker hashrate breakdown"
+    echo "    spiralctl miner nick 192.168.1.50 \"Rig 1\"  Set miner nickname"
+    echo "    spiralctl coin enable LTC                   Add Litecoin to the pool"
+    echo "    spiralctl coin disable DOGE                Disable Dogecoin daemon"
+    echo "    spiralctl remove-coin DOGE                 Remove DOGE generated files (keeps wallet)"
+    echo "    spiralctl shutdown                         Gracefully stop all services and power off"
+    echo "    spiralctl shutdown --reboot                Gracefully stop all services and reboot"
     echo ""
     echo -e "${WHITE}SUPPORTED COINS${NC}"
     echo "    SHA-256d: bc2, bch, btc, dgb, fbtc, nmc, qbx, sys, xmy"
@@ -5571,7 +6072,65 @@ show_help() {
 }
 
 show_version() {
-    echo "spiralctl version $VERSION"
+    echo ""
+    echo -e "${CYAN}SPIRAL POOL${NC}"
+    echo -e "────────────────────────────────────────"
+    printf "  %-24s %s\n" "spiralctl" "$VERSION"
+
+    # Stratum binary version
+    local stratum_bin="${INSTALL_DIR}/bin/spiralstratum"
+    if [[ -x "$stratum_bin" ]]; then
+        local sv
+        sv=$("$stratum_bin" --version 2>&1 | grep -oP '\d+\.\d+[\.\d]*' | head -1)
+        [[ -z "$sv" ]] && sv="unknown"
+        printf "  %-24s %s\n" "spiralstratum" "$sv"
+    fi
+
+    # Sentinel version (from sentinel source header)
+    local sentinel_ver=""
+    local sentinel_py="${INSTALL_DIR}/src/sentinel/SpiralSentinel.py"
+    if [[ -f "$sentinel_py" ]]; then
+        sentinel_ver=$(grep -m1 -oP '(?<=version[[:space:]])[\d.]+' "$sentinel_py" 2>/dev/null \
+            || grep -m1 '__version__\s*=' "$sentinel_py" 2>/dev/null | grep -oP '[\d.]+')
+    fi
+    [[ -z "$sentinel_ver" ]] && sentinel_ver="$VERSION"
+    printf "  %-24s %s\n" "sentinel" "$sentinel_ver"
+
+    echo ""
+    echo -e "${WHITE}COIN DAEMONS${NC}"
+    echo -e "────────────────────────────────────────"
+    local coins=("bc2:bitcoiniid" "bch:bitcoind-bch" "btc:bitcoind" "cat:catcoind"
+                 "dgb:digibyted" "doge:dogecoind" "fbtc:fractald" "ltc:litecoind"
+                 "nmc:namecoind" "pep:pepecoind" "qbx:qbitxd" "sys:syscoind" "xmy:myriadcoind")
+    local shown_any=0
+    for entry in "${coins[@]}"; do
+        local ticker="${entry%%:*}"
+        local svc="${entry##*:}"
+        if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            local dv
+            dv=$(get_coin_daemon_version "$ticker")
+            [[ -z "$dv" ]] && dv="not found"
+            printf "  %-24s %s\n" "${ticker^^}" "$dv"
+            shown_any=1
+        fi
+    done
+    [[ "$shown_any" -eq 0 ]] && echo -e "  ${DIM}No coin daemons enabled${NC}"
+    echo ""
+}
+
+#===============================================================================
+# COIN DAEMON UPGRADE
+#===============================================================================
+
+cmd_coin_upgrade() {
+    local script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
+    if [[ ! -x "$script" ]]; then
+        log_error "coin-upgrade.sh not found at ${script}"
+        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.1.0+."
+        exit 1
+    fi
+    # Pass all arguments through — supports --check, --coin <TICKER>, --reindex, --list
+    exec "$script" "$@"
 }
 
 #===============================================================================
@@ -5799,6 +6358,899 @@ cmd_sync_addresses() {
 }
 
 #===============================================================================
+# WORKERS COMMAND — per-worker breakdown (address → worker name → stats)
+#===============================================================================
+
+cmd_workers() {
+    local pool_api="http://localhost:4000"
+
+    local pools_json
+    pools_json=$(curl -sf --max-time 8 "$pool_api/api/pools" 2>/dev/null || echo "")
+    if [[ -z "$pools_json" ]] || ! command -v jq &>/dev/null; then
+        log_error "Pool API unavailable or jq not installed"
+        exit 1
+    fi
+
+    local header_printed=false
+
+    while IFS= read -r pool_id; do
+        [[ -z "$pool_id" ]] && continue
+        local symbol
+        symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.[] | select(.id==$id) | .coin.symbol' 2>/dev/null || echo "$pool_id")
+
+        local miners_json
+        miners_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
+        [[ -z "$miners_json" ]] && continue
+
+        while IFS= read -r addr; do
+            [[ -z "$addr" ]] && continue
+            local workers_json
+            workers_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners/${addr}/workers" 2>/dev/null || echo "")
+            [[ -z "$workers_json" ]] && continue
+
+            local wcount
+            wcount=$(echo "$workers_json" | jq 'length' 2>/dev/null || echo 0)
+            [[ "$wcount" == "0" ]] && continue
+
+            if [[ "$header_printed" == "false" ]]; then
+                echo ""
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "  ${WHITE}WORKER BREAKDOWN${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                printf "  %-6s %-18s %-14s %12s %8s %8s\n" "COIN" "MINER" "WORKER" "HASHRATE" "ACC%" "ONLINE"
+                echo "  ────────────────────────────────────────────────────────────────────────"
+                header_printed=true
+            fi
+
+            local addr_short="${addr:0:16}…"
+            echo "$workers_json" | jq -r '.[] | [.worker, (.currentHashrate // 0), (.acceptanceRate // 0), (.connected // false)] | @tsv' 2>/dev/null \
+            | while IFS=$'\t' read -r worker hr acc connected; do
+                local hr_str
+                if   (( $(echo "$hr >= 1000000000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f TH/s" "$(echo "$hr/1000000000000" | bc -l)")
+                elif (( $(echo "$hr >= 1000000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f GH/s" "$(echo "$hr/1000000000" | bc -l)")
+                elif (( $(echo "$hr >= 1000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f MH/s" "$(echo "$hr/1000000" | bc -l)")
+                elif (( $(echo "$hr >= 1000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f KH/s" "$(echo "$hr/1000" | bc -l)")
+                else hr_str=$(printf "%.0f H/s" "$hr")
+                fi
+                local acc_str; acc_str=$(printf "%.1f%%" "$(echo "$acc * 100" | bc -l 2>/dev/null || echo 0)")
+                local online_str="🔴"; [[ "$connected" == "true" ]] && online_str="🟢"
+                printf "  %-6s %-18s %-14s %12s %8s %8s\n" "$symbol" "$addr_short" "${worker:0:14}" "$hr_str" "$acc_str" "$online_str"
+            done
+        done < <(echo "$miners_json" | jq -r '.[].address' 2>/dev/null)
+    done < <(echo "$pools_json" | jq -r '.[].id' 2>/dev/null)
+
+    if [[ "$header_printed" == "false" ]]; then
+        echo ""
+        echo "  No workers currently connected."
+    fi
+    echo ""
+}
+
+#===============================================================================
+# LOG ERRORS COMMAND — filter service logs for ERROR/WARN/CRIT within a time window
+#===============================================================================
+
+cmd_log_errors() {
+    # Consume optional "errors" subcommand so both forms work:
+    #   spiralctl log errors          (window defaults to 1h)
+    #   spiralctl log errors 24h      (window = 24h)
+    #   spiralctl log 24h             (window = 24h, "errors" omitted)
+    if [[ "${1:-}" == "errors" ]]; then
+        shift
+    fi
+
+    # Optional service filter — accepts short aliases or full names.
+    # If the next arg doesn't look like a time window, treat it as a service name.
+    #   spiralctl log errors stratum 24h
+    #   spiralctl log errors sentinel
+    local service_filter=""
+    local service_label="all services"
+    if [[ -n "${1:-}" && ! "${1:-}" =~ ^[0-9]+[smhd]$ ]]; then
+        local svc_arg="${1,,}"   # lowercase
+        shift
+        case "$svc_arg" in
+            stratum|spiralstratum)         service_filter="spiralstratum" ;;
+            sentinel|spiralsentinel)       service_filter="spiralsentinel" ;;
+            dash|dashboard|spiraldash)     service_filter="spiraldash" ;;
+            patroni|postgres|pg)           service_filter="patroni" ;;
+            ha|watcher|ha-watcher)         service_filter="spiralpool-ha-watcher" ;;
+            *)
+                log_error "Unknown service '${svc_arg}'. Known: stratum, sentinel, dash, patroni, ha"
+                exit 1
+                ;;
+        esac
+        service_label="$service_filter"
+    fi
+
+    local window="${1:-1h}"
+
+    # Validate window format (e.g. 30m, 2h, 24h, 7d)
+    if ! [[ "$window" =~ ^[0-9]+[smhd]$ ]]; then
+        log_error "Usage: spiralctl log errors [service] [window]  (e.g. 1h, 30m, 24h, 7d)"
+        log_error "  Services: stratum, sentinel, dash, patroni, ha"
+        exit 1
+    fi
+
+    # Convert to systemd --since format
+    local since_arg=""
+    local unit="${window: -1}"
+    local val="${window%?}"
+    case "$unit" in
+        s) since_arg="${val} seconds ago" ;;
+        m) since_arg="${val} minutes ago" ;;
+        h) since_arg="${val} hours ago"   ;;
+        d) since_arg="${val} days ago"    ;;
+    esac
+
+    # Build service list — filtered or full
+    local services
+    if [[ -n "$service_filter" ]]; then
+        services=("$service_filter")
+    else
+        services=("spiralstratum" "spiralsentinel" "spiraldash" "patroni" "spiralpool-ha-watcher")
+    fi
+    local found=0
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${WHITE}LOG ERRORS — last ${window} / ${service_label}${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    for svc in "${services[@]}"; do
+        # Check if service exists
+        if ! systemctl list-units --full --all "${svc}.service" 2>/dev/null | grep -q "${svc}.service"; then
+            continue
+        fi
+
+        local lines
+        lines=$(journalctl -u "${svc}.service" --since "$since_arg" --no-pager -q 2>/dev/null \
+            | grep -iE '\b(error|warn(ing)?|crit(ical)?|fatal|panic|emerg)\b' \
+            | tail -100)
+
+        if [[ -n "$lines" ]]; then
+            local count; count=$(echo "$lines" | wc -l | tr -d ' ')
+            echo ""
+            echo -e "  ${YELLOW}${svc}${NC}  (${count} entries)"
+            echo "  ────────────────────────────────────────────────────────"
+            echo "$lines" | while IFS= read -r line; do
+                # Colour-code by severity
+                if echo "$line" | grep -qiE '\b(crit(ical)?|fatal|panic|emerg)\b'; then
+                    echo -e "  ${RED}${line}${NC}"
+                elif echo "$line" | grep -qiE '\berror\b'; then
+                    echo -e "  ${RED}${line}${NC}"
+                else
+                    echo -e "  ${YELLOW}${line}${NC}"
+                fi
+            done
+            found=$((found + 1))
+        fi
+    done
+
+    echo ""
+    if [[ $found -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ No errors or warnings in the last ${window}${NC}"
+    fi
+    echo ""
+}
+
+#===============================================================================
+# MINERS COMMAND — list connected miners, kick by IP
+#===============================================================================
+
+_get_admin_api_key() {
+    # Read admin_api_key from config.yaml (V2 format: admin_api_key: "value")
+    local key=""
+    if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
+        key=$(grep -m1 'admin_api_key:' "$INSTALL_DIR/config/config.yaml" 2>/dev/null \
+              | sed 's/.*admin_api_key:[[:space:]]*//' | tr -d '"' | tr -d "'" | tr -d '[:space:]')
+    fi
+    echo "$key"
+}
+
+cmd_miners() {
+    local subcommand="${1:-list}"
+    shift || true
+
+    local pool_api="http://localhost:4000"
+    local admin_key
+    admin_key=$(_get_admin_api_key)
+
+    case "$subcommand" in
+        list|"")
+            # Query /api/pools to get pool IDs, then list miners per pool
+            local pools_json
+            pools_json=$(curl -sf --max-time 8 "$pool_api/api/pools" 2>/dev/null || echo "")
+            if [[ -z "$pools_json" ]] || ! command -v jq &>/dev/null; then
+                log_error "Pool API unavailable or jq not installed"
+                exit 1
+            fi
+
+            local header_printed=false
+            while IFS= read -r pool_id; do
+                [[ -z "$pool_id" ]] && continue
+                local miners_json
+                miners_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
+                [[ -z "$miners_json" ]] && continue
+
+                local symbol
+                symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.[] | select(.id==$id) | .coin.symbol' 2>/dev/null || echo "$pool_id")
+
+                local count
+                count=$(echo "$miners_json" | jq 'length' 2>/dev/null || echo 0)
+                [[ "$count" == "0" ]] && continue
+
+                if [[ "$header_printed" == "false" ]]; then
+                    echo ""
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                    echo -e "  ${WHITE}CONNECTED MINERS${NC}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                    printf "  %-8s %-20s %12s %10s %10s\n" "COIN" "ADDRESS" "HASHRATE" "SH/S" "SHARES"
+                    echo "  ────────────────────────────────────────────────────────────────────────"
+                    header_printed=true
+                fi
+
+                echo "$miners_json" | jq -r '.[] | [.address, (.hashrate // 0), (.sharesPerSecond // 0), (.sharesPerMinute // 0)] | @tsv' 2>/dev/null \
+                | while IFS=$'\t' read -r addr hr sps shares; do
+                    local addr_short="${addr:0:18}…"
+                    local hr_str
+                    if   (( $(echo "$hr >= 1000000000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f TH/s" "$(echo "$hr/1000000000000" | bc -l)")
+                    elif (( $(echo "$hr >= 1000000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f GH/s" "$(echo "$hr/1000000000" | bc -l)")
+                    elif (( $(echo "$hr >= 1000000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f MH/s" "$(echo "$hr/1000000" | bc -l)")
+                    elif (( $(echo "$hr >= 1000" | bc -l 2>/dev/null || echo 0) )); then hr_str=$(printf "%.2f KH/s" "$(echo "$hr/1000" | bc -l)")
+                    else hr_str=$(printf "%.0f H/s" "$hr")
+                    fi
+                    printf "  %-8s %-20s %12s %10.2f %10.0f\n" "$symbol" "$addr_short" "$hr_str" "$sps" "$shares"
+                done
+            done < <(echo "$pools_json" | jq -r '.[].id' 2>/dev/null)
+
+            if [[ "$header_printed" == "false" ]]; then
+                echo ""
+                echo "  No miners currently connected."
+            fi
+            echo ""
+            ;;
+
+        kick)
+            local ip="${1:-}"
+            if [[ -z "$ip" ]]; then
+                log_error "Usage: spiralctl miners kick <IP>"
+                exit 1
+            fi
+            # Whitelist IP characters — blocks shell metacharacters before the request leaves.
+            # Full validation is done server-side by net.ParseIP, this is defence-in-depth.
+            if ! [[ "$ip" =~ ^[0-9a-fA-F:.]+$ ]]; then
+                log_error "Invalid IP address: $ip"
+                exit 1
+            fi
+            if [[ -z "$admin_key" ]]; then
+                log_error "admin_api_key not found in config.yaml — cannot authenticate kick request"
+                exit 1
+            fi
+            local result
+            result=$(curl -sf --max-time 8 -X POST \
+                -H "X-API-Key: $admin_key" \
+                "$pool_api/api/admin/kick?ip=${ip}" 2>/dev/null || echo "")
+            if [[ -z "$result" ]]; then
+                log_error "Kick request failed — pool API unavailable or request rejected"
+                exit 1
+            fi
+            local kicked
+            kicked=$(echo "$result" | jq -r '.kicked // 0' 2>/dev/null || echo "?")
+            if [[ "$kicked" == "0" ]]; then
+                log_warn "No active sessions found for IP $ip"
+            else
+                log_success "Kicked $kicked session(s) from $ip — miner will reconnect automatically"
+            fi
+            ;;
+
+        *)
+            echo "Usage: spiralctl miners [list|kick <IP>]"
+            echo ""
+            echo "  list              Show all connected miners with hashrate and shares"
+            echo "  kick <IP>         Disconnect all sessions from the given IP"
+            echo ""
+            echo "Examples:"
+            echo "  spiralctl miners"
+            echo "  spiralctl miners kick 192.168.1.50"
+            exit 1
+            ;;
+    esac
+}
+
+#===============================================================================
+# MINER NICK COMMAND — set/clear miner nicknames in sentinel config
+#===============================================================================
+
+cmd_miner() {
+    local subcommand="${1:-}"
+    shift || true
+
+    case "$subcommand" in
+        nick)
+            local action_or_ip="${1:-}"
+            shift || true
+
+            # Resolve sentinel config path (same logic as cmd_config)
+            local sentinel_cfg=""
+            local candidate_paths=(
+                "/home/${POOL_USER}/.spiralsentinel/config.json"
+                "${INSTALL_DIR}/config/sentinel/config.json"
+            )
+            for p in "${candidate_paths[@]}"; do
+                [[ -f "$p" ]] && sentinel_cfg="$p" && break
+            done
+            if [[ -z "$sentinel_cfg" ]]; then
+                log_error "Sentinel config not found"
+                exit 1
+            fi
+
+            case "$action_or_ip" in
+                clear)
+                    local ip="${1:-}"
+                    if [[ -z "$ip" ]]; then
+                        log_error "Usage: spiralctl miner nick clear <IP>"
+                        exit 1
+                    fi
+                    check_root
+                    # Remove the key using Python (preserves all other JSON)
+                    sudo python3 - "$sentinel_cfg" "$ip" << 'PYEOF'
+import sys, json
+cfg_path, ip = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+nicks = cfg.get("miner_nicknames", {})
+if ip in nicks:
+    del nicks[ip]
+    cfg["miner_nicknames"] = nicks
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"Cleared nickname for {ip}")
+else:
+    print(f"No nickname set for {ip}")
+PYEOF
+                    ;;
+
+                list|"")
+                    # List all current nicknames
+                    python3 - "$sentinel_cfg" << 'PYEOF'
+import sys, json
+cfg_path = sys.argv[1]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+nicks = cfg.get("miner_nicknames", {})
+if not nicks:
+    print("  No miner nicknames configured.")
+else:
+    print()
+    for ip, name in sorted(nicks.items()):
+        print(f"  {ip:<20} → {name}")
+    print()
+PYEOF
+                    ;;
+
+                *)
+                    # Treat as IP — next arg is the name
+                    local ip="$action_or_ip"
+                    local name="${1:-}"
+                    if [[ -z "$name" ]]; then
+                        log_error "Usage: spiralctl miner nick <IP> <name>"
+                        exit 1
+                    fi
+                    check_root
+                    sudo python3 - "$sentinel_cfg" "$ip" "$name" << 'PYEOF'
+import sys, json
+cfg_path, ip, name = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+if "miner_nicknames" not in cfg:
+    cfg["miner_nicknames"] = {}
+cfg["miner_nicknames"][ip] = name
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"Set nickname: {ip} → {name}")
+print("Restart spiralsentinel to apply: sudo systemctl restart spiralsentinel")
+PYEOF
+                    ;;
+            esac
+            ;;
+
+        *)
+            echo "Usage: spiralctl miner nick [list | <IP> <name> | clear <IP>]"
+            echo ""
+            echo "  nick list             List all miner nicknames"
+            echo "  nick <IP> <name>      Set a nickname for a miner IP"
+            echo "  nick clear <IP>       Remove the nickname for a miner IP"
+            echo ""
+            echo "Examples:"
+            echo "  spiralctl miner nick 192.168.1.50 \"Living Room Miner\""
+            echo "  spiralctl miner nick list"
+            echo "  spiralctl miner nick clear 192.168.1.50"
+            exit 1
+            ;;
+    esac
+}
+
+#===============================================================================
+# CONFIG NOTIFY-TEST — send a test notification to every configured channel
+#===============================================================================
+
+cmd_config_notify_test() {
+    local pool_home
+    pool_home=$(getent passwd "$POOL_USER" 2>/dev/null | cut -d: -f6)
+    pool_home="${pool_home:-/home/$POOL_USER}"
+
+    local sentinel_cfg=""
+    local candidate_paths=(
+        "${pool_home}/.spiralsentinel/config.json"
+        "${INSTALL_DIR}/config/sentinel/config.json"
+    )
+    for p in "${candidate_paths[@]}"; do
+        [[ -f "$p" ]] && sentinel_cfg="$p" && break
+    done
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${WHITE}NOTIFICATION TEST${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    if [[ -z "$sentinel_cfg" ]]; then
+        log_error "Sentinel config not found — is Sentinel installed?"
+        exit 1
+    fi
+
+    python3 - "$sentinel_cfg" << 'PYEOF' 2>&1
+import sys, json, urllib.request, urllib.error, ssl, smtplib, time
+
+cfg_path = sys.argv[1]
+try:
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+except Exception as e:
+    print(f"ERROR: Cannot read sentinel config: {e}")
+    sys.exit(1)
+
+RESET  = "\033[0m"
+GREEN  = "\033[32m"
+RED    = "\033[31m"
+YELLOW = "\033[33m"
+CYAN   = "\033[36m"
+WHITE  = "\033[97m"
+
+ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+any_configured = False
+all_ok = True
+
+# ── Discord ──────────────────────────────────────────────────────────────────
+webhook = cfg.get("discord_webhook_url", "")
+if webhook and "YOUR" not in webhook:
+    any_configured = True
+    sys.stdout.write(f"  Discord        ... ")
+    sys.stdout.flush()
+    payload = json.dumps({
+        "embeds": [{
+            "title": "🔔 Test Notification — Spiral Pool",
+            "description": f"This is a test notification from `spiralctl config notify-test`.\nIf you see this, Discord alerts are working correctly.\n\n`{ts}`",
+            "color": 0x00BFFF
+        }]
+    }).encode()
+    try:
+        req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        print(f"{GREEN}✓ sent{RESET}")
+    except Exception as e:
+        print(f"{RED}✗ failed: {e}{RESET}")
+        all_ok = False
+else:
+    print(f"  Discord        {YELLOW}— not configured{RESET}")
+
+# ── Telegram ─────────────────────────────────────────────────────────────────
+tg_token = cfg.get("telegram_bot_token", "")
+tg_chat  = str(cfg.get("telegram_chat_id", ""))
+if tg_token and tg_chat:
+    any_configured = True
+    sys.stdout.write(f"  Telegram       ... ")
+    sys.stdout.flush()
+    url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+    text = (
+        "*Spiral Pool — Test Notification*\n\n"
+        "This is a test from `spiralctl config notify\\-test`\\.\n"
+        "If you see this, Telegram alerts are working correctly\\.\n\n"
+        f"`{ts}`"
+    )
+    payload = json.dumps({"chat_id": tg_chat, "text": text, "parse_mode": "MarkdownV2"}).encode()
+    try:
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        print(f"{GREEN}✓ sent{RESET}")
+    except Exception as e:
+        err = str(e).replace(tg_token, "***")
+        print(f"{RED}✗ failed: {err}{RESET}")
+        all_ok = False
+else:
+    print(f"  Telegram       {YELLOW}— not configured{RESET}")
+
+# ── ntfy ─────────────────────────────────────────────────────────────────────
+ntfy_url = cfg.get("ntfy_url", "")
+if ntfy_url:
+    any_configured = True
+    sys.stdout.write(f"  ntfy           ... ")
+    sys.stdout.flush()
+    ntfy_token = cfg.get("ntfy_token", "")
+    headers = {"Title": "Spiral Pool — Test Notification", "Content-Type": "text/plain"}
+    if ntfy_token:
+        headers["Authorization"] = f"Bearer {ntfy_token}"
+    try:
+        req = urllib.request.Request(ntfy_url, data=f"Test from spiralctl config notify-test ({ts})".encode(), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        print(f"{GREEN}✓ sent{RESET}")
+    except Exception as e:
+        print(f"{RED}✗ failed: {e}{RESET}")
+        all_ok = False
+else:
+    print(f"  ntfy           {YELLOW}— not configured{RESET}")
+
+# ── Email / SMTP ──────────────────────────────────────────────────────────────
+smtp_enabled = cfg.get("smtp_enabled", False)
+smtp_host    = cfg.get("smtp_host", "")
+smtp_to      = cfg.get("smtp_to", [])
+if smtp_enabled and smtp_host and smtp_to:
+    any_configured = True
+    sys.stdout.write(f"  Email (SMTP)   ... ")
+    sys.stdout.flush()
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    smtp_port  = int(cfg.get("smtp_port", 587))
+    smtp_user  = cfg.get("smtp_username", "")
+    smtp_pass  = cfg.get("smtp_password", "")
+    smtp_from  = cfg.get("smtp_from", smtp_user)
+    use_tls    = cfg.get("smtp_use_tls", True)
+    recipients = smtp_to if isinstance(smtp_to, list) else [smtp_to]
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Spiral Pool — Test Notification"
+    msg["From"]    = smtp_from
+    msg["To"]      = ", ".join(recipients)
+    msg.attach(MIMEText(f"This is a test notification from spiralctl config notify-test.\n\nIf you received this, email alerts are working correctly.\n\n{ts}", "plain"))
+    try:
+        _ctx = ssl.create_default_context()
+        if use_tls:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as s:
+                s.ehlo(); s.starttls(context=_ctx); s.ehlo()
+                if smtp_user: s.login(smtp_user, smtp_pass)
+                s.sendmail(smtp_from, recipients, msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15, context=_ctx) as s:
+                if smtp_user: s.login(smtp_user, smtp_pass)
+                s.sendmail(smtp_from, recipients, msg.as_string())
+        print(f"{GREEN}✓ sent{RESET}")
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"{RED}✗ auth failed: {e}{RESET}")
+        all_ok = False
+    except Exception as e:
+        print(f"{RED}✗ failed: {e}{RESET}")
+        all_ok = False
+else:
+    print(f"  Email (SMTP)   {YELLOW}— not configured{RESET}")
+
+# ── XMPP ─────────────────────────────────────────────────────────────────────
+xmpp_jid  = cfg.get("xmpp_jid", "")
+xmpp_pass = cfg.get("xmpp_password", "")
+xmpp_to   = cfg.get("xmpp_recipient", "")
+if xmpp_jid and xmpp_pass and xmpp_to:
+    any_configured = True
+    sys.stdout.write(f"  XMPP           ... ")
+    sys.stdout.flush()
+    try:
+        import slixmpp, asyncio
+
+        async def _xmpp_test(jid, password, recipient, message, use_tls, is_muc):
+            xmpp = slixmpp.ClientXMPP(jid, password)
+            xmpp.register_plugin('xep_0030')
+            xmpp.register_plugin('xep_0199')
+            if is_muc:
+                xmpp.register_plugin('xep_0045')
+            success = [False]
+            async def on_start(event):
+                xmpp.send_presence()
+                await xmpp.get_roster()
+                if is_muc:
+                    await xmpp.plugin['xep_0045'].join_muc_wait(recipient, 'SpiralSentinel')
+                    xmpp.send_message(mto=recipient, mbody=message, mtype='groupchat')
+                else:
+                    xmpp.send_message(mto=recipient, mbody=message, mtype='chat')
+                success[0] = True
+                xmpp.disconnect()
+            xmpp.add_event_handler("session_start", on_start)
+            xmpp.connect(use_tls=cfg.get("xmpp_use_tls", True))
+            try:
+                await asyncio.wait_for(xmpp.disconnected, timeout=15)
+            except asyncio.TimeoutError:
+                xmpp.disconnect()
+                return False
+            return success[0]
+
+        is_muc = bool(cfg.get("xmpp_muc", ""))
+        ok = asyncio.run(_xmpp_test(
+            xmpp_jid, xmpp_pass, xmpp_to,
+            f"Spiral Pool test notification from spiralctl config notify-test ({ts})",
+            cfg.get("xmpp_use_tls", True), is_muc
+        ))
+        if ok:
+            print(f"{GREEN}✓ sent{RESET}")
+        else:
+            print(f"{RED}✗ failed (no confirmation from server){RESET}")
+            all_ok = False
+    except ImportError:
+        print(f"{YELLOW}⚠ slixmpp not installed — install with: pip install slixmpp{RESET}")
+    except Exception as e:
+        print(f"{RED}✗ failed: {e}{RESET}")
+        all_ok = False
+else:
+    print(f"  XMPP           {YELLOW}— not configured{RESET}")
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+print("")
+if not any_configured:
+    print(f"  {YELLOW}No notification channels configured in sentinel config.{RESET}")
+    print(f"  Run {WHITE}spiralctl config{RESET} to set up Discord, Telegram, email, or ntfy.")
+elif all_ok:
+    print(f"  {GREEN}✓ All configured channels delivered successfully{RESET}")
+else:
+    print(f"  {RED}✗ One or more channels failed — check credentials and connectivity{RESET}")
+print("")
+PYEOF
+}
+
+#===============================================================================
+# CONFIG VALIDATE — dry-run config check without restarting services
+#===============================================================================
+
+cmd_config_validate() {
+    local sentinel_cfg=""
+    local candidate_paths=(
+        "/home/${POOL_USER}/.spiralsentinel/config.json"
+        "${INSTALL_DIR}/config/sentinel/config.json"
+    )
+    for p in "${candidate_paths[@]}"; do
+        [[ -f "$p" ]] && sentinel_cfg="$p" && break
+    done
+
+    local config_yaml="${INSTALL_DIR}/config/config.yaml"
+    local issues=0
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${WHITE}CONFIG VALIDATE${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # --- config.yaml ---
+    echo -e "  ${WHITE}config.yaml${NC} ($config_yaml)"
+    if [[ ! -f "$config_yaml" ]]; then
+        echo -e "    ${RED}✗ File not found${NC}"
+        issues=$((issues + 1))
+    else
+        # YAML syntax check via Python — pass path via sys.argv to handle spaces/quotes safely
+        local yaml_result
+        yaml_result=$(python3 - "$config_yaml" << 'PYEOF' 2>/dev/null
+import sys
+path = sys.argv[1]
+try:
+    import yaml
+    yaml.safe_load(open(path))
+    print('ok')
+except ImportError:
+    print('no_yaml_module')
+except Exception as e:
+    print(f'error: {e}')
+PYEOF
+)
+
+        case "$yaml_result" in
+            ok)  echo -e "    ${GREEN}✓ YAML syntax valid${NC}" ;;
+            no_yaml_module)
+                # Fallback: check for obvious YAML issues with grep
+                if grep -qP "^\s+\S" "$config_yaml" 2>/dev/null; then
+                    echo -e "    ${YELLOW}⚠ PyYAML not installed — syntax check skipped${NC}"
+                fi
+                ;;
+            error:*)
+                echo -e "    ${RED}✗ YAML syntax error: ${yaml_result#error: }${NC}"
+                issues=$((issues + 1))
+                ;;
+        esac
+
+        # Check for placeholder wallet addresses
+        if grep -q 'PENDING_GENERATION\|YOUR_.*_ADDRESS\|placeholder' "$config_yaml" 2>/dev/null; then
+            echo -e "    ${YELLOW}⚠ Placeholder wallet address detected — update before mining${NC}"
+            issues=$((issues + 1))
+        fi
+
+        # Check admin_api_key is set (v1: adminApiKey, v2: admin_api_key)
+        if ! grep -qE 'admin_api_key:|adminApiKey:' "$config_yaml" 2>/dev/null || \
+           grep -E 'admin_api_key:|adminApiKey:' "$config_yaml" 2>/dev/null | grep -q '""\|'"''"'\|: $'; then
+            echo -e "    ${YELLOW}⚠ admin_api_key not set — miners kick and admin endpoints disabled${NC}"
+            issues=$((issues + 1))
+        fi
+
+        echo -e "    ${GREEN}✓ config.yaml checks passed${NC}"
+    fi
+
+    echo ""
+
+    # --- sentinel config.json ---
+    echo -e "  ${WHITE}sentinel config.json${NC}"
+    if ! systemctl is-enabled --quiet spiralsentinel 2>/dev/null; then
+        echo -e "    ${CYAN}ℹ Sentinel not enabled — skipping config check${NC}"
+    elif [[ -z "$sentinel_cfg" ]]; then
+        echo -e "    ${YELLOW}⚠ Sentinel config not found${NC}"
+        issues=$((issues + 1))
+    else
+        echo "    Path: $sentinel_cfg"
+        local sentinel_result
+        sentinel_result=$(python3 - "$sentinel_cfg" "$config_yaml" << 'PYEOF' 2>&1
+import sys, json, re
+
+sentinel_path = sys.argv[1]
+stratum_yaml_path = sys.argv[2] if len(sys.argv) > 2 else ""
+issues = []
+try:
+    with open(sentinel_path) as f:
+        cfg = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"FATAL: JSON syntax error: {e}")
+    sys.exit(0)
+except Exception as e:
+    print(f"FATAL: Cannot read config: {e}")
+    sys.exit(0)
+
+# Placeholder wallet checks (only flag if explicitly set to a placeholder — empty is valid)
+wallet = cfg.get("wallet_address", "")
+if wallet in ("YOUR_DGB_ADDRESS", "YOUR_ADDRESS", "PENDING_GENERATION") or (wallet and "YOUR" in wallet.upper()):
+    issues.append("wallet_address is a placeholder — update to your wallet address")
+
+# Notification checks
+discord = cfg.get("discord_webhook_url", "")
+if discord and "YOUR" in discord:
+    issues.append("discord_webhook_url contains placeholder")
+if discord and not discord.startswith("https://discord.com/api/webhooks/"):
+    issues.append("discord_webhook_url has unexpected format")
+
+ntfy_url = cfg.get("ntfy_url", "")
+if ntfy_url and not ntfy_url.startswith("https://"):
+    issues.append("ntfy_url must use https://")
+
+# Telegram: token and chat_id must both be set or both absent
+tg_token = cfg.get("telegram_bot_token", "")
+tg_chat  = cfg.get("telegram_chat_id", "")
+if bool(tg_token) != bool(tg_chat):
+    issues.append("telegram_bot_token and telegram_chat_id must both be set (one is missing)")
+
+# XMPP: jid, password, and recipient must all be set together
+xmpp_jid  = cfg.get("xmpp_jid", "")
+xmpp_pass = cfg.get("xmpp_password", "")
+xmpp_to   = cfg.get("xmpp_recipient", "")
+xmpp_set  = [bool(xmpp_jid), bool(xmpp_pass), bool(xmpp_to)]
+if any(xmpp_set) and not all(xmpp_set):
+    missing = [k for k, v in [("xmpp_jid", xmpp_jid), ("xmpp_password", xmpp_pass), ("xmpp_recipient", xmpp_to)] if not v]
+    issues.append(f"XMPP partially configured — missing: {', '.join(missing)}")
+
+# pool_api_url basic format check
+pool_url = cfg.get("pool_api_url", "")
+if pool_url and not re.match(r'^https?://', pool_url):
+    issues.append(f"pool_api_url does not look like a URL: {pool_url}")
+
+smtp_enabled = cfg.get("smtp_enabled", False)
+if smtp_enabled:
+    if not cfg.get("smtp_host"):     issues.append("smtp_enabled but smtp_host is empty")
+    if not cfg.get("smtp_to"):       issues.append("smtp_enabled but smtp_to is empty")
+    if not cfg.get("smtp_username"): issues.append("smtp_enabled but smtp_username is empty")
+    if not cfg.get("smtp_password"): issues.append("smtp_enabled but smtp_password is empty — email delivery will fail")
+
+# Check required keys have sensible values
+check_interval = cfg.get("check_interval", 120)
+if not isinstance(check_interval, (int, float)) or check_interval < 10:
+    issues.append(f"check_interval={check_interval} is unusually low (< 10s)")
+
+# v1.1.0 new alert config range checks
+disk_warn = cfg.get("disk_warn_pct", 85)
+disk_crit = cfg.get("disk_critical_pct", 95)
+if disk_warn >= disk_crit:
+    issues.append(f"disk_warn_pct ({disk_warn}) must be less than disk_critical_pct ({disk_crit})")
+if not (1 <= disk_warn <= 99) or not (1 <= disk_crit <= 99):
+    issues.append(f"disk_warn_pct/disk_critical_pct must be between 1 and 99")
+
+dry_mult = cfg.get("dry_streak_multiplier", 3)
+if not isinstance(dry_mult, (int, float)) or dry_mult < 1:
+    issues.append(f"dry_streak_multiplier={dry_mult} must be >= 1")
+
+diff_pct = cfg.get("difficulty_alert_threshold_pct", 25)
+if not isinstance(diff_pct, (int, float)) or not (1 <= diff_pct <= 100):
+    issues.append(f"difficulty_alert_threshold_pct={diff_pct} must be between 1 and 100")
+
+backup_days = cfg.get("backup_stale_days", 2)
+if not isinstance(backup_days, (int, float)) or backup_days < 1:
+    issues.append(f"backup_stale_days={backup_days} must be >= 1")
+
+mempool_thresh = cfg.get("mempool_alert_threshold", 50000)
+if not isinstance(mempool_thresh, (int, float)) or mempool_thresh < 100:
+    issues.append(f"mempool_alert_threshold={mempool_thresh} is unusually low (< 100 txns)")
+
+_hhmm = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+for i, win in enumerate(cfg.get("scheduled_maintenance_windows", [])):
+    pfx = f"scheduled_maintenance_windows[{i}]"
+    if not isinstance(win, dict):
+        issues.append(f"{pfx}: must be an object with 'start' and 'end' keys"); continue
+    for fld in ("start", "end"):
+        v = win.get(fld, "")
+        if not _hhmm.match(str(v)):
+            issues.append(f"{pfx}.{fld}={v!r}: must be HH:MM (00:00–23:59)")
+    days = win.get("days")
+    if days is not None:
+        if not isinstance(days, list) or not all(isinstance(d, int) and 0 <= d <= 6 for d in days):
+            issues.append(f"{pfx}.days must be a list of integers 0–6 (0=Monday)")
+
+# Cross-check: pool_admin_api_key in sentinel config must match admin_api_key in stratum config.yaml
+sentinel_admin_key = cfg.get("pool_admin_api_key", "").strip()
+if stratum_yaml_path:
+    try:
+        stratum_admin_key = ""
+        with open(stratum_yaml_path) as f:
+            for line in f:
+                s = line.strip()
+                if s.startswith("admin_api_key:") or s.startswith("adminApiKey:"):
+                    stratum_admin_key = s.split(":", 1)[1].strip().strip('"').strip("'")
+                    break
+        if sentinel_admin_key and stratum_admin_key and sentinel_admin_key != stratum_admin_key:
+            issues.append("pool_admin_api_key in sentinel config does not match admin_api_key in config.yaml — stratum kick will fail with 401")
+        elif not sentinel_admin_key and stratum_admin_key:
+            # Sentinel auto-discovers from config.yaml on startup, so this is fine — just informational
+            print("INFO: pool_admin_api_key not set in sentinel config — will auto-discover from config.yaml")
+    except Exception:
+        pass  # stratum config.yaml not readable — skip cross-check
+
+if issues:
+    for i in issues:
+        print(f"WARN: {i}")
+else:
+    print("OK")
+PYEOF
+)
+        if echo "$sentinel_result" | grep -q "^FATAL:"; then
+            echo -e "    ${RED}✗ ${sentinel_result#FATAL: }${NC}"
+            issues=$((issues + 1))
+        else
+            if echo "$sentinel_result" | grep -q "^WARN:"; then
+                echo "$sentinel_result" | grep "^WARN:" | while IFS= read -r line; do
+                    echo -e "    ${YELLOW}⚠ ${line#WARN: }${NC}"
+                done
+                issues=$((issues + 1))
+            fi
+            if echo "$sentinel_result" | grep -q "^INFO:"; then
+                echo "$sentinel_result" | grep "^INFO:" | while IFS= read -r line; do
+                    echo -e "    ${CYAN}ℹ ${line#INFO: }${NC}"
+                done
+            fi
+            if ! echo "$sentinel_result" | grep -q "^WARN:\|^FATAL:"; then
+                echo -e "    ${GREEN}✓ Sentinel config valid${NC}"
+            fi
+        fi
+    fi
+
+    echo ""
+    echo -e "${CYAN}────────────────────────────────────────────────────────────────────────${NC}"
+    if [[ $issues -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ All checks passed — no issues found${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ $issues issue(s) found — review above${NC}"
+    fi
+    echo ""
+}
+
+#===============================================================================
 # MAIN
 #===============================================================================
 
@@ -5815,39 +7267,54 @@ main() {
         logs)       cmd_logs "$@" ;;
         restart)    cmd_restart_all "$@" ;;
         wallet)     cmd_wallet "$@" ;;
-        backup)     cmd_backup "$@" ;;
-        restore)    cmd_restore_pool "$@" ;;
         pause)      cmd_pause "$@" ;;
-        stats)      cmd_stats "$@" ;;
-        blocks)     cmd_blocks "$@" ;;
+        stats)      cmd_stats "$@" ;;      # also: stats blocks [N]
         test)       cmd_test "$@" ;;
         scan)       cmd_scan "$@" ;;
         watch)      cmd_watch "$@" ;;
-        export)     cmd_export "$@" ;;
         update)     cmd_update "$@" ;;
         maintenance) cmd_maintenance "$@" ;;
+        shutdown)    cmd_shutdown "$@" ;;
+
+        # Data management (canonical)
+        data)       cmd_data "$@" ;;
+        # Backward-compat aliases for data subcommands
+        backup)     cmd_backup "$@" ;;
+        restore)    cmd_restore_pool "$@" ;;
+        export)     cmd_export "$@" ;;
+        # Backward-compat alias for stats subcommand
+        blocks)     cmd_blocks "$@" ;;
 
         # Blockchain data transfer
         chain)      cmd_chain "$@" ;;
+
+        # Miner management
+        miners)     cmd_miners "$@" ;;
+        miner)      cmd_miner "$@" ;;
+        workers)    cmd_workers "$@" ;;
+        log)        cmd_log_errors "$@" ;;
 
         # Node & coin management
         coin)       cmd_coin "$@" ;;
         node)       cmd_node "$@" ;;
         add-coin)    cmd_add_coin "$@" ;;
         remove-coin) cmd_remove_coin "$@" ;;
+        coin-upgrade) cmd_coin_upgrade "$@" ;;
 
         # Infrastructure
-        tor)        cmd_tor "$@" ;;
-        vip)        cmd_vip "$@" ;;
-        ha)         cmd_ha "$@" ;;
+        ha)         cmd_ha "$@" ;;        # also: ha vip [action]
         sync-addresses) cmd_sync_addresses "$@" ;;
+        # Backward-compat aliases for ha subcommands
+        vip)        cmd_vip "$@" ;;
+        tor)        cmd_tor "$@" ;;
 
         # Configuration & notifications
         config)     cmd_config "$@" ;;
         webhook)    cmd_webhook "$@" ;;
 
-        # Security
+        # Security (also: security fail2ban [...], security tor [...])
         security)   cmd_security "$@" ;;
+        # Backward-compat aliases for security subcommands
         fail2ban)   cmd_fail2ban "$@" ;;
 
         # Go binary commands (pool-level)

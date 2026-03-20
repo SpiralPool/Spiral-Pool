@@ -331,6 +331,12 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Stop() error {
 	s.running.Store(false)
 
+	// Notify all connected miners to reconnect gracefully before dropping connections.
+	// This prevents miners from sitting idle until their TCP keepalive fires (can be minutes).
+	// Miners that support client.reconnect will reconnect within waitTime seconds.
+	s.BroadcastReconnect(5)
+	time.Sleep(500 * time.Millisecond) // Brief window for the message to be flushed
+
 	if s.listener != nil {
 		_ = s.listener.Close() // #nosec G104 - error ignored during shutdown
 	}
@@ -963,6 +969,30 @@ func (s *Server) sendJob(session *protocol.Session, job *protocol.Job) {
 	)
 }
 
+// BroadcastReconnect sends a client.reconnect to all connected miners.
+// Used before graceful shutdown so miners reconnect quickly rather than waiting for TCP timeout.
+// waitTime is in seconds — miners should wait this long before reconnecting.
+func (s *Server) BroadcastReconnect(waitTime int) {
+	msg, err := s.v1Handler.BuildReconnect("", 0, waitTime)
+	if err != nil {
+		s.logger.Warnw("Failed to build reconnect message", "error", err)
+		return
+	}
+
+	var sent int
+	s.sessions.Range(func(id uint64, session *protocol.Session) bool {
+		if session.IsSubscribed() && session.Conn != nil {
+			_ = session.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if _, err := session.Conn.Write(msg); err == nil {
+				sent++
+			}
+		}
+		return true
+	})
+
+	s.logger.Infow("Broadcast reconnect to miners before shutdown", "sent", sent, "waitTimeSecs", waitTime)
+}
+
 // BroadcastMessage sends a client.show_message to all connected miners.
 // This is used for pool-wide announcements like block found celebrations.
 // Supported by cgminer, Avalon, and other stratum-compatible miners.
@@ -1387,6 +1417,25 @@ func (s *Server) GetActiveConnections() []*protocol.Session {
 		return true
 	})
 	return sessions
+}
+
+// KickWorkerByIP closes all sessions whose remote address starts with the given IP.
+// Returns the number of sessions closed. The miner's client will reconnect automatically.
+func (s *Server) KickWorkerByIP(ip string) int {
+	kicked := 0
+	s.sessions.Range(func(id uint64, session *protocol.Session) bool {
+		addr := session.RemoteAddr
+		// Strip port: "192.168.1.5:3333" -> compare "192.168.1.5"
+		if host, _, err := net.SplitHostPort(addr); err == nil {
+			addr = host
+		}
+		if addr == ip {
+			_ = session.Conn.Close() // #nosec G104
+			kicked++
+		}
+		return true
+	})
+	return kicked
 }
 
 // GetActiveSessionIDs returns the IDs of all currently active sessions.

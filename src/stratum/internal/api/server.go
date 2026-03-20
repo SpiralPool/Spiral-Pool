@@ -39,7 +39,7 @@ const (
 var (
 	// Multi-coin address patterns:
 	// - DigiByte: D (mainnet P2PKH), S (P2SH), dgb1 (bech32)
-	// Address validation supports all 13 coins:
+	// Address validation supports all 14 coins:
 	// - BTC/BC2/FBTC/QBX: 1 (P2PKH), 3 (P2SH), bc1q (bech32)
 	// - BCH: q/p (CashAddr), bitcoincash: prefix
 	// - DGB: D (P2PKH), S (P2SH), 3 (P2SH), dgb1q (bech32)
@@ -198,6 +198,8 @@ type WorkerConnection struct {
 // ConnectionStatsProvider provides access to real-time worker connection status.
 type ConnectionStatsProvider interface {
 	GetActiveConnections() []WorkerConnection
+	// KickWorkerByIP closes all sessions from the given IP. Returns count closed.
+	KickWorkerByIP(ip string) int
 }
 
 // NewServer creates a new API server.
@@ -267,6 +269,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Admin endpoints (SECURITY: Protected by API key authentication)
 	mux.HandleFunc("/api/admin/stats", s.adminAuthMiddleware(s.handleAdminStats))
 	mux.HandleFunc("/api/admin/device-hints", s.adminAuthMiddleware(s.handleDeviceHints))
+	mux.HandleFunc("/api/admin/kick", s.adminAuthMiddleware(s.handleKickWorker))
 
 	// HA/Failover status endpoints (SECURITY: Protected by API key authentication)
 	// These expose sensitive cluster information and must be protected
@@ -389,10 +392,13 @@ func (s *Server) handlePools(w http.ResponseWriter, r *http.Request) {
 	// Build merge mining info if configured
 	var mergeMiningInfo *PoolMergeMiningInfo
 	if s.mergeMiningCfg != nil && s.mergeMiningCfg.Enabled {
-		auxChains := make([]string, 0)
+		auxChains := make([]AuxChainDetail, 0)
 		for _, aux := range s.mergeMiningCfg.AuxChains {
 			if aux.Enabled {
-				auxChains = append(auxChains, aux.Symbol)
+				auxChains = append(auxChains, AuxChainDetail{
+					Symbol:  aux.Symbol,
+					Address: aux.Address,
+				})
 			}
 		}
 		if len(auxChains) > 0 {
@@ -405,7 +411,7 @@ func (s *Server) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "1.0-BLACKICE",
+		Version:  "1.1.0-PHI_FORGE",
 		Pools: []PoolInfo{
 			{
 				ID: s.poolCfg.ID,
@@ -773,6 +779,39 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, response)
+}
+
+// handleKickWorker disconnects all stratum sessions from a given IP address.
+// POST /api/admin/kick?ip=X.X.X.X
+// The miner's client will reconnect automatically on its own reconnect timer.
+func (s *Server) handleKickWorker(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ip := r.URL.Query().Get("ip")
+	if ip == "" {
+		http.Error(w, "Missing required query parameter: ip", http.StatusBadRequest)
+		return
+	}
+
+	// Basic IP format validation
+	if net.ParseIP(ip) == nil {
+		http.Error(w, "Invalid IP address", http.StatusBadRequest)
+		return
+	}
+
+	if s.connectionProvider == nil {
+		http.Error(w, "Connection provider unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	kicked := s.connectionProvider.KickWorkerByIP(ip)
+	s.writeJSON(w, map[string]interface{}{
+		"ip":     ip,
+		"kicked": kicked,
+	})
 }
 
 // handleDeviceHints handles device hint updates from Spiral Sentinel.
@@ -1746,8 +1785,14 @@ type PoolInfo struct {
 
 // PoolMergeMiningInfo contains merge mining status for the /api/pools response.
 type PoolMergeMiningInfo struct {
-	Enabled   bool     `json:"enabled"`
-	AuxChains []string `json:"auxChains"`
+	Enabled   bool              `json:"enabled"`
+	AuxChains []AuxChainDetail  `json:"auxChains"`
+}
+
+// AuxChainDetail contains symbol and wallet address for an aux chain in API responses.
+type AuxChainDetail struct {
+	Symbol  string `json:"symbol"`
+	Address string `json:"address"`
 }
 
 // PortsInfo contains stratum port information for the pool.

@@ -25,6 +25,27 @@
 # NOTE: Do NOT use set -e — test functions return non-zero for failures,
 # which is expected behavior in a validation tool, not an error.
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
+# ── Patroni REST API credentials ─────────────────────────────────────────────
+# SECURITY (patroni-auth): Load Patroni REST API credentials if configured.
+PATRONI_CURL_AUTH=()
+if [[ -f /spiralpool/config/patroni-api.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/patroni-api.conf
+    [[ -n "${PATRONI_API_USERNAME:-}" ]] && PATRONI_CURL_AUTH=(-u "${PATRONI_API_USERNAME}:${PATRONI_API_PASSWORD}")
+fi
+
 # Configuration
 INSTALL_DIR="/spiralpool"
 HA_STATUS_PORT=5354
@@ -115,10 +136,14 @@ udp_port_listening() {
 }
 
 # Fetch JSON from URL (validates HTTP 2xx status)
+# Usage: fetch_json <url> [extra-curl-args...]
+# Extra args (e.g. -u user:pass) are passed through to curl unchanged.
 fetch_json() {
     local url="$1"
+    shift
+    local -a extra_args=("$@")
     local response http_code body
-    response=$(curl -s --connect-timeout 3 --max-time 5 -w "\n%{http_code}" "$url" 2>/dev/null) || { echo ""; return 1; }
+    response=$(curl -s --connect-timeout 3 --max-time 5 "${extra_args[@]}" -w "\n%{http_code}" "$url" 2>/dev/null) || { echo ""; return 1; }
     http_code=$(echo "$response" | tail -1)
     body=$(echo "$response" | sed '$d')
     # Only return body for 2xx responses
@@ -292,7 +317,7 @@ test_postgresql_ha() {
 
     # Check Patroni API
     local patroni_json
-    patroni_json=$(fetch_json "http://localhost:${PATRONI_API_PORT}/patroni")
+    patroni_json=$(fetch_json "http://localhost:${PATRONI_API_PORT}/patroni" "${PATRONI_CURL_AUTH[@]}")
 
     if [[ -z "$patroni_json" ]]; then
         test_fail "Patroni API not responding (port $PATRONI_API_PORT)"

@@ -4139,9 +4139,9 @@ func getAlgoBlockTime(symbol string) float64 {
 	switch strings.ToUpper(symbol) {
 	case "DGB", "DGB-SCRYPT":
 		return 75 // 15s chain time * 5 algorithms
-	case "BTC", "BCH", "BC2", "NMC", "CAT", "QBX":
+	case "BTC", "BCH", "BC2", "NMC", "CAT":
 		return 600
-	case "SYS", "LTC":
+	case "SYS", "LTC", "QBX":
 		return 150
 	case "XMY", "DOGE", "PEP":
 		return 60
@@ -4903,6 +4903,12 @@ func (p *Pool) GetPaymentStats() (*api.PaymentStats, error) {
 		BlockMaturity:   blockMaturity,
 		TotalPaid:       0, // FUTURE: Sum from payments table
 	}, nil
+}
+
+// KickWorkerByIP implements api.ConnectionStatsProvider.
+// Closes all stratum sessions from the given IP. Returns number of sessions closed.
+func (p *Pool) KickWorkerByIP(ip string) int {
+	return p.stratumServer.KickWorkerByIP(ip)
 }
 
 // GetActiveConnections implements api.ConnectionStatsProvider.

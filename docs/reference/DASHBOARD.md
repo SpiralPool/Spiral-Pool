@@ -472,4 +472,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Black Ice 1.0*
+*Spiral Dash &mdash; Phi Forge 1.1.0*

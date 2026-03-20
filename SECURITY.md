@@ -1,6 +1,6 @@
 # Security Policy
 
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-18
 
 ## Reporting a Vulnerability
 
@@ -49,7 +49,7 @@ Spiral Pool is mining pool software that:
 
 ### Deployment Recommendations
 
-1. **Operator-controlled infrastructure only**: Deploy on bare metal servers under your physical control, or VMs on hypervisors you own. **Cloud/VPS deployment is NOT supported** — the installer blocks cloud providers. See [WARNINGS.md](WARNINGS.md) for details.
+1. **Operator-controlled infrastructure preferred**: Deploy on bare metal servers under your physical control, or VMs on hypervisors you own. Cloud/VPS deployments are supported but carry serious risks (provider ToS violations, bandwidth billing, provider access to wallet credentials) — the installer requires written risk acknowledgment. See [WARNINGS.md](WARNINGS.md) and [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md).
 2. **x86_64 architecture only**: All packages and binaries target x86_64 (amd64). ARM/Raspberry Pi has not been tested.
 3. **Network Isolation**: Run database and internal services on private networks
 4. **Firewall Configuration**: Only expose stratum ports for your enabled coins (see [docs/reference/REFERENCE.md](docs/reference/REFERENCE.md) for port list) and necessary API ports
@@ -63,6 +63,7 @@ Spiral Pool is mining pool software that:
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.1.x   | Supported |
 | 1.0.x   | Supported |
 
 Security updates may be released for the current major version at maintainer discretion. No update schedule, timeline, or commitment is guaranteed. Support may be discontinued at any time without notice.
@@ -232,5 +233,5 @@ Operators may wish to consult:
 
 *Security is a shared responsibility. This policy describes how to report vulnerabilities and provides general security guidance. You are responsible for securing your deployment.*
 
-*Spiral Pool v1.0 - Security Policy*
+*Spiral Pool v1.1.0 - Security Policy*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

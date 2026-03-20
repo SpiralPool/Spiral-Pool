@@ -86,7 +86,7 @@ Source: `internal/pool/pool.go` (Pool struct), `internal/pool/coordinator.go` (C
                   +-------------------------+
                   |    Blockchain Daemon     |
                   |    (per coin)            |
-                  |  RPC :18332  ZMQ :28332  |
+                  |  RPC :8332   ZMQ :28332  |
                   +------+----------+-------+
                          |          |
                   +------+----------+-------+
@@ -178,11 +178,11 @@ Miner Connects
 
 ### Miner Classification
 
-13 SHA-256d profiles and 6 Scrypt profiles (including Unknown fallback) with separate difficulty settings per algorithm. Full tables with exact values are in [REFERENCE.md](../reference/REFERENCE.md).
+15 SHA-256d profiles and 8 Scrypt profiles (including Unknown fallback) with separate difficulty settings per algorithm. Full tables with exact values are in [REFERENCE.md](../reference/REFERENCE.md).
 
 ### Block-Time-Aware Scaling
 
-Initial difficulty is scaled based on the coin's block time to maintain share cadence relative to block intervals. Implemented in `scaleProfilesForBlockTime()` at `spiralrouter.go:399`.
+Initial difficulty is scaled based on the coin's block time to maintain share cadence relative to block intervals. Implemented in `scaleProfilesForBlockTime()` at `spiralrouter.go:484`.
 
 - **DigiByte** (15s blocks): Shorter target share times for faster feedback
 - **Bitcoin** (600s blocks): Longer target share times to avoid flooding
@@ -1088,4 +1088,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Titan Node 1.1*
+*Spiral Pool — Phi Forge 1.1.0*
