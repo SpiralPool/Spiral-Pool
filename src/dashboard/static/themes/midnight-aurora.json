@@ -6,10 +6,10 @@
   "description": "Dark sky with northern lights aurora effects",
   "category": "Nature",
   "colors": {
-    "bg-primary": "#080c18",
-    "bg-secondary": "#0e1428",
-    "bg-card": "#141c34",
-    "bg-card-hover": "#1c2644",
+    "bg-primary": "#0c0820",
+    "bg-secondary": "#141030",
+    "bg-card": "#1e1840",
+    "bg-card-hover": "#281e50",
     "neon-blue": "#4db8ff",
     "neon-cyan": "#42e6c8",
     "neon-purple": "#a86eff",
@@ -39,7 +39,7 @@
     "mono": "'Fira Code', monospace"
   },
   "effects": {
-    "glowIntensity": 0.3,
+    "glowIntensity": 0.2,
     "animationSpeed": 1,
     "borderRadius": "12px",
     "useGlitchEffect": false,

@@ -4,6 +4,18 @@ This document describes how to add support for new SHA-256d or Scrypt coins to S
 
 ---
 
+> **Important:** The onboarding process is mostly automated via `scripts/add-coin.py`, but the output **requires testing before production deployment**. Coin implementations can differ in subtle ways even among SHA256d forks — block header serialization, AuxPoW chain IDs, address encoding, version bits, and RPC behaviour all vary by fork. The generated Go code is a starting template, not a finished implementation.
+>
+> Before deploying any new coin:
+> - Review the generated Go file and manifest entry carefully
+> - Test against the coin's actual daemon (testnet/devnet if available)
+> - Verify share submission, block template construction, and coinbase payout
+> - Understand how the coin's consensus rules differ from Bitcoin/DigiByte
+>
+> AI assistance (Claude, GPT-4, etc.) is recommended for interpreting `chainparams.cpp`, understanding fork-specific differences, and debugging generated code — especially for unfamiliar or obscure coins.
+
+---
+
 ## Overview
 
 Adding a new coin requires two components:
@@ -12,6 +24,8 @@ Adding a new coin requires two components:
 2. **Go Implementation** - Consensus logic in `src/stratum/internal/coin/<symbol>.go`
 
 The manifest provides metadata (ports, display names, addresses). The Go code provides consensus-critical logic (hashing, serialization). Both are validated at startup.
+
+The `scripts/add-coin.py` automation script handles most of steps 1 and 2 automatically when given a coin symbol and GitHub repository URL. Manual review and testing are always required after generation.
 
 ---
 
@@ -222,7 +236,7 @@ For supported coins, use the automated script:
 ./scripts/spiralpool-add-coin -s NEWCOIN -g https://github.com/newcoin/newcoin
 
 # Windows
-scripts\spiralpool-add-coin.bat -s NEWCOIN -g https://github.com/newcoin/newcoin
+scripts\windows\spiralpool-add-coin.bat -s NEWCOIN -g https://github.com/newcoin/newcoin
 ```
 
 The script:
@@ -315,4 +329,4 @@ QBX (Q-BitX)
 
 ---
 
-*Spiral Pool — Black Ice 1.0 — Convergent difficulty. Minimal oscillation.*
+*Spiral Pool — Phi Forge 1.1.0 — Convergent difficulty. Minimal oscillation.*

@@ -49,6 +49,7 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | `spiralctl logs` | View stratum log output |
 | `spiralctl sync` | Blockchain sync status |
 | `spiralctl restart` | Restart all pool services |
+| `spiralctl shutdown [--reboot]` | Gracefully stop all services and power off (or reboot) |
 | `spiralctl mining status` | Current mining configuration |
 | `spiralctl mining solo <coin>` | Single coin mode |
 | `spiralctl mining multi <a,b,c>` | Multi-coin mode (same algorithm) |
@@ -58,14 +59,14 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | `spiralctl coin list\|status` | Show coins and blockchain sync status |
 | `spiralctl coin disable <coin>` | Disable a coin's daemon (requires root) |
 | `spiralctl wallet` | Wallet management |
-| `spiralctl blocks` | Block history |
+| `spiralctl stats blocks [N]` | Block history (alias: `spiralctl blocks`) |
 | `spiralctl pool stats` | Pool statistics |
 | `spiralctl watch` | Live pool monitoring |
 | `spiralctl scan` | Miner network scan |
 | `spiralctl test` | Connection test |
-| `spiralctl backup` | Backup pool data |
-| `spiralctl restore` | Restore pool from backup |
-| `spiralctl export` | Export pool data |
+| `spiralctl data backup` | Backup pool data (alias: `spiralctl backup`) |
+| `spiralctl data restore` | Restore pool from backup (alias: `spiralctl restore`) |
+| `spiralctl data export` | Export pool data (alias: `spiralctl export`) |
 | `spiralctl update` | Check for updates |
 | `spiralctl pause` | Pause Sentinel alerts temporarily |
 | `spiralctl maintenance` | Maintenance mode |
@@ -76,11 +77,27 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | `spiralctl ha enable\|disable\|status` | HA control |
 | `spiralctl ha promote\|failback` | Promote to primary / rejoin cluster |
 | `spiralctl ha credentials\|setup\|validate\|service` | HA cluster utilities |
+| `spiralctl miners` | List connected miners with hashrate and shares |
+| `spiralctl miners kick <IP>` | Disconnect all stratum sessions from a miner IP |
+| `spiralctl workers` | Per-worker breakdown (miner → rig → hashrate + acceptance rate) |
+| `spiralctl miner nick <IP> <name>` | Set a display name for a miner in Sentinel |
+| `spiralctl miner nick list\|clear` | List or clear miner nicknames |
+| `spiralctl coin enable <TICKER>` | Add a supported coin (installs daemon, generates wallet) |
+| `spiralctl coin disable <TICKER>` | Stop and disable a coin daemon |
+| `spiralctl coin-upgrade` | In-place coin daemon binary upgrade |
+| `spiralctl add-coin <TICKER>` | Add a custom/unsupported coin from GitHub (advanced) |
+| `spiralctl remove-coin <TICKER>` | Remove a custom coin's generated files (wallet preserved) |
 | `spiralctl config show\|list\|get\|set` | Sentinel configuration |
-| `spiralctl tor status\|enable\|disable` | Tor configuration |
+| `spiralctl config validate` | Dry-run config check (YAML/JSON syntax, placeholder detection) |
+| `spiralctl config notify-test` | Send a test notification to every configured channel |
+| `spiralctl config list-cooldowns` | Show active alert cooldowns with time remaining |
+| `spiralctl log errors [service] [window]` | Filter service logs for errors/warnings |
+| `spiralctl security [period]` | Security status overview (default: 24h) |
+| `spiralctl security fail2ban [action]` | Manage fail2ban jails (alias: `spiralctl fail2ban`) |
+| `spiralctl security tor [action]` | Tor configuration (alias: `spiralctl tor`) |
 | `spiralctl webhook status\|set\|clear\|test` | Webhook management |
 | `spiralctl stats` | Quick pool stats (hashrate, blocks) |
-| `spiralctl version` | Show Spiral Pool version |
+| `spiralctl version` | Show full version table (stratum binary + all coin daemons) |
 | `spiralctl help` | Show help and available commands |
 | `spiralctl external setup\|enable\|disable\|status\|test` | External access configuration |
 | `spiralctl gdpr-delete` | GDPR data deletion |
@@ -113,6 +130,8 @@ Base: `http://localhost:4000`
 | GET | `/api/sentinel/alerts` | Sentinel alert history |
 | GET | `/api/admin/stats` | Admin statistics (admin, requires API key) |
 | GET | `/api/admin/device-hints` | Device hint cache (admin, requires API key) |
+| POST | `/api/admin/device-hints` | Push device classification hints (requires X-API-Key) |
+| POST | `/api/admin/kick?ip=X.X.X.X` | Disconnect all stratum sessions from an IP (requires X-API-Key) |
 | GET | `/api/ha/status` | HA cluster status (admin, requires API key) |
 | GET | `/api/ha/database` | Database HA status (admin, requires API key) |
 | GET | `/api/ha/failover` | Failover status (admin, requires API key) |
@@ -138,7 +157,7 @@ Daemon service names follow the pattern of the coin's CLI name.
 
 ## Miner Classes (SHA-256d)
 
-Source: `src/stratum/internal/stratum/spiralrouter.go:153-292`
+Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
 
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
@@ -155,10 +174,12 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:153-292`
 | Avalon High | Avalon A12/A13 series | 85-130 TH/s | 25,000 | 25,000 | 40,000 | 1s |
 | Avalon Pro | Avalon A14/A15/A16 series | 150-300 TH/s | 45,000 | 45,000 | 80,000 | 1s |
 | Avalon Home | Mini 3, Avalon Q | 37-90 TH/s | 14,900 | 14,900 | 30,000 | 1s |
+| Farm Proxy | Braiins Farm Proxy, stratum aggregators | ~500 GH/s–429 PH/s per connection | 500,000 | 25,600 | 100,000,000 | 1s |
+| Hash Marketplace | NiceHash, MiningRigRentals | ~100 TH/s–214 PH/s per connection | 25,600 | 25,600 | 50,000,000 | 1s |
 
 ## Miner Classes (Scrypt)
 
-Source: `src/stratum/internal/stratum/spiralrouter.go:313-356`
+Source: `src/stratum/internal/stratum/spiralrouter.go:373-441`
 
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
@@ -168,6 +189,8 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:313-356`
 | Mid | Antminer L3+, Goldshell LT Lite, FluMiner L2 | ~498 MH/s-3.3 GH/s | 38,000 | 16,000 | 256,000 | 5s |
 | High | LT5 Pro, DG Home | ~2.9-8.4 GH/s | 180,000 | 64,000 | 512,000 | 4s |
 | Pro | Antminer L7/L9, LT6, DG1/DG1+ | ~9.5-67 GH/s | 290,000 | 128,000 | 2,048,000 | 2s |
+| Farm Proxy | Scrypt stratum aggregators | ~500 GH/s–6.7 TH/s per connection | 2,048,000 | 128,000 | 200,000,000 | 2s |
+| Hash Marketplace | Scrypt rental platforms | ~100 GH/s–3.4 TH/s per connection | 128,000 | 128,000 | 100,000,000 | 2s |
 
 ---
 
@@ -258,12 +281,12 @@ stratum:
 
 daemon:
   host: localhost
-  port: 18332
+  port: 14022                           # DGB RPC port (see Stratum Ports table for per-coin values)
   user: user
   password: pass
   zmq:
     enabled: true
-    endpoint: "tcp://127.0.0.1:28332"
+    endpoint: "tcp://127.0.0.1:28532"  # DGB ZMQ port
 
 database:
   host: localhost
@@ -422,4 +445,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Black Ice 1.0*
+*Spiral Pool — Phi Forge 1.1.0*

@@ -516,7 +516,9 @@ func (s *Server) handleSetupConnection(session *Session, payload []byte) error {
 	session.ProtocolVersion = s.config.ProtocolVersion
 	session.Flags = msg.Flags & s.config.Flags
 	session.VendorID = msg.VendorID
-	session.SetState(StateSetupComplete)
+	if err := session.TransitionTo(StateSetupComplete); err != nil {
+		return fmt.Errorf("setup connection rejected: %w", err)
+	}
 
 	// Send success response
 	resp := EncodeSetupConnectionSuccess(&SetupConnectionSuccess{
@@ -598,7 +600,9 @@ func (s *Server) handleOpenStandardMiningChannel(session *Session, payload []byt
 		s.config.ExtraNonce2Size,
 	)
 
-	session.SetState(StateChannelOpen)
+	if err := session.TransitionTo(StateChannelOpen); err != nil {
+		return fmt.Errorf("open channel rejected: %w", err)
+	}
 
 	// Send success response
 	resp, encErr := EncodeOpenStandardMiningChannelSuccess(&OpenStandardMiningChannelSuccess{
@@ -622,7 +626,9 @@ func (s *Server) handleOpenStandardMiningChannel(session *Session, payload []byt
 		}
 	}
 
-	session.SetState(StateMining)
+	if err := session.TransitionTo(StateMining); err != nil {
+		return fmt.Errorf("mining transition rejected: %w", err)
+	}
 	return nil
 }
 

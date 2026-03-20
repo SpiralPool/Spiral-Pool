@@ -1,7 +1,7 @@
 # Terms of Use
 
 **Effective Date:** 2026-01-24
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-16
 
 ## 1. Acceptance of Terms
 
@@ -41,7 +41,7 @@ You are solely responsible for:
 - Backing up all data and maintaining disaster recovery procedures
 - Any tax obligations arising from cryptocurrency mining
 - Conducting your own security assessment before deployment
-- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v1.0 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
+- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v1.1.0 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
 
 ## 5A. Tor Network Functionality
 
@@ -75,6 +75,50 @@ By using this Software, you acknowledge that:
 ## 5C. ARM Architecture
 
 This Software has **NOT** been tested on ARM architecture (including Raspberry Pi, ARM64/aarch64, and ARMv7). All packages, build references, and binary dependencies target **x86_64 (amd64)** on Ubuntu 24.04 LTS. ARM deployments are **NOT supported** and issues arising from ARM-based installations may not be investigated.
+
+## 5E. Single-Operator Architecture
+
+This Software is designed for **single-operator use only**. A single wallet address per coin is configured at installation time by the operator. This is a fundamental architectural property, not a configurable option.
+
+**Key facts operators must understand before deployment:**
+
+1. **All block rewards go to the operator's configured wallet address**, embedded directly in the coinbase transaction. There is no mechanism to split rewards or route funds to any other party.
+2. **Miners connecting to your pool receive no direct payment** from this software. Regardless of which connected miner found the block, the full block reward goes to the operator's wallet.
+3. **Operator wallet control is exclusive.** Only the operator who configured the wallet address can access the mined funds. Connecting miners have no claim against the pool's software-level reward mechanism.
+4. **No pooled payout schemes are supported.** PPLNS, PPS, PROP, and similar multi-participant reward distribution schemes are not implemented and will not be added.
+
+**If you allow external miners to connect to your pool**, you acknowledge:
+
+1. You are solely responsible for disclosing to those miners that their hashrate contributes to **your** wallet, not their own
+2. You must make any compensation arrangements with external miners independently and outside this software
+3. Operating without disclosing this to participants may constitute fraud, deceptive business practices, or theft of services under applicable law
+4. Any legal, regulatory, or financial obligations arising from inviting external miners are solely your responsibility
+5. The authors of this Software accept **no liability** for any disputes, claims, or legal consequences arising from your operation of the pool in a multi-participant context
+
+**By installing and using this Software**, you confirm that you understand and accept this single-operator architecture, and that you will disclose the wallet control arrangement to any parties whose hashrate you use.
+
+**If you do not agree with these terms or intend to operate a multi-participant pool without proper disclosure, do not use this Software.**
+
+## 5D. SimpleSwap.io Integration
+
+This Software includes an optional integration with [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service. This feature is **disabled by default** and must be explicitly enabled by the operator during installation.
+
+When enabled, Spiral Sentinel monitors the sat value (coin/BTC ratio) of mined coins and sends a swap recommendation alert when a coin appreciates 25% or more against BTC over a 7-day baseline. The alert includes a SimpleSwap.io link with the source coin and BTC pre-selected. **No swap is performed automatically. The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys.** All swap activity occurs on the SimpleSwap.io website in the operator's own browser.
+
+By enabling or using the SimpleSwap integration, you:
+
+1. Acknowledge that **SimpleSwap.io is a third-party service** with its own Terms of Service, Privacy Policy, and operational policies, over which Spiral Pool has no control
+2. Accept **full responsibility** for complying with SimpleSwap.io's Terms of Service and all applicable requirements for using their platform
+3. Accept **full responsibility** for all applicable **AML (Anti-Money Laundering)** and **KYC (Know Your Customer)** requirements in your jurisdiction
+4. Accept **full responsibility** for all **tax obligations**, reporting requirements, and financial regulatory obligations arising from any currency exchange or conversion activity
+5. Acknowledge that exchange fees, rate spreads, minimum/maximum limits, and processing times are determined solely by SimpleSwap.io and may change at any time
+6. Acknowledge that Spiral Pool **does not process, hold, intermediate, or have any visibility into** any exchange or conversion you initiate through SimpleSwap.io
+7. Acknowledge that all transactions with SimpleSwap.io are **irreversible** and Spiral Pool accepts no responsibility for failed swaps, incorrect amounts, wrong destination addresses, or any other transaction outcome
+8. **Release** the Software authors and contributors from **all liability** related to your use of SimpleSwap.io or any third-party exchange service
+
+**If you do not agree with these terms, do not enable the SimpleSwap integration.**
+
+The authors make no representations about the availability, reliability, regulatory status, or legality of SimpleSwap.io in any jurisdiction. See WARNINGS.md for additional hazard disclosures related to third-party exchange services.
 
 ## 6. Data Loss Acknowledgment
 
@@ -205,7 +249,7 @@ The failure of the authors to enforce any right or provision of these Terms shal
 
 ## 13. Survival
 
-The following provisions shall survive any termination or expiration of these Terms: Sections 3 (No Warranty), 4 (Limitation of Liability), 5 (User Responsibilities), 5A (Tor Network Functionality), 5B (Cloud Deployment Exclusion), 5C (ARM Architecture), 6 (Data Loss Acknowledgment), 8 (Indemnification), 8A (No Indemnification to Downstream Parties), 10 (Governing Law and Jurisdiction), 14 (European Union Product Liability), and this Section 13 (Survival).
+The following provisions shall survive any termination or expiration of these Terms: Sections 3 (No Warranty), 4 (Limitation of Liability), 5 (User Responsibilities), 5A (Tor Network Functionality), 5B (Cloud Deployment Exclusion), 5C (ARM Architecture), 5D (SimpleSwap.io Integration), 5E (Single-Operator Architecture), 6 (Data Loss Acknowledgment), 8 (Indemnification), 8A (No Indemnification to Downstream Parties), 10 (Governing Law and Jurisdiction), 14 (European Union Product Liability), and this Section 13 (Survival).
 
 ## 14. European Union Product Liability
 
@@ -232,5 +276,5 @@ These Terms, together with the BSD-3-Clause License and the following supplement
 
 *By using Spiral Pool, you acknowledge that you have read, understood, and agree to be bound by these Terms of Use.*
 
-*Spiral Pool v1.0 - Terms of Use*
+*Spiral Pool v1.1.0 - Terms of Use*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

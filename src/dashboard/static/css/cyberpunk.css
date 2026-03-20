@@ -82,8 +82,8 @@ body {
     z-index: 0;
     background:
         /* Static grid pattern - subtle */
-        linear-gradient(90deg, rgba(0, 212, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(rgba(0, 212, 255, 0.02) 1px, transparent 1px);
+        linear-gradient(90deg, rgba(0, 212, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(rgba(0, 212, 255, 0.04) 1px, transparent 1px);
     background-size: 40px 40px;
 }
 
@@ -97,12 +97,12 @@ body {
     pointer-events: none;
     z-index: 0;
     background:
-        /* Top-left corner glow */
-        radial-gradient(ellipse 600px 400px at 5% 10%, rgba(0, 212, 255, 0.08), transparent),
-        /* Bottom-right corner glow */
-        radial-gradient(ellipse 500px 500px at 95% 90%, rgba(168, 85, 247, 0.06), transparent),
-        /* Center subtle accent */
-        radial-gradient(ellipse 800px 300px at 50% 50%, rgba(255, 107, 53, 0.03), transparent);
+        /* Top-left corner glow — cyan */
+        radial-gradient(ellipse 600px 400px at 5% 10%, rgba(0, 212, 255, 0.22), transparent),
+        /* Bottom-right corner glow — purple */
+        radial-gradient(ellipse 500px 500px at 95% 90%, rgba(145, 117, 240, 0.14), transparent),
+        /* Center subtle accent — red/orange */
+        radial-gradient(ellipse 800px 300px at 50% 50%, rgba(255, 107, 53, 0.10), transparent);
 }
 
 /* Floating particles effect */
@@ -187,6 +187,18 @@ body {
 @keyframes scanLines {
     0% { background-position: 0 0; }
     100% { background-position: 0 100vh; }
+}
+
+/* On HiDPI / 4K displays, widen scan-line spacing and tone down ambient glows
+   so effects stay subtle rather than becoming visible artifacts */
+@media (-webkit-min-device-pixel-ratio: 1.5), (min-resolution: 144dpi) {
+    .scan-line {
+        background-size: 100% 8px;
+        opacity: 0.25;
+    }
+    .cyber-glow {
+        opacity: 0.65;
+    }
 }
 
 /* Neon border pulse for cards */
@@ -808,7 +820,12 @@ body {
 }
 
 .settings-btn {
-    padding: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    padding: 0;
     background: transparent;
     border: 1px solid rgba(168, 85, 247, 0.3);
     border-radius: 6px;
@@ -816,6 +833,8 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     font-size: 1.2rem;
+    text-decoration: none;
+    line-height: 1;
 }
 
 .settings-btn:hover {

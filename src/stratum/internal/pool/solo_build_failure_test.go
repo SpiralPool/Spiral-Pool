@@ -48,7 +48,7 @@ type coinConfig struct {
 	NBits         string // difficulty encoding
 }
 
-// allCoins returns the full set of 13 coins with inline configuration.
+// allCoins returns the full set of 14 coins with inline configuration.
 func allCoins() []coinConfig {
 	return []coinConfig{
 		// SHA-256d coins
@@ -60,6 +60,7 @@ func allCoins() []coinConfig {
 		{Coin: "SYS", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "sys1qsolominer", Height: 1500001, CoinbaseValue: 606060606, NBits: "1c00d2d1"},
 		{Coin: "XMY", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "MsoloMiner1addr", Height: 3000001, CoinbaseValue: 250000000, NBits: "1c0d3142"},
 		{Coin: "FBTC", Algorithm: "SHA-256d", BlockInterval: 30, AuxPow: true, MinerAddress: "FsoloMiner1addr", Height: 200001, CoinbaseValue: 2500000000, NBits: "1d00ffff"},
+		{Coin: "QBX", Algorithm: "SHA-256d", BlockInterval: 150, AuxPow: false, MinerAddress: "1QBXsoloMiner1addr", Height: 500001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 
 		// Scrypt coins
 		{Coin: "LTC", Algorithm: "Scrypt", BlockInterval: 150, AuxPow: false, MinerAddress: "ltc1qsolominer", Height: 2800001, CoinbaseValue: 625000000, NBits: "1a01cc46"},
@@ -665,13 +666,13 @@ func TestSOLO_BuildFailure_DGB_RecoveryShowsBuildFailedWithComponents(t *testing
 // =============================================================================
 
 // TestSOLO_BuildFailure_AllCoins_MultipleBuildFailuresPreserved writes build_failed
-// WAL entries for all 13 coins in a single WAL and verifies that every single
+// WAL entries for all 14 coins in a single WAL and verifies that every single
 // entry's raw components survive the roundtrip. This is the most comprehensive
 // test: if a miner running multiple coins has buildFullBlock fail for several
 // coins simultaneously, no solved block is lost.
 //
 // Risk vector: #4 - Multiple build failures across different coins
-// Coins: All 13 (BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC,
+// Coins: All 14 (BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC, QBX,
 //         LTC, DOGE, DGB-SCRYPT, PEP, CAT)
 // Algorithms: SHA-256d, Scrypt
 func TestSOLO_BuildFailure_AllCoins_MultipleBuildFailuresPreserved(t *testing.T) {
@@ -1281,17 +1282,17 @@ func TestSOLO_BuildFailure_SYS_RebuildFromWALComponents(t *testing.T) {
 }
 
 // =============================================================================
-// COMBINED: All 13 Coins End-to-End Build Failure and Recovery
+// COMBINED: All 14 Coins End-to-End Build Failure and Recovery
 // =============================================================================
 
-// TestSOLO_BuildFailure_All13Coins_EndToEndRecovery is the comprehensive test
-// that writes build_failed entries for all 13 coins, closes the WAL, reopens
+// TestSOLO_BuildFailure_All14Coins_EndToEndRecovery is the comprehensive test
+// that writes build_failed entries for all 14 coins, closes the WAL, reopens
 // it, and verifies every coin's raw components are intact for manual
 // reconstruction. This is the "no block left behind" test.
 //
 // Risk vectors: #1 through #4 combined
-// Coins: All 13 (SHA-256d + Scrypt, with and without AuxPoW)
-func TestSOLO_BuildFailure_All13Coins_EndToEndRecovery(t *testing.T) {
+// Coins: All 14 (SHA-256d + Scrypt, with and without AuxPoW)
+func TestSOLO_BuildFailure_All14Coins_EndToEndRecovery(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	logger := zap.NewNop()

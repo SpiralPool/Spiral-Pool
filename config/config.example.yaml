@@ -1,6 +1,6 @@
-# Spiral Pool v1.0 Configuration
+# Spiral Pool v1.1.0 Configuration
 # Multi-coin support with node failover
-# Supports SHA256d coins: BTC, BCH, DGB, BC2 (Bitcoin II), NMC (Namecoin - merge-mineable with BTC)
+# Supports SHA256d coins: BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC, QBX
 # Supports Scrypt coins: LTC, DOGE, DGB-SCRYPT, PEP, CAT
 #
 # NOTE: This is a TEMPLATE. All "CHANGE_ME" passwords are replaced automatically
@@ -12,10 +12,10 @@
 # from the user-agent string during mining.subscribe and sets appropriate difficulty:
 #
 #   Lottery (ESP32 Miner):            0.001   (target: 60s shares)
-#   Low (BitAxe Ultra, NMAxe):        500     (target: 10s shares)
-#   Mid (NerdQAxe, BitAxe Hex):       4000    (target: 5s shares)
-#   High (Antminer S9, older gen):    13000   (target: 4s shares)
-#   Pro (Antminer S19+, S21):         50000   (target: 2s shares)
+#   Low (BitAxe Ultra, NMAxe):        580     (target: 5s shares)
+#   Mid (NerdQAxe, BitAxe Hex):       1165    (target: 1s shares)
+#   High (Antminer S9, older gen):    3260    (target: 1s shares)
+#   Pro (Antminer S19+, S21):         25600   (target: 1s shares)
 #
 # Difficulty auto-adjusts based on actual hashrate to maintain target share times.
 # No need for separate low-diff ports - one port handles everything!
@@ -383,6 +383,199 @@ coins:
         password: "CHANGE_ME"
         priority: 1
         weight: 1
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Syscoin Pool (SHA256d) - Merge-mining ONLY with Bitcoin
+  # NOTE: Syscoin requires BTC parent chain — cannot solo mine standalone
+  # CbTx/quorum commitment requires a parent chain for block submissions
+  - symbol: SYS
+    pool_id: sys_mainnet
+    enabled: false  # Enable when ready (requires BTC parent chain)
+    address: "sys1qyoursyscoinaddress..."  # Bech32 format (sys1q...)
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 15335             # SYS stratum port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 30s
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 8370
+        user: spiralsys
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28370"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Myriad Pool (SHA256d) - Merge-mineable with Bitcoin
+  # Multi-algorithm coin (5 algos) — Spiral Pool mines the SHA-256d algorithm
+  - symbol: XMY
+    pool_id: xmy_mainnet
+    enabled: false  # Enable when ready
+    address: "my1qyourmyriadaddress..."  # Bech32 format (my1q...)
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 17335             # XMY stratum port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 60
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 15s    # XMY has 1-min blocks
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 10889
+        user: spiralxmy
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28889"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Fractal Bitcoin Pool (SHA256d) - Merge-mineable with Bitcoin
+  # WARNING: Uses same address format as BTC — verify wallet before use!
+  - symbol: FBTC
+    pool_id: fbtc_mainnet
+    enabled: false  # Enable when ready
+    address: "bc1qyourfractalbitcoinaddress..."  # Same format as BTC — MUST be Fractal Bitcoin wallet
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 18335             # FBTC stratum port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 5         # 5 seconds (FBTC has 30-sec blocks)
+          retargetTime: 30
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 10s    # FBTC has 30-sec blocks
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 8340
+        user: spiralfbtc
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28340"
+
+    payments:
+      enabled: false
+      scheme: SOLO
+
+  # Q-BitX Pool (SHA256d) - Standalone (NO merge mining)
+  # Post-quantum Bitcoin fork with Dilithium signatures
+  - symbol: QBX
+    pool_id: qbx_mainnet
+    enabled: false  # Enable when ready
+    address: "MYourQBitXAddress..."  # P2PKH format (M-prefix) or pq-prefix for post-quantum
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 20335             # QBX stratum port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 30s    # QBX has 2.5-min blocks
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 8344
+        user: spiralqbx
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28344"
 
     payments:
       enabled: false

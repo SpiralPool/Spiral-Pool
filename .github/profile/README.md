@@ -35,7 +35,7 @@ Free, open-source Stratum server software for proof-of-work (PoW) cryptocurrency
 - 🔗 **Merge mining** — 6 AuxPoW pairs across BTC and LTC parent chains
 - 🏥 **High availability** — VIP failover, Patroni database replication, advisory lock fencing
 - 📊 **Prometheus metrics** — Per-session, per-worker observability
-- 🤖 **Spiral Sentinel** — Device discovery, health monitoring, Discord/Telegram/XMPP alerts
+- 🤖 **Spiral Sentinel** — Device discovery, health monitoring, Discord/Telegram/XMPP/ntfy/email alerts
 
 ### 📬 Connect
 

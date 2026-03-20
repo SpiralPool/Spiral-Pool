@@ -1,6 +1,6 @@
 # Security Architecture Decisions
 
-**Last Updated:** 2026-03-01
+**Last Updated:** 2026-03-16
 
 ## Purpose
 
@@ -43,6 +43,31 @@ Spiral Pool manages external processes as core functionality:
 - Verify all configured binary paths point to trusted executables
 - Use least-privilege service accounts where possible
 - Implement process monitoring and auditing
+
+### SimpleSwap — No Pool Server Involvement in Financial Transactions
+
+Spiral Pool includes an optional SimpleSwap.io swap alert feature. When enabled, `SpiralSentinel` appends a SimpleSwap.io link to `sats_surge` alerts (fired when a mined coin rises 25%+ against BTC over 7 days).
+
+**Decision: The pool server has no involvement in any swap transaction.**
+
+| Property | Detail |
+|----------|--------|
+| Config file | `/etc/spiralpool/simpleswap.conf` (chmod 600, root:root) |
+| Config stores | `SIMPLESWAP_ENABLED` only |
+| API key | Not used, not stored — operator uses the SimpleSwap website directly |
+| BTC address | Not stored — operator enters it on the SimpleSwap website |
+| Pool server role | Sends the alert link only; no API calls, no coin transfers |
+
+**Rationale:** All swap activity happens on the SimpleSwap.io website in the operator's browser. The pool server generates an alert with a pre-filled link (source coin and BTC destination pre-selected). The operator clicks the link, enters their BTC address on the SimpleSwap website, and completes the swap there. This design means:
+
+- No API keys or wallet addresses are stored anywhere on the pool server
+- No financial transaction data ever passes through the pool software
+- No risk of the pool being classified as a money transmitter or financial intermediary
+- No attack surface from stored exchange credentials
+
+**Operator responsibilities:** Operators are solely responsible for complying with all applicable AML/KYC requirements, tax reporting obligations, and SimpleSwap.io's Terms of Service. See TERMS.md (Section 5D) and WARNINGS.md for full details.
+
+---
 
 ### Randomness Usage
 
@@ -106,7 +131,7 @@ Database connections use PostgreSQL's native `sslmode` parameter via the `pgx` d
 
 ### Gosec Suppressions (#nosec)
 
-All 122 `#nosec` annotations across 29 files have been reviewed and are justified. The table below covers all suppressions grouped by category.
+All 123 `#nosec` annotations across 29 files have been reviewed and are justified. The table below covers all suppressions grouped by category.
 
 **Security-sensitive suppressions (G204, G304, G402, G407):**
 
@@ -212,11 +237,35 @@ src/stratum/internal/database/     - Database with advisory locks
 src/stratum/internal/payments/     - Payment processor with fencing
 ```
 
+## Cloud Deployments — Architectural Restrictions
+
+When `CLOUD_DETECTED` is set during installation (100+ providers auto-detected plus a manual failsafe), the following restrictions are applied automatically. These are not operator-configurable on cloud — they are enforced by the installer.
+
+| Restriction | Behavior | Rationale |
+|-------------|----------|-----------|
+| Tor | Disabled automatically | Most provider AUPs prohibit Tor; Tor does not protect against provider hypervisor access — the primary cloud threat |
+| High Availability | Forced to Standalone | Cloud provider networks block VRRP multicast/broadcast required for keepalived VIP failover; etcd split-brain risk without physical node isolation |
+| ZMQ bindings | `127.0.0.1` only | ZMQ is a local IPC channel between daemon and stratum — never needs external reachability; `0.0.0.0` binding would expose it to the provider's tenant network |
+| Prometheus metrics | Loopback-only (UFW) | Cloud "local subnet" is a shared tenant network that may include other customers' VMs; `SPIRAL_METRICS_TOKEN` enforced |
+| Dashboard port 1618 | UFW closed; SSH tunnel required | Dashboard is HTTP-only; exposing it on the public internet is insecure regardless of rate limiting |
+| IPv6 | Disabled at kernel level | Causes kernel routing cache corruption during keepalived VIP failover operations; all services use IPv4 |
+
+**Verified code locations:**
+
+- Tor cloud block: `install.sh:10434` — `if [[ -n "${CLOUD_DETECTED:-}" ]]; then TOR_ENABLED="false" ...`
+- HA standalone enforcement: `install.sh` (`select_ha_mode`) — options 2/3 auto-revert to standalone when `CLOUD_DETECTED` is set
+- ZMQ bindings: all `zmqpubhashblock`, `zmqpubrawtx`, `zmqpubrawblock` entries use `tcp://127.0.0.1:PORT` in all coin daemon configs
+- Metrics UFW: `install.sh:14564` — subnet `ufw allow` skipped; loopback-only rules applied on cloud
+- Dashboard UFW: `install.sh:14545` — `if [[ -z "$CLOUD_DETECTED" ]]; then sudo ufw allow $DASHBOARD_PORT/tcp; fi`
+- IPv6: `install.sh` (`configure_network`) — `net.ipv6.conf.all.disable_ipv6 = 1` written to `/etc/sysctl.conf`
+
+---
+
 ## Operator Security Guidance
 
 ### Recommended Deployment
 
-1. **Operator-controlled infrastructure only** - Bare metal or self-hosted VMs. **Cloud/VPS is NOT supported** — the installer blocks cloud providers. See WARNINGS.md.
+1. **Operator-controlled infrastructure preferred** - Bare metal or self-hosted VMs. Cloud/VPS is supported with explicit risk acknowledgment during install (provider ToS violations, bandwidth billing, provider access to credentials). See WARNINGS.md and CLOUD_OPERATIONS.md.
 2. **x86_64 architecture only** - ARM/Raspberry Pi has not been tested
 3. **Run as dedicated user** - Not root except for VIP management
 4. **Audit configured paths** - Verify all binary paths before deployment
@@ -250,5 +299,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v1.0 - Security Architecture Decisions*
+*Spiral Pool v1.1.0 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

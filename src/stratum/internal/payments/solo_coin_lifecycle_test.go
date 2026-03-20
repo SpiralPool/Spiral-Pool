@@ -7,7 +7,7 @@
 // pending -> orphaned lifecycle using the errInject mocks. Exercises
 // confirmation with custom maturity, bulk block processing, deep reorg
 // detection on parent coins, cross-chain isolation for merge mining
-// pairs, and near-orphan recovery across all 13 supported coins.
+// pairs, and near-orphan recovery across all 14 supported coins.
 package payments
 
 import (
@@ -20,7 +20,7 @@ import (
 // TEST 1: All Coins — Pending to Confirmed
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// For each of the 13 coins: add a pending block at height 800000, set the
+// For each of the 14 coins: add a pending block at height 800000, set the
 // chain tip at 800000 + maturity + 10, set a matching block hash, and run
 // StabilityWindowChecks cycles. The block must transition to confirmed.
 

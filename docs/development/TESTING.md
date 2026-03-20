@@ -1,8 +1,8 @@
 # Spiral Stratum - Test Suite Reference
 
-**Version**: 1.0
-**Updated**: 2026-03-01
-**Total Test Files**: 238
+**Version**: 1.1
+**Updated**: 2026-03-20
+**Total Test Files**: 240
 **Total Test Functions**: 3,500+
 
 ---
@@ -63,7 +63,7 @@ All tests are designed to run with `go test -race` and should produce zero data 
 
 | File | Focus |
 |------|-------|
-| `handlers_test.go` | REST API handler correctness |
+| `handlers_test.go` | REST API handler correctness; includes `POST /api/admin/kick` tests (v1.1.0) |
 | `security_test.go` | API authentication, authorization |
 | `workers_test.go` | Worker stats API endpoints |
 

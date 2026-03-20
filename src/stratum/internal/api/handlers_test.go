@@ -16,11 +16,13 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/spiralpool/stratum/internal/config"
+	"go.uber.org/zap"
 )
 
 // TestValidAddressPattern verifies address validation for multiple coins.
@@ -493,5 +495,124 @@ func BenchmarkPathParsing(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = strings.Split(path, "/")
+	}
+}
+
+// =============================================================================
+// KICK WORKER ENDPOINT TESTS (POST /api/admin/kick)
+// =============================================================================
+
+// mockConnectionProvider is a test double for ConnectionStatsProvider.
+type mockConnectionProvider struct {
+	kickCount int
+}
+
+func (m *mockConnectionProvider) GetActiveConnections() []WorkerConnection { return nil }
+func (m *mockConnectionProvider) KickWorkerByIP(_ string) int             { return m.kickCount }
+
+func TestHandleKickWorker_MethodNotAllowed(t *testing.T) {
+	s := &Server{
+		cfg:    &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger: zap.NewNop().Sugar(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/kick?ip=192.168.1.1", nil)
+	rr := httptest.NewRecorder()
+	s.handleKickWorker(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestHandleKickWorker_MissingIP(t *testing.T) {
+	s := &Server{
+		cfg:    &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger: zap.NewNop().Sugar(),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/kick", nil)
+	rr := httptest.NewRecorder()
+	s.handleKickWorker(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "ip") {
+		t.Errorf("expected 'ip' in error body, got: %s", rr.Body.String())
+	}
+}
+
+func TestHandleKickWorker_InvalidIP(t *testing.T) {
+	s := &Server{
+		cfg:    &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger: zap.NewNop().Sugar(),
+	}
+
+	for _, bad := range []string{"notanip", "999.999.999.999", "'; DROP TABLE--", ""} {
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/kick?ip="+url.QueryEscape(bad), nil)
+		rr := httptest.NewRecorder()
+		s.handleKickWorker(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("ip=%q: expected 400, got %d", bad, rr.Code)
+		}
+	}
+}
+
+func TestHandleKickWorker_NoConnectionProvider(t *testing.T) {
+	s := &Server{
+		cfg:                &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger:             nil,
+		connectionProvider: nil,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/kick?ip=192.168.1.100", nil)
+	rr := httptest.NewRecorder()
+	s.handleKickWorker(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestHandleKickWorker_Success(t *testing.T) {
+	mock := &mockConnectionProvider{kickCount: 3}
+	s := &Server{
+		cfg:                &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger:             nil,
+		connectionProvider: mock,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/kick?ip=192.168.1.100", nil)
+	rr := httptest.NewRecorder()
+	s.handleKickWorker(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "192.168.1.100") {
+		t.Errorf("expected IP in response, got: %s", body)
+	}
+	if !strings.Contains(body, "3") {
+		t.Errorf("expected kicked count 3 in response, got: %s", body)
+	}
+}
+
+func TestHandleKickWorker_ZeroKicked(t *testing.T) {
+	mock := &mockConnectionProvider{kickCount: 0}
+	s := &Server{
+		cfg:                &config.APIConfig{Enabled: true, AdminAPIKey: "test-key"},
+		logger:             nil,
+		connectionProvider: mock,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/kick?ip=10.0.0.50", nil)
+	rr := httptest.NewRecorder()
+	s.handleKickWorker(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 even when 0 sessions kicked, got %d", rr.Code)
 	}
 }

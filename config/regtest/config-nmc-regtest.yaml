@@ -1,19 +1,19 @@
-# Spiral Pool - Myriad (XMY) Regtest Integration Test Config
+# Spiral Pool - Namecoin (NMC) Regtest Integration Test Config
 #
-# This config runs the pool against a local myriadcoind in regtest mode.
+# This config runs the pool against a local namecoind in regtest mode.
 # Regtest = private local blockchain, difficulty 1, instant CPU mining.
 #
 # Purpose: End-to-end validation of the full block lifecycle:
 #   stratum subscribe/authorize -> getblocktemplate -> miner solves ->
 #   submitblock -> ZMQ hashblock notification -> DB insert -> status update
 #
-# Note: XMY supports AuxPoW (merge-mining with BTC parent). This config tests
-#       standalone mining only. Merge-mining tests require both BTC and XMY daemons.
+# Note: NMC supports AuxPoW (merge-mining with BTC parent). This config tests
+#       standalone mining only. Merge-mining tests require both BTC and NMC daemons.
 #
 # Usage:
-#   1. Start myriadcoind in regtest mode (see scripts/linux/regtest.sh xmy)
-#   2. Start the pool:  ./spiralpool -config config-xmy-regtest.yaml
-#   3. Connect cpuminer: minerd -a sha256d -o stratum+tcp://127.0.0.1:16349 -u TEST.worker1 -p x
+#   1. Start namecoind in regtest mode (see scripts/linux/regtest.sh nmc)
+#   2. Start the pool:  ./spiralpool -config config/regtest/config-nmc-regtest.yaml
+#   3. Connect cpuminer: minerd -a sha256d -o stratum+tcp://127.0.0.1:16343 -u TEST.worker1 -p x
 #   4. Watch pool logs for block found/submitted messages
 #
 version: 2
@@ -21,8 +21,8 @@ version: 2
 global:
   log_level: debug        # Verbose for integration testing
   log_format: text        # Human-readable during testing
-  metrics_port: 19116
-  api_port: 14016
+  metrics_port: 19110
+  api_port: 14010
   api_enabled: true
 
   sentinel:
@@ -52,23 +52,23 @@ database:
   port: 5432
   user: spiralstratum
   password: "spiralstratum"
-  database: spiralstratum_xmy_regtest
+  database: spiralstratum_nmc_regtest
   maxConnections: 50
   batching:
     size: 100
     interval: 2s
 
 coins:
-  - symbol: XMY
-    pool_id: xmy_regtest
+  - symbol: NMC
+    pool_id: nmc_regtest
     enabled: true
     address: "REGTEST_ADDRESS_PLACEHOLDER"
-    coinbase_text: "Spiral XMY Regtest"
+    coinbase_text: "Spiral NMC Regtest"
     skip_genesis_verify: true
 
     stratum:
-      port: 16349
-      port_v2: 17343
+      port: 16343
+      port_v2: 17341
       difficulty:
         initial: 0.01             # Low share diff for V2 Go test miner
         varDiff:
@@ -94,14 +94,14 @@ coins:
     nodes:
       - id: regtest-primary
         host: 127.0.0.1
-        port: 18562               # XMY regtest RPC port
+        port: 18556               # NMC regtest RPC port
         user: spiraltest
         password: "spiraltest"
         priority: 0
         weight: 1
         zmq:
           enabled: true
-          endpoint: "tcp://127.0.0.1:29354"
+          endpoint: "tcp://127.0.0.1:29348"
 
     payments:
       enabled: true

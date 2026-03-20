@@ -1,5 +1,11 @@
 # Miner Device Support Reference
 
+> **⚠️ IMPORTANT — READ BEFORE CONNECTING YOUR MINER**
+>
+> Spiral Pool is a **single-operator solo mining pool**. One wallet address per coin is configured by the pool operator at install time. **All block rewards go directly to the operator's wallet address, regardless of which miner found the block.** Miners connecting to a Spiral Pool instance receive no direct payment from the pool software.
+>
+> If you are connecting your miner to someone else's Spiral Pool, confirm with that operator what compensation arrangement, if any, they have in place. The pool software itself has no mechanism to split rewards or pay you directly.
+
 This document details the mining hardware supported by Spiral Dash, Spiral Sentinel, and the `spiralctl scan` utility, including API protocols, auto-detection capabilities, and known limitations.
 
 ## Support Tiers
@@ -238,9 +244,9 @@ Spiral Sentinel monitors all configured devices for these alert conditions:
 | Alert Type | AxeOS | Goldshell | CGMiner (Antminer/Whatsminer/etc.) | BraiinsOS | Vnish | ePIC | LuxOS | ESP32 (Pool API) |
 |------------|-------|-----------|-----------------------------------|-----------|-------|------|-------|------------------|
 | Offline | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Temp Warning (>80C) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | N/A |
-| Temp Critical (>95C) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | N/A |
-| Thermal Shutdown (>105C) | Yes* | N/A | Yes | Yes | Yes | Yes | Yes | N/A |
+| Temp Warning (>=75C) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | N/A |
+| Temp Critical (>=85C) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | N/A |
+| Thermal Shutdown (>=95C immediate; >=85C sustained 90s) | Yes* | N/A | Yes | Yes | Yes | Yes | Yes | N/A |
 | Fan Failure (0 RPM) | N/A | N/A | Yes | Yes | Yes | Yes | Yes | N/A |
 | Hashboard Dead | N/A | N/A | Yes | N/A | N/A | N/A | N/A | N/A |
 | HW Error Rate | N/A | N/A | Yes | N/A | N/A | N/A | N/A | N/A |

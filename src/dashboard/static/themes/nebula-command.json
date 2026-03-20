@@ -39,7 +39,7 @@
     "mono": "'Share Tech Mono', monospace"
   },
   "effects": {
-    "glowIntensity": 0.35,
+    "glowIntensity": 0.25,
     "animationSpeed": 1.0,
     "borderRadius": "4px",
     "useGlitchEffect": false,

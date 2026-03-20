@@ -132,7 +132,7 @@ func TestSOLO_ZMQFailure_AllCoins_Drop(t *testing.T) {
 // are handled without block loss or status corruption.
 //
 // Risk vector: ZMQ duplicate (same hashblock notification received twice)
-// Coins: dynamic loop over all 13 supported coins
+// Coins: dynamic loop over all 14 supported coins
 func TestSOLO_ZMQFailure_AllCoins_Duplicate(t *testing.T) {
 	t.Parallel()
 
@@ -262,7 +262,7 @@ func TestSOLO_ZMQFailure_AllCoins_Stall(t *testing.T) {
 // to the processor; only DB contents matter.
 //
 // Risk vector: ZMQ disabled (pure RPC polling fallback for all block discovery)
-// Coverage: all 13 coins, all algorithms (sha256d, scrypt), all block intervals
+// Coverage: all 14 coins, all algorithms (sha256d, scrypt), all block intervals
 func TestSOLO_ZMQFailure_AllCoins_Disabled(t *testing.T) {
 	t.Parallel()
 

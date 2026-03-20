@@ -33,6 +33,29 @@
 
 set -euo pipefail
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
+# ── Patroni REST API credentials ─────────────────────────────────────────────
+# SECURITY (patroni-auth): Load Patroni REST API credentials if configured.
+# Written by the installer to /spiralpool/config/patroni-api.conf (mode 600,
+# root-only). Populates PATRONI_CURL_AUTH array used by all curl calls below.
+PATRONI_CURL_AUTH=()
+if [[ -f /spiralpool/config/patroni-api.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/patroni-api.conf
+    [[ -n "${PATRONI_API_USERNAME:-}" ]] && PATRONI_CURL_AUTH=(-u "${PATRONI_API_USERNAME}:${PATRONI_API_PASSWORD}")
+fi
+
 INSTALL_DIR="/spiralpool"
 LOG_PREFIX="ha-failback"
 HA_STATUS_PORT=5354
@@ -59,7 +82,7 @@ SYNC_DISABLED=0
 cleanup_sync_mode() {
     if [[ $SYNC_DISABLED -eq 1 ]]; then
         echo "${LOG_PREFIX}: CLEANUP: Re-enabling synchronous_mode after abnormal exit..."
-        curl -s --max-time 10 -X PATCH "http://localhost:8008/config" \
+        curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 10 -X PATCH "http://localhost:8008/config" \
             -H "Content-Type: application/json" \
             -d '{"synchronous_mode": true}' 2>/dev/null || true
         echo "${LOG_PREFIX}: CLEANUP: synchronous_mode re-enabled"
@@ -237,7 +260,7 @@ fi
 log "Step 2: Waiting for Patroni to join as replica (max 5 min)..."
 PATRONI_READY=0
 for i in $(seq 1 60); do
-    PATRONI_JSON=$(curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
+    PATRONI_JSON=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
     PATRONI_ROLE=$(echo "$PATRONI_JSON" | jq -r '.role // ""' 2>/dev/null || echo "")
     PATRONI_STATE=$(echo "$PATRONI_JSON" | jq -r '.state // ""' 2>/dev/null || echo "")
 
@@ -271,7 +294,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
     LAG_ZERO=0
     for i in $(seq 1 60); do
         # Use /cluster endpoint — it reports lag per member directly
-        CLUSTER_JSON=$(curl -s --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
+        CLUSTER_JSON=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
         NODE_LAG=$(echo "$CLUSTER_JSON" | jq -r --arg host "$PATRONI_NAME" \
             '.members[] | select(.name == $host) | .lag // 0' 2>/dev/null || echo "unknown")
 
@@ -310,7 +333,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
     log "Step 3a2: Waiting for Patroni to promote to sync_standby..."
     IS_SYNC=0
     for i in $(seq 1 30); do
-        CLUSTER_JSON=$(curl -s --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
+        CLUSTER_JSON=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
         MY_ROLE=$(echo "$CLUSTER_JSON" | jq -r --arg host "$PATRONI_NAME" \
             '.members[] | select(.name == $host) | .role // ""' 2>/dev/null || echo "")
         if [[ "$MY_ROLE" == "sync_standby" ]]; then
@@ -329,7 +352,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
         # so switchover works for any replica. Safe because Step 3a confirmed lag=0.
         log "WARN: Step 3a2: Not sync_standby after 2.5 min — likely 3+ node cluster"
         log "Step 3a2: Temporarily disabling synchronous_mode for switchover (lag verified = 0)"
-        PATCH_RESULT=$(curl -s --max-time 10 -X PATCH "http://localhost:8008/config" \
+        PATCH_RESULT=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 10 -X PATCH "http://localhost:8008/config" \
             -H "Content-Type: application/json" \
             -d '{"synchronous_mode": false}' 2>/dev/null || echo "")
         if echo "$PATCH_RESULT" | grep -qi "error"; then
@@ -347,7 +370,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
     log "Step 3b: Triggering Patroni switchover..."
     # Fetch cluster state ONCE to avoid TOCTOU (leader could change between two curl calls)
     # NOTE: || echo "" prevents set -e exit so we can log a useful error
-    CLUSTER_JSON=$(curl -s --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
+    CLUSTER_JSON=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/cluster" 2>/dev/null || echo "")
     LEADER_NAME=$(echo "$CLUSTER_JSON" | \
         jq -r '.members[] | select(.role == "leader" or .role == "master") | .name' 2>/dev/null | head -1 || echo "")
 
@@ -374,7 +397,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
 
     log "Step 3b: Current leader: ${LEADER_NAME} (at ${LEADER_API_IP}), switchover target: ${PATRONI_NAME}"
     # Switchover must be sent to the LEADER's Patroni API, not the local replica
-    SWITCHOVER_RESULT=$(curl -s --max-time 30 -X POST "http://${LEADER_API_IP}:8008/switchover" \
+    SWITCHOVER_RESULT=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 30 -X POST "http://${LEADER_API_IP}:8008/switchover" \
         -H "Content-Type: application/json" \
         -d "{\"leader\": \"${LEADER_NAME}\", \"candidate\": \"${PATRONI_NAME}\"}" 2>/dev/null || echo "")
 
@@ -389,7 +412,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
     log "Step 3c: Waiting for Patroni to report primary role (max 60s)..."
     IS_PRIMARY=0
     for i in $(seq 1 30); do
-        PATRONI_JSON=$(curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
+        PATRONI_JSON=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
         PATRONI_ROLE=$(echo "$PATRONI_JSON" | jq -r '.role // ""' 2>/dev/null || echo "")
         if [[ "$PATRONI_ROLE" == "master" || "$PATRONI_ROLE" == "primary" ]]; then
             IS_PRIMARY=1
@@ -407,7 +430,7 @@ if [[ $PATRONI_READY -eq 1 ]]; then
     # Re-enable synchronous_mode if we disabled it for 3+ node switchover
     if [[ $SYNC_DISABLED -eq 1 ]]; then
         log "Step 3c: Re-enabling synchronous_mode..."
-        curl -s --max-time 10 -X PATCH "http://localhost:8008/config" \
+        curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 10 -X PATCH "http://localhost:8008/config" \
             -H "Content-Type: application/json" \
             -d '{"synchronous_mode": true}' 2>/dev/null || true
         SYNC_DISABLED=0
@@ -537,7 +560,7 @@ else
 fi
 
 # Check Patroni is primary
-PATRONI_ROLE=$(curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | \
+PATRONI_ROLE=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | \
     jq -r '.role // ""' 2>/dev/null || echo "")
 if [[ "$PATRONI_ROLE" == "master" || "$PATRONI_ROLE" == "primary" ]]; then
     log "  Patroni: ${PATRONI_ROLE} (ok)"

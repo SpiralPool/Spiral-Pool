@@ -49,7 +49,7 @@ func newRPCFailureProcessor(db *mockBlockStore, rpc *mockDaemonRPC) *Processor {
 // the entire confirmation cycle aborts and no pending block is orphaned.
 //
 // Risk vector:  GetBlockchainInfo fails -> cycle aborted, blocks stay pending (NOT orphaned)
-// Coins:        All 13 supported coins (SHA-256d + Scrypt)
+// Coins:        All 14 supported coins (SHA-256d + Scrypt)
 // Block interval: Varies per coin (15s - 600s)
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_GetBlockchainInfoFails(t *testing.T) {
@@ -104,7 +104,7 @@ func TestSOLO_RPCFailure_AllCoins_GetBlockchainInfoFails(t *testing.T) {
 // processing normally.
 //
 // Risk vector:  GetBlockHash timeout for specific block -> block skipped, stays pending
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_GetBlockHashTimeout(t *testing.T) {
@@ -165,7 +165,7 @@ func TestSOLO_RPCFailure_AllCoins_GetBlockHashTimeout(t *testing.T) {
 // the cycle aborts gracefully and no pending blocks are falsely orphaned.
 //
 // Risk vector:  GetBlockchainInfo returns truncated/nil -> graceful handling, no false orphans
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_GetBlockchainInfoNil(t *testing.T) {
@@ -228,7 +228,7 @@ func TestSOLO_RPCFailure_AllCoins_GetBlockchainInfoNil(t *testing.T) {
 // remain in their current state with zero status mutations.
 //
 // Risk vector:  All RPC calls fail -> no status changes, blocks remain safe in pending
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_AllRPCFail(t *testing.T) {
@@ -299,7 +299,7 @@ func TestSOLO_RPCFailure_AllCoins_AllRPCFail(t *testing.T) {
 // orphaned or confirmed.
 //
 // Risk vector:  Intermittent RPC: first GetBlockchainInfo succeeds, TOCTOU check fails -> cycle aborted
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_TOCTOUCheckFails(t *testing.T) {
@@ -380,7 +380,7 @@ func TestSOLO_RPCFailure_AllCoins_TOCTOUCheckFails(t *testing.T) {
 // consecutive mismatches before marking orphaned.
 //
 // Risk vector:  GetBlockHash returns wrong hash but under OrphanMismatchThreshold -> delayed orphaning
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_WrongHashUnderThreshold(t *testing.T) {
@@ -536,7 +536,7 @@ func TestSOLO_RPCFailure_Scrypt_GetBlockchainInfoFails(t *testing.T) {
 // (progress updates etc.) and are not disrupted.
 //
 // Risk vector:  GetBlockHash timeout for specific block -> block skipped, stays pending
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_PartialGetBlockHashFailure(t *testing.T) {
@@ -604,7 +604,7 @@ func TestSOLO_RPCFailure_AllCoins_PartialGetBlockHashFailure(t *testing.T) {
 // safely in pending status and are never orphaned.
 //
 // Risk vector:  All RPC calls fail -> no status changes, blocks remain safe in pending
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_RepeatedFailuresNeverOrphan(t *testing.T) {
@@ -656,7 +656,7 @@ func TestSOLO_RPCFailure_AllCoins_RepeatedFailuresNeverOrphan(t *testing.T) {
 // The cycle must abort without processing any block.
 //
 // Risk vector:  Intermittent RPC: first GetBlockchainInfo succeeds, TOCTOU check fails -> cycle aborted
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_TOCTOUTipChangeAbortsCycle(t *testing.T) {
@@ -738,7 +738,7 @@ func TestSOLO_RPCFailure_AllCoins_TOCTOUTipChangeAbortsCycle(t *testing.T) {
 // upon a successful match, preventing false orphaning from temporary forks.
 //
 // Risk vector:  GetBlockHash returns wrong hash but under OrphanMismatchThreshold -> delayed orphaning
-// Coins:        All 13 supported coins
+// Coins:        All 14 supported coins
 // Block interval: Varies per coin
 // Algorithm:    SHA-256d and Scrypt
 func TestSOLO_RPCFailure_AllCoins_WrongHashRecovery(t *testing.T) {

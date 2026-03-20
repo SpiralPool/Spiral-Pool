@@ -299,7 +299,7 @@
                 <span class="title-icon">📡</span>
                 Auto-Discover Miners
             </h3>
-            <p class="section-desc">Scan your local network to automatically find mining devices. This will detect AxeOS, BitAxe, NMaxe, and Avalon miners.</p>
+            <p class="section-desc">Scan your local network to automatically find mining devices. Detects AxeOS, BitAxe, NMaxe, Avalon, Antminer, Whatsminer, and all CGMiner API devices.</p>
 
             <div class="scan-controls">
                 <div class="scan-subnet-info">
@@ -349,46 +349,335 @@
             </div>
         </div>
 
-        <!-- AxeOS HTTP API Devices -->
+        <!-- BitAxe Devices -->
         <div class="config-section cyber-card">
             <h3 class="section-title">
                 <span class="title-icon">🔷</span>
-                ASIC Miners - AxeOS
+                BitAxe Devices
             </h3>
-            <p class="section-desc">BitAxe, NMaxe, NerdQAxe, QAxe, Hammer, Goldshell, and ESP32 Miner devices. Auto-detected via HTTP API (port 80).</p>
-
-            <div id="axeos-devices" class="device-list">
-                <!-- Device entries will be added here -->
-            </div>
-
-            <div class="add-device-row">
-                <button type="button" class="btn-add-device" onclick="addDevice('axeos')">
-                    <span class="btn-icon">+</span> Add AxeOS Device
-                </button>
-                <button type="button" class="btn-add-device btn-esp32miner" onclick="addDeviceWithData('esp32miner', {})">
-                    <span class="btn-icon">+</span> Add ESP32 Miner (Manual)
-                </button>
-            </div>
-            <p class="section-note">💡 <strong>ESP32 Miner V2:</strong> Has no HTTP API and cannot be auto-detected. Use "Add ESP32 Miner" to manually enter its IP. Sentinel will show these as 🎰 <em>Online (Stratum)</em> — monitored via pool stratum connections instead of direct HTTP polling.</p>
+            <p class="section-desc">BitAxe Ultra, Supra, Hex, Gamma and other standard AxeOS devices. HTTP API (port 80).</p>
+            <div id="axeos-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('axeos')">
+                <span class="btn-icon">+</span> Add BitAxe Device
+            </button>
         </div>
 
-        <!-- CGMiner API ASIC Devices -->
+        <!-- NMaxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔷</span>
+                NMaxe Devices
+            </h3>
+            <p class="section-desc">NMaxe low-power AxeOS devices (~500 GH/s @ 15W). HTTP API (port 80).</p>
+            <div id="nmaxe-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('nmaxe')">
+                <span class="btn-icon">+</span> Add NMaxe Device
+            </button>
+        </div>
+
+        <!-- NerdQAxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🤓</span>
+                NerdQAxe / NerdAxe / NerdOctaxe Devices
+            </h3>
+            <p class="section-desc">NerdQAxe++, NerdAxe, NerdOctaxe Gamma running AxeOS firmware. HTTP API (port 80).</p>
+            <div id="nerdqaxe-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('nerdqaxe')">
+                <span class="btn-icon">+</span> Add NerdQAxe Device
+            </button>
+        </div>
+
+        <!-- QAxe Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">4️⃣</span>
+                QAxe / QAxe+ Devices
+            </h3>
+            <p class="section-desc">QAxe quad-ASIC (~2 TH/s) and QAxe+ enhanced cooling running AxeOS firmware. HTTP API (port 80).</p>
+            <div id="qaxe-devices" class="device-list"></div>
+            <div class="add-device-row">
+                <button type="button" class="btn-add-device" onclick="addDevice('qaxe')">
+                    <span class="btn-icon">+</span> Add QAxe Device
+                </button>
+                <button type="button" class="btn-add-device" onclick="addDevice('qaxeplus')">
+                    <span class="btn-icon">+</span> Add QAxe+ Device
+                </button>
+            </div>
+        </div>
+
+        <!-- Lucky Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🍀</span>
+                Lucky Miner Devices
+            </h3>
+            <p class="section-desc">Lucky Miner LV06/LV07/LV08 running AxeOS firmware. HTTP API (port 80).</p>
+            <div id="luckyminer-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('luckyminer')">
+                <span class="btn-icon">+</span> Add Lucky Miner Device
+            </button>
+        </div>
+
+        <!-- Jingle Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔔</span>
+                Jingle Miner Devices
+            </h3>
+            <p class="section-desc">Jingle Miner BTC Solo Pro/Lite running AxeOS firmware. HTTP API (port 80).</p>
+            <div id="jingleminer-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('jingleminer')">
+                <span class="btn-icon">+</span> Add Jingle Miner Device
+            </button>
+        </div>
+
+        <!-- Zyber Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚙️</span>
+                Zyber Devices
+            </h3>
+            <p class="section-desc">Zyber 8G/8GP/8S (TinyChipHub) running AxeOS firmware. HTTP API (port 80).</p>
+            <div id="zyber-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('zyber')">
+                <span class="btn-icon">+</span> Add Zyber Device
+            </button>
+        </div>
+
+        <!-- Goldshell Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🥇</span>
+                Goldshell Devices
+            </h3>
+            <p class="section-desc">Goldshell Scrypt miners (Mini DOGE, LT5, LT6). HTTP API (port 80).</p>
+            <div id="goldshell-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('goldshell')">
+                <span class="btn-icon">+</span> Add Goldshell Device
+            </button>
+        </div>
+
+        <!-- Hammer Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔨</span>
+                Hammer Miner Devices
+            </h3>
+            <p class="section-desc">PlebSource Hammer Miner Scrypt devices. HTTP API (port 80).</p>
+            <div id="hammer-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('hammer')">
+                <span class="btn-icon">+</span> Add Hammer Miner Device
+            </button>
+        </div>
+
+        <!-- ESP32 Miner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">📡</span>
+                ESP32 Miner Devices
+            </h3>
+            <p class="section-desc">ESP32 miners (detected via stratum worker connections, no HTTP API).</p>
+            <div id="esp32miner-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('esp32miner')">
+                <span class="btn-icon">+</span> Add ESP32 Miner Device
+            </button>
+            <p class="section-note">💡 <strong>ESP32 Miner V2:</strong> Has no HTTP API and cannot be auto-detected. Use the button above to manually enter its IP. Sentinel will show these as 🎰 <em>Online (Stratum)</em> — monitored via pool stratum connections instead of direct HTTP polling.</p>
+        </div>
+
+        <!-- Avalon Devices -->
         <div class="config-section cyber-card">
             <h3 class="section-title">
                 <span class="title-icon">🔶</span>
-                ASIC Miners (CGMiner API)
+                Avalon ASIC Devices
             </h3>
-            <p class="section-desc">Add your ASIC miners below. Supports Antminer, Whatsminer, Avalon, Innosilicon, Ebang, and FutureBit. Uses CGMiner API (port 4028).</p>
+            <p class="section-desc">Canaan Avalon Nano 3/3S, Avalon Q miners. CGMiner API (port 4028).</p>
+            <div id="avalon-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('avalon')">
+                <span class="btn-icon">+</span> Add Avalon Device
+            </button>
+        </div>
 
-            <div id="avalon-devices" class="device-list">
-                <!-- Device entries will be added here -->
-            </div>
+        <!-- Canaan AvalonMiner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🏔️</span>
+                Canaan AvalonMiner Devices
+            </h3>
+            <p class="section-desc">Canaan AvalonMiner A12/A13/A14/A15/A16 series. CGMiner API (port 4028).</p>
+            <div id="canaan-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('canaan')">
+                <span class="btn-icon">+</span> Add Canaan AvalonMiner Device
+            </button>
+        </div>
 
-            <div class="add-device-row">
-                <button type="button" class="btn-add-device" onclick="addDevice('avalon')">
-                    <span class="btn-icon">+</span> Add ASIC Miner
-                </button>
-            </div>
+        <!-- Antminer SHA-256 Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⛏️</span>
+                Antminer Devices (SHA-256)
+            </h3>
+            <p class="section-desc">Bitmain Antminer S-series (S9, S17, S19, S21, etc.). CGMiner API (port 4028).</p>
+            <div id="antminer-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('antminer')">
+                <span class="btn-icon">+</span> Add Antminer Device
+            </button>
+        </div>
+
+        <!-- Antminer Scrypt Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐕</span>
+                Antminer Scrypt Devices
+            </h3>
+            <p class="section-desc">Bitmain Antminer L-series (L3+, L7, L9) for LTC/DOGE. CGMiner API (port 4028).</p>
+            <div id="antminer_scrypt-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('antminer_scrypt')">
+                <span class="btn-icon">+</span> Add Antminer Scrypt Device
+            </button>
+        </div>
+
+        <!-- Whatsminer Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔧</span>
+                Whatsminer Devices
+            </h3>
+            <p class="section-desc">MicroBT Whatsminer M-series (M30S, M50, M60, etc.). CGMiner API (port 4028).</p>
+            <div id="whatsminer-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('whatsminer')">
+                <span class="btn-icon">+</span> Add Whatsminer Device
+            </button>
+        </div>
+
+        <!-- Innosilicon Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">💎</span>
+                Innosilicon Devices
+            </h3>
+            <p class="section-desc">Innosilicon T-series miners. CGMiner API (port 4028).</p>
+            <div id="innosilicon-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('innosilicon')">
+                <span class="btn-icon">+</span> Add Innosilicon Device
+            </button>
+        </div>
+
+        <!-- FutureBit Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🚀</span>
+                FutureBit Devices
+            </h3>
+            <p class="section-desc">FutureBit Apollo and Moonlander devices. CGMiner API (port 4028).</p>
+            <div id="futurebit-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('futurebit')">
+                <span class="btn-icon">+</span> Add FutureBit Device
+            </button>
+        </div>
+
+        <!-- Ebang/Ebit Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">⚡</span>
+                Ebang / Ebit Devices
+            </h3>
+            <p class="section-desc">Ebang Ebit E9/E10/E11/E12/E12+ series. CGMiner API (port 4028).</p>
+            <div id="ebang-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('ebang')">
+                <span class="btn-icon">+</span> Add Ebang Device
+            </button>
+        </div>
+
+        <!-- GekkoScience Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🦎</span>
+                GekkoScience Devices
+            </h3>
+            <p class="section-desc">GekkoScience Compac F, NewPac, R606 USB miners. CGMiner API (port 4028).</p>
+            <div id="gekkoscience-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('gekkoscience')">
+                <span class="btn-icon">+</span> Add GekkoScience Device
+            </button>
+        </div>
+
+        <!-- iPollo Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐔</span>
+                iPollo Devices
+            </h3>
+            <p class="section-desc">iPollo V1, V1 Mini, G1 series. CGMiner API (port 4028).</p>
+            <div id="ipollo-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('ipollo')">
+                <span class="btn-icon">+</span> Add iPollo Device
+            </button>
+        </div>
+
+        <!-- ePIC BlockMiner Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🎮</span>
+                ePIC BlockMiner Devices
+            </h3>
+            <p class="section-desc">ePIC BlockMiner series. CGMiner API (port 4028).</p>
+            <div id="epic-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('epic')">
+                <span class="btn-icon">+</span> Add ePIC BlockMiner Device
+            </button>
+        </div>
+
+        <!-- Elphapex Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🐘</span>
+                Elphapex Devices
+            </h3>
+            <p class="section-desc">Elphapex DG1, DG Home Scrypt miners. CGMiner API (port 4028).</p>
+            <div id="elphapex-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('elphapex')">
+                <span class="btn-icon">+</span> Add Elphapex Device
+            </button>
+        </div>
+
+        <!-- BraiinsOS/BOS+ Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🧠</span>
+                BraiinsOS / BOS+ Devices
+            </h3>
+            <p class="section-desc">Antminers (S9, S17, S19, S21) running BraiinsOS/BOS+ custom firmware. REST API (port 80).</p>
+            <div id="braiins-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('braiins')">
+                <span class="btn-icon">+</span> Add BraiinsOS Device
+            </button>
+        </div>
+
+        <!-- Vnish Firmware Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">🔥</span>
+                Vnish Firmware Devices
+            </h3>
+            <p class="section-desc">Antminers running Vnish custom firmware. REST API (port 80) + CGMiner RPC (port 4028).</p>
+            <div id="vnish-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('vnish')">
+                <span class="btn-icon">+</span> Add Vnish Device
+            </button>
+        </div>
+
+        <!-- LuxOS Firmware Devices -->
+        <div class="config-section cyber-card">
+            <h3 class="section-title">
+                <span class="title-icon">💡</span>
+                LuxOS Firmware Devices
+            </h3>
+            <p class="section-desc">Antminers running LuxOS custom firmware. CGMiner API (port 4028).</p>
+            <div id="luxos-devices" class="device-list"></div>
+            <button type="button" class="btn-add-device" onclick="addDevice('luxos')">
+                <span class="btn-icon">+</span> Add LuxOS Device
+            </button>
         </div>
 
         <!-- Action Buttons -->
@@ -1462,6 +1751,15 @@
         // Uses safe DOM manipulation to prevent XSS
         function updateWalletInputs() {
             const container = document.getElementById('wallet-inputs');
+
+            // Preserve existing wallet values before rebuilding
+            const savedValues = {};
+            container.querySelectorAll('input[id^="wallet-"]').forEach(input => {
+                if (input.value.trim()) {
+                    savedValues[input.id] = input.value;
+                }
+            });
+
             container.innerHTML = '';
 
             // All supported coins including SYS (SYS only appears when merge mining is active)
@@ -1497,16 +1795,24 @@
                 input.placeholder = info.placeholder;
                 input.autocomplete = 'off';
 
+                // Restore previously entered or pre-populated value
+                if (savedValues[input.id]) {
+                    input.value = savedValues[input.id];
+                }
+
                 div.appendChild(badge);
                 div.appendChild(input);
                 container.appendChild(div);
             });
         }
 
-        // Device counters
+        // Device counters — one per device type
         let deviceCounters = {
-            axeos: 0,
-            avalon: 0
+            axeos: 0, nmaxe: 0, nerdqaxe: 0, esp32miner: 0, qaxe: 0, qaxeplus: 0,
+            hammer: 0, goldshell: 0, luckyminer: 0, jingleminer: 0, zyber: 0,
+            avalon: 0, antminer: 0, antminer_scrypt: 0, whatsminer: 0, innosilicon: 0,
+            futurebit: 0, canaan: 0, ebang: 0, gekkoscience: 0, ipollo: 0, epic: 0, elphapex: 0,
+            braiins: 0, vnish: 0, luxos: 0
         };
 
         // Discovered devices storage
@@ -1694,7 +2000,7 @@
             try {
                 // Start the scan with timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const timeoutId = setTimeout(() => controller.abort(), 45000);
 
                 const startResp = await fetch('/api/scan/start', {
                     method: 'POST',
@@ -1742,8 +2048,32 @@
                     stopPolling();  // Clear any existing interval to prevent leak
                     startPolling();
                 } else if (e.name === 'AbortError') {
+                    // The server may have still processed the request and started the scan
+                    // even though our fetch timed out. Check status, then auto-retry once.
+                    console.log('[SCAN] Fetch timed out — checking if server started scan anyway...');
+                    document.getElementById('scan-status').textContent = 'Checking scan status...';
+                    try {
+                        const statusResp = await fetch('/api/scan/status', { credentials: 'same-origin' });
+                        if (statusResp.ok) {
+                            const statusData = await statusResp.json();
+                            if (statusData.running || statusData.phase === 'scanning') {
+                                console.log('[SCAN] Server scan is running — joining existing scan');
+                                startPolling();
+                                return;
+                            }
+                        }
+                    } catch (_) { /* ignore */ }
+                    // Auto-retry once on cold start (server may have been initializing)
+                    if (!scanBtn._retried) {
+                        scanBtn._retried = true;
+                        console.log('[SCAN] Auto-retrying scan start (cold start)...');
+                        document.getElementById('scan-status').textContent = 'Server warming up — retrying...';
+                        setTimeout(() => startNetworkScan(), 2000);
+                        return;
+                    }
+                    scanBtn._retried = false;
                     restoreScanButton();
-                    document.getElementById('scan-status').textContent = 'Request timeout - server not responding';
+                    document.getElementById('scan-status').textContent = 'Server is slow to respond — click Scan Network again';
                 } else {
                     restoreScanButton();
                     document.getElementById('scan-status').textContent = `Error: ${e.message || 'Failed to start scan'}`;
@@ -1866,19 +2196,11 @@
         // Get list of IPs already configured in the device sections
         function getConfiguredIPs() {
             const configuredIPs = new Set();
-
-            // Check axeos devices
-            document.querySelectorAll('#axeos-devices .device-entry .url-input').forEach(input => {
+            // Check all device sections
+            document.querySelectorAll('.device-list .device-entry .url-input').forEach(input => {
                 const ip = input.value.trim().replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
                 if (ip) configuredIPs.add(ip);
             });
-
-            // Check avalon devices
-            document.querySelectorAll('#avalon-devices .device-entry .url-input').forEach(input => {
-                const ip = input.value.trim().replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
-                if (ip) configuredIPs.add(ip);
-            });
-
             return configuredIPs;
         }
 
@@ -1891,7 +2213,7 @@
             const listDiv = document.getElementById('discovered-list');
 
             // Whitelist of valid device types
-            const validTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'hammer', 'futurebit'];
+            const validTypes = VALID_DEVICE_TYPES;
 
             // Get already configured IPs to filter out duplicates
             const configuredIPs = getConfiguredIPs();
@@ -1974,10 +2296,11 @@
 
             // Clear existing device lists — scan results replace old config
             // (ESP32/stratum-only miners must be re-added via CLI since they can't be discovered by scan)
-            document.getElementById('axeos-devices').innerHTML = '';
-            document.getElementById('avalon-devices').innerHTML = '';
-            deviceCounters.axeos = 0;
-            deviceCounters.avalon = 0;
+            VALID_DEVICE_TYPES.forEach(t => {
+                const container = document.getElementById(`${t}-devices`);
+                if (container) container.innerHTML = '';
+                deviceCounters[t] = 0;
+            });
 
             checkboxes.forEach(checkbox => {
                 const index = parseInt(checkbox.dataset.index);
@@ -2005,14 +2328,23 @@
         // Helper function to create device entry DOM structure safely
         // Whitelist of valid device types
         // Comprehensive list of ALL supported device types
-        // - axeos/nmaxe/nerdqaxe/qaxe/esp32miner/hammer/goldshell map to axeos UI section (HTTP API)
-        // - avalon/antminer/whatsminer/innosilicon/futurebit/canaan/ebang map to avalon UI section (CGMiner API)
+        // Each type has its own UI section with a matching {type}-devices container
         const VALID_DEVICE_TYPES = [
             // AxeOS HTTP API devices (port 80)
-            'axeos', 'nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell',
+            'axeos', 'nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus',
+            'hammer', 'goldshell', 'luckyminer', 'jingleminer', 'zyber',
             // CGMiner API devices (port 4028)
-            'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'
+            'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon',
+            'futurebit', 'canaan', 'ebang', 'gekkoscience', 'ipollo', 'epic', 'elphapex',
+            // Custom firmware
+            'braiins', 'vnish', 'luxos'
         ];
+
+        // Device types that use CGMiner API (need port field)
+        const CGMINER_DEVICE_TYPES = new Set([
+            'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon',
+            'futurebit', 'canaan', 'ebang', 'gekkoscience', 'ipollo', 'epic', 'elphapex', 'luxos'
+        ]);
 
         function createDeviceEntry(type, deviceNum, data = {}, originalType = null) {
             // Validate type against whitelist
@@ -2060,8 +2392,8 @@
             urlGroup.appendChild(urlInput);
             fieldsDiv.appendChild(urlGroup);
 
-            // Port group (Avalon only)
-            if (type === 'avalon') {
+            // Port group (CGMiner API devices)
+            if (CGMINER_DEVICE_TYPES.has(type)) {
                 const portGroup = document.createElement('div');
                 portGroup.className = 'form-group port-group';
                 const portLabel = document.createElement('label');
@@ -2129,34 +2461,25 @@
                 }
             }
 
-            // Map device types to UI sections:
-            // - AxeOS HTTP API devices (no port needed) -> axeos section
-            // - CGMiner API devices (port needed) -> avalon section
-            const axeosTypes = ['nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell'];
-            const avalonTypes = ['antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'];
-
-            let sectionType;
-            if (axeosTypes.includes(type)) {
-                sectionType = 'axeos';
-            } else if (avalonTypes.includes(type)) {
-                sectionType = 'avalon';
-                // Ensure port is set for CGMiner devices
-                if (!data.port) {
-                    data.port = 4028;
-                }
-            } else {
-                sectionType = type;
+            // Ensure port is set for CGMiner devices
+            if (CGMINER_DEVICE_TYPES.has(type) && !data.port) {
+                data.port = 4028;
             }
+
+            // QAxe+ devices share the qaxe section container
+            const sectionType = (type === 'qaxeplus') ? 'qaxe' : type;
 
             deviceCounters[sectionType]++;
             const container = document.getElementById(`${sectionType}-devices`);
+            if (!container) {
+                console.error('[SETUP] No container for device type:', sectionType);
+                return;
+            }
             const deviceNum = deviceCounters[sectionType];
 
-            // Pass original type so it can be stored and used when saving
-            const deviceEntry = createDeviceEntry(sectionType, deviceNum, data, type);
+            const deviceEntry = createDeviceEntry(type, deviceNum, data);
             if (deviceEntry) {
                 container.appendChild(deviceEntry);
-                // Animate entry for manual adds (when no data.name, visible class isn't set)
                 if (!data.name) {
                     setTimeout(() => deviceEntry.classList.add('visible'), 10);
                 }
@@ -2167,14 +2490,16 @@
         function addDevice(type) {
             if (!VALID_DEVICE_TYPES.includes(type)) return;
 
-            deviceCounters[type]++;
-            const container = document.getElementById(`${type}-devices`);
-            const deviceNum = deviceCounters[type];
+            // QAxe+ shares the qaxe container
+            const containerId = (type === 'qaxeplus') ? 'qaxe' : type;
+            deviceCounters[containerId]++;
+            const container = document.getElementById(`${containerId}-devices`);
+            if (!container) return;
+            const deviceNum = deviceCounters[containerId];
 
             const deviceEntry = createDeviceEntry(type, deviceNum);
             if (deviceEntry) {
                 container.appendChild(deviceEntry);
-                // Animate entry
                 setTimeout(() => deviceEntry.classList.add('visible'), 10);
             }
         }
@@ -2195,11 +2520,14 @@
         }
 
         function getPlaceholderName(type, num) {
-            // Return just the device class name without numbering
             const names = {
-                axeos: 'AxeOS',
-                nmaxe: 'NMaxe',
-                avalon: 'Avalon'
+                axeos: 'AxeOS', nmaxe: 'NMaxe', nerdqaxe: 'NerdQAxe', qaxe: 'QAxe', qaxeplus: 'QAxe+',
+                esp32miner: 'ESP32 Miner', hammer: 'Hammer', goldshell: 'Goldshell',
+                luckyminer: 'Lucky Miner', jingleminer: 'Jingle Miner', zyber: 'Zyber',
+                avalon: 'Avalon', canaan: 'AvalonMiner', antminer: 'Antminer', antminer_scrypt: 'Antminer Scrypt',
+                whatsminer: 'Whatsminer', innosilicon: 'Innosilicon', futurebit: 'FutureBit',
+                ebang: 'Ebang', gekkoscience: 'GekkoScience', ipollo: 'iPollo', epic: 'ePIC', elphapex: 'Elphapex',
+                braiins: 'BraiinsOS', vnish: 'Vnish', luxos: 'LuxOS'
             };
             return names[type] || type;
         }
@@ -2234,8 +2562,8 @@
             const deviceType = entry.dataset.deviceType || sectionType;
 
             let port = 4028;
-            if (sectionType === 'avalon') {
-                const portInput = entry.querySelector('.port-input');
+            const portInput = entry.querySelector('.port-input');
+            if (portInput) {
                 port = parseInt(portInput.value) || 4028;
             }
 
@@ -2314,79 +2642,42 @@
                     enabled: true,
                     wallet_address: walletAddresses[coin]
                 })),
-                devices: {
-                    axeos: [],
-                    nmaxe: [],
-                    nerdqaxe: [],
-                    avalon: [],
-                    antminer: [],
-                    antminer_scrypt: [],
-                    whatsminer: [],
-                    innosilicon: [],
-                    goldshell: [],
-                    hammer: [],
-                    futurebit: []
-                }
+                devices: {}
             };
 
-            // Collect AxeOS/NMaxe/NerdQAxe devices (they share the same UI section)
-            // Use data-device-type attribute to save to correct category
-            document.querySelectorAll('#axeos-devices .device-entry').forEach(entry => {
-                const name = entry.querySelector('.name-input').value.trim();
-                let ip = entry.querySelector('.url-input').value.trim();
-                // Get the original device type (nmaxe, nerdqaxe, or axeos)
-                const deviceType = entry.dataset.deviceType || 'axeos';
+            // Initialize all device type arrays
+            VALID_DEVICE_TYPES.forEach(t => config.devices[t] = []);
 
-                if (ip) {
-                    // Normalize IP: strip protocol, path, and port (consistent with other parsing)
+            // Collect devices from all sections
+            let totalDevices = 0;
+            VALID_DEVICE_TYPES.forEach(deviceType => {
+                // QAxe+ shares the qaxe container
+                const containerId = (deviceType === 'qaxeplus') ? 'qaxe' : deviceType;
+                const container = document.getElementById(`${containerId}-devices`);
+                if (!container) return;
+
+                container.querySelectorAll('.device-entry').forEach(entry => {
+                    const entryType = entry.dataset.deviceType || deviceType;
+                    // Only collect entries that match this device type
+                    if (entryType !== deviceType) return;
+
+                    const name = entry.querySelector('.name-input').value.trim();
+                    let ip = entry.querySelector('.url-input').value.trim();
+                    if (!ip) return;
+
                     ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
-                    // Save to the correct device category
-                    // This ensures NerdQAxe++ gets 80W default, NMaxe gets 15W
-                    if (!config.devices[deviceType]) {
-                        config.devices[deviceType] = [];
+                    const deviceData = { name: name || ip, ip: ip };
+
+                    // Add port for CGMiner API devices
+                    const portInput = entry.querySelector('.port-input');
+                    if (portInput) {
+                        deviceData.port = parseInt(portInput.value) || 4028;
                     }
-                    config.devices[deviceType].push({
-                        name: name || ip,
-                        ip: ip
-                    });
-                }
+
+                    config.devices[deviceType].push(deviceData);
+                    totalDevices++;
+                });
             });
-
-            // Collect Avalon/Antminer/Whatsminer/Innosilicon devices (CGMiner API, share same UI section)
-            // Use data-device-type attribute to save to correct category
-            document.querySelectorAll('#avalon-devices .device-entry').forEach(entry => {
-                const name = entry.querySelector('.name-input').value.trim();
-                let ip = entry.querySelector('.url-input').value.trim();
-                const port = parseInt(entry.querySelector('.port-input').value) || 4028;
-                // Get the original device type (avalon, antminer, whatsminer, or innosilicon)
-                const deviceType = entry.dataset.deviceType || 'avalon';
-
-                if (ip) {
-                    ip = ip.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
-                    // Save to the correct device category
-                    if (!config.devices[deviceType]) {
-                        config.devices[deviceType] = [];
-                    }
-                    config.devices[deviceType].push({
-                        name: name || ip,
-                        ip: ip,
-                        port: port
-                    });
-                }
-            });
-
-            // Check if at least one device is configured
-            const totalDevices = config.devices.axeos.length +
-                                config.devices.nmaxe.length +
-                                config.devices.nerdqaxe.length +
-                                config.devices.avalon.length +
-                                config.devices.antminer.length +
-                                config.devices.antminer_scrypt.length +
-                                config.devices.whatsminer.length +
-                                config.devices.innosilicon.length +
-                                config.devices.goldshell.length +
-                                config.devices.hammer.length +
-                                config.devices.futurebit.length;
 
             if (totalDevices === 0) {
                 showGlobalStatus('error', 'Please add at least one mining device');
@@ -2699,6 +2990,21 @@
 
                         updateCoinSelectionUI();
                         updateWalletInputs();
+
+                        // Pre-populate wallet addresses detected from stratum
+                        // coins_config is [{symbol, wallet_address}, ...] for all active coins
+                        const VALID_WALLET_COINS = new Set(['BC2','BCH','BTC','FBTC','QBX','NMC','SYS','XMY','CAT','DGB','DGB-SCRYPT','DOGE','LTC','PEP']);
+                        if (data.coins_config && Array.isArray(data.coins_config)) {
+                            data.coins_config.forEach(coinCfg => {
+                                if (!coinCfg || typeof coinCfg !== 'object') return;
+                                const sym = String(coinCfg.symbol || '').toUpperCase();
+                                const addr = String(coinCfg.wallet_address || '').trim();
+                                console.log(`[SETUP] Coin ${sym}: wallet="${addr}" from stratum`);
+                                if (!VALID_WALLET_COINS.has(sym) || !addr) return;
+                                const input = document.getElementById(`wallet-${sym.toLowerCase()}`);
+                                if (input) input.value = addr;
+                            });
+                        }
                     }
 
                     // Show detection status (using textContent for safe output)
@@ -2724,7 +3030,6 @@
                         messageEl.textContent = `Detected: ${modeLabel} mode with ${coinsLabel}`;
                         statusDiv.className = 'import-status info';
                         statusDiv.classList.remove('hidden');
-                        setTimeout(() => statusDiv.classList.add('hidden'), 8000);
                     }
                 } else {
                     // Server not reachable or no pools — show all coins as fallback
@@ -2735,7 +3040,6 @@
                 console.log('Could not detect server mode, showing all coins as fallback:', e);
                 selectPoolMode('solo');
             }
-            updateWalletInputs();
         }
 
         // Check for pre-scanned miners from install.sh
@@ -2815,43 +3119,24 @@
 
                 console.log('[SETUP] Loading existing devices from config');
 
-                // Map device types to their UI section (comprehensive list)
-                // AxeOS HTTP API devices -> axeos section
-                // CGMiner API devices -> avalon section
-                const axeosTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'esp32miner', 'qaxe', 'qaxeplus', 'hammer', 'goldshell'];
-                const avalonTypes = ['avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'futurebit', 'canaan', 'ebang'];
-
-                // Load AxeOS-type devices
-                for (const deviceType of axeosTypes) {
+                // Load devices into their individual sections
+                for (const deviceType of VALID_DEVICE_TYPES) {
                     const devices = config.devices[deviceType] || [];
+                    // QAxe+ shares the qaxe container
+                    const containerId = (deviceType === 'qaxeplus') ? 'qaxe' : deviceType;
+                    const container = document.getElementById(`${containerId}-devices`);
+                    if (!container) continue;
+
                     for (const device of devices) {
                         if (device && device.ip) {
-                            deviceCounters.axeos++;
-                            const entry = createDeviceEntry('axeos', deviceCounters.axeos, {
-                                name: device.name || '',
-                                ip: device.ip
-                            }, deviceType);
-                            if (entry) {
-                                document.getElementById('axeos-devices').appendChild(entry);
-                                console.log(`[SETUP] Loaded ${deviceType} device: ${device.ip}`);
+                            deviceCounters[containerId]++;
+                            const data = { name: device.name || '', ip: device.ip };
+                            if (CGMINER_DEVICE_TYPES.has(deviceType)) {
+                                data.port = device.port || 4028;
                             }
-                        }
-                    }
-                }
-
-                // Load Avalon-type devices (CGMiner API)
-                for (const deviceType of avalonTypes) {
-                    const devices = config.devices[deviceType] || [];
-                    for (const device of devices) {
-                        if (device && device.ip) {
-                            deviceCounters.avalon++;
-                            const entry = createDeviceEntry('avalon', deviceCounters.avalon, {
-                                name: device.name || '',
-                                ip: device.ip,
-                                port: device.port || 4028
-                            }, deviceType);
+                            const entry = createDeviceEntry(deviceType, deviceCounters[containerId], data);
                             if (entry) {
-                                document.getElementById('avalon-devices').appendChild(entry);
+                                container.appendChild(entry);
                                 console.log(`[SETUP] Loaded ${deviceType} device: ${device.ip}`);
                             }
                         }

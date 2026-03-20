@@ -26,6 +26,27 @@
 
 set -euo pipefail
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
+# ── Patroni REST API credentials ─────────────────────────────────────────────
+# SECURITY (patroni-auth): Load Patroni REST API credentials if configured.
+PATRONI_CURL_AUTH=()
+if [[ -f /spiralpool/config/patroni-api.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/patroni-api.conf
+    [[ -n "${PATRONI_API_USERNAME:-}" ]] && PATRONI_CURL_AUTH=(-u "${PATRONI_API_USERNAME}:${PATRONI_API_PASSWORD}")
+fi
+
 # Prevent concurrent execution — this script wipes the PG data directory
 mkdir -p /run/spiralpool 2>/dev/null || true
 exec 8>/run/spiralpool/patroni-force-bootstrap.lock
@@ -125,7 +146,7 @@ fi
 
 READY=0
 for i in $(seq 1 30); do
-    patroni_json=$(curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
+    patroni_json=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/patroni" 2>/dev/null || echo "")
     if command -v jq >/dev/null 2>&1; then
         local_role=$(echo "$patroni_json" | jq -r '.role // ""' 2>/dev/null || echo "")
     else

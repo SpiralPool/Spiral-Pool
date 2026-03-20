@@ -336,20 +336,20 @@
             </div>
         </div>
 
-        <!-- AxeOS/NMAXE Devices -->
+        <!-- BitAxe Devices -->
         <div class="config-section cyber-card">
             <h3 class="section-title">
                 <span class="title-icon">🔷</span>
-                AxeOS / NMAXE Devices
+                BitAxe Devices
             </h3>
-            <p class="section-desc">BitAxe and similar devices running AxeOS firmware</p>
+            <p class="section-desc">BitAxe Ultra, Supra, Hex, Gamma and other standard AxeOS devices</p>
 
             <div id="axeos-devices" class="device-list">
                 <!-- Device entries will be loaded here -->
             </div>
 
             <button type="button" class="btn-add-device" onclick="addDevice('axeos')">
-                <span class="btn-icon">+</span> Add AxeOS Device
+                <span class="btn-icon">+</span> Add BitAxe Device
             </button>
         </div>
 
@@ -1782,10 +1782,25 @@
                     }
                 }
             } catch (e) {
-                const errorMsg = e.name === 'AbortError'
-                    ? 'Request timeout - server not responding'
-                    : e.message;
-                showGlobalStatus('error', `Scan error: ${errorMsg}`);
+                if (e.name === 'AbortError') {
+                    // Fetch timed out but server may have still started the scan.
+                    // Poll status once before showing error — if scan is running, join it.
+                    console.log('[SCAN] Fetch timed out — checking if server started scan anyway...');
+                    try {
+                        const statusResp = await fetch('/api/scan/status', { credentials: 'same-origin' });
+                        if (statusResp.ok) {
+                            const statusData = await statusResp.json();
+                            if (statusData.running || statusData.phase === 'scanning') {
+                                console.log('[SCAN] Server scan is running — joining existing scan');
+                                startPollWithGeneration();
+                                return;
+                            }
+                        }
+                    } catch (_) { /* ignore */ }
+                    showGlobalStatus('error', 'Server is slow to respond — click Scan Network again');
+                } else {
+                    showGlobalStatus('error', `Scan error: ${e.message}`);
+                }
                 restoreScanButton();
                 progressDiv.classList.add('hidden');
             }

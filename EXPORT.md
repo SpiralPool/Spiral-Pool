@@ -1,6 +1,6 @@
 # Export Control Notice
 
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-18
 
 ## Project Origin
 
@@ -115,6 +115,9 @@ This software includes standard cryptographic components:
 | Scrypt | Mining hash verification | Litecoin protocol |
 | TLS 1.2/1.3 | Optional encrypted transport | IETF RFC 5246 (TLS 1.2), RFC 8446 (TLS 1.3) |
 | Noise Protocol | Stratum V2 encryption | Public specification |
+| AES-256-GCM | HA cluster message encryption | NIST SP 800-38D |
+| HKDF-SHA256 | Key derivation from cluster token | IETF RFC 5869 |
+| bcrypt | Dashboard password hashing | OpenBSD bcrypt |
 
 These are standard, publicly documented cryptographic implementations used in accordance with published protocol specifications. No novel or proprietary cryptography is included.
 
@@ -170,5 +173,5 @@ This software is a neutral, **non-custodial** infrastructure tool. Like web serv
 
 *This notice is provided for informational purposes. It is not legal advice. Users with specific compliance questions should consult qualified legal counsel in their jurisdiction.*
 
-*Spiral Pool v1.0 - Export Control Notice*
+*Spiral Pool v1.1.0 - Export Control Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

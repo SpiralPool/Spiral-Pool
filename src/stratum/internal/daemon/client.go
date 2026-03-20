@@ -992,13 +992,13 @@ func DefaultSubmitTimeouts() *SubmitTimeouts {
 // and also cancels if the chain tip advances (stale block). MaxRetries is kept as a
 // hard safety cap to prevent runaway retries on long-block coins.
 //
-// All 13 supported coins grouped by block time tier:
+// All 14 supported coins grouped by block time tier:
 //
 //	15s  (DGB, DGB-SCRYPT):                submit=3s  deadline=4.5s   retries=2  propagation=10.5s
 //	30s  (FBTC):                           submit=5s  deadline=9s     retries=3  propagation=21s
 //	60s  (DOGE, XMY, PEP):                 submit=5s  deadline=18s    retries=5  propagation=42s
-//	150s (LTC, SYS):                       submit=5s  deadline=45s    retries=5  propagation=105s
-//	600s (BTC, BCH, BC2, CAT, NMC, QBX):   submit=5s  deadline=180s   retries=5  propagation=420s
+//	150s (LTC, QBX, SYS):                  submit=5s  deadline=45s    retries=5  propagation=105s
+//	600s (BTC, BCH, BC2, CAT, NMC):        submit=5s  deadline=180s   retries=5  propagation=420s
 func NewSubmitTimeouts(blockTimeSec int) *SubmitTimeouts {
 	const retrySleep = 10 * time.Millisecond
 

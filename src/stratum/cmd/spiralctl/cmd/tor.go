@@ -407,7 +407,9 @@ discover=0
 	// Restart service if running
 	if isServiceRunning(n.service) {
 		printInfo(fmt.Sprintf("Restarting %s...", n.service))
-		_ = exec.Command("systemctl", "restart", n.service).Run() // G104: error intentionally ignored
+		if out, err := exec.Command("systemctl", "restart", n.service).CombinedOutput(); err != nil {
+			printWarning(fmt.Sprintf("Failed to restart %s: %v\n%s", n.service, err, string(out)))
+		}
 	}
 
 	return nil
@@ -444,7 +446,9 @@ func disableTorForNode(n nodeInfo) error {
 	// Restart service if running
 	if isServiceRunning(n.service) {
 		printInfo(fmt.Sprintf("Restarting %s...", n.service))
-		_ = exec.Command("systemctl", "restart", n.service).Run() // G104: error intentionally ignored
+		if out, err := exec.Command("systemctl", "restart", n.service).CombinedOutput(); err != nil {
+			printWarning(fmt.Sprintf("Failed to restart %s: %v\n%s", n.service, err, string(out)))
+		}
 	}
 
 	return nil

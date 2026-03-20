@@ -76,7 +76,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CONFIG_FILE="$PROJECT_ROOT/config/config-bc2-regtest.yaml"
+CONFIG_FILE="$PROJECT_ROOT/config/regtest/config-bc2-regtest.yaml"
 POOL_BINARY="$PROJECT_ROOT/src/stratum/spiralpool"
 LOG_DIR="$PROJECT_ROOT/logs/regtest"
 
@@ -96,6 +96,15 @@ DB_USER="${DB_USER:-spiralstratum}"
 DB_PASS="${DB_PASS:-spiralstratum}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
+
+# SECURITY (F-02): Set up PGPASSFILE instead of using PGPASSWORD env var.
+# PGPASSWORD is visible in /proc/<pid>/environ and ps aux output to any local user.
+# PGPASSFILE uses a chmod-600 temp file that is never part of the process environment.
+_PGPASS_TMP=$(mktemp /tmp/spiral-pgpass.XXXXXX)
+chmod 600 "$_PGPASS_TMP"
+printf '%s:%s:%s:%s:%s\n' "$DB_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER" "$DB_PASS" > "$_PGPASS_TMP"
+printf '%s:%s:*:%s:%s\n'  "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" >> "$_PGPASS_TMP"
+export PGPASSFILE="$_PGPASS_TMP"
 
 # Daemon RPC credentials (must match config-bc2-regtest.yaml)
 RPC_USER="${RPC_USER:-spiraltest}"
@@ -138,6 +147,7 @@ POOL_PID=""
 MINER_PID=""
 POOL2_PID=""
 MINING_ADDRESS=""  # Set in Step 3, used in cleanup to restore config
+_PGPASS_TMP=""    # SECURITY (F-02): Temp pgpass file path, cleaned in cleanup()
 
 log_info()  { echo -e "${CYAN}[INFO]${NC}  $(date '+%H:%M:%S')  $*"; }
 log_ok()    { echo -e "${GREEN}[ OK ]${NC}  $(date '+%H:%M:%S')  $*"; }
@@ -206,6 +216,7 @@ cleanup() {
         log_info "Config address placeholder restored"
     fi
 
+    rm -f "${_PGPASS_TMP:-}" 2>/dev/null || true  # SECURITY (F-02): Remove temp pgpass file
     log_ok "Cleanup complete"
 }
 
@@ -460,14 +471,14 @@ log_step "Step 5/10: Set up PostgreSQL database"
 
 # Try connecting first — if install.sh already set up the DB, skip sudo entirely.
 # This allows the script to run headless (nohup, screen, cron) without sudo prompts.
-if PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
+if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
     log_ok "Database '$DB_NAME' already accessible (user=$DB_USER, auth verified)"
     # Kill stale PostgreSQL sessions from previous pool runs to release advisory locks.
     # The pool uses pg_try_advisory_lock for payment fencing — if a previous pool process
     # was killed (SIGKILL), its PostgreSQL session may still hold the lock, blocking
     # ALL payment processor cycles in the next run.
     log_info "Terminating stale database sessions from previous runs..."
-    TERMINATED=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+    TERMINATED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
         "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid != pg_backend_pid()) sub;" 2>/dev/null | tr -d ' ' || echo "0")
     if [[ "$TERMINATED" -gt 0 ]]; then
         log_ok "Terminated $TERMINATED stale session(s) (advisory locks released)"
@@ -479,11 +490,11 @@ if PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_
     # The blockchain resets (rm -rf ~/.bitcoinII/regtest) but DB persists — old records
     # with different hashes cause the payment processor to see false orphans.
     log_info "Truncating block tables from previous runs..."
-    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
         "DO \$\$ DECLARE t TEXT; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'blocks_%' LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE'; END LOOP; END \$\$;" 2>/dev/null && \
         log_ok "Block tables truncated" || log_warn "No block tables to truncate (first run)"
     # Also clean shares, payments, and balance tables for a fresh test
-    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
         "DO \$\$ DECLARE t TEXT; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename LIKE 'shares_%' OR tablename LIKE 'payments_%' OR tablename LIKE 'balances_%') LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE'; END LOOP; END \$\$;" 2>/dev/null || true
 else
     # DB not accessible — need sudo to set it up
@@ -512,14 +523,14 @@ else
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" 2>/dev/null || true
 
     # Verify the connection actually works after setup
-    if PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
+    if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &>/dev/null; then
         log_ok "Database '$DB_NAME' ready (user=$DB_USER, auth verified)"
         # Clean stale data (same as the non-sudo path above)
         log_info "Truncating block tables from previous runs..."
-        PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
             "DO \$\$ DECLARE t TEXT; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'blocks_%' LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE'; END LOOP; END \$\$;" 2>/dev/null && \
             log_ok "Block tables truncated" || log_warn "No block tables to truncate (first run)"
-        PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
             "DO \$\$ DECLARE t TEXT; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename LIKE 'shares_%' OR tablename LIKE 'payments_%' OR tablename LIKE 'balances_%') LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE'; END LOOP; END \$\$;" 2>/dev/null || true
     else
         log_error "Cannot connect to PostgreSQL as $DB_USER — password may not have been updated"
@@ -674,11 +685,11 @@ if [[ "$MATURITY_WAIT_SECS" -gt 0 ]] && [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; th
         if [[ $FIRST_BLOCK_CONFIRMS -lt 0 ]]; then FIRST_BLOCK_CONFIRMS=0; fi
 
         # Check DB for confirmed vs pending
-        DB_CONFIRMED=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+        DB_CONFIRMED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
             "SELECT COUNT(*) FROM blocks_bc2_regtest WHERE status = 'confirmed';" 2>/dev/null | tr -d ' ' || echo "?")
-        DB_PENDING=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+        DB_PENDING=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
             "SELECT COUNT(*) FROM blocks_bc2_regtest WHERE status = 'pending';" 2>/dev/null | tr -d ' ' || echo "?")
-        DB_ORPHANED=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+        DB_ORPHANED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
             "SELECT COUNT(*) FROM blocks_bc2_regtest WHERE status = 'orphaned';" 2>/dev/null | tr -d ' ' || echo "?")
 
         log_info "  ${MATURITY_ELAPSED}s — height: $CHAIN_HEIGHT, confirms: ~$FIRST_BLOCK_CONFIRMS | DB: confirmed=$DB_CONFIRMED pending=$DB_PENDING orphaned=$DB_ORPHANED"
@@ -696,7 +707,7 @@ if [[ "$MATURITY_WAIT_SECS" -gt 0 ]] && [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; th
     echo ""
     # Final DB snapshot
     log_info "Final database state:"
-    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
         "SELECT blockheight, status, confirmationprogress, orphan_mismatch_count, stability_check_count FROM blocks_bc2_regtest ORDER BY blockheight;" 2>/dev/null || \
         log_warn "Could not query database"
     echo ""
@@ -845,11 +856,11 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     fi
 
     # ── 5/8. Block status: confirmed → paid ───────────────────────────────
-    FIRST_HASH=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+    FIRST_HASH=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
         "SELECT hash FROM blocks_bc2_regtest WHERE blockheight = $FIRST_POOL_BLOCK AND status = 'confirmed' LIMIT 1;" 2>/dev/null | tr -d ' ') || true
 
     if [[ -n "$FIRST_HASH" ]]; then
-        PAID_RESULT=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+        PAID_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
             "UPDATE blocks_bc2_regtest SET status = 'paid', confirmationprogress = 1.0
              WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
              AND (status = 'confirmed' AND 'paid' IN ('orphaned', 'paid'));" 2>/dev/null) || true
@@ -862,7 +873,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
         fi
 
         # ── 6/8. Verify paid is terminal ──────────────────────────────────
-        REVERT_RESULT=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+        REVERT_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
             "UPDATE blocks_bc2_regtest SET status = 'pending'
              WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
              AND (status = 'pending' OR (status = 'confirmed' AND 'pending' IN ('orphaned', 'paid')));" 2>/dev/null) || true
@@ -889,11 +900,11 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
         log_info "Using synthetic test data for payment table verification"
     fi
 
-    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q -c \
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q -c \
         "INSERT INTO payments (poolid, coin, address, amount, transactionconfirmationdata, created)
          VALUES ('bc2_regtest', 'BC2', '$PAY_ADDR_FOR_DB', $PAY_AMT_FOR_DB, '$PAY_TXID_FOR_DB', NOW());" 2>/dev/null || true
 
-    PAY_COUNT=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+    PAY_COUNT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
         "SELECT COUNT(*) FROM payments WHERE poolid = 'bc2_regtest' AND transactionconfirmationdata = '$PAY_TXID_FOR_DB';" 2>/dev/null | tr -d ' ') || echo "0"
 
     if [[ "$PAY_COUNT" -ge 1 ]]; then

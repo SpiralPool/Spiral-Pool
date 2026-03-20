@@ -320,8 +320,8 @@ if %PYTHON_EXIT_CODE% equ 0 (
     echo ═══════════════════════════════════════════════════════════════════════════════
     echo.
     echo     cd docker
-    echo     docker compose -f docker-compose.windows.yml build --no-cache
-    echo     docker compose -f docker-compose.windows.yml up -d
+    echo     docker compose -f docker-compose.yml build --no-cache
+    echo     docker compose -f docker-compose.yml up -d
     echo.
     echo ═══════════════════════════════════════════════════════════════════════════════
 )

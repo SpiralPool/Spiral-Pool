@@ -33,6 +33,18 @@
 # Using set -e in a service control script would cause silent failures
 # when any sub-command returns non-zero (e.g., systemctl on stopped service).
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -592,14 +604,7 @@ promote() {
         echo ""
         echo -e "${GREEN}All services started successfully${NC}"
 
-        # Send notifications (delayed so Sentinel's startup message appears first in Discord)
-        load_notification_settings
-        local msg
-        printf -v msg 'HA PROMOTE: Node is now MASTER\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: %s' "${reason}"
-        local tg_msg
-        printf -v tg_msg '<b>HA PROMOTE</b>\n\nNode is now <b>MASTER</b>\n\nServices started:\n- Sentinel\n- Dashboard\n\nReason: %s' "${reason}"
-        (sleep 120 && send_discord_notification "$msg" 3066993) &
-        (sleep 120 && send_telegram_notification "$tg_msg") &
+        # Notifications handled by Sentinel (richer embeds, no duplicate alerts)
     else
         log "ERROR" "Some services failed to start"
         echo ""
@@ -693,14 +698,7 @@ demote() {
         echo ""
         echo -e "${GREEN}All services stopped successfully${NC}"
 
-        # Send notifications (backgrounded to avoid blocking service control)
-        load_notification_settings
-        local msg
-        printf -v msg 'HA DEMOTE: Node is now %s\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: %s' "${new_role}" "${reason}"
-        local tg_msg
-        printf -v tg_msg '<b>HA DEMOTE</b>\n\nNode is now <b>%s</b>\n\nServices stopped:\n- Sentinel\n- Dashboard\n\nReason: %s' "${new_role}" "${reason}"
-        (sleep 120 && send_discord_notification "$msg" 16776960) &
-        (sleep 120 && send_telegram_notification "$tg_msg") &
+        # Notifications handled by Sentinel (richer embeds, no duplicate alerts)
     else
         log "ERROR" "Some services failed to stop"
         echo ""

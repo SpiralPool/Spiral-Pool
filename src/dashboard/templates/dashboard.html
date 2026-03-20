@@ -1858,9 +1858,9 @@
             <!-- Actions -->
             <div class="detail-actions" id="detail-actions" style="display: none;">
                 <button class="action-btn restart-btn" onclick="restartFromDetail()">⟳ Restart</button>
-                <button class="action-btn overclock-btn" onclick="overclockFromDetail()">⚡ Overclock</button>
+                <button class="action-btn overclock-btn" id="detail-overclock-btn" onclick="overclockFromDetail()">⚡ Overclock</button>
                 <button class="action-btn pool-btn" onclick="showPoolConfig()" title="Pool Connection Info">🌐 Info</button>
-                <button class="action-btn schedule-btn" id="detail-schedule-btn" onclick="showScheduleConfig()" title="Power Schedule" style="display: none;">🕐 Schedule</button>
+                <button class="action-btn schedule-btn" id="detail-schedule-btn" onclick="showScheduleConfig()" title="Power Mode / Schedule" style="display: none;">🕐 Schedule</button>
             </div>
         </div>
     </div>
@@ -2118,7 +2118,7 @@
         <!-- Stats Overview -->
         <section class="stats-overview">
             <div class="stat-card hashrate">
-                <div class="stat-label">Total Hashrate</div>
+                <div class="stat-label">Pool Hashrate</div>
                 <div class="stat-value">
                     <span id="total-hashrate">--</span>
                     <span class="stat-unit">TH/s</span>
@@ -2173,7 +2173,7 @@
                     <span id="miners-online">-</span>
                     <span class="stat-unit">/ <span id="miners-total">-</span></span>
                 </div>
-                <div class="stat-sub" id="avg-temp">Avg Temp: --°C</div>
+                <div class="stat-sub"><span id="avg-temp">Avg Temp: --°C</span> <span id="fleet-count" class="fleet-count"></span></div>
             </div>
         </section>
 
@@ -2200,7 +2200,7 @@
                 <div class="lifetime-card">
                     <div class="lifetime-icon">⚡</div>
                     <div class="lifetime-value" id="lifetime-shares">--</div>
-                    <div class="lifetime-label">Total Shares</div>
+                    <div class="lifetime-label" title="All-time shares accepted by this pool">Pool Shares</div>
                 </div>
                 <div class="lifetime-card">
                     <div class="lifetime-icon">🏆</div>
@@ -2468,7 +2468,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v1.0</span>
+            <span>Spiral Pool Dashboard v1.1.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -2504,7 +2504,11 @@
         const REFRESH_INTERVAL = {{ config.refresh_interval or 30 }} * 1000;
         let refreshCountdown = {{ config.refresh_interval or 30 }};
         let countdownInterval;
-        let lastKnownBlockCount = null;
+        // Persist across service restarts — if service crashes while a block is found,
+        // on reconnect we can still detect the new block and fire the celebration.
+        let lastKnownBlockCount = sessionStorage.getItem('spiral_last_blocks') !== null
+            ? parseInt(sessionStorage.getItem('spiral_last_blocks'), 10)
+            : null;
         let celebrationAudio = null;
         let currentBlockReward = 0;       // Will be updated from API
         let currentCoinPriceUsd = 0;
@@ -3262,6 +3266,7 @@
                 }
             }
             lastKnownBlockCount = currentBlockCount;
+            sessionStorage.setItem('spiral_last_blocks', currentBlockCount);
             // Track finder for reference
             if (blockFinder) lastBlockFinder = blockFinder;
             if (blockHeight) lastBlockHeight = blockHeight;
@@ -3718,15 +3723,20 @@
 
             // Show/hide actions based on device support
             const actionsEl = document.getElementById('detail-actions');
-            const supportedTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'bitaxe', 'hammer', 'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'futurebit'];
+            const supportedTypes = ['axeos', 'nmaxe', 'nerdqaxe', 'qaxe', 'bitaxe', 'hammer', 'lucky miner', 'jingle miner', 'zyber', 'avalon', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'futurebit', 'braiins', 'vnish', 'luxos'];
             const minerType = (miner.type || '').toLowerCase();
             actionsEl.style.display = (miner.online && supportedTypes.some(t => minerType.includes(t)))
                 ? 'flex' : 'none';
 
-            // Show schedule button only for Avalon devices
+            // Avalon: hide Overclock, show Mode (reuses Schedule button with relabeled text)
+            // Non-Avalon: show Overclock, hide Schedule button
+            const isAvalon = minerType.includes('avalon');
+            const overclockBtn = document.getElementById('detail-overclock-btn');
             const scheduleBtn = document.getElementById('detail-schedule-btn');
+            if (overclockBtn) overclockBtn.style.display = isAvalon ? 'none' : 'inline-flex';
             if (scheduleBtn) {
-                scheduleBtn.style.display = minerType.includes('avalon') ? 'inline-flex' : 'none';
+                scheduleBtn.style.display = isAvalon ? 'inline-flex' : 'none';
+                scheduleBtn.textContent = isAvalon ? '⚙ Mode' : '🕐 Schedule';
             }
         }
 
@@ -3747,7 +3757,10 @@
             document.getElementById('chart-loading').style.display = 'block';
 
             try {
-                const response = await fetch(`/api/miner/${encodeURIComponent(currentDetailMiner.name)}/history?hours=${hours}`);
+                const histAbort = new AbortController();
+                const histTimeout = setTimeout(() => histAbort.abort(), 8000);
+                const response = await fetch(`/api/miner/${encodeURIComponent(currentDetailMiner.name)}/history?hours=${hours}`, { signal: histAbort.signal, credentials: 'same-origin' });
+                clearTimeout(histTimeout);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
 
@@ -3907,14 +3920,10 @@
         // Open overclock modal from detail modal
         function overclockFromDetail() {
             if (!currentDetailMiner) return;
+            // Capture before closeMinerDetailModal() nulls currentDetailMiner
+            const miner = currentDetailMiner;
             closeMinerDetailModal();
-            openOverclockModal(
-                currentDetailMiner.name,
-                currentDetailMiner.ip,
-                currentDetailMiner.type,
-                currentDetailMiner.frequency,
-                currentDetailMiner.voltage
-            );
+            openOverclockModal(miner.name, miner.ip, miner.type, miner.frequency, miner.voltage);
         }
 
         // ========================================
@@ -4747,8 +4756,10 @@
             // Farm hashrate from miner devices (all miners in config, regardless of where they point)
             const farmHashrateThs = totals.hashrate_ths || 0;
 
-            // Use pool hashrate for main display if available, otherwise fall back to farm hashrate
-            const displayHashrateThs = poolHashrateThs > 0 ? poolHashrateThs : farmHashrateThs;
+            // Pool Hashrate card: only show stratum hashrate, never farm fallback
+            // If no miners are connected to the pool, hashrate is 0
+            const poolMinersConnected = data.pool_connected_miners || 0;
+            const displayHashrateThs = poolMinersConnected > 0 ? (poolHashrateThs > 0 ? poolHashrateThs : farmHashrateThs) : 0;
             currentHashrateThs = displayHashrateThs; // Store for earnings calc
 
             // Algorithm-aware hashrate display
@@ -4772,11 +4783,11 @@
                     : '';
                 document.getElementById('hashrate-sub').textContent = `${poolMiners} workers${farmDisplay}`;
             } else {
-                // Pool hashrate not available, show miner count and source indicator
-                const onlineCount = totals.online_count || 0;
+                // Pool hashrate not available, show pool-connected count with fleet fallback
+                const poolMinersAlt = data.pool_connected_miners || 0;
                 const totalCount = totals.total_count || 0;
                 document.getElementById('hashrate-sub').textContent =
-                    `${onlineCount}/${totalCount} miners online (farm only)`;
+                    `${poolMinersAlt}/${totalCount} miners online`;
             }
 
             // Power stats (optional elements - may not exist in all layouts)
@@ -4839,8 +4850,16 @@
             document.getElementById('best-diff-alltime').textContent =
                 formatDifficulty(lifetime.best_share_difficulty);
 
-            document.getElementById('miners-online').textContent = totals.online_count || 0;
+            // Pool-connected miners (stratum) as primary display
+            const poolConnected = data.pool_connected_miners || 0;
+            document.getElementById('miners-online').textContent = poolConnected;
             document.getElementById('miners-total').textContent = totals.total_count || 0;
+            // Show fleet count as secondary info
+            const fleetEl = document.getElementById('fleet-count');
+            if (fleetEl) {
+                const fleetOnline = totals.online_count || 0;
+                fleetEl.textContent = fleetOnline > 0 ? `(Fleet: ${fleetOnline} online)` : '';
+            }
 
             // Calculate average temperature
             let totalTemp = 0;
@@ -4854,8 +4873,9 @@
             const avgTemp = tempCount > 0 ? (totalTemp / tempCount).toFixed(2) : '--';
             document.getElementById('avg-temp').textContent = `Avg Temp: ${avgTemp}°C`;
 
-            // Update lifetime stats
-            document.getElementById('lifetime-shares').textContent = formatNumber(lifetime.total_shares || 0);
+            // Update lifetime stats — use pool-accepted shares directly from Prometheus
+            const lifetimeShares = data.pool_accepted_shares > 0 ? data.pool_accepted_shares : (lifetime.total_pool_shares > 0 ? lifetime.total_pool_shares : 0);
+            document.getElementById('lifetime-shares').textContent = formatNumber(lifetimeShares);
             document.getElementById('lifetime-blocks').textContent = lifetime.total_blocks || 0;
             document.getElementById('lifetime-best-diff').textContent = formatDifficulty(lifetime.best_share_difficulty);
 
@@ -5509,11 +5529,11 @@
                 'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
             },
             'wood-paneling': {
-                'bg-primary': '#1a1209', 'bg-secondary': '#2d2010', 'bg-card': '#3d2a16',
-                'neon-blue': '#c4a35a', 'neon-cyan': '#d4b86a', 'neon-purple': '#8b6914',
-                'neon-orange': '#e07020', 'neon-yellow': '#daa520', 'neon-green': '#6b8e23',
-                'neon-red': '#a0522d',
-                'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
+                'bg-primary': '#1a1205', 'bg-secondary': '#251a08', 'bg-card': '#33220c',
+                'neon-blue': '#c89040', 'neon-cyan': '#e8b830', 'neon-purple': '#b07828',
+                'neon-orange': '#f5a818', 'neon-yellow': '#f0d050', 'neon-green': '#98b840',
+                'neon-red': '#c84028',
+                'text-primary': '#f5ead0', 'text-secondary': '#c8a860', 'text-muted': '#7a6030'
             },
             '1337-h4x0r': {
                 'bg-primary': '#000000', 'bg-secondary': '#0a0a0a', 'bg-card': '#0d0d0d',
@@ -5523,11 +5543,11 @@
                 'text-primary': '#00ff00', 'text-secondary': '#00cc00', 'text-muted': '#008800'
             },
             'midnight-aurora': {
-                'bg-primary': '#0a0e14', 'bg-secondary': '#111820', 'bg-card': '#151d28',
-                'neon-blue': '#5ee7ff', 'neon-cyan': '#00ffc8', 'neon-purple': '#b967ff',
-                'neon-pink': '#ff6bcb', 'neon-orange': '#ff9f43', 'neon-yellow': '#ffd93d',
-                'neon-green': '#00e676', 'neon-red': '#ff6b6b',
-                'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
+                'bg-primary': '#0c0820', 'bg-secondary': '#141030', 'bg-card': '#1e1840',
+                'neon-blue': '#4db8ff', 'neon-cyan': '#42e6c8', 'neon-purple': '#a86eff',
+                'neon-pink': '#e060a0', 'neon-orange': '#ff8844', 'neon-yellow': '#e8d050',
+                'neon-green': '#42e68a', 'neon-red': '#ff5566',
+                'text-primary': '#e4eaf4', 'text-secondary': '#8898b8', 'text-muted': '#4a5878'
             },
             'solar-flare': {
                 'bg-primary': '#1a0f0a', 'bg-secondary': '#2a1810', 'bg-card': '#3a2015',
@@ -5537,11 +5557,11 @@
                 'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
             },
             'ocean-depths': {
-                'bg-primary': '#020b18', 'bg-secondary': '#051525', 'bg-card': '#081e33',
-                'neon-blue': '#00bfff', 'neon-cyan': '#00ced1', 'neon-purple': '#4169e1',
-                'neon-orange': '#20b2aa', 'neon-yellow': '#7fffd4', 'neon-green': '#00fa9a',
-                'neon-red': '#ff6b6b',
-                'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
+                'bg-primary': '#051614', 'bg-secondary': '#091e1c', 'bg-card': '#0e2828',
+                'neon-blue': '#2080cc', 'neon-cyan': '#30c8e8', 'neon-purple': '#6868cc',
+                'neon-pink': '#c060a0', 'neon-orange': '#e09050', 'neon-yellow': '#b8c868',
+                'neon-green': '#30d0a0', 'neon-red': '#e06060',
+                'text-primary': '#c8dae8', 'text-secondary': '#7898b8', 'text-muted': '#405878'
             },
             'rainbow-unicorn': {
                 'bg-primary': '#1a0033', 'bg-secondary': '#2d0055', 'bg-card': '#3d0077',
@@ -5551,7 +5571,7 @@
                 'text-primary': '#f1f5f9', 'text-secondary': '#a1a9b8', 'text-muted': '#6b7280'
             },
             'summer-vibes': {
-                'bg-primary': '#0a1628', 'bg-secondary': '#112240', 'bg-card': '#1a365d',
+                'bg-primary': '#061a1e', 'bg-secondary': '#0c2830', 'bg-card': '#122e3c',
                 'neon-blue': '#00d4ff', 'neon-cyan': '#00e5cc', 'neon-purple': '#7c3aed',
                 'neon-pink': '#f472b6', 'neon-orange': '#ff8c42', 'neon-yellow': '#ffd93d',
                 'neon-green': '#10b981', 'neon-red': '#ef4444',
@@ -5577,11 +5597,70 @@
                 'neon-pink': '#fbcfe8', 'neon-orange': '#fdba74', 'neon-yellow': '#fef08a',
                 'neon-green': '#86efac', 'neon-red': '#fca5a5',
                 'text-primary': '#f0f9ff', 'text-secondary': '#bae6fd', 'text-muted': '#7dd3fc'
+            },
+            'black-ice': {
+                'bg-primary': '#08090b', 'bg-secondary': '#0e1114', 'bg-card': '#14181d',
+                'neon-blue': '#6bb8ff', 'neon-cyan': '#80e5e5', 'neon-purple': '#a088f0',
+                'neon-pink': '#e090c0', 'neon-orange': '#f0a060', 'neon-yellow': '#e8d060',
+                'neon-green': '#70d090', 'neon-red': '#f07070',
+                'text-primary': '#e0e8f0', 'text-secondary': '#90a0b8', 'text-muted': '#506078'
+            },
+            'chrome-warfare': {
+                'bg-primary': '#111214', 'bg-secondary': '#1a1c20', 'bg-card': '#24262c',
+                'neon-blue': '#4a90d9', 'neon-cyan': '#6cb4ee', 'neon-purple': '#8866bb',
+                'neon-pink': '#cc2233', 'neon-orange': '#cc4400', 'neon-yellow': '#ddaa22',
+                'neon-green': '#44aa44', 'neon-red': '#cc2233',
+                'text-primary': '#c0c0c8', 'text-secondary': '#808090', 'text-muted': '#484858'
+            },
+            'dracula': {
+                'bg-primary': '#282a36', 'bg-secondary': '#21222c', 'bg-card': '#44475a',
+                'neon-blue': '#8be9fd', 'neon-cyan': '#8be9fd', 'neon-purple': '#bd93f9',
+                'neon-pink': '#ff79c6', 'neon-orange': '#ffb86c', 'neon-yellow': '#f1fa8c',
+                'neon-green': '#50fa7b', 'neon-red': '#ff5555',
+                'text-primary': '#f8f8f2', 'text-secondary': '#bfbfba', 'text-muted': '#6272a4'
+            },
+            'gruvbox-dark': {
+                'bg-primary': '#282828', 'bg-secondary': '#1d2021', 'bg-card': '#3c3836',
+                'neon-blue': '#83a598', 'neon-cyan': '#8ec07c', 'neon-purple': '#d3869b',
+                'neon-pink': '#d3869b', 'neon-orange': '#fe8019', 'neon-yellow': '#fabd2f',
+                'neon-green': '#b8bb26', 'neon-red': '#fb4934',
+                'text-primary': '#ebdbb2', 'text-secondary': '#d5c4a1', 'text-muted': '#665c54'
+            },
+            'meltdown': {
+                'bg-primary': '#0e0d0a', 'bg-secondary': '#1a1710', 'bg-card': '#1e1b14',
+                'neon-blue': '#8b9a3c', 'neon-cyan': '#39ff14', 'neon-purple': '#c8a951',
+                'neon-pink': '#cc5500', 'neon-orange': '#cc5500', 'neon-yellow': '#c8a951',
+                'neon-green': '#39ff14', 'neon-red': '#b22222',
+                'text-primary': '#c4b998', 'text-secondary': '#8a7e65', 'text-muted': '#5c5040'
+            },
+            'nebula-command': {
+                'bg-primary': '#050510', 'bg-secondary': '#0a0a1a', 'bg-card': '#0f0f22',
+                'neon-blue': '#4488ff', 'neon-cyan': '#00ccff', 'neon-purple': '#9944ff',
+                'neon-pink': '#ff2244', 'neon-orange': '#ff8800', 'neon-yellow': '#ffcc00',
+                'neon-green': '#44ff44', 'neon-red': '#ff2244',
+                'text-primary': '#c8d0e0', 'text-secondary': '#7080a0', 'text-muted': '#384060'
+            },
+            'nord': {
+                'bg-primary': '#2e3440', 'bg-secondary': '#3b4252', 'bg-card': '#434c5e',
+                'neon-blue': '#5e81ac', 'neon-cyan': '#88c0d0', 'neon-purple': '#b48ead',
+                'neon-pink': '#b48ead', 'neon-orange': '#d08770', 'neon-yellow': '#ebcb8b',
+                'neon-green': '#a3be8c', 'neon-red': '#bf616a',
+                'text-primary': '#eceff4', 'text-secondary': '#d8dee9', 'text-muted': '#4c566a'
+            },
+            'tokyo-night': {
+                'bg-primary': '#1a1b26', 'bg-secondary': '#16161e', 'bg-card': '#24283b',
+                'neon-blue': '#7aa2f7', 'neon-cyan': '#7dcfff', 'neon-purple': '#bb9af7',
+                'neon-pink': '#ff007c', 'neon-orange': '#ff9e64', 'neon-yellow': '#e0af68',
+                'neon-green': '#9ece6a', 'neon-red': '#f7768e',
+                'text-primary': '#c0caf5', 'text-secondary': '#a9b1d6', 'text-muted': '#565f89'
             }
         };
 
         // Apply theme from select
         async function applyThemeFromSelect(themeId) {
+            // Always clear previous theme's injected CSS first (e.g. Nord/Dracula hard-code card backgrounds)
+            applyCustomCSS('');
+
             const builtinColors = themeColors[themeId];
 
             if (builtinColors) {
@@ -5599,12 +5678,12 @@
                 .replace(/theme-\S+/g, '')
                 .trim() + ` theme-${themeId}`;
 
-            // Load theme from API (applies colors for custom themes, customCSS for all)
+            // Load theme from API — always apply JSON colors (JSON has more vars than themeColors)
             try {
                 const response = await fetch(`/api/themes/${themeId}`);
                 if (response.ok) {
                     const themeData = await response.json();
-                    if (!builtinColors && themeData.colors) {
+                    if (themeData.colors) {
                         const root = document.documentElement;
                         for (const [name, value] of Object.entries(themeData.colors)) {
                             root.style.setProperty(`--${name}`, value);
@@ -5842,9 +5921,10 @@
             initSortableSections();
             fetchAlgoBadges();
             fetchActivityFeed();
-            // Refresh activity feed and algo badges on same cycle as main data
+            // Refresh activity feed, algo badges, and health (node/network hashrate) every 30s
             setInterval(fetchActivityFeed, 30000);
             setInterval(fetchAlgoBadges, 30000);
+            setInterval(fetchHealthData, 30000);
         });
     </script>
     <script>

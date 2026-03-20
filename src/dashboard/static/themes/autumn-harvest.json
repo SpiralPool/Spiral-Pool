@@ -40,7 +40,7 @@
     "mono": "'IBM Plex Mono', monospace"
   },
   "effects": {
-    "glowIntensity": 0.3,
+    "glowIntensity": 0.2,
     "animationSpeed": 1,
     "borderRadius": "10px",
     "useGlitchEffect": false,

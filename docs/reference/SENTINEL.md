@@ -8,9 +8,9 @@
   <em>Autonomous mining fleet monitoring, alerting, and self-healing.</em>
 </p>
 
-Spiral Sentinel is a Python-based monitoring system that watches your mining fleet, blockchain nodes, pool infrastructure, and market conditions. It sends real-time alerts via Discord, Telegram, and XMPP/Jabber with cyberpunk or professional theming.
+Spiral Sentinel is a Python-based monitoring system that watches your mining fleet, blockchain nodes, pool infrastructure, and market conditions. It sends real-time alerts via Discord, Telegram, XMPP/Jabber, ntfy, and email (SMTP) with cyberpunk or professional theming.
 
-**Source:** `src/sentinel/SpiralSentinel.py` (~17,600 lines)
+**Source:** `src/sentinel/SpiralSentinel.py` (~19,500 lines)
 **Service:** `spiralsentinel`
 **State directory:** `~spiraluser/.spiralsentinel/`
 
@@ -34,6 +34,8 @@ Spiral Sentinel is a Python-based monitoring system that watches your mining fle
 14. [Command-Line Arguments](#command-line-arguments)
 15. [Environment Variables](#environment-variables)
 16. [Alert Cooldowns](#alert-cooldowns)
+17. [Telegram Bot Commands](#telegram-bot-commands)
+18. [Health Endpoint](#health-endpoint)
 
 ---
 
@@ -47,7 +49,7 @@ systemctl restart spiralsentinel
 # One-shot status check
 python3 /spiralpool/bin/SpiralSentinel.py --status
 
-# Test Discord/Telegram webhook
+# Test all configured notification channels (Discord, Telegram, XMPP, ntfy, SMTP)
 python3 /spiralpool/bin/SpiralSentinel.py --test
 
 # Hot-reload miner database (no restart needed)
@@ -87,6 +89,11 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `pool_id` | string | `"dgb_sha256_1"` | Legacy single-coin pool ID |
 | `wallet_address` | string | `""` | Legacy single-coin wallet address |
 | `push_device_hints` | bool | `true` | Push device info to pool for difficulty hints |
+| `update_check_enabled` | bool | `true` | Periodically check for Spiral Pool updates |
+| `update_check_interval` | int | `21600` | Seconds between update checks (6 hours) |
+| `auto_update_mode` | string | `"notify"` | `"notify"` (alert only), `"auto"` (run upgrade.sh), or `"disabled"` |
+| `sentinel_health_enabled` | bool | `true` | Expose `/health` and `/cooldowns` endpoints on loopback |
+| `sentinel_health_port` | int | `9191` | Port for the health endpoint (loopback only) |
 
 ### Temperature & Thresholds
 
@@ -94,7 +101,10 @@ Permissions are set to `0600` on every load. Environment variables override conf
 |-----|------|---------|-------------|
 | `temp_warning` | int | `75` | Warning threshold (Celsius) |
 | `temp_critical` | int | `85` | Critical threshold (Celsius) |
+| `thermal_shutdown_enabled` | bool | `true` | Automatically stop miner after sustained critical temp |
+| `thermal_shutdown_sustained_sec` | int | `90` | Seconds at critical temp before shutdown triggers |
 | `health_warn_threshold` | int | `70` | Health score threshold (0-100) |
+| `hw_error_rate_threshold` | int | `25` | HW error rate (%) above which `hw_error_rate` alert fires |
 | `miner_offline_threshold_min` | int | `10` | Minutes before declaring miner offline |
 | `pool_no_shares_threshold_min` | int | `30` | Minutes with no pool shares before zombie alert |
 
@@ -148,6 +158,11 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `sats_change_alert_pct` | int | `15` | Alert when sat value changes by N% |
 | `wallet_drop_alert_enabled` | bool | `true` | Alert when wallet balance drops |
 | `odds_alert_threshold` | int | `40` | Daily odds percentage to trigger alert |
+| `price_crash_enabled` | bool | `true` | Enable sudden price-drop alerts |
+| `price_crash_pct` | int | `15` | Price drop percentage in 1 hour to trigger `price_crash` |
+| `payout_check_interval` | int | `3600` | Seconds between wallet balance checks |
+| `missing_payout_days` | int | `7` | Alert if wallet balance unchanged for N days |
+| `revenue_decline_pct` | int | `50` | Alert when mining pace is N% below last month's earnings |
 
 ### Sats Surge
 
@@ -157,6 +172,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `sats_surge_threshold_pct` | int | `25` | Alert threshold (% increase) |
 | `sats_surge_lookback_days` | int | `7` | Compare against N days ago |
 | `sats_surge_cooldown_hours` | int | `24` | Per-coin cooldown |
+| `sats_surge_sample_interval` | int | `3600` | How often sat values are sampled (seconds) |
 
 ### Prometheus Metrics
 
@@ -170,6 +186,8 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `infra_backpressure_alert` | bool | `true` | Alert on high backpressure |
 | `infra_wal_errors_alert` | bool | `true` | Alert on WAL write/commit errors |
 | `infra_share_loss_alert` | bool | `true` | Alert on share batch drops |
+| `infra_zmq_health_alert` | bool | `true` | Alert on ZMQ degradation (health level > 2) |
+| `zmq_stale_threshold` | int | `300` | Seconds without a ZMQ message before `zmq_stale` fires |
 
 ### Alert Batching
 
@@ -186,6 +204,42 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `startup_suppression_bypass` | list | See below | Alert types that always bypass suppression |
 
 Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`
+
+### New Alert Types (v1.1.0)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `dry_streak_enabled` | bool | `true` | Alert when no block found for N × ETB |
+| `dry_streak_multiplier` | int | `3` | ETB multiple before dry streak alert fires |
+| `difficulty_alert_enabled` | bool | `true` | Alert on significant network difficulty changes |
+| `difficulty_alert_threshold_pct` | int | `25` | Difficulty change percentage threshold |
+| `disk_monitor_enabled` | bool | `true` | Monitor disk space on key paths |
+| `disk_warn_pct` | int | `85` | Disk warning threshold (percent used) |
+| `disk_critical_pct` | int | `95` | Disk critical threshold (percent used) |
+| `disk_monitor_paths` | list | `["/", "/spiralpool", "/var"]` | Paths to monitor |
+| `mempool_alert_enabled` | bool | `true` | Alert when BTC mempool is congested |
+| `mempool_alert_threshold` | int | `50000` | Transaction count threshold |
+| `backup_stale_enabled` | bool | `true` | Alert when backups are outdated |
+| `backup_stale_days` | int | `2` | Days before backup is considered stale |
+| `scheduled_maintenance_windows` | list | `[]` | Time windows where non-critical alerts are muted. Format: `[{"start": "02:00", "end": "04:00", "days": [6], "reason": "Weekly backup"}]` (`days` are 0=Mon…6=Sun; omit for every day) |
+| `ha_role_change_confirm_secs` | int | `90` | Seconds a role change must hold before firing ha_demoted/ha_promoted |
+| `ha_replication_lag_threshold` | int | `10485760` | Replication lag in bytes (10 MB) before `ha_replication_lag` fires |
+
+### Notification Channels (config keys)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `ntfy_url` | string | `""` | Full ntfy topic URL (e.g. `https://ntfy.sh/my-topic`) |
+| `ntfy_token` | string | `""` | Bearer token for private/self-hosted ntfy topics |
+| `smtp_enabled` | bool | `false` | Enable email notifications |
+| `smtp_host` | string | `""` | SMTP server hostname |
+| `smtp_port` | int | `587` | SMTP port (587=STARTTLS, 465=SSL) |
+| `smtp_username` | string | `""` | SMTP login username |
+| `smtp_password` | string | `""` | SMTP login password (stored in config.json, chmod 600) |
+| `smtp_from` | string | `""` | Sender email address |
+| `smtp_to` | list | `[]` | Recipient email address(es) |
+| `smtp_use_tls` | bool | `true` | `true`=STARTTLS (587), `false`=SSL (465) |
+| `telegram_commands_enabled` | bool | `true` | Enable Telegram bot command responses (when Telegram is configured) |
 
 ### Multi-Coin
 
@@ -239,9 +293,13 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 
 | Alert Type | Trigger | Quiet Hours | Cooldown |
 |------------|---------|-------------|----------|
-| `hashrate_crash` | Network hashrate drops 25%+ for 30 min | Bypasses | 3600s |
+| `hashrate_crash` | Network hashrate drops 25%+ for 30 min | Bypasses | 21600s (6h) |
 | `pool_hashrate_drop` | Fleet hashrate drops 50%+ for 15 min | Bypasses | 1800s |
 | `high_odds` | Mining odds exceed threshold (40%) | Respects | 4h internal |
+| `dry_streak` | No block found for `dry_streak_multiplier × ETB` (default 3×) | Respects | 21600s (6h) |
+| `difficulty_change` | Network difficulty drifts ≥`difficulty_alert_threshold_pct`% from last-alert baseline | Respects | 3600s (1h) |
+| `mempool_congestion` | BTC mempool exceeds `mempool_alert_threshold` transactions (default 50,000) | Respects | 3600s (1h) |
+| `stratum_down` | Pool API unreachable for 5+ minutes | **Bypasses** | None |
 
 ### Block Events
 
@@ -279,15 +337,42 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `ha_replication_lag` | DB replication falling behind | Bypasses | 3600s |
 | `ha_replica_drop` | Replica count decreased | Bypasses | 3600s |
 
+### Infrastructure Monitoring
+
+| Alert Type | Trigger | Quiet Hours | Cooldown |
+|------------|---------|-------------|----------|
+| `disk_space_warn` | Disk usage ≥ `disk_warn_pct` (default 85%) on monitored paths | Respects | 3600s (1h) |
+| `disk_space_critical` | Disk usage ≥ `disk_critical_pct` (default 95%) on monitored paths | Bypasses | 300s (5m) |
+| `backup_stale` | Newest backup older than `backup_stale_days` (default 2). Only active when backup cron installed. | Respects | 86400s (24h) |
+| `config_warning` | Placeholder values or invalid config detected at startup | Bypasses | Once per restart |
+
 ### Financial
 
 | Alert Type | Trigger | Quiet Hours | Cooldown |
 |------------|---------|-------------|----------|
-| `sats_surge` | Sat value up 25%+ over 7-day baseline | Respects | 24h per-coin |
+| `sats_surge` | Sat value up 25%+ over 7-day baseline — includes SimpleSwap swap link if configured | Respects | 24h per-coin |
 | `price_crash` | Sudden price drop | Bypasses | 14400s (4h) |
 | `payout_received` | Wallet balance increased | Respects | None |
 | `missing_payout` | Wallet balance unchanged for N days | Bypasses | 86400s |
 | `wallet_drop` | Wallet balance decreased unexpectedly | Bypasses | 3600s |
+
+#### SimpleSwap Swap Alerts (`sats_surge`)
+
+When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap.conf`), every `sats_surge` alert includes a **"SimpleSwap"** field with a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected.
+
+**This is a notification only.** No swap is executed automatically. The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. All swap activity happens on the SimpleSwap website in the operator's own browser — click the link, enter your BTC address on the site, and complete the swap there.
+
+> **Operator responsibility:** You are solely responsible for AML/KYC compliance, taxes, SimpleSwap.io Terms of Service, and all applicable financial regulations. See [TERMS.md](../../TERMS.md) section 5D and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
+
+**Configuration fields** (in `config.json`):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `sats_surge_enabled` | `true` | Enable/disable surge monitoring |
+| `sats_surge_threshold_pct` | `25` | Percentage rise vs baseline to trigger alert |
+| `sats_surge_lookback_days` | `7` | Baseline comparison window (days) |
+| `sats_surge_cooldown_hours` | `24` | Minimum hours between alerts for the same coin |
+| `sats_surge_sample_interval` | `3600` | How often sat values are recorded (seconds) |
 
 ### Security
 
@@ -338,9 +423,30 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | Requires | Optional `slixmpp` package (GPL-3.0) |
 | Timeout | 15 seconds |
 
+### ntfy
+
+| Key | Value |
+|-----|-------|
+| Config | `ntfy_url`, `ntfy_token` (optional) |
+| Format | Plain text with title header |
+| Auth | Bearer token via `ntfy_token` (for private/self-hosted topics) |
+| Block actions | Block-found alerts include a "View Block" action button linking to the block explorer |
+| Self-hosted | Any ntfy server URL works — not limited to ntfy.sh |
+
+### Email (SMTP)
+
+| Key | Value |
+|-----|-------|
+| Config | `smtp_enabled`, `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`, `smtp_from`, `smtp_to`, `smtp_use_tls` |
+| Format | Plain text (Discord embed converted to readable email body) |
+| TLS | STARTTLS (port 587, recommended) or SSL/TLS (port 465) via `smtp_use_tls` |
+| Recipients | Multiple recipients via comma-separated `smtp_to` list |
+| Retry | 3 attempts with exponential backoff; no retry on auth failure |
+| Security | Credentials stored in `config.json` (chmod 600); cert chain + hostname verified |
+
 ### Fallback
 
-If all channels fail: retries once after 10s, then writes to `fallback_notifications.log` (5MB rotation).
+If all configured channels fail (Discord, Telegram, ntfy, email, XMPP): retries once after 10s, then writes to `fallback_notifications.log` (5MB rotation).
 
 ---
 
@@ -404,7 +510,7 @@ If all channels fail: retries once after 10s, then writes to `fallback_notificat
 
 - Sends restart via AxeOS HTTP (`POST /api/system/restart`) or CGMiner API (`restart` command)
 - 30-minute startup grace period (no auto-restarts during initial startup)
-- Zombie detection: online but no shares for 30 min triggers restart
+- Zombie detection: online but no shares for 30 min. Remediation is **two-stage**: kick stratum session first (forces reconnect in ~5s), only escalate to full miner reboot if zombie persists 15+ minutes after the kick. Controlled by `pool_admin_api_key` — if not set, goes straight to reboot.
 - Cooldown: 30 minutes between restart attempts per miner
 
 ### Device Discovery Integration
@@ -540,6 +646,7 @@ State is persisted via atomic write (temp file + fsync + rename).
 | `GET /api/pools/{id}/miners` | Connected miners |
 | `GET /api/pools/{id}/blocks` | Block history for found/orphan detection |
 | `POST /api/admin/device-hints` | Push device classification (requires X-API-Key) |
+| `POST /api/admin/kick?ip=X.X.X.X` | Disconnect all stratum sessions from the given IP (requires X-API-Key). Returns `{"ip":"...","kicked":N}` |
 | `GET /api/sentinel/alerts` | Infrastructure alerts from Go stratum (supports `?since=`) |
 
 ### Prometheus (`http://localhost:9100/metrics`)
@@ -595,6 +702,14 @@ Circuit breaker, backpressure, WAL errors, ZMQ health, share loss. Requires Bear
 | `XMPP_JID` | `xmpp_jid` |
 | `XMPP_PASSWORD` | `xmpp_password` |
 | `XMPP_RECIPIENT` | `xmpp_recipient` |
+| `NTFY_URL` | `ntfy_url` |
+| `NTFY_TOKEN` | `ntfy_token` |
+| `SMTP_HOST` | `smtp_host` |
+| `SMTP_PORT` | `smtp_port` |
+| `SMTP_USERNAME` | `smtp_username` |
+| `SMTP_PASSWORD` | `smtp_password` |
+| `SMTP_FROM` | `smtp_from` |
+| `SMTP_TO` | `smtp_to` |
 | `EXPECTED_FLEET_THS` | `expected_fleet_ths` |
 | `WALLET_ADDRESS` | `wallet_address` |
 | `ALERT_THEME` | `alert_theme` |
@@ -614,7 +729,7 @@ The `alert_cooldowns` config key is a dict that merges with built-in defaults. S
 | `circuit_breaker` | 0 (always) |
 | `wal_errors` | 0 (always) |
 | `temp_warning` | 3600s (1h) |
-| `hashrate_crash` | 3600s (1h) |
+| `hashrate_crash` | 21600s (6h) |
 | `degradation` | 3600s (1h) |
 | `pool_hashrate_drop` | 1800s (30m) |
 | `miner_reboot` | 600s (10m) |
@@ -624,4 +739,58 @@ The `alert_cooldowns` config key is a dict that merges with built-in defaults. S
 
 ---
 
-*Spiral Sentinel &mdash; Black Ice 1.0*
+## Telegram Bot Commands
+
+When `telegram_commands_enabled` is `true` (default when Telegram is configured), Sentinel responds to commands sent to the configured bot:
+
+| Command | Response |
+|---------|----------|
+| `/status` | Pool overview — coins, connected miners, hashrate per pool; shows pause status if alerts are paused |
+| `/miners` | Per-miner table — nickname (if set) or truncated wallet address, hashrate, shares/sec |
+| `/hashrate` | Pool hashrate and network difficulty per coin |
+| `/blocks` | Last 5 blocks found per coin with height, reward, and date |
+| `/uptime` | Sentinel process uptime + stratum service uptime (from systemd) |
+| `/pause [minutes]` | Pause non-critical alerts (default 30 min, max 1440). Same as `spiralctl pause`. |
+| `/resume` | Resume alerts immediately if paused |
+| `/cooldowns` | List active alert cooldowns with time remaining |
+| `/help` | Command list |
+
+**Security:** Only the configured `telegram_chat_id` receives responses. All other senders are silently ignored.
+
+The bot uses long-polling (`getUpdates`, 25s timeout) with automatic reconnect on error.
+
+---
+
+## Health Endpoint
+
+Sentinel exposes a local-only HTTP health endpoint for monitoring integrations and `spiralctl`:
+
+```
+http://127.0.0.1:<sentinel_health_port>/health
+http://127.0.0.1:<sentinel_health_port>/cooldowns
+```
+
+Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
+
+### `GET /health`
+
+```json
+{"alive": true, "uptime_s": 3600, "version": "1.1.0-PHI_FORGE"}
+```
+
+### `GET /cooldowns`
+
+Returns a JSON array of active alert cooldowns with time remaining. Used by `spiralctl config list-cooldowns`.
+
+```json
+[
+  {"alert_type": "hashrate_crash", "cooldown_s": 21600, "remaining_s": 18432, "expires_at": "2026-03-17T08:32:00"},
+  {"alert_type": "temp_warning:miner1", "cooldown_s": 3600, "remaining_s": 245, "expires_at": "2026-03-17T03:04:05"}
+]
+```
+
+The endpoint is loopback-only and restarts automatically after errors with a 30-second backoff.
+
+---
+
+*Spiral Sentinel &mdash; Phi Forge 1.1.0*

@@ -27,6 +27,7 @@ All documentation and MOTD references use `spiralctl` exclusively.
 |---|---|
 | `spiralctl status` | Show full service and blockchain node status |
 | `spiralctl restart` | Restart all Spiral Pool services (requires root) |
+| `spiralctl shutdown [--reboot]` | Gracefully stop all services and power off (or reboot) |
 | `spiralctl logs` | View stratum log output |
 | `spiralctl watch` | Live monitoring dashboard (like htop for the pool) |
 | `spiralctl test` | Run diagnostic and connectivity tests |
@@ -42,7 +43,7 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl chain export` | Push blockchain data to a remote machine (requires root) |
 | `spiralctl chain restore` | Pull blockchain data from a remote machine (requires root) |
 | `spiralctl node <action> [coin]` | Manage blockchain node daemons |
-| `spiralctl coin <action> [coin]` | Show or disable cryptocurrency support |
+| `spiralctl coin <action> [coin]` | Show, list, or disable cryptocurrency support |
 
 ### Mining
 
@@ -50,27 +51,48 @@ All documentation and MOTD references use `spiralctl` exclusively.
 |---|---|
 | `spiralctl mining [action] [options]` | Mining mode management (Go binary) |
 | `spiralctl pool stats` | Pool hashrate and worker statistics (Go binary) |
-| `spiralctl stats` | Quick pool stats (hashrate, blocks) |
-| `spiralctl blocks [count]` | View discovered blocks and status (default: last 5) |
+| `spiralctl stats [blocks [N]]` | Quick pool stats; `stats blocks` shows last N blocks |
 | `spiralctl scan` | Scan network for miners |
 | `spiralctl wallet [options]` | Show or generate wallet addresses |
 | `spiralctl external [action]` | External access / hashrate rental (Go binary) |
+
+### Miner Management
+
+| Command | Description |
+|---|---|
+| `spiralctl miners` | List connected miners with hashrate and shares |
+| `spiralctl miners kick <IP>` | Disconnect all stratum sessions from an IP |
+| `spiralctl workers` | Per-worker breakdown (miner → rig → hashrate + acceptance rate) |
+| `spiralctl miner nick <IP> <name>` | Set a display name for a miner in Sentinel |
+| `spiralctl miner nick list` | List all configured miner nicknames |
+| `spiralctl miner nick clear <IP>` | Remove a miner nickname |
 
 ### Data
 
 | Command | Description |
 |---|---|
-| `spiralctl backup` | Backup pool data and configuration (requires root) |
-| `spiralctl restore` | Restore pool data from backup (requires root) |
-| `spiralctl export` | Export mining history to CSV |
+| `spiralctl data backup` | Backup pool data and configuration (requires root) |
+| `spiralctl data restore` | Restore pool data from backup (requires root) |
+| `spiralctl data export` | Export mining history to CSV |
 | `spiralctl gdpr-delete` | Delete miner data for GDPR/CCPA compliance (Go binary) |
+
+### Coin Management
+
+| Command | Description |
+|---|---|
+| `spiralctl coin enable <TICKER>` | Add a supported coin (installs daemon, generates wallet, updates config) |
+| `spiralctl coin disable <TICKER>` | Stop and disable a coin daemon |
+| `spiralctl coin status` | Show all coins and their enabled/disabled state |
+| `spiralctl coin-upgrade` | In-place coin daemon binary upgrade (config and data preserved) |
+| `spiralctl add-coin <TICKER>` | Add a custom/unsupported coin from GitHub (advanced) |
+| `spiralctl remove-coin <TICKER>` | Remove a custom coin's generated files (wallet and blockchain data preserved) |
 
 ### High Availability / Failover
 
 | Command | Description |
 |---|---|
 | `spiralctl ha [action]` | High Availability cluster management |
-| `spiralctl vip [action]` | Virtual IP for miner failover |
+| `spiralctl ha vip [action]` | Virtual IP for miner failover |
 | `spiralctl sync-addresses` | Sync wallet addresses across HA nodes |
 
 ### Configuration
@@ -78,8 +100,19 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | Command | Description |
 |---|---|
 | `spiralctl config [action] [key] [value]` | View or update Sentinel configuration |
+| `spiralctl config validate` | Dry-run config check — YAML/JSON syntax, placeholder detection, key cross-checks |
+| `spiralctl config notify-test` | Send a test notification to every configured channel |
+| `spiralctl config list-cooldowns` | Show active alert cooldowns with time remaining |
+| `spiralctl log [errors] [service] [window]` | Filter service logs for errors/warnings |
 | `spiralctl webhook [action]` | Manage Discord & Telegram notifications |
-| `spiralctl tor [action]` | Manage Tor privacy settings |
+
+### Security
+
+| Command | Description |
+|---|---|
+| `spiralctl security [period]` | Security status overview (default: 24h) |
+| `spiralctl security fail2ban [action]` | Manage fail2ban jails |
+| `spiralctl security tor [action]` | Manage Tor privacy settings |
 
 ---
 
@@ -106,6 +139,33 @@ sudo spiralctl restart
 ```
 
 Requires root.
+
+---
+
+### spiralctl shutdown
+
+Gracefully stop all Spiral Pool services in the correct order, then power off or reboot the machine.
+
+```
+sudo spiralctl shutdown              # Stop services, then power off
+sudo spiralctl shutdown --reboot     # Stop services, then reboot
+sudo spiralctl shutdown --yes        # Skip confirmation prompt
+sudo spiralctl shutdown --reboot --yes
+```
+
+**Stop order:**
+1. `spiralstratum` — drops miner connections cleanly
+2. `spiralsentinel` — flushes monitoring state
+3. `spiraldash` — dashboard
+4. `keepalived` — releases the VIP (HA nodes only)
+5. `patroni` — flushes PostgreSQL WAL
+6. `etcd` — HA consensus (HA nodes only)
+
+Requires root. Prompts for confirmation unless `--yes` / `-y` is passed.
+
+**Options:**
+- `--reboot`, `-r` — reboot instead of power off
+- `--yes`, `-y` — skip confirmation prompt
 
 ---
 
@@ -332,28 +392,19 @@ spiralctl pool stats
 
 ### spiralctl stats
 
-Quick pool statistics (hashrate, blocks found).
+Quick pool statistics (hashrate, blocks found). The `blocks` subcommand shows recent block history.
 
 ```
 spiralctl stats
+spiralctl stats blocks [count]
 ```
 
-Delegates to `spiralpool-stats`.
+**Subcommands:**
+- `blocks [count]` - Show last N blocks (default: 5), status: pending / confirmed / orphaned
 
----
+**Backward-compat alias:** `spiralctl blocks [count]` still works.
 
-### spiralctl blocks
-
-View discovered blocks and their current status (pending, confirmed, orphaned).
-
-```
-spiralctl blocks [count]
-```
-
-**Arguments:**
-- `count` - Number of recent blocks to show (default: 5)
-
-Delegates to `spiralpool-blocks`.
+Delegates to `spiralpool-stats` / `spiralpool-blocks`.
 
 ---
 
@@ -400,39 +451,22 @@ spiralctl external [setup|enable|disable|status|test]
 
 ---
 
-### spiralctl backup
+### spiralctl data
 
-Backup pool data and configuration.
-
-```
-sudo spiralctl backup
-```
-
-Requires root. Delegates to `spiralpool-backup`.
-
----
-
-### spiralctl restore
-
-Restore pool data from a previous backup.
+Manage pool data: backups, restores, and CSV exports.
 
 ```
-sudo spiralctl restore
+sudo spiralctl data backup    # Backup pool data and configuration
+sudo spiralctl data restore   # Restore pool data from backup
+spiralctl data export         # Export mining history to CSV
 ```
 
-Requires root. Delegates to `spiralpool-restore`.
+**Subcommands:**
+- `backup` - Full backup of pool config and data (requires root). Delegates to `spiralpool-backup`.
+- `restore` - Restore from a previous backup (requires root). Delegates to `spiralpool-restore`.
+- `export` - Export mining history to CSV. Delegates to `spiralpool-export`.
 
----
-
-### spiralctl export
-
-Export mining history to CSV format.
-
-```
-spiralctl export
-```
-
-Delegates to `spiralpool-export`.
+**Backward-compat aliases:** `spiralctl backup`, `spiralctl restore`, and `spiralctl export` still work.
 
 ---
 
@@ -451,7 +485,7 @@ spiralctl gdpr-delete
 High Availability cluster management.
 
 ```
-spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|service]
+spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|service|vip]
 ```
 
 **Actions:**
@@ -464,6 +498,7 @@ spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|
 - `setup` - Run HA setup wizard
 - `validate` - Validate HA configuration
 - `service` - Manage HA services
+- `vip [status|enable|disable|failover]` - Virtual IP for miner failover (see below)
 
 **Enable options:**
 - `--vip <ip>` (or `--address <ip>`) - Virtual IP address (required)
@@ -484,20 +519,20 @@ spiralctl ha status
 sudo spiralctl ha enable --vip 192.168.1.100
 sudo spiralctl ha enable --vip 192.168.1.100 --token <token> --priority 101
 sudo spiralctl ha promote
+spiralctl ha vip status
+sudo spiralctl ha vip enable --address 192.168.1.100
 ```
 
----
+#### ha vip subcommand
 
-### spiralctl vip
-
-Virtual IP management for miner failover.
+Virtual IP management for miner failover (keepalived).
 
 ```
-spiralctl vip [status|enable|disable|failover]
+spiralctl ha vip [status|enable|disable|failover]
 ```
 
 **Actions:**
-- `status` - Show VIP cluster status (default)
+- `status` - Show VIP / keepalived state (default)
 - `enable [options]` - Enable VIP on this node (requires root)
 - `disable` - Disable VIP on this node (requires root)
 - `failover` - Display VIP failover instructions (does not move VIP directly; use `ha promote` instead)
@@ -509,12 +544,7 @@ spiralctl vip [status|enable|disable|failover]
 - `--priority <num>` - Priority: 100 = primary, 101+ = backup
 - `--token <token>` - Cluster token (generated if omitted)
 
-**Examples:**
-```
-spiralctl vip status
-sudo spiralctl vip enable --address 192.168.1.100
-sudo spiralctl vip failover
-```
+**Backward-compat alias:** `spiralctl vip [action]` still works.
 
 ---
 
@@ -544,9 +574,12 @@ spiralctl config [show|list|get|set] [key] [value]
 ```
 
 **Actions:**
-- `show` / `list` - Show current configuration
+- `show` / `list` - Show current Sentinel configuration
 - `get <key>` - Get a specific config value
 - `set <key> <value>` - Set a config value
+- `validate` - Dry-run check of `config.yaml` and sentinel `config.json`: YAML/JSON syntax, placeholder wallet addresses (absent `wallet_address` is valid — only explicit placeholders like `YOUR_DGB_ADDRESS` are flagged), admin API key cross-check (accepts both v2 `admin_api_key` and v1 `adminApiKey` formats), Telegram/XMPP completeness, SMTP completeness (including password), v1.1.0 alert config range checks (disk_warn_pct < disk_critical_pct, dry_streak_multiplier ≥ 1, difficulty_alert_threshold_pct 1–100, backup_stale_days ≥ 1), `scheduled_maintenance_windows` format (HH:MM start/end, valid days 0–6). Skips Sentinel config check with an informational note when `spiralsentinel.service` is not enabled.
+- `notify-test` - Send a test message to every configured notification channel (Discord, Telegram, ntfy, email, XMPP). Reports pass/fail per channel.
+- `list-cooldowns` - Show all active Sentinel alert cooldowns with time remaining (queries the health endpoint)
 
 **Keys:**
 - `expected_hashrate` - Expected fleet hashrate in TH/s
@@ -560,7 +593,164 @@ spiralctl config show
 spiralctl config get expected_hashrate
 spiralctl config set expected_hashrate 50
 spiralctl config set discord_webhook https://discord.com/api/webhooks/...
+spiralctl config validate
+spiralctl config notify-test
+spiralctl config list-cooldowns
 ```
+
+---
+
+### spiralctl log
+
+Filter service logs for errors and warnings.
+
+```
+spiralctl log errors [service] [window]
+```
+
+**Arguments:**
+- `service` (optional) - Scope to one service. Aliases: `stratum`, `sentinel`, `dash`/`dashboard`, `patroni`/`postgres`/`pg`, `ha`/`watcher`
+- `window` (optional) - Time window. Format: `<N><unit>` where unit is `s`, `m`, `h`, or `d`. Default: `1h`
+
+Colour-codes output by severity: red for ERROR/CRITICAL/FATAL, yellow for WARN.
+
+**Examples:**
+```
+spiralctl log errors                      # All services, last 1h
+spiralctl log errors 24h                  # All services, last 24h
+spiralctl log errors sentinel             # Sentinel only, last 1h
+spiralctl log errors stratum 6h           # Stratum only, last 6h
+spiralctl log errors patroni 7d           # Patroni only, last 7 days
+```
+
+---
+
+### spiralctl miners
+
+List connected miners and manage stratum sessions.
+
+```
+spiralctl miners
+spiralctl miners kick <IP>
+```
+
+**Subcommands:**
+- *(none)* - List all connected miners grouped by coin: wallet address, hashrate, shares/sec, total shares
+- `kick <IP>` - Disconnect all stratum sessions from the given IP. The miner will reconnect automatically on its own timer.
+
+`kick` requires `admin_api_key` to be set in `config.yaml`.
+
+**Examples:**
+```
+spiralctl miners
+spiralctl miners kick 192.168.1.50
+```
+
+---
+
+### spiralctl workers
+
+Show per-worker hashrate breakdown, grouped by coin and miner wallet.
+
+```
+spiralctl workers
+```
+
+Lists each worker name with current hashrate, acceptance rate, and online status. Useful for farms with multiple rigs per wallet address.
+
+---
+
+### spiralctl miner
+
+Miner management subcommands.
+
+```
+spiralctl miner nick <IP> <name>     Set a display nickname for a miner
+spiralctl miner nick list            List all configured nicknames
+spiralctl miner nick clear <IP>      Remove a miner's nickname
+```
+
+Nicknames are stored in Sentinel's `config.json` and used in all alert messages and reports. Changes take effect after Sentinel is restarted.
+
+**Examples:**
+```
+spiralctl miner nick 192.168.1.50 "Antminer S21"
+spiralctl miner nick list
+spiralctl miner nick clear 192.168.1.50
+```
+
+---
+
+### spiralctl coin enable
+
+Add a supported coin to the pool. Launches the installer in "Add coins to existing installation" mode, which handles the full setup: daemon installation, wallet generation, config.yaml update, firewall ports, and service restart.
+
+```
+spiralctl coin enable <TICKER>
+```
+
+**Supported coins:** BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XMY
+
+**Examples:**
+```
+spiralctl coin enable BTC       # Enable Bitcoin
+spiralctl coin enable LTC       # Enable Litecoin
+spiralctl coin enable NMC       # Enable Namecoin (merge-mine with BTC)
+```
+
+After enabling, visit the Dashboard at `http://<server>:1618/setup` to verify wallet addresses.
+
+---
+
+### spiralctl coin disable
+
+Stop and disable a coin daemon. Wallet data and blockchain data are preserved.
+
+```
+spiralctl coin disable <TICKER>
+```
+
+---
+
+### spiralctl add-coin
+
+Add a **custom** coin not natively supported by Spiral Pool. This is an advanced command for coins outside the 14 built-in tickers.
+
+```
+spiralctl add-coin <TICKER> --github <URL> [--algorithm sha256d|scrypt]
+```
+
+If a built-in ticker is provided, the command redirects to `spiralctl coin enable` instead.
+
+---
+
+### spiralctl remove-coin
+
+Remove a custom coin's generated files (Go source, Dockerfile, manifest entry). Wallet data and blockchain data are **never deleted**.
+
+```
+spiralctl remove-coin <TICKER> [--yes]
+```
+
+---
+
+### spiralctl coin-upgrade
+
+Upgrade a coin daemon binary in-place. Config files, wallets, blockchain data, and pool settings are never modified.
+
+```
+spiralctl coin-upgrade [--coin <TICKER>] [--check] [--reindex]
+```
+
+**Options:**
+- `--coin <TICKER>` - Target a specific coin
+- `--check` - Show current vs target version without making changes
+- `--reindex` - Start the daemon with `-reindex` after upgrade
+
+**Risk classification shown before any change:**
+- `PATCH` — Binary swap, reindex not expected
+- `MINOR` — Reindex may be needed
+- `MAJOR` — Reindex almost certainly required
 
 ---
 
@@ -590,18 +780,59 @@ spiralctl webhook test
 
 ---
 
-### spiralctl tor
+### spiralctl security
+
+Security status dashboard and management. Shows firewall state, active fail2ban bans, stratum security events, and connection fingerprints.
+
+```
+spiralctl security [period]
+spiralctl security fail2ban [action]
+spiralctl security tor [action]
+```
+
+**Top-level (status view):**
+- `period` - Time window for event counts (default: `24h`). Accepts journald relative times: `1h`, `7d`, etc.
+
+#### security fail2ban subcommand
+
+Manage fail2ban jails for Spiral Pool services.
+
+```
+spiralctl security fail2ban [status|banned|unban|whitelist-add|whitelist-show|reload|logs]
+```
+
+**Actions:**
+- `status` - Show all jail stats (default)
+- `banned` - List currently banned IPs
+- `unban <IP>` - Remove a ban (requires root)
+- `whitelist-add <CIDR>` - Whitelist an IP/CIDR (requires root)
+- `whitelist-show` - Show current whitelist
+- `reload` - Reload fail2ban config (requires root)
+- `logs` - Tail fail2ban log
+
+**Backward-compat alias:** `spiralctl fail2ban [action]` still works.
+
+**Examples:**
+```
+spiralctl security fail2ban banned
+sudo spiralctl security fail2ban unban 1.2.3.4
+sudo spiralctl security fail2ban whitelist-add 203.0.113.0/24
+```
+
+#### security tor subcommand
 
 Manage Tor privacy settings for blockchain connections.
 
 ```
-spiralctl tor [status|enable|disable]
+spiralctl security tor [status|enable|disable]
 ```
 
 **Actions:**
 - `status` - Show Tor status (default)
-- `enable` - Enable Tor (requires re-running installer)
+- `enable` - Enable Tor (requires re-running installer with `--tor`)
 - `disable` - Disable Tor (requires re-running installer)
+
+**Backward-compat alias:** `spiralctl tor [action]` still works.
 
 ---
 
@@ -617,11 +848,13 @@ spiralctl help
 
 ### spiralctl version
 
-Show spiralctl version.
+Show full version table.
 
 ```
 spiralctl version
 ```
+
+Displays: spiralctl script version, stratum binary version (`spiralstratum --version`), Sentinel version, and all installed coin daemon versions.
 
 ---
 

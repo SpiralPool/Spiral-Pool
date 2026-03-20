@@ -24,6 +24,27 @@
 # Each error is handled explicitly by the functions.
 # Using set -e would kill the daemon on transient errors (e.g., grep in a pipeline).
 
+# ── etcd credentials ─────────────────────────────────────────────────────────
+# SECURITY (etcd-auth): Load etcd root password if authentication is configured.
+# Written by the installer to /spiralpool/config/etcd-auth.conf (mode 640,
+# root-owned, spiralpool-group-readable). Sets ETCDCTL_USER so all etcdctl calls
+# in this script authenticate automatically without per-call --user flags.
+if [[ -f /spiralpool/config/etcd-auth.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/etcd-auth.conf
+    [[ -n "${ETCD_ROOT_PASS:-}" ]] && export ETCDCTL_USER="root:${ETCD_ROOT_PASS}"
+fi
+export ETCDCTL_API=3
+
+# ── Patroni REST API credentials ─────────────────────────────────────────────
+# SECURITY (patroni-auth): Load Patroni REST API credentials if configured.
+PATRONI_CURL_AUTH=()
+if [[ -f /spiralpool/config/patroni-api.conf ]]; then
+    # shellcheck source=/dev/null
+    source /spiralpool/config/patroni-api.conf
+    [[ -n "${PATRONI_API_USERNAME:-}" ]] && PATRONI_CURL_AUTH=(-u "${PATRONI_API_USERNAME}:${PATRONI_API_PASSWORD}")
+fi
+
 # Configuration
 INSTALL_DIR="/spiralpool"
 LOG_FILE="${INSTALL_DIR}/logs/ha-role-watcher.log"
@@ -286,7 +307,7 @@ wait_for_pg_readwrite() {
     log "INFO" "ETCD RECOVERY: Waiting for Patroni to promote PostgreSQL..."
     for i in $(seq 1 60); do
         local patroni_role
-        patroni_role=$(curl -s --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | jq -r '.role // ""' 2>/dev/null || echo "")
+        patroni_role=$(curl -s "${PATRONI_CURL_AUTH[@]}" --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | jq -r '.role // ""' 2>/dev/null || echo "")
         if [[ "$patroni_role" == "master" ]] || [[ "$patroni_role" == "primary" ]]; then
             log "SUCCESS" "ETCD RECOVERY: Patroni role=${patroni_role} (read-write)"
             return 0

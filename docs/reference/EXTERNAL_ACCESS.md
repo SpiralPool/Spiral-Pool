@@ -377,6 +377,7 @@ If you're running multiple coins, each typically uses a different stratum port. 
 | Syscoin           | SHA-256d  | 15335        | `stratum+tcp://mypool.com:15335`    |
 | Myriad            | SHA-256d  | 17335        | `stratum+tcp://mypool.com:17335`    |
 | Fractal Bitcoin   | SHA-256d  | 18335        | `stratum+tcp://mypool.com:18335`    |
+| Q-BitX            | SHA-256d  | 20335        | `stratum+tcp://mypool.com:20335`    |
 
 **Note:** These are example ports. Use whatever ports you configured in your pool. Check `spiralctl status` to see your actual stratum ports.
 

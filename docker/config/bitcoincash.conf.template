@@ -44,9 +44,8 @@ zmqpubhashblockhwm=1000
 # PERFORMANCE TUNING - OPTIMIZED FOR FAST SYNC
 # ═══════════════════════════════════════════════════════════════════════════════
 # Database cache size in MB (higher = faster sync, more RAM)
-# BCH blockchain is smaller than BTC, 2048MB is usually sufficient
-# Requires ~2-4GB RAM depending on setting
-dbcache=2048
+# 8192MB for large-chain coins (BTC, BCH, DGB)
+dbcache=8192
 
 # Signature cache size (higher = faster validation)
 maxsigcachesize=250
