@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Forge 1.1.0 &mdash; Convergent difficulty. Minimal oscillation.</em>
+  <em>Phi Forge 1.1.1 &mdash; Convergent difficulty. Minimal oscillation.</em>
 </p>
 
 <p align="center">
@@ -432,4 +432,4 @@ This project is licensed under BSD-3-Clause. See [LICENSE](LICENSE) and [THIRD_P
 
 ---
 
-*Spiral Pool &mdash; Phi Forge 1.1.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Forge 1.1.1 &mdash; Convergent difficulty. Minimal oscillation.*

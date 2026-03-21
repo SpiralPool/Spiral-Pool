@@ -14,7 +14,7 @@
     Supports all 14 coins via the -Coin parameter.
 
 .NOTES
-    Version: 1.1.0
+    Version: 1.1.1
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL TEST INFRASTRUCTURE
 

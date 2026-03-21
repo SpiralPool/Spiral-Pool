@@ -35,7 +35,7 @@ def find_manifest_path() -> Path:
     script_dir = Path(__file__).parent
     paths = [
         script_dir.parent / "config" / "coins.manifest.yaml",
-        script_dir.parent / "RELEASE-V1.1.0-PHI_FORGE" / "config" / "coins.manifest.yaml",
+        script_dir.parent / "RELEASE-V1.1.1-PHI_FORGE" / "config" / "coins.manifest.yaml",
         Path("/spiralpool/config/coins.manifest.yaml"),
     ]
     for p in paths:

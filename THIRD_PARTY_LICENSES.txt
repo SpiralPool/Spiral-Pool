@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v1.1.0 - Third-Party Licenses
+Spiral Pool v1.1.1 - Third-Party Licenses
 ================================================================================
 
 This software incorporates or depends on the following third-party components.
@@ -904,7 +904,7 @@ compliance with all applicable licenses.
 
 ================================================================================
 Last Updated: 2026-03-01
-Spiral Pool Version: 1.1.0
+Spiral Pool Version: 1.1.1
 ================================================================================
 
 Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️

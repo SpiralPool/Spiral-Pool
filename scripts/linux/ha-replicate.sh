@@ -5,7 +5,7 @@
 
 #
 # Spiral Pool HA Cold-Standby Replication Script
-# Version: 1.1.0
+# Version: 1.1.1
 # License: BSD-3-Clause
 #
 # PURPOSE:
@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.1.1"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

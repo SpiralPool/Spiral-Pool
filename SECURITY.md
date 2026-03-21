@@ -233,5 +233,5 @@ Operators may wish to consult:
 
 *Security is a shared responsibility. This policy describes how to report vulnerabilities and provides general security guidance. You are responsible for securing your deployment.*
 
-*Spiral Pool v1.1.0 - Security Policy*
+*Spiral Pool v1.1.1 - Security Policy*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

@@ -14,7 +14,7 @@
     Authenticode certificate from a Certificate Authority.
 
 .NOTES
-    Version: 1.1.0
+    Version: 1.1.1
     Author: Spiral Pool Contributors
 
     IMPORTANT: Self-signed certificates are for development/testing only.

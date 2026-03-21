@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v1.1.0 - Asset Provenance
+Spiral Pool v1.1.1 - Asset Provenance
 ================================================================================
 
 This file documents the origin and licensing status of all visual assets
@@ -114,7 +114,7 @@ AI-GENERATED ASSETS. USE AT YOUR OWN RISK.
 
 ================================================================================
 Last Updated: 2026-03-01
-Spiral Pool Version: 1.1.0
+Spiral Pool Version: 1.1.1
 Origin: Canada
 ================================================================================
 

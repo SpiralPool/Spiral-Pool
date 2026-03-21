@@ -10,7 +10,7 @@ Getting started, installation, and deployment guides.
 |----------|-------------|
 | [OPERATIONS.md](setup/OPERATIONS.md) | Installation, configuration, monitoring, HA setup, upgrading, troubleshooting |
 | [CLOUD_OPERATIONS.md](setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment: dashboard SSH tunnel, firewall layout, SSH hardening, HTTPS options, provider-specific config |
-| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v1.1.0 (Phi Forge): compatibility, all coin types, step-by-step |
+| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v1.1.1 (Phi Forge): compatibility, all coin types, step-by-step |
 | [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 single-coin mode) |
 
 ## Architecture

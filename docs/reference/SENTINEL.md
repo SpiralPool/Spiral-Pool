@@ -205,7 +205,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 
 Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`
 
-### New Alert Types (v1.1.0)
+### New Alert Types (v1.1.1)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
