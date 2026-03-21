@@ -2,36 +2,36 @@
   "name": "Midnight Aurora",
   "id": "midnight-aurora",
   "author": "Spiral Pool",
-  "version": "1.0.0",
-  "description": "Dark sky with northern lights aurora effects",
+  "version": "1.0.1",
+  "description": "Northern lights dancing across a dark arctic sky — green and violet curtains",
   "category": "Nature",
   "colors": {
-    "bg-primary": "#0c0820",
-    "bg-secondary": "#141030",
-    "bg-card": "#1e1840",
-    "bg-card-hover": "#281e50",
-    "neon-blue": "#4db8ff",
-    "neon-cyan": "#42e6c8",
+    "bg-primary": "#060810",
+    "bg-secondary": "#0c1018",
+    "bg-card": "#121822",
+    "bg-card-hover": "#1a222e",
+    "neon-blue": "#40d8a0",
+    "neon-cyan": "#60f0c0",
     "neon-purple": "#a86eff",
     "neon-pink": "#e060a0",
     "neon-orange": "#ff8844",
     "neon-yellow": "#e8d050",
-    "neon-green": "#42e68a",
+    "neon-green": "#40e870",
     "neon-red": "#ff5566",
-    "text-primary": "#e4eaf4",
-    "text-secondary": "#8898b8",
-    "text-muted": "#4a5878",
-    "status-online": "#42e68a",
+    "text-primary": "#e0eaf0",
+    "text-secondary": "#8098b0",
+    "text-muted": "#485868",
+    "status-online": "#40e870",
     "status-offline": "#ff5566",
     "status-warning": "#e8d050",
-    "border-primary": "rgba(66, 230, 200, 0.15)",
-    "border-accent": "rgba(168, 110, 255, 0.2)"
+    "border-primary": "rgba(64, 216, 160, 0.15)",
+    "border-accent": "rgba(168, 110, 255, 0.15)"
   },
   "gradients": {
-    "primary": "linear-gradient(135deg, #42e6c8 0%, #4db8ff 100%)",
-    "secondary": "linear-gradient(135deg, #a86eff 0%, #42e6c8 100%)",
-    "accent": "linear-gradient(135deg, #42e68a 0%, #42e6c8 100%)",
-    "card": "linear-gradient(180deg, rgba(20, 28, 52, 0.95) 0%, rgba(14, 20, 40, 1) 100%)"
+    "primary": "linear-gradient(135deg, #40d8a0 0%, #60f0c0 100%)",
+    "secondary": "linear-gradient(135deg, #a86eff 0%, #40d8a0 100%)",
+    "accent": "linear-gradient(135deg, #40e870 0%, #40d8a0 100%)",
+    "card": "linear-gradient(180deg, rgba(18, 24, 34, 0.95) 0%, rgba(12, 16, 24, 1) 100%)"
   },
   "fonts": {
     "display": "'Exo 2', sans-serif",
@@ -39,7 +39,7 @@
     "mono": "'Fira Code', monospace"
   },
   "effects": {
-    "glowIntensity": 0.2,
+    "glowIntensity": 0.22,
     "animationSpeed": 1,
     "borderRadius": "12px",
     "useGlitchEffect": false,
@@ -47,5 +47,5 @@
     "useScanLines": false,
     "useNeonGlow": true
   },
-  "customCSS": "/* Midnight Aurora - Northern Lights */\n@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=Nunito:wght@300;400;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 800px 400px at 20% 0%, rgba(66, 230, 200, 0.1), transparent),\n    radial-gradient(ellipse 600px 500px at 50% 10%, rgba(168, 110, 255, 0.08), transparent),\n    radial-gradient(ellipse 700px 350px at 80% 5%, rgba(66, 230, 138, 0.06), transparent);\n  animation: auroraShift 15s ease-in-out infinite;\n}\n\n@keyframes auroraShift {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.7; }\n}\n\n.stat-card {\n  border: 1px solid rgba(66, 230, 200, 0.12);\n  backdrop-filter: blur(10px);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #42e6c8, #a86eff, #42e68a);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(66, 230, 200, 0.3);\n  box-shadow: 0 4px 30px rgba(66, 230, 200, 0.15);\n}\n\n.stat-value {\n  text-shadow: 0 0 20px currentColor;\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #42e6c8, #a86eff, #42e68a);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(66, 230, 200, 0.08);\n}\n\n.miner-card:hover {\n  border-color: rgba(168, 110, 255, 0.2);\n}"
+  "customCSS": "/* Midnight Aurora - Northern Lights */\n@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=Nunito:wght@300;400;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 800px 200px at 20% 0%, rgba(64, 232, 112, 0.12), transparent),\n    radial-gradient(ellipse 600px 300px at 50% 5%, rgba(168, 110, 255, 0.1), transparent),\n    radial-gradient(ellipse 700px 200px at 80% 0%, rgba(64, 216, 160, 0.08), transparent);\n  animation: auroraShift 15s ease-in-out infinite;\n}\n\n@keyframes auroraShift {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.7; }\n}\n\n.stat-card {\n  border: 1px solid rgba(64, 216, 160, 0.12);\n  backdrop-filter: blur(10px);\n  background: rgba(18, 24, 34, 0.85);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #40e870, #40d8a0, #a86eff);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(64, 216, 160, 0.3);\n  box-shadow: 0 4px 30px rgba(64, 216, 160, 0.12);\n}\n\n.stat-value {\n  text-shadow: 0 0 18px currentColor;\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #40e870, #40d8a0, #a86eff);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(64, 216, 160, 0.08);\n  background: rgba(18, 24, 34, 0.7);\n}\n\n.miner-card:hover {\n  border-color: rgba(168, 110, 255, 0.2);\n}"
 }

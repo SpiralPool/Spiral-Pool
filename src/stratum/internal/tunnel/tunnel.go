@@ -170,7 +170,7 @@ func DefaultExternalConfig() ExternalConfig {
 			HardenOnEnable:      true,
 			RequireTLS:          false,
 			MaxConnectionsPerIP: 50,
-			SharesPerSecond:     50,
+			SharesPerSecond:     500,
 		},
 	}
 }

@@ -750,4 +750,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0*
+*Spiral Pool — Phi Forge 1.1.1*

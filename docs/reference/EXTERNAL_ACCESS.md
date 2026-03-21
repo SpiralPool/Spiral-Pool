@@ -183,9 +183,11 @@ If running Bitcoin (4333), Litecoin (7333), and Dogecoin (8335):
 
 Use this mode if you cannot configure port forwarding, are behind CGNAT, or want additional DDoS protection.
 
+> **Requires Cloudflare Spectrum (paid add-on).** Standard Cloudflare Tunnels only proxy HTTP/WebSocket traffic. Mining hardware (ASICs, FPGAs) connects via raw TCP stratum protocol and cannot run `cloudflared` on the client side. Without Cloudflare Spectrum for raw TCP proxying, miners will **not** be able to connect through the tunnel. If you don't have Spectrum, use port-forward mode instead. The setup wizard will verify this during configuration.
+
 ### Prerequisites
 
-1. Cloudflare account (free tier works)
+1. Cloudflare account with **Spectrum** enabled (raw TCP proxying)
 2. Domain name pointed to Cloudflare nameservers
 3. `cloudflared` binary installed
 
@@ -259,10 +261,10 @@ Tunnel routes to:      localhost:3333 (your local stratum port)
 
 When external access is enabled, security hardening is automatically applied:
 
-| Setting | Normal | Hardened |
-|---------|--------|----------|
+| Setting | Normal | Hardened (default) |
+|---------|--------|--------------------|
 | Connections per IP | 100 | 50 |
-| Shares per second | 100 | 50 |
+| Shares per second per IP | 100 | Configurable (see below) |
 | Ban threshold | 10 | 5 |
 | Ban duration | 30m | 60m |
 
@@ -271,7 +273,31 @@ These values help protect against:
 - Share spam attacks
 - Repeated invalid share submissions
 
-To disable automatic hardening during setup:
+### Shares Per Second Configuration
+
+The `sharesPerSecond` limit is configurable during setup because the correct value depends on how much rented hashrate you expect. Hashrate rental services (NiceHash, MiningRigRentals) often route traffic through proxy IPs that aggregate many workers — a single IP can submit hundreds or thousands of shares per second at scale.
+
+The setup wizard (`spiralctl external setup`) prompts you to select a tier:
+
+| Tier | Expected Hashrate | Shares/sec per IP | Use Case |
+|------|-------------------|-------------------|----------|
+| Small | <10 TH/s | 200 | Home miners, small rentals |
+| Medium (default) | 10-100 TH/s | 500 | Moderate rentals |
+| Large | 100 TH/s - 50 PH/s | 1000 | Large rentals, proxy aggregation |
+| XL | 50+ PH/s | 2000 | Massive rentals, multiple proxies |
+| Custom | Any | 10-100000 | Manual tuning |
+
+**If miners are being rate-limited or banned**, increase this value by re-running:
+```bash
+spiralctl external setup
+```
+
+Monitor actual share rates with:
+```bash
+spiralctl pool stats
+```
+
+To disable automatic hardening entirely during setup:
 ```bash
 # When prompted "Apply security hardening?" choose 'n'
 ```

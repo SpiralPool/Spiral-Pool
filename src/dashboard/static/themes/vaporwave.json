@@ -1,0 +1,51 @@
+{
+  "name": "Vaporwave",
+  "id": "vaporwave",
+  "author": "Spiral Pool",
+  "version": "1.0.1",
+  "description": "A E S T H E T I C — sunset horizon with hot pink, teal sky, and chrome grid",
+  "category": "Fun",
+  "colors": {
+    "bg-primary": "#0a1018",
+    "bg-secondary": "#0e1620",
+    "bg-card": "#121e2c",
+    "bg-card-hover": "#182838",
+    "neon-blue": "#00c8e0",
+    "neon-cyan": "#48e8c8",
+    "neon-purple": "#b040e0",
+    "neon-pink": "#ff2a6d",
+    "neon-orange": "#ff6040",
+    "neon-yellow": "#f3e858",
+    "neon-green": "#05ffa1",
+    "neon-red": "#ff2a6d",
+    "text-primary": "#e8f0ff",
+    "text-secondary": "#80a0c0",
+    "text-muted": "#405868",
+    "status-online": "#05ffa1",
+    "status-offline": "#ff2a6d",
+    "status-warning": "#f3e858",
+    "border-primary": "rgba(0, 200, 224, 0.18)",
+    "border-accent": "rgba(255, 42, 109, 0.15)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(180deg, #00c8e0 0%, #b040e0 50%, #ff2a6d 100%)",
+    "secondary": "linear-gradient(135deg, #00c8e0 0%, #48e8c8 100%)",
+    "accent": "linear-gradient(180deg, #ff6040 0%, #ff2a6d 100%)",
+    "card": "linear-gradient(180deg, rgba(18, 30, 44, 0.95) 0%, rgba(14, 22, 32, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Orbitron', sans-serif",
+    "body": "'Quicksand', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.3,
+    "animationSpeed": 0.85,
+    "borderRadius": "4px",
+    "useGlitchEffect": false,
+    "useParticles": true,
+    "useScanLines": true,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Vaporwave — A E S T H E T I C */\n@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background:\n    linear-gradient(transparent 0%, transparent 48%, rgba(0, 200, 224, 0.06) 49%, rgba(0, 200, 224, 0.06) 51%, transparent 52%, transparent 100%),\n    linear-gradient(90deg, transparent 0%, transparent 48%, rgba(0, 200, 224, 0.04) 49%, rgba(0, 200, 224, 0.04) 51%, transparent 52%, transparent 100%);\n  background-size: 60px 60px;\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 100% 300px at 50% 100%, rgba(255, 42, 109, 0.18), rgba(176, 64, 224, 0.08) 50%, transparent),\n    radial-gradient(ellipse 80% 250px at 50% 0%, rgba(0, 200, 224, 0.1), transparent);\n}\n\n.stat-card {\n  border: 1px solid rgba(0, 200, 224, 0.15);\n  backdrop-filter: blur(8px);\n  background: rgba(18, 30, 44, 0.85);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #00c8e0, #b040e0, #ff2a6d);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(255, 42, 109, 0.3);\n  box-shadow: 0 4px 25px rgba(176, 64, 224, 0.15);\n}\n\n.stat-value {\n  text-shadow: 0 0 20px rgba(0, 200, 224, 0.5);\n}\n\n.celebration-title {\n  background: linear-gradient(180deg, #00c8e0, #b040e0, #ff2a6d);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n  filter: drop-shadow(0 0 20px rgba(255, 42, 109, 0.4));\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(0, 200, 224, 0.08);\n  background: rgba(18, 30, 44, 0.7);\n}\n\n.miner-card:hover {\n  border-color: rgba(255, 42, 109, 0.2);\n}\n\n.logo {\n  background: linear-gradient(180deg, #00c8e0, #ff2a6d);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n}"
+}

@@ -63,5 +63,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-Last Updated: 2026-02-17
+All Other Themes
+================================================================================
+
+The following themes are original works by Spiral Pool, licensed under
+BSD-3-Clause. They do not use color palettes from external projects:
+
+  Codename:   black-ice (V1.0), phi-forge (V1.1)
+  Core:       cyberpunk, 1337-h4x0r
+  Nature:     midnight-aurora, ocean-depths, solar-flare, wood-paneling
+  Seasonal:   autumn-harvest, spring-bloom, summer-vibes, winter-frost
+  Fun:        bitcoin-laser, pixel-arcade, rainbow-unicorn, vaporwave
+  Industrial: chrome-warfare, meltdown, nebula-command
+
+================================================================================
+Last Updated: 2026-03-21
 ================================================================================

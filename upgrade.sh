@@ -1643,11 +1643,11 @@ METRICS_EOF
         local recovered_api_key=""
         local checkpoint_file="/var/lib/spiralpool/.checkpoint"
         if [[ -f "$checkpoint_file" ]]; then
-            recovered_api_key=$(grep -oP '^ADMIN_API_KEY="\K[^"]+' "$checkpoint_file" 2>/dev/null || echo "")
+            recovered_api_key=$(grep -oP '^ADMIN_API_KEY="?\K[^"\s]+' "$checkpoint_file" 2>/dev/null || echo "")
         fi
         # Fallback: check if adminApiKey exists elsewhere in config.yaml (e.g. under a coin section)
         if [[ -z "$recovered_api_key" ]]; then
-            recovered_api_key=$(grep -oP '(?:adminApiKey|admin_api_key):\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+            recovered_api_key=$(grep -oP '(?:adminApiKey|admin_api_key):\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
         fi
         log_info "  - Adding: API section (required for dashboard)"
         if [[ -n "$recovered_api_key" ]]; then
@@ -1686,8 +1686,8 @@ API_EOF
     # The v2 stratum binary only reads global.admin_api_key — v1 location is ignored.
     local v2_key=""
     local v1_key=""
-    v2_key=$(grep -oP '^\s+admin_api_key:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
-    v1_key=$(grep -oP '^\s+adminApiKey:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    v2_key=$(grep -oP '^\s+admin_api_key:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    v1_key=$(grep -oP '^\s+adminApiKey:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
 
     if [[ -z "$v2_key" ]]; then
         # v2 key missing — use v1 key if available, otherwise generate
@@ -1698,7 +1698,7 @@ API_EOF
         else
             local checkpoint_file="/var/lib/spiralpool/.checkpoint"
             if [[ -f "$checkpoint_file" ]]; then
-                new_key=$(grep -oP '^ADMIN_API_KEY="\K[^"]+' "$checkpoint_file" 2>/dev/null || echo "")
+                new_key=$(grep -oP '^ADMIN_API_KEY="?\K[^"\s]+' "$checkpoint_file" 2>/dev/null || echo "")
             fi
             if [[ -z "$new_key" ]]; then
                 new_key=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32 || LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)
@@ -1732,7 +1732,7 @@ API_EOF
     # Sentinel's config.json has its own pool_admin_api_key — if it holds a stale value
     # from v1, the auto-discovery from config.yaml is skipped (non-empty = truthy).
     local final_api_key=""
-    final_api_key=$(grep -oP '^\s+admin_api_key:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    final_api_key=$(grep -oP '^\s+admin_api_key:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
     if [[ -n "$final_api_key" ]]; then
         for sentinel_cfg in \
             "${INSTALL_DIR}/config/sentinel/config.json" \
@@ -2134,14 +2134,27 @@ build_stratum() {
     GO_VER=$(go version 2>/dev/null | grep -oP '\d+\.\d+' | head -1) || true
     echo -e "${CYAN}Go version:${NC} $(go version 2>/dev/null || echo 'unknown')"
 
-    # Check Go version meets minimum requirement (1.22+)
+    # Check Go version meets minimum requirement (1.26+ required by go.mod)
     local GO_MAJOR="${GO_VER%%.*}"
     local GO_MINOR="${GO_VER##*.}"
     if [[ -z "$GO_MAJOR" || -z "$GO_MINOR" ]]; then
         log_warn "Could not determine Go version — proceeding with build"
-    elif [[ "$GO_MAJOR" -lt 1 ]] || { [[ "$GO_MAJOR" -eq 1 ]] && [[ "$GO_MINOR" -lt 22 ]]; }; then
-        log_warn "Go ${GO_VER} is outdated. Recommended: Go 1.25+ (install.sh uses 1.25.6)"
-        log_warn "To upgrade Go: sudo rm -rf /usr/local/go && curl -fsSL https://go.dev/dl/go1.25.6.linux-${SYSTEM_ARCH}.tar.gz | sudo tar -C /usr/local -xzf -"
+    elif [[ "$GO_MAJOR" -lt 1 ]] || { [[ "$GO_MAJOR" -eq 1 ]] && [[ "$GO_MINOR" -lt 26 ]]; }; then
+        log_warn "Go ${GO_VER} is below 1.26 (required by go.mod). Installing Go 1.26.1..."
+        local SYSTEM_ARCH_GO
+        SYSTEM_ARCH_GO=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+        [[ "$SYSTEM_ARCH_GO" == "arm64" ]] || SYSTEM_ARCH_GO="amd64"
+        log_info "Downloading Go 1.26.1 (this may take a minute)..."
+        if curl -fSL --connect-timeout 15 --max-time 300 "https://go.dev/dl/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz" -o "/tmp/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz"; then
+            sudo rm -rf /usr/local/go
+            sudo tar -C /usr/local -xzf "/tmp/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz"
+            rm -f "/tmp/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz"
+            export PATH="/usr/local/go/bin:$PATH"
+            log_info "Go 1.26.1 installed successfully"
+        else
+            log_warn "Failed to download Go 1.26.1 — build may fail"
+            log_warn "Manual fix: sudo rm -rf /usr/local/go && curl -fSL https://go.dev/dl/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz | sudo tar -C /usr/local -xzf -"
+        fi
     fi
 
     # Build new stratum binary
@@ -3407,6 +3420,10 @@ verify_upgrade() {
     $UPDATE_SENTINEL && [[ -n "$SENTINEL_SERVICE" ]] && verify_services+=("$SENTINEL_SERVICE")
     $UPDATE_STRATUM && [[ -n "$HEALTH_SERVICE" ]] && verify_services+=("$HEALTH_SERVICE")
 
+    # Give services time to initialize before checking status
+    log_info "Waiting for services to start..."
+    sleep 10
+
     for service in "${verify_services[@]}"; do
         local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
         [[ -z "$status" ]] && status="inactive"
@@ -3462,15 +3479,26 @@ show_summary() {
     echo
     echo -e "${CYAN}Service Status:${NC}"
 
+    # Brief wait so services have time to transition from deactivating/inactive
+    sleep 5
+
+    local all_active=true
     for service in "$STRATUM_SERVICE" "$DASHBOARD_SERVICE" "$SENTINEL_SERVICE"; do
         local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
         [[ -z "$status" ]] && status="inactive"
         case "$status" in
             active)     printf "  %-24s ${GREEN}%s${NC}\n" "$service" "Running" ;;
-            activating) printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting" ;;
-            *)          printf "  %-24s ${YELLOW}%s${NC}\n" "$service" "$status" ;;
+            activating) printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting"; all_active=false ;;
+            *)          printf "  %-24s ${YELLOW}%s${NC}\n" "$service" "$status"; all_active=false ;;
         esac
     done
+
+    if [[ "$all_active" != "true" ]]; then
+        echo
+        echo -e "  ${YELLOW}Note:${NC} Services may take up to 30 seconds to fully start."
+        echo -e "  If any show inactive/deactivating, wait a moment and check:"
+        echo -e "    systemctl is-active $STRATUM_SERVICE $DASHBOARD_SERVICE $SENTINEL_SERVICE"
+    fi
 
     echo
     echo -e "${CYAN}To monitor startup:${NC}"

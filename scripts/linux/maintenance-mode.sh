@@ -223,21 +223,21 @@ send_discord_notification() {
 
     # SECURITY: Use jq for safe JSON construction to prevent injection
     local payload
-    local node_id
-    node_id=$(get_node_uuid | cut -c1-8)
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
 
     if command -v jq &>/dev/null; then
         payload=$(jq -n \
             --arg title "Spiral Pool Maintenance" \
             --arg desc "$message" \
             --argjson color "$color" \
-            --arg footer "Node: ${node_id}..." \
+            --arg footer "$node_name" \
             '{embeds: [{title: $title, description: $desc, color: $color, footer: {text: $footer}}]}')
     else
         # Fallback: escape special characters manually
         local escaped_message
-        escaped_message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
-        payload="{\"embeds\": [{\"title\": \"Spiral Pool Maintenance\", \"description\": \"${escaped_message}\", \"color\": ${color}, \"footer\": {\"text\": \"Node: ${node_id}...\"}}]}"
+        escaped_message=$(printf '%s' "$message" | sed ':a;N;$!ba;s/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
+        payload="{\"embeds\": [{\"title\": \"Spiral Pool Maintenance\", \"description\": \"${escaped_message}\", \"color\": ${color}, \"footer\": {\"text\": \"${node_name}\"}}]}"
     fi
 
     # SECURITY: Use --max-time to prevent hanging, --data-raw to prevent interpretation
@@ -264,15 +264,15 @@ send_telegram_notification() {
     fi
 
     local url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-    local node_id
-    node_id=$(get_node_uuid | cut -c1-8)
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
 
     # SECURITY: Use jq for safe JSON construction
     local payload
     if command -v jq &>/dev/null; then
         payload=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "${message}\n\nNode: ${node_id}..." \
+            --arg text "$(printf '%s\n\n%s' "$message" "$node_name")" \
             '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s --max-time 10 -H "Content-Type: application/json" --data-raw "${payload}" "${url}" > /dev/null 2>&1 || true
     else
@@ -281,7 +281,7 @@ send_telegram_notification() {
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
             --data-urlencode "text=${message}
 
-Node: ${node_id}..." \
+${node_name}" \
             --data-urlencode "parse_mode=HTML" > /dev/null 2>&1 || true
     fi
 }
@@ -355,9 +355,11 @@ EOF
 
     # Send notifications
     load_notification_settings
-    local msg="MAINTENANCE MODE ENABLED\n\nDuration: ${duration_minutes} minutes\nReason: ${reason}\nEnd: $(date -d "@${end_time}" '+%H:%M:%S')\n\nAlerts are suppressed during this period."
+    printf -v msg "MAINTENANCE MODE ENABLED\n\nDuration: %s minutes\nReason: %s\nEnd: %s\n\nAlerts are suppressed during this period." "${duration_minutes}" "${reason}" "$(date -d "@${end_time}" '+%H:%M:%S')"
     send_discord_notification "$msg" 16776960  # Yellow
-    send_telegram_notification "<b>Maintenance Mode Enabled</b>\n\nDuration: ${duration_minutes} minutes\nReason: ${reason}\nEnd: $(date -d "@${end_time}" '+%H:%M:%S')\n\nAlerts are suppressed."
+    local tg_msg
+    printf -v tg_msg "<b>Maintenance Mode Enabled</b>\n\nDuration: %s minutes\nReason: %s\nEnd: %s\n\nAlerts are suppressed." "${duration_minutes}" "${reason}" "$(date -d "@${end_time}" '+%H:%M:%S')"
+    send_telegram_notification "$tg_msg"
 
     echo ""
     echo -e "${YELLOW}${BOLD}MAINTENANCE MODE ACTIVE${NC}"
@@ -400,9 +402,11 @@ disable_maintenance() {
 
     # Send notifications
     load_notification_settings
-    local msg="MAINTENANCE MODE ENDED\n\nActual duration: $(format_duration $actual_duration)\n\nAlerts are now active."
+    printf -v msg "MAINTENANCE MODE ENDED\n\nActual duration: %s\n\nAlerts are now active." "$(format_duration $actual_duration)"
     send_discord_notification "$msg" 3066993  # Green
-    send_telegram_notification "<b>Maintenance Mode Ended</b>\n\nActual duration: $(format_duration $actual_duration)\n\nAlerts are now active."
+    local tg_msg
+    printf -v tg_msg "<b>Maintenance Mode Ended</b>\n\nActual duration: %s\n\nAlerts are now active." "$(format_duration $actual_duration)"
+    send_telegram_notification "$tg_msg"
 
     echo ""
     echo -e "${GREEN}${BOLD}MAINTENANCE MODE DISABLED${NC}"
@@ -496,9 +500,11 @@ extend_maintenance() {
 
     # Send notifications
     load_notification_settings
-    local msg="MAINTENANCE EXTENDED\n\nAdditional: ${additional_minutes} minutes\nNew end: $(date -d "@${new_end}" '+%H:%M:%S')"
+    printf -v msg "MAINTENANCE EXTENDED\n\nAdditional: %s minutes\nNew end: %s" "${additional_minutes}" "$(date -d "@${new_end}" '+%H:%M:%S')"
     send_discord_notification "$msg" 16776960  # Yellow
-    send_telegram_notification "<b>Maintenance Extended</b>\n\nAdditional: ${additional_minutes} minutes\nNew end: $(date -d "@${new_end}" '+%H:%M:%S')"
+    local tg_msg
+    printf -v tg_msg "<b>Maintenance Extended</b>\n\nAdditional: %s minutes\nNew end: %s" "${additional_minutes}" "$(date -d "@${new_end}" '+%H:%M:%S')"
+    send_telegram_notification "$tg_msg"
 
     echo ""
     echo -e "${YELLOW}Maintenance extended by ${additional_minutes} minutes${NC}"

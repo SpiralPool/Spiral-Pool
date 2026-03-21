@@ -184,7 +184,7 @@ if (-not $wslReady) {
         Write-Host "  2. After restart, open Ubuntu from the Start menu." -ForegroundColor White
         Write-Host "  3. Create your Linux username and password." -ForegroundColor White
         Write-Host "  4. Clone and run the Spiral Pool installer inside Ubuntu:" -ForegroundColor White
-        Write-Host "       git clone https://github.com/SpiralPool/Spiral-Pool.git" -ForegroundColor Gray
+        Write-Host "       git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git" -ForegroundColor Gray
         Write-Host "       cd Spiral-Pool && ./install.sh" -ForegroundColor Gray
         Write-Host "  5. Then run start-wsl2-proxy.bat again to set up routing." -ForegroundColor White
         Write-Host "  ────────────────────────────────────────────────────────────" -ForegroundColor Yellow

@@ -411,7 +411,7 @@ func (s *Server) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "1.1.0-PHI_FORGE",
+		Version:  "1.1.1-PHI_FORGE",
 		Pools: []PoolInfo{
 			{
 				ID: s.poolCfg.ID,

@@ -345,16 +345,20 @@ send_discord_notification() {
 
     # SECURITY: Use jq to properly escape JSON, preventing injection attacks
     local payload
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
+
     if command -v jq &>/dev/null; then
         payload=$(jq -n \
             --arg title "Spiral Pool Update Available" \
             --arg desc "$message" \
-            '{embeds: [{title: $title, description: $desc, color: 3447003, footer: {text: "Spiral Pool Update Checker"}}]}')
+            --arg footer "$node_name" \
+            '{embeds: [{title: $title, description: $desc, color: 3447003, footer: {text: $footer}}]}')
     else
         # Fallback: manually escape special characters for JSON
         local escaped_message
-        escaped_message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g' | tr '\n' ' ')
-        payload="{\"embeds\": [{\"title\": \"Spiral Pool Update Available\", \"description\": \"${escaped_message}\", \"color\": 3447003, \"footer\": {\"text\": \"Spiral Pool Update Checker\"}}]}"
+        escaped_message=$(printf '%s' "$message" | sed ':a;N;$!ba;s/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
+        payload="{\"embeds\": [{\"title\": \"Spiral Pool Update Available\", \"description\": \"${escaped_message}\", \"color\": 3447003, \"footer\": {\"text\": \"${node_name}\"}}]}"
     fi
 
     # SECURITY: Use --max-time and --data-raw for safe curl execution
@@ -383,17 +387,20 @@ send_telegram_notification() {
 
     local url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
 
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
+
     # SECURITY: Use jq to properly escape JSON, preventing injection attacks
     local payload
     if command -v jq &>/dev/null; then
         payload=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "$message" \
+            --arg text "$(printf '%s\n\n%s' "$message" "$node_name")" \
             '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
     else
         # Fallback: manually escape special characters for JSON
         local escaped_message
-        escaped_message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g' | tr '\n' ' ')
+        escaped_message=$(printf '%s\n\n%s' "$message" "$node_name" | sed ':a;N;$!ba;s/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
         payload="{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"${escaped_message}\", \"parse_mode\": \"HTML\"}"
     fi
 
@@ -422,8 +429,12 @@ notify_user() {
     echo ""
 
     # Send external notifications
-    send_discord_notification "Current: v${current}\nLatest: v${latest}\n\nRun: sudo /spiralpool/upgrade.sh"
-    send_telegram_notification "<b>Spiral Pool Update Available</b>\n\nCurrent: v${current}\nLatest: v${latest}\n\nRun: <code>sudo /spiralpool/upgrade.sh</code>"
+    local discord_msg
+    printf -v discord_msg "Current: v%s\nLatest: v%s\n\nRun: sudo /spiralpool/upgrade.sh" "${current}" "${latest}"
+    send_discord_notification "$discord_msg"
+    local tg_msg
+    printf -v tg_msg "<b>Spiral Pool Update Available</b>\n\nCurrent: v%s\nLatest: v%s\n\nRun: <code>sudo /spiralpool/upgrade.sh</code>" "${current}" "${latest}"
+    send_telegram_notification "$tg_msg"
 
     # Update last notified version
     LAST_NOTIFIED_VERSION="$latest"
@@ -532,6 +543,8 @@ perform_auto_update() {
     local latest="$2"
     local countdown_minutes=15
     local node_uuid=$(get_node_uuid)
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
 
     # HA SAFETY: Only auto-update on the VIP-holding (primary) node.
     # Running upgrade.sh on the backup node while primary is serving miners
@@ -562,10 +575,13 @@ perform_auto_update() {
     log "INFO" "=============================================="
 
     # Send countdown notification
-    local countdown_msg="AUTOMATIC UPDATE SCHEDULED\n\nNode: ${node_uuid:0:8}...\nCurrent: v${current}\nTarget: v${latest}\n\nUpdate will begin in ${countdown_minutes} minutes.\nServices will be temporarily stopped.\n\nTo cancel, run: touch ${INSTALL_DIR}/config/.cancel-auto-update"
+    local countdown_msg
+    printf -v countdown_msg "AUTOMATIC UPDATE SCHEDULED\n\nCurrent: v%s\nTarget: v%s\n\nUpdate will begin in %s minutes.\nServices will be temporarily stopped.\n\nTo cancel, run: touch %s/config/.cancel-auto-update" "${current}" "${latest}" "${countdown_minutes}" "${INSTALL_DIR}"
 
     send_discord_notification "$countdown_msg"
-    send_telegram_notification "<b>Spiral Pool Auto-Update Scheduled</b>\n\n${countdown_msg}"
+    local tg_msg
+    printf -v tg_msg "<b>Spiral Pool Auto-Update Scheduled</b>\n\n%s" "$countdown_msg"
+    send_telegram_notification "$tg_msg"
 
     # Create cancellation file check
     local cancel_file="${INSTALL_DIR}/config/.cancel-auto-update"
@@ -581,9 +597,12 @@ perform_auto_update() {
             log "INFO" "Auto-update CANCELLED by user"
             rm -f "$cancel_file"
 
-            local cancel_msg="Auto-update CANCELLED by user.\n\nNode: ${node_uuid:0:8}...\nTo upgrade manually: sudo ${INSTALL_DIR}/upgrade.sh"
+            local cancel_msg
+            printf -v cancel_msg "Auto-update CANCELLED by user.\n\nTo upgrade manually: sudo %s/upgrade.sh" "${INSTALL_DIR}"
             send_discord_notification "$cancel_msg"
-            send_telegram_notification "<b>Auto-Update Cancelled</b>\n\n${cancel_msg}"
+            local tg_msg
+            printf -v tg_msg "<b>Auto-Update Cancelled</b>\n\n%s" "$cancel_msg"
+            send_telegram_notification "$tg_msg"
 
             return 0
         fi
@@ -610,9 +629,12 @@ perform_auto_update() {
     local start_time=$(date +%s)
 
     # Notify that auto-update is starting NOW
-    local start_msg="AUTOMATIC UPDATE STARTING NOW\n\nNode: ${node_uuid:0:8}...\nFrom: v${current} to v${latest}\n\nServices will be stopped momentarily.\nAlerts are suppressed during upgrade."
+    local start_msg
+    printf -v start_msg "AUTOMATIC UPDATE STARTING NOW\n\nFrom: v%s to v%s\n\nServices will be stopped momentarily.\nAlerts are suppressed during upgrade." "${current}" "${latest}"
     send_discord_notification "$start_msg"
-    send_telegram_notification "<b>Auto-Update Starting</b>\n\n${start_msg}"
+    local tg_msg
+    printf -v tg_msg "<b>Auto-Update Starting</b>\n\n%s" "$start_msg"
+    send_telegram_notification "$tg_msg"
 
     # Run the upgrade script with --auto flag for unattended operation
     # sudo required: this script runs as POOL_USER (spiraluser) via cron,
@@ -644,9 +666,12 @@ perform_auto_update() {
             done
 
             # Notify about successful update
-            local success_msg="AUTOMATIC UPDATE COMPLETED\n\nNode: ${node_uuid:0:8}...\nFrom: v${current}\nTo: v${latest}\nDuration: ${duration_min}m ${duration_sec}s\n\nServices Status:\n${services_status}\n\nAlerts have been re-enabled."
+            local success_msg
+            printf -v success_msg "AUTOMATIC UPDATE COMPLETED\n\nFrom: v%s\nTo: v%s\nDuration: %sm %ss\n\nServices Status:\n%s\n\nAlerts have been re-enabled." "${current}" "${latest}" "${duration_min}" "${duration_sec}" "${services_status}"
             send_discord_notification "$success_msg"
-            send_telegram_notification "<b>Spiral Pool Updated Successfully</b>\n\n${success_msg}"
+            local tg_msg
+            printf -v tg_msg "<b>Spiral Pool Updated Successfully</b>\n\n%s" "$success_msg"
+            send_telegram_notification "$tg_msg"
 
             # Update last notified version
             LAST_NOTIFIED_VERSION="$latest"
@@ -658,9 +683,12 @@ perform_auto_update() {
             clear_alert_suppression
 
             # Notify about failed update
-            local fail_msg="AUTOMATIC UPDATE FAILED!\n\nNode: ${node_uuid:0:8}...\nFrom: v${current} to v${latest}\n\nPlease check the server and run manually:\nsudo ${INSTALL_DIR}/upgrade.sh\n\nLog: ${upgrade_log}"
+            local fail_msg
+            printf -v fail_msg "AUTOMATIC UPDATE FAILED!\n\nFrom: v%s to v%s\n\nPlease check the server and run manually:\nsudo %s/upgrade.sh\n\nLog: %s" "${current}" "${latest}" "${INSTALL_DIR}" "${upgrade_log}"
             send_discord_notification "$fail_msg"
-            send_telegram_notification "<b>Spiral Pool Auto-Update FAILED</b>\n\n${fail_msg}"
+            local tg_msg
+            printf -v tg_msg "<b>Spiral Pool Auto-Update FAILED</b>\n\n%s" "$fail_msg"
+            send_telegram_notification "$tg_msg"
 
             return 1
         fi
@@ -669,9 +697,12 @@ perform_auto_update() {
 
         clear_alert_suppression
 
-        local fail_msg="AUTOMATIC UPDATE FAILED!\n\nNode: ${node_uuid:0:8}...\nUpgrade script not found.\nPlease reinstall Spiral Pool."
+        local fail_msg
+        printf -v fail_msg "AUTOMATIC UPDATE FAILED!\n\nUpgrade script not found.\nPlease reinstall Spiral Pool."
         send_discord_notification "$fail_msg"
-        send_telegram_notification "<b>Spiral Pool Auto-Update FAILED</b>\n\n${fail_msg}"
+        local tg_msg
+        printf -v tg_msg "<b>Spiral Pool Auto-Update FAILED</b>\n\n%s" "$fail_msg"
+        send_telegram_notification "$tg_msg"
 
         return 1
     fi

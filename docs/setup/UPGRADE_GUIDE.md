@@ -80,7 +80,7 @@ Three new commands are available when Telegram is configured. No configuration c
 | `/pause [minutes]` | Pause non-critical alerts (default 30 min). Same as `spiralctl pause`. |
 | `/resume` | Resume alerts immediately if paused |
 
-Full command list after upgrade: `/status`, `/miners`, `/hashrate`, `/blocks`, `/uptime`, `/pause`, `/resume`, `/help`.
+Full command list after upgrade: `/status`, `/miners`, `/hashrate`, `/blocks`, `/uptime`, `/pause`, `/resume`, `/cooldowns`, `/help`.
 
 ### PostgreSQL maintenance timer
 
@@ -360,8 +360,8 @@ Check: `sudo journalctl -u spiralstratum -n 50`
 Common cause: config.yaml issue. Run `chmod +x upgrade.sh && sudo ./upgrade.sh --fix-config` for automatic fixes.
 
 **Stratum binary won't build**
-Ensure Go 1.25.6 is installed: `go version`
-If missing or wrong version, re-run `upgrade.sh` — it downloads and installs Go 1.25.6 automatically from go.dev. Do not use `sudo apt install golang-go` — the Ubuntu package is too old.
+Ensure Go 1.26.1 is installed: `go version`
+If missing or wrong version, re-run `upgrade.sh` — it downloads and installs Go 1.26.1 automatically from go.dev. Do not use `sudo apt install golang-go` — the Ubuntu package is too old.
 
 **Already on latest version**
 Force reinstall: `chmod +x upgrade.sh && sudo ./upgrade.sh --force`
@@ -415,4 +415,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0 — Convergent difficulty. Minimal oscillation.*
+*Spiral Pool — Phi Forge 1.1.1 — Built on what came before. Growing toward phi.*

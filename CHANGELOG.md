@@ -7,6 +7,99 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 
 ---
 
+## [1.1.1] — 2026-03-21 — Phi Forge
+
+> *Built on what came before. Growing toward phi.*
+
+### Added
+
+**Custom Theme Editor**
+- New in-dashboard theme editor panel in the Appearance sidebar — create custom themes without editing JSON files
+- 13 color pickers: background, cards, 8 accent colors (blue, cyan, purple, pink, orange, yellow, green, red), text primary/secondary, border color
+- Border radius selector (Sharp 0px → Extra 16px)
+- Live preview — all color changes apply instantly as you pick
+- Save to browser localStorage — custom themes persist across sessions
+- Export as `.json` — download your custom theme in the standard Spiral Pool theme format
+- Import `.json` — load any exported theme (or any Spiral Pool theme JSON) directly into the editor
+- Custom themes appear in a "Custom" optgroup in the theme dropdown
+- Validates imported themes: requires `colors` object with minimum keys (`bg-primary`, `bg-card`, `neon-blue`, `text-primary`)
+- Handles localStorage quota errors gracefully ("Storage full — export instead")
+- Editor pickers auto-refresh when switching themes via the dropdown
+
+**Profitability Tracker Module (Sentinel)**
+- New `compute_coin_profitability()` and `compute_profitability_rankings()` functions in Spiral Sentinel
+- Calculates daily fiat revenue per coin: `(block_reward × blocks_per_day × hashrate) / network_hashrate × coin_price`
+- Groups coins by algorithm family (SHA-256d, Scrypt) for profitability ranking
+- Module is present in code but **not active** — staging for v1.2.0 profit-switching
+
+### Changed
+
+**Theme Quality Overhaul**
+- **Phi Forge**: Redesigned — all-gold monochromatic palette replaced with gold + amethyst purple accents on dark charcoal background; added visual hierarchy with contrasting secondary color
+- **Bitcoin Laser**: Background changed to true black (#050505); secondary accent changed from grey to laser red (#cc2200); stripped to minimal effects for maximalist aesthetic
+- **Vaporwave**: Background changed from deep purple (duplicate of Rainbow Unicorn) to dark teal (#0a1018) with sunset horizon glow; primary accent shifted to cyan; completely distinct visual identity
+- **Solar Flare**: Background changed from warm brown (duplicate of Autumn Harvest) to near-black (#080808); hotter plasma yellows (#ffee00) for a coronal ejection feel
+- **Midnight Aurora**: Background changed from deep purple to neutral dark; primary accent changed from cyan to aurora green (#40d8a0); now green/purple curtain effect, distinct from Ocean Depths' blue/cyan
+- **Wood Paneling**: Fonts changed from Playfair Display + Lato (identical to Autumn Harvest) to Libre Baskerville + Source Sans 3
+- **Nebula Command**: Display font changed from Orbitron (shared with Cyberpunk) to Titillium Web
+
+**Sentinel — Backup Reporting**
+- Backup size display now shows actual size instead of `?` when permissions are correct
+- Shows "no access" instead of `?` when `Permission denied` is detected — diagnosable instead of opaque
+- Backup snapshot count added to report: `💾 Size: 3.1M (2 snapshots)`
+
+**Dashboard — ETB Display**
+- Estimated Time to Block now shows minutes when under 1 hour (e.g. "12 minutes" instead of "0.2 hours")
+
+**External Access — Rented Hashrate**
+- `sharesPerSecond` now configurable in `spiralctl external setup` wizard with tiered options:
+  - Small (<10 TH/s): 200/sec, Medium (10–100 TH/s): 500/sec, Large (100TH–50PH): 1000/sec, XL (50+ PH/s): 2000/sec, Custom: 10–100000
+- Default `sharesPerSecond` changed from 50 to 500 (Medium tier)
+- Cloudflare Tunnel setup now warns that Spectrum (paid add-on) is required for raw TCP proxying
+- Documentation updated with Spectrum prerequisite and shares-per-second configuration table
+
+**Go Toolchain**
+- Go version updated from 1.25.6 to 1.26.1 across all build paths (go.mod, install.sh, upgrade.sh, Dockerfile, test.sh)
+- Minimum build requirement is now Go 1.26.1 (enforced by go.mod) — `install.sh` and `upgrade.sh` download Go 1.26.1 automatically from go.dev; existing installs with older Go will be upgraded on next `upgrade.sh` run
+
+### Security
+
+- **Theme CSS injection hardening**: `customCSS` field in theme JSON files is now sanitized before injection — `url()`, `@import`, `expression()`, `javascript:`, `-moz-binding`, `behavior:`, and Unicode escape obfuscation are all blocked and replaced with `/* blocked */`
+- **CSS variable value sanitization**: all CSS custom property values from theme JSON are validated — values containing `url()`, `expression()`, or `javascript:` are rejected before `setProperty` to prevent data exfiltration via computed styles
+- **Imported theme confirmation prompt**: importing a `.json` theme that contains `customCSS` now shows a confirmation dialog with a preview of the CSS — operator can cancel to apply colors only without the custom CSS
+
+### Fixed
+
+- Backup script permissions: added `chown -R root:spiralpool` step so Sentinel can read backup sizes
+- 7 themes fixed for visual similarity — eliminated duplicate-looking pairs across all 23 themes
+- Dashboard "Miners Online" display could show numerator exceeding denominator (e.g. 8/7) during stratum reconnection spikes — clamped to `min(realtime, configured)` so the count never exceeds the fleet total; also fixed unclamped workers count in hashrate subtitle
+
+**`upgrade.sh` — Service Status Display**
+- Post-upgrade service status check ran immediately after `systemctl start --no-block`, showing services as `inactive` / `deactivating` — added 10-second wait before verification and 5-second wait before summary display
+- Summary now shows contextual note when services aren't yet active: "Services may take up to 30 seconds to fully start" with a re-check command
+
+**`upgrade.sh` — API Key Migration**
+- Admin API key grep patterns required double-quoted values (`"\K[^"]+`); unquoted YAML values (valid syntax) silently failed, causing the upgrade to generate a new API key instead of preserving the existing one
+- Fixed all 6 grep patterns (Fix 6, Fix 7, Fix 8) to accept both quoted and unquoted values (`"?\K[^"\s]+`)
+
+**`upgrade.sh` — Go Download Hang**
+- Go 1.26.1 download used `curl -fsSL` (silent mode) — a ~150MB download with no progress output appeared to hang indefinitely
+- Fixed: removed `-s` flag, added `--connect-timeout 15` and `--max-time 300`, added "Downloading Go 1.26.1" log message; also fixed in `test.sh`
+
+**Notification Formatting — Discord / Telegram**
+- All maintenance-mode, HA, and update-checker notifications used literal `\n` in double-quoted bash strings — Discord and Telegram displayed `\n` as text instead of newlines
+- Fixed: all notification messages now use `printf -v` to produce real newline characters
+- Node identifier in notification footers changed from truncated UUID (`Node: 8990382...`) to hostname (e.g. `spiralpool-qbx-109`) — consistent with Sentinel's existing approach
+
+**Dashboard — Coin Daemon Version Display**
+- Dashboard showed incorrect version for daemons with broken `subversion` strings (e.g. Q-BitX reports `0.1.0` regardless of installed version)
+- Fixed: dashboard now reads from version cache (`/spiralpool/config/coin-versions/<COIN>.ver`) when available, which reflects the actual installed binary version
+
+**Documentation — `git clone` Instructions**
+- All user-facing `git clone` instructions now use `--depth 1` to skip git history (~29MB), reducing download size to source files only (~16MB)
+
+---
+
 ## [1.1.0] — 2026-03-19 — Phi Forge
 
 > *Convergent difficulty. Minimal oscillation.*

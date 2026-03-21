@@ -130,33 +130,50 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 
 ## Themes
 
-19 themes available in `src/dashboard/static/themes/`:
+23 themes available in `src/dashboard/static/themes/`:
 
 | Theme | Category |
 |-------|----------|
+| **V1.0 — Black Ice** | Codename |
+| **V1.1 — Phi Forge** | Codename |
 | **cyberpunk** (default) | Core |
-| **black-ice** | Core |
-| 1337-h4x0r | &mdash; |
-| autumn-harvest | &mdash; |
-| chrome-warfare | &mdash; |
-| dracula | Community |
-| gruvbox-dark | Community |
-| meltdown | &mdash; |
-| midnight-aurora | &mdash; |
-| nebula-command | &mdash; |
-| nord | Community |
-| ocean-depths | &mdash; |
-| rainbow-unicorn | &mdash; |
-| solar-flare | &mdash; |
-| spring-bloom | &mdash; |
-| summer-vibes | &mdash; |
-| tokyo-night | Community |
-| winter-frost | &mdash; |
-| wood-paneling | &mdash; |
+| 1337-h4x0r | Core |
+| dracula | Developer |
+| gruvbox-dark | Developer |
+| nord | Developer |
+| tokyo-night | Developer |
+| midnight-aurora | Nature |
+| ocean-depths | Nature |
+| solar-flare | Nature |
+| wood-paneling | Nature |
+| autumn-harvest | Seasonal |
+| spring-bloom | Seasonal |
+| summer-vibes | Seasonal |
+| winter-frost | Seasonal |
+| bitcoin-laser | Fun |
+| pixel-arcade | Fun |
+| rainbow-unicorn | Fun |
+| vaporwave | Fun |
+| chrome-warfare | Industrial |
+| meltdown | Industrial |
+| nebula-command | Industrial |
 
 Each theme is a JSON file defining CSS variables (`colors`, `gradients`). Theme manager (`theme-manager.js`) applies variables client-side. Theme ID sanitized with `^[a-zA-Z0-9_-]+$` regex to prevent path traversal.
 
-Community themes use color palettes derived from Dracula, Nord, Tokyo Night, and Gruvbox (MIT licensed). See `src/dashboard/static/themes/THEME-LICENSES.txt`.
+Codename themes correspond to Spiral Pool release versions. Developer themes use color palettes derived from Dracula, Nord, Tokyo Night, and Gruvbox (MIT licensed). See `src/dashboard/static/themes/THEME-LICENSES.txt`.
+
+### Custom Theme Editor
+
+The Appearance panel includes a built-in theme editor for creating custom themes without editing JSON files.
+
+- **13 color pickers**: background, cards, 8 accent colors, text primary/secondary, border color
+- **Border radius selector**: Sharp (0px) to Extra Round (16px)
+- **Live preview**: changes apply instantly as colors are picked
+- **Save**: persists to browser `localStorage`, appears in theme dropdown under "Custom" group
+- **Export**: downloads as a standard `.json` theme file
+- **Import**: load any `.json` theme file (including exported themes from other users)
+
+Custom themes are stored client-side only — they do not modify server files.
 
 ---
 
@@ -472,4 +489,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Phi Forge 1.1.0*
+*Spiral Dash &mdash; Phi Forge 1.1.1*

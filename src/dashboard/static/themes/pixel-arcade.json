@@ -1,0 +1,51 @@
+{
+  "name": "Pixel Arcade",
+  "id": "pixel-arcade",
+  "author": "Spiral Pool",
+  "version": "1.0.0",
+  "description": "8-bit retro arcade cabinet — sharp pixels, bright primaries, pure black, zero border radius",
+  "category": "Fun",
+  "colors": {
+    "bg-primary": "#06060e",
+    "bg-secondary": "#0c0c18",
+    "bg-card": "#121222",
+    "bg-card-hover": "#1a1a30",
+    "neon-blue": "#00aaff",
+    "neon-cyan": "#00ffcc",
+    "neon-purple": "#ff00ff",
+    "neon-pink": "#ff0066",
+    "neon-orange": "#ff6600",
+    "neon-yellow": "#ffff00",
+    "neon-green": "#00ff00",
+    "neon-red": "#ff0000",
+    "text-primary": "#ffffff",
+    "text-secondary": "#aaaaaa",
+    "text-muted": "#555555",
+    "status-online": "#00ff00",
+    "status-offline": "#ff0000",
+    "status-warning": "#ffff00",
+    "border-primary": "rgba(0, 170, 255, 0.25)",
+    "border-accent": "rgba(0, 255, 0, 0.2)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(180deg, #00aaff 0%, #00ffcc 100%)",
+    "secondary": "linear-gradient(180deg, #00ff00 0%, #ffff00 100%)",
+    "accent": "linear-gradient(180deg, #ff0066 0%, #ff6600 100%)",
+    "card": "linear-gradient(180deg, rgba(17, 17, 17, 0.98) 0%, rgba(10, 10, 10, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Press Start 2P', monospace",
+    "body": "'Share Tech Mono', monospace",
+    "mono": "'Press Start 2P', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.2,
+    "animationSpeed": 1.0,
+    "borderRadius": "0px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": true,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Pixel Arcade — INSERT COIN */\n@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap');\n\n.cyber-grid {\n  background:\n    linear-gradient(transparent 0%, transparent 96%, rgba(0, 170, 255, 0.06) 97%, rgba(0, 170, 255, 0.06) 100%),\n    linear-gradient(90deg, transparent 0%, transparent 96%, rgba(0, 170, 255, 0.06) 97%, rgba(0, 170, 255, 0.06) 100%);\n  background-size: 20px 20px;\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 400px 250px at 50% 0%, rgba(0, 170, 255, 0.08), transparent),\n    radial-gradient(ellipse 300px 200px at 50% 100%, rgba(0, 255, 0, 0.06), transparent);\n}\n\n.stat-card {\n  border: 2px solid rgba(0, 170, 255, 0.3);\n  backdrop-filter: none;\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00aaff, #ff00ff);\n  height: 3px;\n}\n\n.stat-card:hover {\n  border-color: rgba(0, 255, 0, 0.5);\n  box-shadow: 0 0 15px rgba(0, 255, 0, 0.2);\n}\n\n.stat-value {\n  text-shadow: 0 0 6px currentColor;\n  letter-spacing: 2px;\n}\n\n.celebration-title {\n  background: linear-gradient(180deg, #ffff00, #ff6600, #ff0000);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 2px solid rgba(0, 170, 255, 0.15);\n}\n\n.miner-card:hover {\n  border-color: rgba(0, 255, 0, 0.3);\n}\n\n.logo {\n  color: #00ff00;\n  text-shadow: 2px 2px 0 #005500;\n  letter-spacing: 3px;\n}"
+}

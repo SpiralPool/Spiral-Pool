@@ -1,10 +1,10 @@
 {
-  "name": "Black Ice",
+  "name": "V1.0 — Black Ice",
   "id": "black-ice",
   "author": "Spiral Pool",
   "version": "1.0.0",
-  "description": "Sleek dark theme with ice blue accents",
-  "category": "Core",
+  "description": "Sleek dark theme with ice blue accents — the original Spiral Pool release theme",
+  "category": "Codename",
   "colors": {
     "bg-primary": "#08090b",
     "bg-secondary": "#0e1114",

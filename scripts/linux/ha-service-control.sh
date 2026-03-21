@@ -268,8 +268,8 @@ send_discord_notification() {
     fi
 
     local payload
-    local node_id
-    node_id=$(get_node_uuid | cut -c1-8)
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
 
     if command -v jq &>/dev/null; then
         # jq --arg handles newline escaping for JSON automatically
@@ -277,14 +277,14 @@ send_discord_notification() {
             --arg title "Spiral Pool HA Event" \
             --arg desc "$message" \
             --argjson color "$color" \
-            --arg footer "Node: ${node_id}..." \
+            --arg footer "$node_name" \
             '{embeds: [{title: $title, description: $desc, color: $color, footer: {text: $footer}}]}')
     else
         # Fallback: escape backslashes and quotes first (per line), then replace newlines with \n for JSON
         local escaped_message
         escaped_message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
         escaped_message="${escaped_message//$'\n'/\\n}"
-        payload="{\"embeds\": [{\"title\": \"Spiral Pool HA Event\", \"description\": \"${escaped_message}\", \"color\": ${color}, \"footer\": {\"text\": \"Node: ${node_id}...\"}}]}"
+        payload="{\"embeds\": [{\"title\": \"Spiral Pool HA Event\", \"description\": \"${escaped_message}\", \"color\": ${color}, \"footer\": {\"text\": \"${node_name}\"}}]}"
     fi
 
     curl -s --max-time 10 -H "Content-Type: application/json" --data-raw "${payload}" "${DISCORD_WEBHOOK}" > /dev/null 2>&1 || true
@@ -308,11 +308,11 @@ send_telegram_notification() {
     fi
 
     local url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-    local node_id
-    node_id=$(get_node_uuid | cut -c1-8)
+    local node_name
+    node_name=$(hostname 2>/dev/null || echo "unknown")
 
     # Append node footer with actual newlines
-    local full_text="${message}"$'\n\n'"Node: ${node_id}..."
+    local full_text="${message}"$'\n\n'"${node_name}"
 
     if command -v jq &>/dev/null; then
         # jq --arg handles newline escaping for JSON automatically

@@ -47,8 +47,8 @@ func TestDefaultExternalConfig(t *testing.T) {
 	if cfg.Security.MaxConnectionsPerIP != 50 {
 		t.Errorf("expected MaxConnectionsPerIP=50, got %d", cfg.Security.MaxConnectionsPerIP)
 	}
-	if cfg.Security.SharesPerSecond != 50 {
-		t.Errorf("expected SharesPerSecond=50, got %d", cfg.Security.SharesPerSecond)
+	if cfg.Security.SharesPerSecond != 500 {
+		t.Errorf("expected SharesPerSecond=500, got %d", cfg.Security.SharesPerSecond)
 	}
 }
 

@@ -1,0 +1,51 @@
+{
+  "name": "Bitcoin Laser",
+  "id": "bitcoin-laser",
+  "author": "Spiral Pool",
+  "version": "1.0.1",
+  "description": "Laser eyes activated — BTC orange on true black, pure maximalist energy",
+  "category": "Fun",
+  "colors": {
+    "bg-primary": "#050505",
+    "bg-secondary": "#0e0e0e",
+    "bg-card": "#161616",
+    "bg-card-hover": "#1e1e1e",
+    "neon-blue": "#f7931a",
+    "neon-cyan": "#ffb84d",
+    "neon-purple": "#cc2200",
+    "neon-pink": "#ff7b00",
+    "neon-orange": "#f7931a",
+    "neon-yellow": "#ffd700",
+    "neon-green": "#4ade80",
+    "neon-red": "#ff4444",
+    "text-primary": "#ffffff",
+    "text-secondary": "#999999",
+    "text-muted": "#555555",
+    "status-online": "#4ade80",
+    "status-offline": "#ff4444",
+    "status-warning": "#ffd700",
+    "border-primary": "rgba(247, 147, 26, 0.2)",
+    "border-accent": "rgba(247, 147, 26, 0.12)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(135deg, #f7931a 0%, #ffd700 100%)",
+    "secondary": "linear-gradient(135deg, #ffd700 0%, #ff7b00 100%)",
+    "accent": "linear-gradient(135deg, #f7931a 0%, #d4710a 100%)",
+    "card": "linear-gradient(180deg, rgba(22, 22, 22, 0.98) 0%, rgba(14, 14, 14, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Rajdhani', sans-serif",
+    "body": "'Inter', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.2,
+    "animationSpeed": 1.0,
+    "borderRadius": "6px",
+    "useGlitchEffect": false,
+    "useParticles": false,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Bitcoin Laser — Laser Eyes Activated */\n@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 500px 300px at 50% 0%, rgba(247, 147, 26, 0.1), transparent);\n}\n\n.cyber-particles { display: none; }\n\n.stat-card {\n  border: 1px solid rgba(247, 147, 26, 0.15);\n  background: rgba(22, 22, 22, 0.95);\n  backdrop-filter: none;\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #f7931a, #ffd700);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(247, 147, 26, 0.4);\n  box-shadow: 0 0 20px rgba(247, 147, 26, 0.15);\n}\n\n.stat-value {\n  color: #f7931a;\n  text-shadow: 0 0 12px rgba(247, 147, 26, 0.4);\n}\n\n.celebration-title {\n  color: #f7931a !important;\n  text-shadow: 0 0 30px rgba(247, 147, 26, 0.6);\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(247, 147, 26, 0.08);\n  background: rgba(22, 22, 22, 0.9);\n}\n\n.miner-card:hover {\n  border-color: rgba(247, 147, 26, 0.25);\n}\n\n.logo {\n  color: #f7931a;\n  text-shadow: 0 0 25px rgba(247, 147, 26, 0.5);\n}"
+}

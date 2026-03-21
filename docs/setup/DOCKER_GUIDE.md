@@ -510,7 +510,7 @@ wsl --install -d Ubuntu
 
 ```bash
 # 2. Open Ubuntu, then clone and run the Spiral Pool installer
-git clone https://github.com/SpiralPool/Spiral-Pool.git
+git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool
 ./install.sh    # self-elevates; no sudo needed
 ```

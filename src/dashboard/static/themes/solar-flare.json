@@ -2,36 +2,36 @@
   "name": "Solar Flare",
   "id": "solar-flare",
   "author": "Spiral Pool",
-  "version": "1.0.0",
-  "description": "Warm orange and yellow energy radiating from the sun",
+  "version": "1.0.1",
+  "description": "Coronal mass ejection — blinding white-yellow plasma on deep space black",
   "category": "Nature",
   "colors": {
-    "bg-primary": "#141008",
-    "bg-secondary": "#1c160c",
-    "bg-card": "#261e10",
-    "bg-card-hover": "#332816",
-    "neon-blue": "#ffaa33",
-    "neon-cyan": "#ffc855",
-    "neon-purple": "#e87830",
-    "neon-pink": "#ff6644",
+    "bg-primary": "#080808",
+    "bg-secondary": "#101010",
+    "bg-card": "#181818",
+    "bg-card-hover": "#202020",
+    "neon-blue": "#ffc830",
+    "neon-cyan": "#fff080",
+    "neon-purple": "#ff6030",
+    "neon-pink": "#ff4020",
     "neon-orange": "#ff8800",
-    "neon-yellow": "#ffcc00",
-    "neon-green": "#99cc33",
-    "neon-red": "#ee4422",
-    "text-primary": "#fff0d8",
-    "text-secondary": "#cca878",
-    "text-muted": "#886840",
-    "status-online": "#99cc33",
-    "status-offline": "#ee4422",
-    "status-warning": "#ffcc00",
-    "border-primary": "rgba(255, 170, 51, 0.2)",
-    "border-accent": "rgba(255, 136, 0, 0.25)"
+    "neon-yellow": "#ffee00",
+    "neon-green": "#a0d840",
+    "neon-red": "#ee3322",
+    "text-primary": "#fff8e8",
+    "text-secondary": "#b0a890",
+    "text-muted": "#606058",
+    "status-online": "#a0d840",
+    "status-offline": "#ee3322",
+    "status-warning": "#ffee00",
+    "border-primary": "rgba(255, 200, 48, 0.15)",
+    "border-accent": "rgba(255, 136, 0, 0.15)"
   },
   "gradients": {
-    "primary": "linear-gradient(135deg, #ffaa33 0%, #ff8800 100%)",
-    "secondary": "linear-gradient(135deg, #ffcc00 0%, #ff6644 100%)",
-    "accent": "linear-gradient(135deg, #ff8800 0%, #ee4422 100%)",
-    "card": "linear-gradient(180deg, rgba(38, 30, 16, 0.95) 0%, rgba(28, 22, 12, 1) 100%)"
+    "primary": "linear-gradient(135deg, #ffee00 0%, #ff8800 100%)",
+    "secondary": "linear-gradient(135deg, #ff8800 0%, #ff4020 100%)",
+    "accent": "linear-gradient(135deg, #fff080 0%, #ffc830 100%)",
+    "card": "linear-gradient(180deg, rgba(24, 24, 24, 0.97) 0%, rgba(16, 16, 16, 1) 100%)"
   },
   "fonts": {
     "display": "'Exo 2', sans-serif",
@@ -39,7 +39,7 @@
     "mono": "'Source Code Pro', monospace"
   },
   "effects": {
-    "glowIntensity": 0.2,
+    "glowIntensity": 0.3,
     "animationSpeed": 1,
     "borderRadius": "10px",
     "useGlitchEffect": false,
@@ -47,5 +47,5 @@
     "useScanLines": false,
     "useNeonGlow": true
   },
-  "customCSS": "/* Solar Flare - Sun Energy */\n@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=Open+Sans:wght@300;400;600&family=Source+Code+Pro&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 700px 500px at 50% 0%, rgba(255, 136, 0, 0.12), transparent),\n    radial-gradient(ellipse 500px 400px at 30% 80%, rgba(255, 204, 0, 0.06), transparent);\n}\n\n.stat-card {\n  border: 1px solid rgba(255, 170, 51, 0.15);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #ffcc00, #ff8800, #ee4422);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(255, 136, 0, 0.3);\n  box-shadow: 0 4px 25px rgba(255, 136, 0, 0.15);\n}\n\n.stat-value {\n  text-shadow: 0 0 20px rgba(255, 170, 51, 0.5);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #ffcc00, #ff8800);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n  filter: drop-shadow(0 0 20px rgba(255, 136, 0, 0.5));\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(255, 170, 51, 0.1);\n}\n\n.miner-card:hover {\n  border-color: rgba(255, 204, 0, 0.25);\n}"
+  "customCSS": "/* Solar Flare - Coronal Mass Ejection */\n@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=Open+Sans:wght@300;400;600&family=Source+Code+Pro&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background: \n    radial-gradient(ellipse 500px 400px at 50% 0%, rgba(255, 238, 0, 0.15), transparent),\n    radial-gradient(ellipse 400px 300px at 50% 0%, rgba(255, 136, 0, 0.08), transparent);\n}\n\n.stat-card {\n  border: 1px solid rgba(255, 200, 48, 0.12);\n  background: rgba(24, 24, 24, 0.95);\n}\n\n.stat-card::before {\n  background: linear-gradient(90deg, #ffee00, #ff8800, #ff4020);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(255, 238, 0, 0.3);\n  box-shadow: 0 0 25px rgba(255, 200, 48, 0.15);\n}\n\n.stat-value {\n  text-shadow: 0 0 16px rgba(255, 238, 0, 0.5);\n}\n\n.celebration-title {\n  background: linear-gradient(135deg, #ffee00, #ff8800, #ff4020);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n  filter: drop-shadow(0 0 25px rgba(255, 238, 0, 0.5));\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(255, 200, 48, 0.08);\n  background: rgba(24, 24, 24, 0.9);\n}\n\n.miner-card:hover {\n  border-color: rgba(255, 136, 0, 0.2);\n}\n\n.logo {\n  color: #ffc830;\n  text-shadow: 0 0 20px rgba(255, 238, 0, 0.4);\n}"
 }

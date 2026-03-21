@@ -1088,4 +1088,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0*
+*Spiral Pool — Phi Forge 1.1.1*

@@ -225,7 +225,7 @@ func externalSetup(args []string) error {
 	extCfg.PortForward.PublicPort = *portFlag
 	extCfg.Security.HardenOnEnable = true
 	extCfg.Security.MaxConnectionsPerIP = 50
-	extCfg.Security.SharesPerSecond = 50
+	extCfg.Security.SharesPerSecond = 500
 	extCfg.Security.BanThreshold = 5
 	extCfg.Security.BanDuration = "60m"
 
@@ -249,10 +249,55 @@ func externalSetup(args []string) error {
 	if confirmAction("Apply security hardening? (Recommended)") {
 		extCfg.Security.HardenOnEnable = true
 		fmt.Println()
+
+		// Configurable shares/sec based on expected rented hashrate
+		fmt.Println("How much external hashrate do you expect?")
+		fmt.Println("Rented hashrate from NiceHash/MRR often arrives from proxy IPs that")
+		fmt.Println("aggregate many workers. Higher hashrate = more shares per second per IP.")
+		fmt.Println()
+		fmt.Printf("  %s1)%s Small    (<10 TH/s)   — 200 shares/sec per IP\n", ColorCyan, ColorReset)
+		fmt.Printf("  %s2)%s Medium   (10-100 TH/s) — 500 shares/sec per IP\n", ColorCyan, ColorReset)
+		fmt.Printf("  %s3)%s Large    (100 TH/s - 50 PH/s) — 1000 shares/sec per IP\n", ColorCyan, ColorReset)
+		fmt.Printf("  %s4)%s XL       (50+ PH/s)    — 2000 shares/sec per IP\n", ColorCyan, ColorReset)
+		fmt.Printf("  %s5)%s Custom value\n", ColorCyan, ColorReset)
+		fmt.Println()
+		fmt.Print("Choice [1-5] (default: 2): ")
+
+		reader := bufio.NewReader(os.Stdin)
+		choice, _ := reader.ReadString('\n')
+		choice = strings.TrimSpace(choice)
+
+		switch choice {
+		case "1":
+			extCfg.Security.SharesPerSecond = 200
+		case "", "2":
+			extCfg.Security.SharesPerSecond = 500
+		case "3":
+			extCfg.Security.SharesPerSecond = 1000
+		case "4":
+			extCfg.Security.SharesPerSecond = 2000
+		case "5":
+			fmt.Print("Enter shares per second per IP: ")
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+			val, err := strconv.Atoi(input)
+			if err != nil || val < 10 || val > 100000 {
+				return fmt.Errorf("invalid value: %s (must be 10-100000)", input)
+			}
+			extCfg.Security.SharesPerSecond = val
+		default:
+			return fmt.Errorf("invalid choice: %s", choice)
+		}
+
+		fmt.Println()
 		fmt.Printf("  %s->%s Reducing maxConnectionsPerIP: 100 -> 50\n", ColorCyan, ColorReset)
-		fmt.Printf("  %s->%s Reducing sharesPerSecond: 100 -> 50\n", ColorCyan, ColorReset)
+		fmt.Printf("  %s->%s Setting sharesPerSecond: %d per IP\n", ColorCyan, ColorReset, extCfg.Security.SharesPerSecond)
 		fmt.Printf("  %s->%s Reducing banThreshold: 10 -> 5\n", ColorCyan, ColorReset)
 		fmt.Printf("  %s->%s Increasing banDuration: 30m -> 60m\n", ColorCyan, ColorReset)
+
+		fmt.Println()
+		fmt.Printf("%sNote:%s If miners get rate-limited, increase this with 'spiralctl external setup'.\n", ColorYellow, ColorReset)
+		fmt.Println("Monitor actual share rates with 'spiralctl pool stats'.")
 	} else {
 		extCfg.Security.HardenOnEnable = false
 	}
@@ -346,6 +391,22 @@ func setupPortForward(cfg *ExternalAccessConfig, hostname string) error {
 
 func setupTunnel(cfg *ExternalAccessConfig, hostname, tunnelName string) error {
 	fmt.Printf("%s--- Cloudflare Tunnel Setup ---%s\n", ColorBold, ColorReset)
+	fmt.Println()
+
+	// Warn about Cloudflare Spectrum requirement for raw TCP
+	fmt.Printf("%sIMPORTANT:%s Cloudflare Tunnel mode requires %sCloudflare Spectrum%s (paid add-on)\n", ColorYellow, ColorReset, ColorBold, ColorReset)
+	fmt.Println("for raw TCP proxying. Standard Cloudflare Tunnels only proxy HTTP/WebSocket")
+	fmt.Println("traffic. Mining hardware (ASICs) connects via raw TCP stratum protocol and")
+	fmt.Println("cannot run cloudflared on the client side.")
+	fmt.Println()
+	fmt.Println("Without Spectrum, miners will NOT be able to connect through the tunnel.")
+	fmt.Println("If you don't have Spectrum, use 'port-forward' mode instead.")
+	fmt.Println()
+	if !confirmAction("Do you have Cloudflare Spectrum enabled on your account?") {
+		fmt.Println()
+		printInfo("Use 'spiralctl external setup --mode port-forward' instead")
+		return fmt.Errorf("Cloudflare Spectrum required for tunnel mode with mining hardware")
+	}
 	fmt.Println()
 
 	reader := bufio.NewReader(os.Stdin)
@@ -847,7 +908,9 @@ func applySecurityHardening(cfg *ExternalAccessConfig) error {
 
 	// Apply hardened values to external config
 	cfg.Security.MaxConnectionsPerIP = 50
-	cfg.Security.SharesPerSecond = 50
+	if cfg.Security.SharesPerSecond == 0 {
+		cfg.Security.SharesPerSecond = 500
+	}
 	cfg.Security.BanThreshold = 5
 	cfg.Security.BanDuration = "60m"
 

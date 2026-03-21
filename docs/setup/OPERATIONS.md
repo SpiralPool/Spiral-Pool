@@ -108,7 +108,7 @@ sudo apt update && sudo apt upgrade -y
 
 ```bash
 sudo apt-get -y install git
-git clone https://github.com/SpiralPool/Spiral-Pool.git
+git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool
 chmod +x install.sh
 ./install.sh
@@ -734,4 +734,4 @@ sudo ufw enable
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0*
+*Spiral Pool — Phi Forge 1.1.1*

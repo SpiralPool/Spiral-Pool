@@ -108,14 +108,14 @@ if command -v go &> /dev/null; then
     GO_MAJOR=$(echo $GO_VERSION | cut -d. -f1)
     GO_MINOR=$(echo $GO_VERSION | cut -d. -f2)
 
-    if [[ $GO_MAJOR -ge 1 ]] && [[ $GO_MINOR -ge 25 ]]; then
-        pass "Go $GO_VERSION installed"
+    if [[ $GO_MAJOR -ge 1 ]] && [[ $GO_MINOR -ge 26 ]]; then
+        pass "Go $GO_VERSION installed (1.26+ required)"
     else
-        fail "Go $GO_VERSION is too old (need 1.25+)"
-        echo -e "${YELLOW}Installing Go 1.25.6...${NC}"
+        fail "Go $GO_VERSION is too old (need 1.26+, required by go.mod)"
+        echo -e "${YELLOW}Installing Go 1.26.1...${NC}"
 
-        GO_TAR="go1.25.6.linux-${SYSTEM_ARCH}.tar.gz"
-        curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}"
+        GO_TAR="go1.26.1.linux-${SYSTEM_ARCH}.tar.gz"
+        curl -fSL --connect-timeout 15 --max-time 300 "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}"
         sudo rm -rf /usr/local/go
         sudo tar -C /usr/local -xzf "/tmp/${GO_TAR}"
         rm "/tmp/${GO_TAR}"
@@ -124,12 +124,12 @@ if command -v go &> /dev/null; then
         if ! grep -q "/usr/local/go/bin" ~/.bashrc; then
             echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
         fi
-        pass "Go 1.25.6 installed"
+        pass "Go 1.26.1 installed"
     fi
 else
-    info "Go not found. Installing Go 1.25.6..."
-    GO_TAR="go1.25.6.linux-${SYSTEM_ARCH}.tar.gz"
-    curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}"
+    info "Go not found. Installing Go 1.26.1..."
+    GO_TAR="go1.26.1.linux-${SYSTEM_ARCH}.tar.gz"
+    curl -fSL --connect-timeout 15 --max-time 300 "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}"
     sudo rm -rf /usr/local/go
     sudo tar -C /usr/local -xzf "/tmp/${GO_TAR}"
     rm "/tmp/${GO_TAR}"
@@ -138,7 +138,7 @@ else
     if ! grep -q "/usr/local/go/bin" ~/.bashrc; then
         echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
     fi
-    pass "Go 1.25.6 installed"
+    pass "Go 1.26.1 installed"
 fi
 
 # Verify ZMQ

@@ -329,4 +329,4 @@ QBX (Q-BitX)
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0 — Convergent difficulty. Minimal oscillation.*
+*Spiral Pool — Phi Forge 1.1.1 — Built on what came before. Growing toward phi.*

@@ -203,7 +203,7 @@ sudo apt-get -y install git    # or unzip for ZIP archives
 **Option A &mdash; Git clone:**
 
 ```bash
-git clone https://github.com/SpiralPool/Spiral-Pool.git
+git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool && ./install.sh
 ```
 

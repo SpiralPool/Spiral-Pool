@@ -1,0 +1,51 @@
+{
+  "name": "V1.1 — Phi Forge",
+  "id": "phi-forge",
+  "author": "Spiral Pool",
+  "version": "1.1.0",
+  "description": "Fibonacci-inspired golden ratio theme — rich gold on deep charcoal with amethyst accents",
+  "category": "Codename",
+  "colors": {
+    "bg-primary": "#0a0a0e",
+    "bg-secondary": "#121118",
+    "bg-card": "#1a1822",
+    "bg-card-hover": "#22202c",
+    "neon-blue": "#d4a020",
+    "neon-cyan": "#f0d060",
+    "neon-purple": "#8868c0",
+    "neon-pink": "#c87040",
+    "neon-orange": "#e89020",
+    "neon-yellow": "#ffd700",
+    "neon-green": "#5cb85c",
+    "neon-red": "#d9534f",
+    "text-primary": "#ede8dc",
+    "text-secondary": "#9a9080",
+    "text-muted": "#5c564c",
+    "status-online": "#5cb85c",
+    "status-offline": "#d9534f",
+    "status-warning": "#ffd700",
+    "border-primary": "rgba(212, 160, 32, 0.18)",
+    "border-accent": "rgba(136, 104, 192, 0.18)"
+  },
+  "gradients": {
+    "primary": "linear-gradient(137.5deg, #d4a020 0%, #f0d060 61.8%)",
+    "secondary": "linear-gradient(137.5deg, #8868c0 0%, #6848a0 61.8%)",
+    "accent": "linear-gradient(137.5deg, #e89020 0%, #ffd700 100%)",
+    "card": "linear-gradient(180deg, rgba(26, 24, 34, 0.95) 0%, rgba(18, 17, 24, 1) 100%)"
+  },
+  "fonts": {
+    "display": "'Cinzel', serif",
+    "body": "'Inter', sans-serif",
+    "mono": "'Fira Code', monospace"
+  },
+  "effects": {
+    "glowIntensity": 0.18,
+    "animationSpeed": 1.0,
+    "borderRadius": "10px",
+    "useGlitchEffect": false,
+    "useParticles": true,
+    "useScanLines": false,
+    "useNeonGlow": true
+  },
+  "customCSS": "/* Phi Forge — The Golden Ratio */\n@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=Fira+Code&display=swap');\n\n.cyber-grid {\n  background: none;\n  animation: none;\n}\n\n.cyber-glow {\n  background:\n    radial-gradient(ellipse 610px 377px at 38.2% 0%, rgba(212, 160, 32, 0.1), transparent),\n    radial-gradient(ellipse 377px 233px at 61.8% 100%, rgba(136, 104, 192, 0.06), transparent);\n}\n\n.cyber-particles { opacity: 0.25; }\n\n.stat-card {\n  border: 1px solid rgba(212, 160, 32, 0.12);\n  backdrop-filter: blur(10px);\n  background: rgba(26, 24, 34, 0.85);\n}\n\n.stat-card::before {\n  background: linear-gradient(137.5deg, #d4a020, #f0d060, #8868c0);\n  height: 2px;\n}\n\n.stat-card:hover {\n  border-color: rgba(212, 160, 32, 0.3);\n  box-shadow: 0 4px 24px rgba(212, 160, 32, 0.12);\n}\n\n.stat-value {\n  text-shadow: 0 0 16px rgba(212, 160, 32, 0.4);\n}\n\n.celebration-title {\n  background: linear-gradient(137.5deg, #d4a020, #ffd700, #8868c0);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  text-shadow: none;\n  filter: drop-shadow(0 0 18px rgba(212, 160, 32, 0.35));\n}\n\n.miner-card, .health-card, .lifetime-card {\n  border: 1px solid rgba(212, 160, 32, 0.08);\n  background: rgba(26, 24, 34, 0.7);\n}\n\n.miner-card:hover {\n  border-color: rgba(136, 104, 192, 0.2);\n}\n\n.logo {\n  color: #d4a020;\n  text-shadow: 0 0 18px rgba(212, 160, 32, 0.35);\n}"
+}

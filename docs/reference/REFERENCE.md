@@ -445,4 +445,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Forge 1.1.0*
+*Spiral Pool — Phi Forge 1.1.1*
