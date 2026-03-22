@@ -162,12 +162,33 @@ Each theme is a JSON file defining CSS variables (`colors`, `gradients`). Theme 
 
 Codename themes correspond to Spiral Pool release versions. Developer themes use color palettes derived from Dracula, Nord, Tokyo Night, and Gruvbox (MIT licensed). See `src/dashboard/static/themes/THEME-LICENSES.txt`.
 
+### Background Patterns
+
+Each theme includes a `backgroundStyle` in its `effects` object, controlling the background pattern overlay. Available styles:
+
+| Style | Description | Credit |
+|-------|-------------|--------|
+| `grid` | Classic line grid | Spiral Pool |
+| `dots` | Dot matrix | [MagicPattern](https://www.magicpattern.design/tools/css-backgrounds) |
+| `hexagons` | Honeycomb mesh | Spiral Pool |
+| `carbon` | Dark textured weave | [Lea Verou's CSS3 Patterns Gallery](https://projects.verou.me/css3patterns/) (MIT) |
+| `blueprint` | Major + minor engineering grid | [Lea Verou's CSS3 Patterns Gallery](https://projects.verou.me/css3patterns/) (MIT) |
+| `checkerboard` | Subtle offset squares | [Lea Verou's CSS3 Patterns Gallery](https://projects.verou.me/css3patterns/) (MIT) |
+| `diagonal` | 45-degree repeating stripes | [Lea Verou's CSS3 Patterns Gallery](https://projects.verou.me/css3patterns/) (MIT) |
+| `starfield` | Scattered stars at varying sizes | Spiral Pool |
+| `crosshatch` | Diagonal cross-hatch lines | Spiral Pool |
+| `crt` | LCD/CRT pixel grid | Spiral Pool |
+| `none` | No pattern | — |
+
+All patterns use theme CSS variables for colors and adapt automatically to any theme.
+
 ### Custom Theme Editor
 
 The Appearance panel includes a built-in theme editor for creating custom themes without editing JSON files.
 
 - **13 color pickers**: background, cards, 8 accent colors, text primary/secondary, border color
 - **Border radius selector**: Sharp (0px) to Extra Round (16px)
+- **Background style selector**: choose from 11 background patterns
 - **Live preview**: changes apply instantly as colors are picked
 - **Save**: persists to browser `localStorage`, appears in theme dropdown under "Custom" group
 - **Export**: downloads as a standard `.json` theme file

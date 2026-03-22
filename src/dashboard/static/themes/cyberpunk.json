@@ -45,7 +45,8 @@
     "useGlitchEffect": true,
     "useParticles": true,
     "useScanLines": true,
-    "useNeonGlow": true
+    "useNeonGlow": true,
+    "backgroundStyle": "grid"
   },
   "customCSS": ""
 }

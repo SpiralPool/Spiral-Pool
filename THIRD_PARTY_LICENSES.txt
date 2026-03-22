@@ -457,6 +457,28 @@ Full attribution details: src/dashboard/static/themes/THEME-LICENSES.txt
     Copyright (c) 2012-2023 Pavel Pertsev
 
 ================================================================================
+DASHBOARD BACKGROUND PATTERNS (CSS)
+================================================================================
+
+The following dashboard background patterns are adapted from established
+open-source CSS pattern collections. Only gradient techniques are derived;
+colors, opacity, and integration are original work by Spiral Pool.
+
+61. CSS3 Patterns Gallery
+    Original Author: Lea Verou
+    License: MIT License
+    URL: https://projects.verou.me/css3patterns/
+    GitHub: https://github.com/LeaVerou/css3patterns
+    Patterns used: Carbon, Blueprint, Checkerboard, Diagonal
+    Copyright (c) Lea Verou
+
+62. MagicPattern CSS Backgrounds
+    Author: MagicPattern
+    License: Free to use
+    URL: https://www.magicpattern.design/tools/css-backgrounds
+    Patterns used: Dots (radial-gradient dot grid technique)
+
+================================================================================
 PROTOCOL SPECIFICATIONS & STANDARDS
 ================================================================================
 

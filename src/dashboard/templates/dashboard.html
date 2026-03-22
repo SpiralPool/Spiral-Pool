@@ -2176,7 +2176,7 @@
                         </div>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem; align-items: end;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem; align-items: end;">
                         <div>
                             <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Border</label>
                             <input type="color" id="ct-border-color" value="#1e3a5f" data-var="border-primary-solid" onchange="customThemeLive()" style="width: 100%; height: 28px; border: none; border-radius: 4px; cursor: pointer;">
@@ -2189,6 +2189,22 @@
                                 <option value="8px">Medium (8px)</option>
                                 <option value="12px" selected>Round (12px)</option>
                                 <option value="16px">Extra (16px)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Background</label>
+                            <select id="ct-bg-style" onchange="customThemeLive()" style="width: 100%; height: 28px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-primary); border-radius: 4px; color: var(--text-primary); font-size: 0.75rem; padding: 0 4px;">
+                                <option value="grid">Grid</option>
+                                <option value="dots">Dots</option>
+                                <option value="hexagons">Hexagons</option>
+                                <option value="carbon">Carbon</option>
+                                <option value="blueprint">Blueprint</option>
+                                <option value="checkerboard">Checkerboard</option>
+                                <option value="diagonal">Diagonal</option>
+                                <option value="starfield">Starfield</option>
+                                <option value="crosshatch">Crosshatch</option>
+                                <option value="crt">CRT</option>
+                                <option value="none">None</option>
                             </select>
                         </div>
                     </div>
@@ -2541,6 +2557,14 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Top Block Finders -->
+                <div style="margin-top: 1rem; border-top: 1px solid rgba(0, 212, 255, 0.15); padding-top: 0.75rem;">
+                    <h4 style="margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--neon-cyan); font-family: var(--font-display);">&#127942; Top Block Finders</h4>
+                    <div id="leaderboard-content" style="font-size: 0.85rem;">
+                        <span style="color: var(--text-muted);">Loading...</span>
                     </div>
                 </div>
             </div>
@@ -5090,9 +5114,10 @@
                 document.getElementById('connection-status').style.color = 'var(--neon-red)';
             }
 
-            // Also fetch health data and ETB
+            // Also fetch health data, ETB, and leaderboard
             fetchHealthData();
             fetchETBData();
+            fetchLeaderboard();
         }
 
         // Fetch and update Estimated Time to Block
@@ -5121,6 +5146,48 @@
                 }
             } catch (e) {
                 console.error('Failed to fetch ETB data:', e);
+            }
+        }
+
+        // Fetch and render Top Block Finders
+        async function fetchLeaderboard() {
+            try {
+                const response = await fetch('/api/blocks/leaderboard');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const el = document.getElementById('leaderboard-content');
+                if (!el) return;
+
+                if (!data.success || !data.leaderboard || data.leaderboard.length === 0) {
+                    el.innerHTML = '<div class="activity-empty">No blocks found yet</div>';
+                    return;
+                }
+
+                const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+                const maxBlocks = data.leaderboard[0].blocks_found;
+
+                let html = '<div style="display:flex;flex-direction:column;gap:0.4rem;">';
+                data.leaderboard.forEach((m, i) => {
+                    const medal = i < 3 ? medals[i] : `<span style="opacity:0.5;min-width:1.5rem;display:inline-block;text-align:center;">${i+1}.</span>`;
+                    const prefix = i < 3 ? `<span style="min-width:1.5rem;display:inline-block;text-align:center;">${medal}</span>` : medal;
+                    const name = esc(m.device_name || m.worker || 'Unknown');
+                    const pct = maxBlocks > 0 ? (m.blocks_found / maxBlocks * 100) : 0;
+                    const reward = m.total_reward ? parseFloat(m.total_reward).toFixed(2) : '0';
+                    html += `<div style="display:flex;align-items:center;gap:0.4rem;">` +
+                        `${prefix}` +
+                        `<span style="flex:1;color:var(--text-primary);">${name}</span>` +
+                        `<span style="font-size:0.75rem;color:var(--text-muted);">${reward} QBX</span>` +
+                        `<span style="font-weight:bold;color:var(--neon-cyan);min-width:2rem;text-align:right;">${m.blocks_found}</span>` +
+                        `</div>` +
+                        `<div style="margin-left:1.9rem;height:3px;border-radius:2px;background:rgba(0,212,255,0.15);">` +
+                        `<div style="height:100%;width:${pct}%;background:var(--neon-cyan);border-radius:2px;transition:width 0.6s ease;"></div></div>`;
+                });
+                html += '</div>';
+                html += `<div style="text-align:right;font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">${data.total_blocks} blocks across ${data.total_miners} miners</div>`;
+                el.innerHTML = html;
+            } catch (e) {
+                console.error('Failed to fetch leaderboard:', e);
             }
         }
 
@@ -5807,6 +5874,11 @@
                         document.head.appendChild(radiusStyle);
                     }
                     applyCustomCSS(themeData.customCSS || '');
+
+                    // Apply background style from theme
+                    const bgStyle = (themeData.effects && themeData.effects.backgroundStyle) || 'grid';
+                    const gridEl = document.querySelector('.cyber-grid');
+                    if (gridEl) gridEl.setAttribute('data-bg-style', bgStyle);
                 }
             } catch (e) {
                 console.log('Could not load theme data:', e);
@@ -5976,6 +6048,14 @@
                     if (opt.value === brVal) { brSelect.value = brVal; break; }
                 }
             }
+
+            // Sync background style dropdown with current grid style
+            const bgStyleSelect = document.getElementById('ct-bg-style');
+            const gridEl = document.querySelector('.cyber-grid');
+            if (bgStyleSelect && gridEl) {
+                const currentBg = gridEl.getAttribute('data-bg-style') || 'grid';
+                bgStyleSelect.value = currentBg;
+            }
         }
 
         function toggleCustomThemeEditor() {
@@ -6034,6 +6114,11 @@
             const accent = document.getElementById('ct-neon-blue').value;
             const accent2 = document.getElementById('ct-neon-cyan').value;
             root.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${accent} 0%, ${accent2} 100%)`);
+
+            // Background style
+            const bgStyle = document.getElementById('ct-bg-style')?.value || 'grid';
+            const grid = document.querySelector('.cyber-grid');
+            if (grid) grid.setAttribute('data-bg-style', bgStyle);
         }
 
         function adjustBrightness(hex, amount) {
@@ -6102,6 +6187,7 @@
                     glowIntensity: 0.15,
                     animationSpeed: 1.0,
                     borderRadius: borderRadius,
+                    backgroundStyle: document.getElementById('ct-bg-style')?.value || 'grid',
                     useGlitchEffect: false,
                     useParticles: false,
                     useScanLines: false,

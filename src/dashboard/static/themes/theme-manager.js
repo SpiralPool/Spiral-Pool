@@ -127,6 +127,7 @@ class ThemeManager {
                 "glowIntensity": 0.2,
                 "animationSpeed": 1,
                 "borderRadius": "12px",
+                "backgroundStyle": "grid",
                 "useGlitchEffect": true,
                 "useParticles": true,
                 "useScanLines": true
@@ -229,6 +230,12 @@ class ThemeManager {
      */
     applyEffects(theme) {
         const effects = theme.effects || {};
+
+        // Apply background style
+        const grid = document.querySelector('.cyber-grid');
+        if (grid) {
+            grid.setAttribute('data-bg-style', effects.backgroundStyle || 'grid');
+        }
 
         // Toggle glitch effect
         const glitchElements = document.querySelectorAll('.glitch');

@@ -72,13 +72,13 @@ In this documentation, "operator" means the individual or entity that installs a
 Spiral Pool supports any Stratum V1-compatible ASIC miner or GPU rig. The Spiral Router automatically classifies hardware at connection time using 280+ device signatures.
 
 **SHA-256d (Bitcoin, DigiByte, Namecoin, and more):**
-Antminer S9 / S17 / S19 / S19 Pro / S21 / S21 Pro, Whatsminer M20S / M30S / M50S / M60S, Avalon A1246 / A1346 / A1366, BitAxe Gamma / Ultra / Max, iBeLink BM-S1 Max, FutureBit Apollo BTC, NerdAxe, NerdQAxe, Compac F, LuckyMiner
+Antminer S9 / S17 / S19 / S19 Pro / S21 / S21 Pro, Whatsminer M20S / M30S / M50S / M60S, Avalon A1246 / A1346 / A1366, BitAxe Gamma / Ultra / Max, iBeLink BM-S1 Max, FutureBit Apollo BTC, NerdMiner, NM Miner, NerdAxe, NerdQAxe, Compac F, LuckyMiner
 
 **Scrypt (Litecoin, Dogecoin, PepeCoin, and more):**
 Antminer L3+ / L7 / L9, Whatsminer M31S, Innosilicon A6+ LTC Master, FutureBit Apollo LTC
 
 **Low-power / DIY / lottery miners:**
-BitAxe (ESP32-S3 open-source ASIC), NerdAxe, NerdQAxe, Compac F, LuckyMiner, any Stratum V1-compatible firmware
+BitAxe (ESP32-S3 open-source ASIC), NerdMiner, NM Miner, NerdAxe, NerdQAxe, Compac F, LuckyMiner, and other ESP32-based lottery miners &mdash; any Stratum V1-compatible device regardless of hash power
 
 > The Spiral Router identifies miner model, firmware, and hashrate class from the Stratum user-agent string. Unknown hardware falls back to a safe default profile automatically.
 

@@ -77,5 +77,25 @@ BSD-3-Clause. They do not use color palettes from external projects:
   Industrial: chrome-warfare, meltdown, nebula-command
 
 ================================================================================
-Last Updated: 2026-03-21
+Background Pattern Attributions
+================================================================================
+
+Dashboard background patterns (backgroundStyle in theme effects) are adapted
+from established open-source CSS pattern collections. Only gradient techniques
+are derived; colors, opacity, and integration are original work by Spiral Pool.
+
+5. Lea Verou's CSS3 Patterns Gallery
+   License: MIT License
+   URL: https://projects.verou.me/css3patterns/
+   GitHub: https://github.com/LeaVerou/css3patterns
+   Copyright (c) Lea Verou
+   Patterns adapted: carbon, blueprint, checkerboard, diagonal
+
+6. MagicPattern CSS Backgrounds
+   License: Free to use
+   URL: https://www.magicpattern.design/tools/css-backgrounds
+   Patterns adapted: dots
+
+================================================================================
+Last Updated: 2026-03-22
 ================================================================================

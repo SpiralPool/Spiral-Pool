@@ -71,7 +71,12 @@ body {
     overflow-x: hidden;
 }
 
-/* Static Background Grid */
+/* Background Pattern Layer — style set via data-bg-style attribute
+ * Carbon, Blueprint, Checkerboard, Diagonal patterns adapted from
+ * Lea Verou's CSS3 Patterns Gallery (MIT License)
+ * https://projects.verou.me/css3patterns/
+ * Dots pattern adapted from MagicPattern CSS Backgrounds
+ * https://www.magicpattern.design/tools/css-backgrounds */
 .cyber-grid {
     position: fixed;
     top: 0;
@@ -80,11 +85,116 @@ body {
     height: 100%;
     pointer-events: none;
     z-index: 0;
+}
+
+/* Grid — classic line grid */
+.cyber-grid[data-bg-style="grid"] {
     background:
-        /* Static grid pattern - subtle */
-        linear-gradient(90deg, rgba(0, 212, 255, 0.04) 1px, transparent 1px),
-        linear-gradient(rgba(0, 212, 255, 0.04) 1px, transparent 1px);
+        linear-gradient(90deg, var(--neon-cyan, rgba(0, 212, 255, 0.04)) 1px, transparent 1px),
+        linear-gradient(var(--neon-cyan, rgba(0, 212, 255, 0.04)) 1px, transparent 1px);
     background-size: 40px 40px;
+    opacity: 0.08;
+}
+
+/* Dots — dot matrix */
+.cyber-grid[data-bg-style="dots"] {
+    background: radial-gradient(circle 1px at center, var(--neon-cyan, #22d3ee) 0%, transparent 100%);
+    background-size: 28px 28px;
+    opacity: 0.1;
+}
+
+/* Hexagons — honeycomb mesh */
+.cyber-grid[data-bg-style="hexagons"] {
+    background:
+        linear-gradient(30deg, var(--neon-cyan, #22d3ee) 12%, transparent 12.5%, transparent 87%, var(--neon-cyan, #22d3ee) 87.5%, var(--neon-cyan, #22d3ee)),
+        linear-gradient(150deg, var(--neon-cyan, #22d3ee) 12%, transparent 12.5%, transparent 87%, var(--neon-cyan, #22d3ee) 87.5%, var(--neon-cyan, #22d3ee)),
+        linear-gradient(30deg, var(--neon-cyan, #22d3ee) 12%, transparent 12.5%, transparent 87%, var(--neon-cyan, #22d3ee) 87.5%, var(--neon-cyan, #22d3ee)),
+        linear-gradient(150deg, var(--neon-cyan, #22d3ee) 12%, transparent 12.5%, transparent 87%, var(--neon-cyan, #22d3ee) 87.5%, var(--neon-cyan, #22d3ee)),
+        linear-gradient(60deg, var(--neon-purple, #a78bfa) 25%, transparent 25.5%, transparent 75%, var(--neon-purple, #a78bfa) 75%, var(--neon-purple, #a78bfa)),
+        linear-gradient(60deg, var(--neon-purple, #a78bfa) 25%, transparent 25.5%, transparent 75%, var(--neon-purple, #a78bfa) 75%, var(--neon-purple, #a78bfa));
+    background-size: 56px 97px;
+    background-position: 0 0, 0 0, 28px 49px, 28px 49px, 0 0, 28px 49px;
+    opacity: 0.04;
+}
+
+/* Carbon — dark textured weave (Lea Verou's CSS3 Patterns Gallery) */
+.cyber-grid[data-bg-style="carbon"] {
+    background:
+        radial-gradient(var(--neon-cyan, #22d3ee) 15%, transparent 16%) 0 0,
+        radial-gradient(var(--neon-cyan, #22d3ee) 15%, transparent 16%) 8px 8px,
+        radial-gradient(rgba(255,255,255,.07) 15%, transparent 20%) 0 1px,
+        radial-gradient(rgba(255,255,255,.07) 15%, transparent 20%) 8px 9px;
+    background-size: 16px 16px;
+    opacity: 0.06;
+}
+
+/* Blueprint — major + minor engineering grid (Lea Verou's CSS3 Patterns Gallery) */
+.cyber-grid[data-bg-style="blueprint"] {
+    background:
+        linear-gradient(var(--neon-cyan, #22d3ee) 2px, transparent 2px),
+        linear-gradient(90deg, var(--neon-cyan, #22d3ee) 2px, transparent 2px),
+        linear-gradient(var(--neon-cyan, #22d3ee) 1px, transparent 1px),
+        linear-gradient(90deg, var(--neon-cyan, #22d3ee) 1px, transparent 1px);
+    background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+    background-position: -2px -2px, -2px -2px, -1px -1px, -1px -1px;
+    opacity: 0.06;
+}
+
+/* Checkerboard — subtle offset squares (Lea Verou's CSS3 Patterns Gallery) */
+.cyber-grid[data-bg-style="checkerboard"] {
+    background:
+        linear-gradient(45deg, var(--neon-cyan, #22d3ee) 25%, transparent 25%,
+            transparent 75%, var(--neon-cyan, #22d3ee) 75%),
+        linear-gradient(45deg, var(--neon-cyan, #22d3ee) 25%, transparent 25%,
+            transparent 75%, var(--neon-cyan, #22d3ee) 75%);
+    background-size: 60px 60px;
+    background-position: 0 0, 30px 30px;
+    opacity: 0.03;
+}
+
+/* Diagonal — 45-degree repeating stripes (Lea Verou's CSS3 Patterns Gallery) */
+.cyber-grid[data-bg-style="diagonal"] {
+    background: repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 35px,
+        var(--neon-cyan, #22d3ee) 35px,
+        var(--neon-cyan, #22d3ee) 36px
+    );
+    opacity: 0.05;
+}
+
+/* Starfield — scattered stars at varying sizes */
+.cyber-grid[data-bg-style="starfield"] {
+    background:
+        radial-gradient(circle 0.5px, var(--neon-cyan, #22d3ee), transparent 1px),
+        radial-gradient(circle 1px, var(--neon-purple, #a78bfa), transparent 1.5px),
+        radial-gradient(circle 0.7px, var(--text-primary, #f1f5f9), transparent 1px);
+    background-size: 97px 113px, 151px 173px, 199px 211px;
+    background-position: 0 0, 37px 53px, 71px 29px;
+    opacity: 0.15;
+}
+
+/* Crosshatch — diagonal lines */
+.cyber-grid[data-bg-style="crosshatch"] {
+    background:
+        repeating-linear-gradient(45deg, var(--neon-cyan, #22d3ee) 0, var(--neon-cyan, #22d3ee) 1px, transparent 1px, transparent 30px),
+        repeating-linear-gradient(-45deg, var(--neon-cyan, #22d3ee) 0, var(--neon-cyan, #22d3ee) 1px, transparent 1px, transparent 30px);
+    opacity: 0.05;
+}
+
+/* CRT — LCD/CRT pixel grid for terminal themes */
+.cyber-grid[data-bg-style="crt"] {
+    background:
+        linear-gradient(90deg, var(--neon-cyan, #22d3ee) 1px, transparent 1px),
+        linear-gradient(var(--neon-cyan, #22d3ee) 1px, transparent 1px);
+    background-size: 3px 3px;
+    opacity: 0.04;
+}
+
+/* None — clean background */
+.cyber-grid[data-bg-style="none"] {
+    background: none !important;
 }
 
 /* Cyberpunk ambient glow effects */
