@@ -5173,11 +5173,18 @@
                     const prefix = i < 3 ? `<span style="min-width:1.5rem;display:inline-block;text-align:center;">${medal}</span>` : medal;
                     const name = esc(m.device_name || m.worker || 'Unknown');
                     const pct = maxBlocks > 0 ? (m.blocks_found / maxBlocks * 100) : 0;
-                    const reward = m.total_reward ? parseFloat(m.total_reward).toFixed(2) : '0';
+                    // Build reward string from per-coin breakdown
+                    let rewardParts = [];
+                    if (m.rewards_by_coin) {
+                        for (const [coin, amt] of Object.entries(m.rewards_by_coin)) {
+                            rewardParts.push(`${parseFloat(amt).toFixed(2)} ${esc(coin)}`);
+                        }
+                    }
+                    const rewardStr = rewardParts.length > 0 ? rewardParts.join(' + ') : '0';
                     html += `<div style="display:flex;align-items:center;gap:0.4rem;">` +
                         `${prefix}` +
                         `<span style="flex:1;color:var(--text-primary);">${name}</span>` +
-                        `<span style="font-size:0.75rem;color:var(--text-muted);">${reward} QBX</span>` +
+                        `<span style="font-size:0.75rem;color:var(--text-muted);">${rewardStr}</span>` +
                         `<span style="font-weight:bold;color:var(--neon-cyan);min-width:2rem;text-align:right;">${m.blocks_found}</span>` +
                         `</div>` +
                         `<div style="margin-left:1.9rem;height:3px;border-radius:2px;background:rgba(0,212,255,0.15);">` +

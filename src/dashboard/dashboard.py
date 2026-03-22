@@ -13371,13 +13371,37 @@ def get_block_history():
 @app.route('/api/blocks/leaderboard', methods=['GET'])
 @api_key_or_login_required
 def get_block_leaderboard():
-    """ Get leaderboard of miners by blocks found"""
+    """ Get leaderboard of miners by blocks found (all coins)"""
     try:
-        resp = requests.get(f"{POOL_API_URL}/api/pools/{get_pool_id()}/blocks", timeout=5)
-        if resp.status_code != 200:
-            return jsonify({"success": False, "error": "Failed to fetch blocks"})
+        # Fetch blocks from all pools (multi-coin / merge-mining support)
+        pool_blocks = []
+        try:
+            pools_resp = requests.get(f"{POOL_API_URL}/api/pools", timeout=5)
+            if pools_resp.status_code == 200:
+                pools = pools_resp.json().get("pools", [])
+                for pool in pools:
+                    pid = pool.get("id", "")
+                    if not pid:
+                        continue
+                    try:
+                        blk_resp = requests.get(f"{POOL_API_URL}/api/pools/{pid}/blocks", timeout=5)
+                        if blk_resp.status_code == 200:
+                            blocks = blk_resp.json()
+                            coin = pool.get("coin", {}).get("type", "").upper()
+                            for b in blocks:
+                                b.setdefault("coin", coin)
+                            pool_blocks.extend(blocks)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
-        pool_blocks = resp.json()
+        # Fallback: if multi-pool fetch failed, try single pool
+        if not pool_blocks:
+            resp = requests.get(f"{POOL_API_URL}/api/pools/{get_pool_id()}/blocks", timeout=5)
+            if resp.status_code != 200:
+                return jsonify({"success": False, "error": "Failed to fetch blocks"})
+            pool_blocks = resp.json()
 
         # Count blocks per worker (source field = worker name from stratum auth)
         leaderboard = {}
@@ -13390,7 +13414,7 @@ def get_block_leaderboard():
                 leaderboard[worker] = {
                     "worker": worker,
                     "blocks_found": 0,
-                    "total_reward": 0,
+                    "rewards_by_coin": {},
                     "first_block": None,
                     "last_block": None,
                     "device_type": miner_info.get("type") if miner_info else None,
@@ -13399,7 +13423,9 @@ def get_block_leaderboard():
                 }
 
             leaderboard[worker]["blocks_found"] += 1
-            leaderboard[worker]["total_reward"] += block.get("reward", 0)
+            coin = block.get("coin", "").upper() or "BTC"
+            rewards = leaderboard[worker]["rewards_by_coin"]
+            rewards[coin] = rewards.get(coin, 0) + block.get("reward", 0)
 
             block_time = block.get("created", "")
             if not leaderboard[worker]["first_block"] or block_time < leaderboard[worker]["first_block"]:
