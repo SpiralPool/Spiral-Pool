@@ -26,6 +26,13 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 - Handles localStorage quota errors gracefully ("Storage full — export instead")
 - Editor pickers auto-refresh when switching themes via the dropdown
 
+**Top Block Finders Leaderboard (Dashboard)**
+- New leaderboard widget inside System Health section — ranks miners by blocks found with medal icons (gold/silver/bronze)
+- Per-coin reward breakdown (e.g. "125.00 BTC + 500.00 NMC") instead of a single total
+- Multi-coin support: queries all pools for solo, multi-coin, and merge-mining setups with single-pool fallback
+- Blocks with no source attribution are filtered out
+- Retroactive — pulls all historical blocks from PostgreSQL via the pool API
+
 **Profitability Tracker Module (Sentinel)**
 - New `compute_coin_profitability()` and `compute_profitability_rankings()` functions in Spiral Sentinel
 - Calculates daily fiat revenue per coin: `(block_reward × blocks_per_day × hashrate) / network_hashrate × coin_price`
@@ -47,6 +54,8 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 - Backup size display now shows actual size instead of `?` when permissions are correct
 - Shows "no access" instead of `?` when `Permission denied` is detected — diagnosable instead of opaque
 - Backup snapshot count added to report: `💾 Size: 3.1M (2 snapshots)`
+- Recursive ACL (`setfacl -R`) applied during install so spiralpool user can read backup subdirectories — no manual setup needed
+- `acl` package added to installer prerequisites
 
 **Dashboard — ETB Display**
 - Estimated Time to Block now shows minutes when under 1 hour (e.g. "12 minutes" instead of "0.2 hours")
@@ -94,6 +103,10 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 **Dashboard — Coin Daemon Version Display**
 - Dashboard showed incorrect version for daemons with broken `subversion` strings (e.g. Q-BitX reports `0.1.0` regardless of installed version)
 - Fixed: dashboard now reads from version cache (`/spiralpool/config/coin-versions/<COIN>.ver`) when available, which reflects the actual installed binary version
+
+**Documentation — Lottery Miner Support**
+- README now lists NerdMiner, NM Miner, and other ESP32-based lottery miners as supported hardware
+- Explicitly noted support for any Stratum V1-compatible device regardless of hash power
 
 **Documentation — `git clone` Instructions**
 - All user-facing `git clone` instructions now use `--depth 1` to skip git history (~29MB), reducing download size to source files only (~16MB)
