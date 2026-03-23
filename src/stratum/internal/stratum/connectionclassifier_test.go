@@ -108,16 +108,19 @@ func TestClassifier_Level2_InstantAuthorize(t *testing.T) {
 	t.Parallel()
 	cc := NewConnectionClassifier()
 	now := time.Now()
-	cc.RecordSubscribe(1, MinerClassPro, now)
-	// Authorize 2ms after subscribe — automated software.
+	// Use MinerClassUnknown — timing analysis is only applied when Level 1
+	// did not identify the miner (known ASICs on LAN also authorize in <5ms).
+	cc.RecordSubscribe(1, MinerClassUnknown, now)
+	// Authorize 2ms after subscribe — possible proxy or fast LAN ASIC.
 	cc.RecordAuthorize(1, "user.worker", now.Add(2*time.Millisecond))
 
 	c := cc.GetClassification(1)
 	if c.Type != ConnectionTypeProxy {
-		t.Errorf("Type = %v, want PROXY for <5ms auth delay", c.Type)
+		t.Errorf("Type = %v, want PROXY for <5ms auth delay on unknown miner", c.Type)
 	}
-	if c.Confidence < 0.35 {
-		t.Errorf("Confidence = %.2f, want ≥0.35", c.Confidence)
+	// Score: 0.25 (timing) + 0.15 (worker name pattern) = 0.40
+	if c.Confidence < 0.25 {
+		t.Errorf("Confidence = %.2f, want ≥0.25", c.Confidence)
 	}
 }
 
@@ -125,16 +128,32 @@ func TestClassifier_Level2_FastAuthorize(t *testing.T) {
 	t.Parallel()
 	cc := NewConnectionClassifier()
 	now := time.Now()
-	cc.RecordSubscribe(1, MinerClassPro, now)
+	// Use MinerClassUnknown — timing analysis only applies for unidentified miners.
+	cc.RecordSubscribe(1, MinerClassUnknown, now)
 	// 12ms — likely automated but less certain than <5ms.
 	cc.RecordAuthorize(1, "user.worker", now.Add(12*time.Millisecond))
 
 	c := cc.GetClassification(1)
 	if c.Type != ConnectionTypeProxy {
-		t.Errorf("Type = %v, want PROXY for <20ms auth delay", c.Type)
+		t.Errorf("Type = %v, want PROXY for <20ms auth delay on unknown miner", c.Type)
 	}
 	if c.Confidence < 0.15 {
 		t.Errorf("Confidence = %.2f, want ≥0.15", c.Confidence)
+	}
+}
+
+func TestClassifier_Level2_KnownASIC_SkipsTiming(t *testing.T) {
+	t.Parallel()
+	cc := NewConnectionClassifier()
+	now := time.Now()
+	// Level 1 identified as MinerClassPro (e.g. bmminer user-agent).
+	// Timing analysis should be skipped — LAN ASICs authorize fast too.
+	cc.RecordSubscribe(1, MinerClassPro, now)
+	cc.RecordAuthorize(1, "user.worker", now.Add(2*time.Millisecond))
+
+	c := cc.GetClassification(1)
+	if c.Type == ConnectionTypeProxy {
+		t.Errorf("Type = PROXY, want non-PROXY — timing should be skipped for known ASIC class")
 	}
 }
 
