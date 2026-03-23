@@ -75,15 +75,17 @@ func TestVerifyAllMinerProfiles(t *testing.T) {
 				t.Errorf("Class mismatch: got %s, expected %s", class.String(), tc.expectedClass)
 			}
 
-			// 2. Verify MinDiff = InitialDiff (except lottery which can go lower)
-			if tc.expectedClass != "lottery" && profile.MinDiff != profile.InitialDiff {
+			// 2. Verify MinDiff = InitialDiff (except lottery and unknown which intentionally differ)
+			// Unknown: MinDiff=100 (low floor), InitialDiff=500 (mid start) — vardiff ramps up
+			if tc.expectedClass != "lottery" && tc.expectedClass != "unknown" && profile.MinDiff != profile.InitialDiff {
 				t.Errorf("MinDiff (%.6f) != InitialDiff (%.6f) - will cause vardiff oscillation",
 					profile.MinDiff, profile.InitialDiff)
 			}
 
-			// 3. Verify MaxDiff is NOT 1 million or 1 trillion (the bug)
-			if profile.MaxDiff >= 1000000 {
-				t.Errorf("MaxDiff = %.0f is TOO HIGH (>=1 million) - this was the bug!", profile.MaxDiff)
+			// 3. Verify MaxDiff is NOT 1 trillion (the engine default bug)
+			// Unknown class intentionally uses 1M ceiling so vardiff can ramp up for any ASIC
+			if tc.expectedClass != "unknown" && profile.MaxDiff >= 1000000 {
+				t.Errorf("MaxDiff = %.0f is TOO HIGH (>=1 million) for class %s", profile.MaxDiff, tc.expectedClass)
 			}
 
 			// 4. Verify MaxDiff is reasonable for the class
@@ -104,14 +106,15 @@ func TestVerifyAllMinerProfiles(t *testing.T) {
 func TestVerifyFallbackMaxDiff(t *testing.T) {
 	router := NewSpiralRouterWithBlockTime(15)
 
-	// Test GetProfile fallback with invalid class
+	// Test GetProfile fallback with invalid class — falls through to MinerClassUnknown
+	// which has MaxDiff=1M (wide range so vardiff ramps for any ASIC)
 	t.Run("GetProfile_InvalidClass", func(t *testing.T) {
 		fallback := router.GetProfile(MinerClass(999))
-		if fallback.MaxDiff >= 1000000 {
-			t.Errorf("GetProfile fallback MaxDiff = %.0f (>=1 million) - REGRESSION: expected < 1 million", fallback.MaxDiff)
+		if fallback.MaxDiff >= 1000000000000 {
+			t.Errorf("GetProfile fallback MaxDiff = %.0f (>=1 trillion) - REGRESSION", fallback.MaxDiff)
 		}
-		if fallback.MaxDiff != 50000 {
-			t.Errorf("GetProfile fallback MaxDiff = %.0f, expected 50000", fallback.MaxDiff)
+		if fallback.MaxDiff != 1000000 {
+			t.Errorf("GetProfile fallback MaxDiff = %.0f, expected 1000000", fallback.MaxDiff)
 		}
 		t.Logf("GetProfile fallback: MaxDiff=%.0f ✓", fallback.MaxDiff)
 	})
@@ -119,11 +122,11 @@ func TestVerifyFallbackMaxDiff(t *testing.T) {
 	// Test GetProfileForAlgorithm fallback with invalid class
 	t.Run("GetProfileForAlgorithm_InvalidClass", func(t *testing.T) {
 		fallback := router.GetProfileForAlgorithm(MinerClass(999), AlgorithmSHA256d)
-		if fallback.MaxDiff >= 1000000 {
-			t.Errorf("GetProfileForAlgorithm fallback MaxDiff = %.0f (>=1 million) - REGRESSION: expected < 1 million", fallback.MaxDiff)
+		if fallback.MaxDiff >= 1000000000000 {
+			t.Errorf("GetProfileForAlgorithm fallback MaxDiff = %.0f (>=1 trillion) - REGRESSION", fallback.MaxDiff)
 		}
-		if fallback.MaxDiff != 50000 {
-			t.Errorf("GetProfileForAlgorithm fallback MaxDiff = %.0f, expected 50000", fallback.MaxDiff)
+		if fallback.MaxDiff != 1000000 {
+			t.Errorf("GetProfileForAlgorithm fallback MaxDiff = %.0f, expected 1000000", fallback.MaxDiff)
 		}
 		t.Logf("GetProfileForAlgorithm fallback: MaxDiff=%.0f ✓", fallback.MaxDiff)
 	})
@@ -134,22 +137,17 @@ func TestVerifyFallbackMaxDiff(t *testing.T) {
 func TestVerifyDefaultProfilesValid(t *testing.T) {
 	for class, profile := range DefaultProfiles {
 		t.Run(class.String(), func(t *testing.T) {
-			// MaxDiff should never be 1 million (invalid fallback value)
-			if profile.MaxDiff == 1000000 {
-				t.Errorf("Class %s has MaxDiff=1000000 - REGRESSION: unexpected fallback value", class.String())
-			}
-
 			// MaxDiff should never be 1 trillion (invalid engine default)
 			if profile.MaxDiff >= 1000000000000 {
 				t.Errorf("Class %s has MaxDiff>=1 trillion - REGRESSION: unexpected default value", class.String())
 			}
 
-			// MinDiff should equal InitialDiff (except lottery and farm_proxy).
-			// FarmProxy is intentionally different: InitialDiff is the optimistic starting point
-			// (500K, matching MinerClassPro ceiling so vardiff ramps immediately), while MinDiff
+			// MinDiff should equal InitialDiff (except lottery, unknown, and farm_proxy).
+			// Lottery: MinDiff lower to support tiny ESP32 miners.
+			// Unknown: MinDiff=100 (low floor), InitialDiff=500 — wide range for vardiff.
+			// FarmProxy: InitialDiff is the optimistic starting point (500K), while MinDiff
 			// is the floor that prevents vardiff dropping below a single-miner equivalent.
-			// This allows the proxy to self-correct if it carries fewer workers than expected.
-			if class != MinerClassLottery && class != MinerClassFarmProxy && profile.MinDiff != profile.InitialDiff {
+			if class != MinerClassLottery && class != MinerClassUnknown && class != MinerClassFarmProxy && profile.MinDiff != profile.InitialDiff {
 				t.Errorf("Class %s: MinDiff (%.6f) != InitialDiff (%.6f)",
 					class.String(), profile.MinDiff, profile.InitialDiff)
 			}
