@@ -43,13 +43,17 @@ jobs:
       - name: Run tests
         run: go test ./... -count=1 -timeout 300s
 
-      - name: Build binary
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.version=${VERSION}" \
-            -o spiralpool-${VERSION}-linux-amd64 \
-            ./cmd/spiralpool
+      # Binary build disabled — releases are source-only.
+      # Operators build from source via install.sh or Docker.
+      # To re-enable, uncomment the build step and add files: to the release step.
+      #
+      # - name: Build binary
+      #   run: |
+      #     VERSION="${GITHUB_REF#refs/tags/v}"
+      #     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      #       -ldflags "-s -w -X main.version=${VERSION}" \
+      #       -o spiralpool-${VERSION}-linux-amd64 \
+      #       ./cmd/spiralpool
 
       - name: Generate changelog from commits
         id: changelog
@@ -71,5 +75,3 @@ jobs:
           draft: false
           prerelease: false
           make_latest: true
-          files: |
-            src/stratum/spiralpool-*-linux-amd64
