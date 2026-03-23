@@ -7,6 +7,40 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 
 ---
 
+## [1.1.2] — 2026-03-22 — Phi Forge
+
+> *When the miner speaks, the pool listens.*
+
+### Fixed
+
+**Unknown Miner Difficulty Override**
+- ASICs sending empty or unrecognized user-agents (e.g. some Antminer S19 stock firmware) were forced into the "unknown" miner profile with `MinDiff=500 / MaxDiff=50000` — far too restrictive for ASIC hardware, preventing vardiff from reaching proper operating difficulty
+- Unknown SHA-256d profile widened to `MinDiff=100 / MaxDiff=1000000` — vardiff now ramps up naturally to optimal difficulty for any miner class
+- When Spiral Router cannot identify a miner, the pool now falls back to the operator's YAML/env config values instead of overriding with hardcoded defaults
+
+**Connection Classifier — False PROXY on LAN**
+- ASICs on local networks authorize in <5ms, which the timing heuristic misclassified as "automated software (proxy)" at 0.40 confidence
+- Timing score reduced from 0.40 to 0.25 for <5ms auth delay; timing analysis now skipped entirely when Level 1 already identified the miner via user-agent
+
+**Docker — AsicBoost / Version Rolling**
+- `versionRolling` section was completely missing from the Docker config template — Vnish firmware reported pool offline because AsicBoost was not advertised
+- Now enabled by default: `enabled: true`, `mask: 536862720` (standard BIP320)
+- Configurable via `STRATUM_VERSION_ROLLING` and `STRATUM_VERSION_ROLLING_MASK` in `.env`
+
+**Docker — Difficulty Environment Variables**
+- `STRATUM_DIFF_INITIAL`, `STRATUM_DIFF_MIN`, `STRATUM_DIFF_MAX`, `STRATUM_VARDIFF_TARGET_TIME` were defined in `.env.example` but the config template used hardcoded values — operator overrides were silently ignored
+- Template now uses `${STRATUM_DIFF_*}` substitution; defaults set in `stratum-entrypoint.sh`
+
+### Changed
+
+- All version strings bumped from 1.1.1 to 1.1.2
+
+### Acknowledgements
+
+- Thanks to **Kamakhu** for reporting the S19/S19K Pro classification bug and providing detailed logs and Docker config that helped diagnose both the difficulty and AsicBoost issues
+
+---
+
 ## [1.1.1] — 2026-03-21 — Phi Forge
 
 > *Built on what came before. Growing toward phi.*
