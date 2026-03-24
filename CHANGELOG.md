@@ -7,6 +7,21 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 
 ---
 
+## [1.2.1] — 2026-03-24
+
+### Added
+
+- **DigiByte as merge mining parent chain** — install.sh now offers DGB as an explicit SHA-256d parent option (option 3) for merge mining with NMC, SYS, XMY, and FBTC auxiliary chains. Previously DGB was only an implicit fallback when BTC was disabled; now it is a first-class selection alongside BTC and LTC.
+- `spiralctl mining merge enable` also updated to recognize DGB as a valid SHA-256d parent
+- Multi-coin mode merge mining prompt now detects DGB as SHA-256d parent when BTC is not present
+
+### Fixed
+
+- **MOTD not updating on upgrade** — `update_motd()` in upgrade.sh used `cat >` to write to `/etc/update-motd.d/`, which silently fails without root. Now uses `sudo tee` matching install.sh.
+- **Dashboard section ordering** — Lifetime Statistics section now renders below Statistics (charts) instead of above it
+
+---
+
 ## [1.2.0] — 2026-03-23 - Convergent Spiral
 
 > *One pool. Every coin. No limits.*

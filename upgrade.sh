@@ -462,9 +462,9 @@ detect_current_version() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
     elif [[ -f "/usr/local/bin/stratum" ]]; then
-        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.0")
+        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
     else
         CURRENT_VERSION="unknown"
     fi
@@ -472,7 +472,7 @@ detect_current_version() {
     # Validate version format
     if [[ "$CURRENT_VERSION" != "unknown" ]]; then
         if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
-            CURRENT_VERSION="1.2.0"
+            CURRENT_VERSION="1.2.1"
         fi
     fi
 
@@ -540,9 +540,9 @@ check_for_updates() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
     else
-        CURRENT_VERSION="1.2.0"
+        CURRENT_VERSION="1.2.1"
     fi
 
     local RELEASE_URL=""
@@ -2967,7 +2967,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V1.2.0 - CONVERGENT SPIRAL${NC}"
+echo -e "                                     ${DIM}V1.2.1 - CONVERGENT SPIRAL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3622,7 +3622,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v1.2.0 — Convergent Spiral  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v1.2.1 — Convergent Spiral  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

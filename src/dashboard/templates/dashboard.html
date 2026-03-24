@@ -2451,44 +2451,6 @@
         <!-- Draggable sections container (everything below stats bar) -->
         <div id="sortable-sections">
 
-        <!-- Lifetime Stats -->
-        <section class="collapsible-section lifetime-section" id="lifetime-section" data-section-id="lifetime">
-            <div class="collapsible-header" onclick="toggleSection('lifetime-section')">
-                <span class="drag-handle" title="Drag to reorder">⠿</span>
-                <h3>📊 Lifetime Statistics</h3>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                    <button class="clear-stats-btn" onclick="event.stopPropagation(); clearLifetimeStats()" title="Reset all lifetime statistics">
-                        🗑 Clear Stats
-                    </button>
-                    <span class="collapsible-toggle">▼</span>
-                </div>
-            </div>
-            <div class="collapsible-content">
-            <div class="lifetime-grid">
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">⚡</div>
-                    <div class="lifetime-value" id="lifetime-shares">--</div>
-                    <div class="lifetime-label" title="All-time shares accepted by this pool">Pool Shares</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">🏆</div>
-                    <div class="lifetime-value" id="lifetime-blocks">0</div>
-                    <div class="lifetime-label">Blocks Found</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">💎</div>
-                    <div class="lifetime-value" id="lifetime-best-diff">--</div>
-                    <div class="lifetime-label">Best Share</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">⏱</div>
-                    <div class="lifetime-value" id="lifetime-uptime">--</div>
-                    <div class="lifetime-label">Uptime</div>
-                </div>
-            </div>
-            </div><!-- /collapsible-content -->
-        </section>
-
         <!-- Statistics Chart Grid (2x2: Pool Hashrate, Network Hashrate, Difficulty, Workers) -->
         <section class="collapsible-section charts-row" id="charts-section" data-section-id="charts">
             <div class="collapsible-header" onclick="toggleSection('charts-section')">
@@ -2559,6 +2521,44 @@
                     </div>
                 </div>
             </div>
+        </section>
+
+        <!-- Lifetime Stats -->
+        <section class="collapsible-section lifetime-section" id="lifetime-section" data-section-id="lifetime">
+            <div class="collapsible-header" onclick="toggleSection('lifetime-section')">
+                <span class="drag-handle" title="Drag to reorder">⠿</span>
+                <h3>📊 Lifetime Statistics</h3>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <button class="clear-stats-btn" onclick="event.stopPropagation(); clearLifetimeStats()" title="Reset all lifetime statistics">
+                        🗑 Clear Stats
+                    </button>
+                    <span class="collapsible-toggle">▼</span>
+                </div>
+            </div>
+            <div class="collapsible-content">
+            <div class="lifetime-grid">
+                <div class="lifetime-card">
+                    <div class="lifetime-icon">⚡</div>
+                    <div class="lifetime-value" id="lifetime-shares">--</div>
+                    <div class="lifetime-label" title="All-time shares accepted by this pool">Pool Shares</div>
+                </div>
+                <div class="lifetime-card">
+                    <div class="lifetime-icon">🏆</div>
+                    <div class="lifetime-value" id="lifetime-blocks">0</div>
+                    <div class="lifetime-label">Blocks Found</div>
+                </div>
+                <div class="lifetime-card">
+                    <div class="lifetime-icon">💎</div>
+                    <div class="lifetime-value" id="lifetime-best-diff">--</div>
+                    <div class="lifetime-label">Best Share</div>
+                </div>
+                <div class="lifetime-card">
+                    <div class="lifetime-icon">⏱</div>
+                    <div class="lifetime-value" id="lifetime-uptime">--</div>
+                    <div class="lifetime-label">Uptime</div>
+                </div>
+            </div>
+            </div><!-- /collapsible-content -->
         </section>
 
         <!-- Miners Section -->
@@ -2819,7 +2819,7 @@
         // Restore collapsed states on load
         function restoreCollapsedStates() {
             const defaultCollapsed = ['earnings-section', 'health-section'];
-            const sections = ['lifetime-section', 'charts-section', 'miners-section', 'earnings-section', 'health-section', 'activity-section'];
+            const sections = ['charts-section', 'lifetime-section', 'miners-section', 'earnings-section', 'health-section', 'activity-section'];
             sections.forEach(sectionId => {
                 const state = localStorage.getItem('section_' + sectionId);
                 const section = document.getElementById(sectionId);
