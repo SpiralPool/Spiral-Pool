@@ -2910,7 +2910,7 @@ update_motd() {
 
     log_info "Updating MOTD..."
 
-    cat > /etc/update-motd.d/00-spiralpool << 'MOTDEOF'
+    sudo tee /etc/update-motd.d/00-spiralpool > /dev/null << 'MOTDEOF'
 #!/bin/bash
 # Spiral Pool MOTD
 
@@ -2996,7 +2996,7 @@ echo -e "    Dashboard: ${GREEN}http://${IP_ADDR}:1618${NC}    API: ${GREEN}http
 echo ""
 MOTDEOF
 
-    chmod +x /etc/update-motd.d/00-spiralpool
+    sudo chmod +x /etc/update-motd.d/00-spiralpool
     log_success "MOTD updated"
 }
 
