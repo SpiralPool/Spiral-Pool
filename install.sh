@@ -10,7 +10,7 @@
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 1.2.0                                                         ║
+# ║   Version: 1.2.1                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -35,7 +35,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="1.2.0"
+    VERSION="1.2.1"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -7769,7 +7769,7 @@ select_coin_mode() {
 # ═══════════════════════════════════════════════════════════════════════════════
 # MERGE MINING PARENT SELECTION
 # ═══════════════════════════════════════════════════════════════════════════════
-# When user chooses merge mining, they select: BTC only, LTC only, or BOTH
+# When user chooses merge mining, they select: BTC, LTC, DGB, or BOTH (BTC+LTC)
 
 select_merge_mining_parent() {
     clear
@@ -7806,7 +7806,21 @@ select_merge_mining_parent() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${GREEN}3)${NC} ${YELLOW}BOTH - BTC + LTC with All Aux Chains${NC}"
+    echo -e "  ${GREEN}3)${NC} ${WHITE}DigiByte (DGB) + SHA-256d Aux Chains${NC}"
+    echo ""
+    echo -e "     Mine DigiByte as parent with auxiliary chains:"
+    echo -e "     ${CYAN}•${NC} Namecoin (NMC)         - First AuxPoW coin, ~12 GB"
+    echo -e "     ${CYAN}•${NC} Syscoin (SYS)          - Platform coin, ~8 GB"
+    echo -e "     ${CYAN}•${NC} Myriad (XMY)           - Multi-algo coin, ~3 GB"
+    echo -e "     ${CYAN}•${NC} Fractal Bitcoin (FBTC) - Recursive scaling, ~10 GB"
+    echo ""
+    echo -e "     ${WHITE}Requirements:${NC} ~60 GB + aux chains, 4+ GB RAM"
+    echo -e "     ${DIM}Lighter than BTC — 15s blocks, faster merge mining cycles${NC}"
+    echo ""
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${GREEN}4)${NC} ${YELLOW}BOTH - BTC + LTC with All Aux Chains${NC}"
     echo ""
     echo -e "     Run BOTH SHA-256d AND Scrypt merge mining simultaneously!"
     echo -e "     ${WHITE}SHA-256d:${NC} Bitcoin + NMC, SYS, XMY, FBTC"
@@ -7823,7 +7837,7 @@ select_merge_mining_parent() {
     echo ""
 
     while true; do
-        prompt_input "Enter choice (1, 2, or 3): "; read parent_choice
+        prompt_input "Enter choice (1, 2, 3, or 4): "; read parent_choice
 
         # Reset all coins to false before enabling selected ones
         # This fixes bug where DGB (default=true) stayed enabled in merge mining mode
@@ -7880,6 +7894,24 @@ select_merge_mining_parent() {
                 break
                 ;;
             3)
+                # DigiByte (SHA-256d) merge mining — DGB as parent chain
+                COIN_MODE="multi"
+                ENABLE_DGB="true"
+                MERGE_MINING_ENABLED="true"
+                MERGE_MINING_ALGO="sha256d"
+                MERGE_MINING_PARENT="DGB"
+                SOLO_COIN="DGB"
+                STRATUM_PORT=3333
+                STRATUM_V2_PORT=3334
+                log "Selected: Merge Mining - DigiByte (DGB) as parent (SHA-256d)"
+                echo ""
+                echo -e "  ${GREEN}✓${NC} DigiByte selected as merge mining parent"
+                echo ""
+                # Select which SHA-256d aux chains to enable
+                select_aux_chains "DGB" "sha256d"
+                break
+                ;;
+            4)
                 # BOTH SHA-256d AND Scrypt merge mining
                 COIN_MODE="multi"
                 ENABLE_BTC="true"
@@ -7904,7 +7936,7 @@ select_merge_mining_parent() {
                 break
                 ;;
             *)
-                echo -e "  ${RED}Please enter 1, 2, or 3${NC}"
+                echo -e "  ${RED}Please enter 1, 2, 3, or 4${NC}"
                 ;;
         esac
     done
@@ -7921,7 +7953,7 @@ select_aux_chains_dual() {
     echo -e "  ${WHITE}Select auxiliary chains for ${parent_coin} (${algo}):${NC}"
     echo ""
 
-    if [[ "$parent_coin" == "BTC" ]]; then
+    if [[ "$parent_coin" == "BTC" ]] || [[ "$parent_coin" == "DGB" ]]; then
         # SHA-256d aux chains: NMC, SYS, XMY, FBTC
         local sel_nmc="true"   # Default: enable NMC
         local sel_sys="false"
@@ -7979,8 +8011,8 @@ select_aux_chains_dual() {
         MERGE_MINING_AUX_CHAINS_SHA256D="${MERGE_MINING_AUX_CHAINS_SHA256D%,}"
 
         echo ""
-        echo -e "  ${GREEN}✓${NC} SHA-256d merge mining: BTC + ${MERGE_MINING_AUX_CHAINS_SHA256D}"
-        log "Dual merge mining SHA-256d: BTC + ${MERGE_MINING_AUX_CHAINS_SHA256D}"
+        echo -e "  ${GREEN}✓${NC} SHA-256d merge mining: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D}"
+        log "Dual merge mining SHA-256d: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D}"
 
     elif [[ "$parent_coin" == "LTC" ]]; then
         # Scrypt aux chains: DOGE, PEP
@@ -8280,7 +8312,7 @@ select_aux_chains() {
     echo -e "  ${WHITE}Select auxiliary chains to merge-mine:${NC}"
     echo ""
 
-    if [[ "$parent_coin" == "BTC" ]]; then
+    if [[ "$parent_coin" == "BTC" ]] || [[ "$parent_coin" == "DGB" ]]; then
         # SHA-256d aux chains: NMC, SYS, XMY, FBTC
         local sel_nmc="true"   # Default: enable NMC (most popular)
         local sel_sys="false"
@@ -8330,7 +8362,7 @@ select_aux_chains() {
         # Apply selections
         MERGE_MINING_ENABLED="true"
         MERGE_MINING_ALGO="sha256d"
-        MERGE_MINING_PARENT="BTC"
+        MERGE_MINING_PARENT="$parent_coin"
         MERGE_MINING_AUX_CHAINS=""
 
         [[ "$sel_nmc" == "true" ]] && { ENABLE_NMC="true"; MERGE_MINING_AUX_CHAINS="${MERGE_MINING_AUX_CHAINS}NMC,"; }
@@ -8342,8 +8374,8 @@ select_aux_chains() {
         MERGE_MINING_AUX_CHAINS="${MERGE_MINING_AUX_CHAINS%,}"
 
         echo ""
-        echo -e "  ${GREEN}✓${NC} Merge mining enabled: Bitcoin + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
-        log "Merge mining enabled: BTC + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
+        echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
+        log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
 
     elif [[ "$parent_coin" == "LTC" ]]; then
         # Scrypt aux chains: DOGE, PEP
@@ -8627,14 +8659,25 @@ select_multi_coins() {
 # Supports all aux chains: SHA-256d (NMC, SYS, XMY, FBTC), Scrypt (DOGE, PEP)
 select_merge_mining_multicoin() {
     clear
-    # Check if BTC is selected - offer SHA-256d merge mining with all aux chains
+    # Check if BTC or DGB is selected - offer SHA-256d merge mining with all aux chains
+    # DGB can serve as SHA-256d parent when BTC is not present
+    local sha256d_parent=""
     if [[ "$ENABLE_BTC" == "true" ]]; then
+        sha256d_parent="BTC"
+    elif [[ "$ENABLE_DGB" == "true" ]] && [[ "$ENABLE_BTC" != "true" ]]; then
+        sha256d_parent="DGB"
+    fi
+
+    if [[ -n "$sha256d_parent" ]]; then
+        local parent_name="Bitcoin"
+        [[ "$sha256d_parent" == "DGB" ]] && parent_name="DigiByte"
+
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "  ${YELLOW}SHA-256d MERGE MINING AVAILABLE${NC}"
         echo ""
-        echo -e "  You selected Bitcoin. Would you like to enable merge mining?"
+        echo -e "  You selected ${parent_name}. Would you like to enable merge mining?"
         echo -e "  This submits work to auxiliary chains using the same mining computation."
         echo ""
         echo -e "  ${WHITE}AVAILABLE AUX CHAINS:${NC}"
@@ -8653,7 +8696,7 @@ select_merge_mining_multicoin() {
 
         if [[ "${mm_choice,,}" == "y" ]] || [[ "${mm_choice,,}" == "yes" ]]; then
             # Use the aux chain selection UI
-            select_aux_chains_multicoin "BTC" "sha256d"
+            select_aux_chains_multicoin "$sha256d_parent" "sha256d"
         fi
     fi
 
@@ -8696,7 +8739,7 @@ select_aux_chains_multicoin() {
     echo -e "  ${WHITE}Select auxiliary chains to merge-mine:${NC}"
     echo ""
 
-    if [[ "$parent_coin" == "BTC" ]]; then
+    if [[ "$parent_coin" == "BTC" ]] || [[ "$parent_coin" == "DGB" ]]; then
         # SHA-256d aux chains: NMC, SYS, XMY, FBTC
         # Pre-select any that user already enabled
         local sel_nmc="false"
@@ -8753,7 +8796,7 @@ select_aux_chains_multicoin() {
         # when both BTC and LTC merge mining are enabled in multi-coin mode
         MERGE_MINING_ENABLED="true"
         MERGE_MINING_ALGO="sha256d"
-        MERGE_MINING_PARENT="BTC"
+        MERGE_MINING_PARENT="$parent_coin"
         MERGE_MINING_AUX_CHAINS_SHA256D=""
 
         [[ "$sel_nmc" == "true" ]] && { ENABLE_NMC="true"; MERGE_MINING_AUX_CHAINS_SHA256D="${MERGE_MINING_AUX_CHAINS_SHA256D}NMC,"; }
@@ -8767,8 +8810,8 @@ select_aux_chains_multicoin() {
         MERGE_MINING_AUX_CHAINS="$MERGE_MINING_AUX_CHAINS_SHA256D"
 
         echo ""
-        echo -e "  ${GREEN}✓${NC} Merge mining enabled: Bitcoin + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
-        log "Merge mining enabled: BTC + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
+        echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
+        log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
 
     elif [[ "$parent_coin" == "LTC" ]]; then
         # Scrypt aux chains: DOGE, PEP
@@ -14898,7 +14941,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V1.2.0 — CONVERGENT SPIRAL EDITION${NC}"
+echo -e "                                     ${DIM}V1.2.1 — CONVERGENT SPIRAL EDITION${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -20484,7 +20527,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="1.2.0"
+    local BUILD_VERSION="1.2.1"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -28577,11 +28620,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V1.2.0-CONVERGENT_SPIRAL: Create backup command
+    # V1.2.1-CONVERGENT_SPIRAL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V1.2.0-CONVERGENT_SPIRAL
+# Spiral Pool Backup Utility - V1.2.1-CONVERGENT_SPIRAL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -28626,7 +28669,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V1.2.0-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -28975,7 +29018,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "1.2.0",
+    "version": "1.2.1",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -29242,7 +29285,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V1.2.0-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -29295,11 +29338,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V1.2.0-CONVERGENT_SPIRAL: Create restore command
+    # V1.2.1-CONVERGENT_SPIRAL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V1.2.0-CONVERGENT_SPIRAL
+# Spiral Pool Restore Utility - V1.2.1-CONVERGENT_SPIRAL
 # Restores backups created by spiralpool-backup
 #
 
@@ -29346,7 +29389,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V1.2.0-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -29668,7 +29711,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.2.0-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -35336,7 +35379,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V1.2.0 - CONVERGENT SPIRAL${NC}"
+    echo -e "                                     ${DIM}V1.2.1 - CONVERGENT SPIRAL${NC}"
     echo ""
 }
 

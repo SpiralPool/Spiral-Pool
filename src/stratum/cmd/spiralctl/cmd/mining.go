@@ -48,22 +48,32 @@ var coinRegistry = map[string]coinMetadata{
 }
 
 // mergeMiningConfig defines valid parent/aux combinations per algorithm
-// SHA-256d: BTC can merge-mine NMC, SYS, XMY, FBTC
+// SHA-256d: BTC or DGB can merge-mine NMC, SYS, XMY, FBTC
 // Scrypt:   LTC can merge-mine DOGE, PEP
 type mergeMiningDef struct {
-	parent    string
+	parents   []string // Valid parent coins for this algorithm
 	auxChains []string // All supported aux chains for this algorithm
 }
 
 var mergeMiningPairs = map[string]mergeMiningDef{
 	"sha256d": {
-		parent:    "btc",
+		parents:   []string{"btc", "dgb"},
 		auxChains: []string{"nmc", "sys", "xmy", "fbtc"},
 	},
 	"scrypt": {
-		parent:    "ltc",
+		parents:   []string{"ltc"},
 		auxChains: []string{"doge", "pep"},
 	},
+}
+
+// isValidParent checks if a coin is a valid merge mining parent for a given definition
+func (d mergeMiningDef) isValidParent(coin string) bool {
+	for _, p := range d.parents {
+		if p == coin {
+			return true
+		}
+	}
+	return false
 }
 
 // syncRequirements contains disk/time estimates for user guidance
@@ -445,7 +455,7 @@ func switchToSolo(coin string, autoYes bool) error {
 		canMerge := false
 		var validMmDef mergeMiningDef
 		for _, pair := range mergeMiningPairs {
-			if pair.parent == coin {
+			if pair.isValidParent(coin) {
 				canMerge = true
 				validMmDef = pair
 				break
@@ -637,7 +647,7 @@ func switchToMulti(coins []string, autoYes bool) error {
 		var validMmDef mergeMiningDef
 		for _, coin := range coins {
 			for _, pair := range mergeMiningPairs {
-				if pair.parent == coin {
+				if pair.isValidParent(coin) {
 					newParent = coin
 					validMmDef = pair
 					break
@@ -723,7 +733,7 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 		// Check multi-coin config for merge-capable parent
 		for coin := range cfg.Coins {
 			for _, pair := range mergeMiningPairs {
-				if pair.parent == strings.ToLower(coin) {
+				if pair.isValidParent(strings.ToLower(coin)) {
 					parentCoin = strings.ToLower(coin)
 					break
 				}
@@ -735,7 +745,7 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 	}
 
 	if parentCoin == "" {
-		return fmt.Errorf("no merge mining parent configured. First configure BTC or LTC as parent chain")
+		return fmt.Errorf("no merge mining parent configured. First configure BTC, DGB, or LTC as parent chain")
 	}
 
 	parentCoin = strings.ToLower(parentCoin)
@@ -750,8 +760,8 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 		return fmt.Errorf("no merge mining available for algorithm: %s", parentMeta.algorithm)
 	}
 
-	if mmDef.parent != parentCoin {
-		return fmt.Errorf("merge mining requires %s as parent, but got %s", strings.ToUpper(mmDef.parent), strings.ToUpper(parentCoin))
+	if !mmDef.isValidParent(parentCoin) {
+		return fmt.Errorf("merge mining requires one of %v as parent, but got %s", mmDef.parents, strings.ToUpper(parentCoin))
 	}
 
 	printInfo(fmt.Sprintf("Parent chain: %s (%s)", strings.ToUpper(parentCoin), parentMeta.name))
