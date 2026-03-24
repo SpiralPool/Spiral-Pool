@@ -17,7 +17,7 @@
 # ║   - Scrypt:   Litecoin, Dogecoin, DigiByte-Scrypt, PepeCoin, Catcoin    ║
 # ║                                                                            ║
 # ║   MERGE MINING (multi-coin mode only):                                    ║
-# ║   - SHA-256d: BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY                      ║
+# ║   - SHA-256d: BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY (or DGB as parent)   ║
 # ║   - Scrypt:   LTC+DOGE, LTC+PEP                                         ║
 # ║                                                                            ║
 # ║   STRATUM PROTOCOL:                                                       ║

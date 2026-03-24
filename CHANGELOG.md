@@ -12,8 +12,10 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 ### Added
 
 - **DigiByte as merge mining parent chain** — install.sh now offers DGB as an explicit SHA-256d parent option (option 3) for merge mining with NMC, SYS, XMY, and FBTC auxiliary chains. Previously DGB was only an implicit fallback when BTC was disabled; now it is a first-class selection alongside BTC and LTC.
+- **Back navigation in installer** — pressing `b` at any menu prompt returns to the previous step. Covers install mode, merge mining, coin selection, aux chain selection, and HA mode. No more Ctrl+C to fix a fat-finger.
 - `spiralctl mining merge enable` also updated to recognize DGB as a valid SHA-256d parent
 - Multi-coin mode merge mining prompt now detects DGB as SHA-256d parent when BTC is not present
+- MOTD, Docker guide, spiralctl reference, and docker-compose.yml updated to list DGB as merge mining parent
 
 ### Fixed
 

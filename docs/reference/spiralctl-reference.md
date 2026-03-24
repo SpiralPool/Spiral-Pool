@@ -892,9 +892,9 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 
 **Scrypt:** CAT, DGB-SCRYPT, DOGE, LTC, PEP
 
-**AuxPoW merge-mining pairs:** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP
+**AuxPoW merge-mining pairs:** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, DGB+NMC, DGB+SYS, DGB+XMY, DGB+FBTC, LTC+DOGE, LTC+PEP
 
-**Standalone SHA-256d (not merge-mineable):** BC2, BCH, DGB, QBX
+**Standalone SHA-256d (not merge-mineable):** BC2, BCH, QBX
 
 ## SEE ALSO
 
