@@ -219,6 +219,7 @@ docker compose --profile dgb up -d       # Start (replace dgb with your coin)
 ```
 
 **Architecture limitations:**
+- Windows can kill WSL2 during shutdown/sleep, corrupting LevelDB chain data — install the [graceful shutdown hook](DOCKER_GUIDE.md#graceful-shutdown-hook) to prevent this
 - WSL2 adds I/O overhead; blockchain sync takes 2-4x longer than native Linux
 - Windows Home: WSL2 only (no Hyper-V option)
 - Docker Desktop uses bridge networking; host mode not available
