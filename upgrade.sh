@@ -283,9 +283,59 @@ SERVICES_WERE_RUNNING=()
 # Detect system architecture once (dpkg returns "amd64" or "arm64")
 SYSTEM_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
 
+# Detect WSL2 once (used for environment-specific safety checks)
+IS_WSL2="false"
+if grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+    IS_WSL2="true"
+fi
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+# WSL2 pre-flight checks: warn about clock drift and memory pressure
+# that can cause daemon sync failures and OOM crashes after upgrade.
+wsl2_preflight_checks() {
+    [[ "$IS_WSL2" != "true" ]] && return 0
+
+    log_info "WSL2 environment detected — running pre-flight checks..."
+
+    # Clock drift check: WSL2 clock can drift after Windows sleep/hibernate.
+    # Daemons reject peers and blocks with timestamps too far from local clock.
+    local drift_ok=true
+    if command -v ntpdate &>/dev/null; then
+        local offset
+        offset=$(ntpdate -q pool.ntp.org 2>/dev/null | grep -oP 'offset\s+\K[-0-9.]+' | tail -1 || echo "0")
+        # Bash can't do float comparison — convert to integer seconds
+        local abs_offset=${offset#-}
+        abs_offset=${abs_offset%%.*}
+        if [[ -n "$abs_offset" ]] && [[ "$abs_offset" -gt 30 ]]; then
+            drift_ok=false
+            log_warn "WSL2 clock is ${offset}s off from NTP — blockchain daemons may reject peers"
+            log_warn "Fix: sudo ntpdate pool.ntp.org   OR   sudo hwclock -s"
+        fi
+    elif command -v timedatectl &>/dev/null; then
+        # Fallback: check if systemd-timesyncd reports synchronized
+        if ! timedatectl show 2>/dev/null | grep -q "NTPSynchronized=yes"; then
+            drift_ok=false
+            log_warn "WSL2 clock may be drifted (NTP not synchronized)"
+            log_warn "Fix: sudo hwclock -s"
+        fi
+    fi
+    [[ "$drift_ok" == "true" ]] && log_info "  Clock drift: OK"
+
+    # Memory check: WSL2 defaults to 50% host RAM (or .wslconfig override).
+    # dbcache=8192 in daemon configs can OOM the instance.
+    local total_mb
+    total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+    if [[ "$total_mb" -gt 0 ]] && [[ "$total_mb" -lt 10240 ]]; then
+        log_warn "WSL2 has ${total_mb}MB RAM — coin daemons with dbcache=8192 may OOM"
+        log_warn "Consider reducing dbcache in your daemon configs or increasing WSL2 memory"
+        log_warn "in %USERPROFILE%\\.wslconfig: [wsl2] memory=12GB"
+    else
+        log_info "  Memory: ${total_mb}MB available — OK"
+    fi
+}
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -315,6 +365,22 @@ check_root() {
     if [[ $EUID -ne 0 ]]; then
         log_error "This script must be run as root (sudo ./upgrade.sh)"
         exit 1
+    fi
+}
+
+# Resolve the actual coin data directory, checking multi-disk mount first.
+# install.sh may place chain data at CHAIN_MOUNT_POINT/<coin> instead of INSTALL_DIR/<coin>.
+# Falls back to INSTALL_DIR/<coin> if multi-disk is not configured.
+resolve_coin_dir() {
+    local coin="$1"
+    # Check if coins.env records a multi-disk mount point
+    local mount_point=""
+    local coins_env="${INSTALL_DIR}/config/coins.env"
+    [[ -f "$coins_env" ]] && mount_point=$(grep -oP '^CHAIN_MOUNT_POINT=\K.+$' "$coins_env" 2>/dev/null || true)
+    if [[ -n "$mount_point" ]] && [[ -d "$mount_point/$coin" ]]; then
+        echo "$mount_point/$coin"
+    else
+        echo "${INSTALL_DIR}/$coin"
     fi
 }
 
@@ -462,9 +528,9 @@ detect_current_version() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.2")
     elif [[ -f "/usr/local/bin/stratum" ]]; then
-        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
+        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.2")
     else
         CURRENT_VERSION="unknown"
     fi
@@ -472,7 +538,7 @@ detect_current_version() {
     # Validate version format
     if [[ "$CURRENT_VERSION" != "unknown" ]]; then
         if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
-            CURRENT_VERSION="1.2.1"
+            CURRENT_VERSION="1.2.2"
         fi
     fi
 
@@ -540,9 +606,9 @@ check_for_updates() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.1")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.2")
     else
-        CURRENT_VERSION="1.2.1"
+        CURRENT_VERSION="1.2.2"
     fi
 
     local RELEASE_URL=""
@@ -637,21 +703,23 @@ create_backup() {
         cp "${INSTALL_DIR}/config/config.yaml" "${BACKUP_PATH}/" && log_info "  - config.yaml backed up"
 
     # Backup all coin config files (support all coins, not just DGB)
+    # Uses resolve_coin_dir to handle multi-disk setups where chain data
+    # lives at CHAIN_MOUNT_POINT/<coin> instead of INSTALL_DIR/<coin>.
     # SHA-256d coins
-    [[ -f "${INSTALL_DIR}/dgb/digibyte.conf" ]] && cp "${INSTALL_DIR}/dgb/digibyte.conf" "${BACKUP_PATH}/digibyte.conf" && log_info "  - digibyte.conf backed up"
-    [[ -f "${INSTALL_DIR}/btc/bitcoin.conf" ]] && cp "${INSTALL_DIR}/btc/bitcoin.conf" "${BACKUP_PATH}/bitcoin.conf" && log_info "  - bitcoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/bch/bitcoin.conf" ]] && cp "${INSTALL_DIR}/bch/bitcoin.conf" "${BACKUP_PATH}/bitcoincash.conf" && log_info "  - bitcoincash.conf backed up"
-    [[ -f "${INSTALL_DIR}/bc2/bitcoinii.conf" ]] && cp "${INSTALL_DIR}/bc2/bitcoinii.conf" "${BACKUP_PATH}/bitcoinii.conf" && log_info "  - bitcoinii.conf backed up"
+    [[ -f "$(resolve_coin_dir dgb)/digibyte.conf" ]] && cp "$(resolve_coin_dir dgb)/digibyte.conf" "${BACKUP_PATH}/digibyte.conf" && log_info "  - digibyte.conf backed up"
+    [[ -f "$(resolve_coin_dir btc)/bitcoin.conf" ]] && cp "$(resolve_coin_dir btc)/bitcoin.conf" "${BACKUP_PATH}/bitcoin.conf" && log_info "  - bitcoin.conf backed up"
+    [[ -f "$(resolve_coin_dir bch)/bitcoin.conf" ]] && cp "$(resolve_coin_dir bch)/bitcoin.conf" "${BACKUP_PATH}/bitcoincash.conf" && log_info "  - bitcoincash.conf backed up"
+    [[ -f "$(resolve_coin_dir bc2)/bitcoinii.conf" ]] && cp "$(resolve_coin_dir bc2)/bitcoinii.conf" "${BACKUP_PATH}/bitcoinii.conf" && log_info "  - bitcoinii.conf backed up"
     # Scrypt coins
-    [[ -f "${INSTALL_DIR}/ltc/litecoin.conf" ]] && cp "${INSTALL_DIR}/ltc/litecoin.conf" "${BACKUP_PATH}/litecoin.conf" && log_info "  - litecoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/doge/dogecoin.conf" ]] && cp "${INSTALL_DIR}/doge/dogecoin.conf" "${BACKUP_PATH}/dogecoin.conf" && log_info "  - dogecoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/pep/pepecoin.conf" ]] && cp "${INSTALL_DIR}/pep/pepecoin.conf" "${BACKUP_PATH}/pepecoin.conf" && log_info "  - pepecoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/cat/catcoin.conf" ]] && cp "${INSTALL_DIR}/cat/catcoin.conf" "${BACKUP_PATH}/catcoin.conf" && log_info "  - catcoin.conf backed up"
+    [[ -f "$(resolve_coin_dir ltc)/litecoin.conf" ]] && cp "$(resolve_coin_dir ltc)/litecoin.conf" "${BACKUP_PATH}/litecoin.conf" && log_info "  - litecoin.conf backed up"
+    [[ -f "$(resolve_coin_dir doge)/dogecoin.conf" ]] && cp "$(resolve_coin_dir doge)/dogecoin.conf" "${BACKUP_PATH}/dogecoin.conf" && log_info "  - dogecoin.conf backed up"
+    [[ -f "$(resolve_coin_dir pep)/pepecoin.conf" ]] && cp "$(resolve_coin_dir pep)/pepecoin.conf" "${BACKUP_PATH}/pepecoin.conf" && log_info "  - pepecoin.conf backed up"
+    [[ -f "$(resolve_coin_dir cat)/catcoin.conf" ]] && cp "$(resolve_coin_dir cat)/catcoin.conf" "${BACKUP_PATH}/catcoin.conf" && log_info "  - catcoin.conf backed up"
     # SHA-256d merge-mineable coins (AuxPoW)
-    [[ -f "${INSTALL_DIR}/nmc/namecoin.conf" ]] && cp "${INSTALL_DIR}/nmc/namecoin.conf" "${BACKUP_PATH}/namecoin.conf" && log_info "  - namecoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/sys/syscoin.conf" ]] && cp "${INSTALL_DIR}/sys/syscoin.conf" "${BACKUP_PATH}/syscoin.conf" && log_info "  - syscoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/xmy/myriadcoin.conf" ]] && cp "${INSTALL_DIR}/xmy/myriadcoin.conf" "${BACKUP_PATH}/myriadcoin.conf" && log_info "  - myriadcoin.conf backed up"
-    [[ -f "${INSTALL_DIR}/fbtc/fractal.conf" ]] && cp "${INSTALL_DIR}/fbtc/fractal.conf" "${BACKUP_PATH}/fractal.conf" && log_info "  - fractal.conf backed up"
+    [[ -f "$(resolve_coin_dir nmc)/namecoin.conf" ]] && cp "$(resolve_coin_dir nmc)/namecoin.conf" "${BACKUP_PATH}/namecoin.conf" && log_info "  - namecoin.conf backed up"
+    [[ -f "$(resolve_coin_dir sys)/syscoin.conf" ]] && cp "$(resolve_coin_dir sys)/syscoin.conf" "${BACKUP_PATH}/syscoin.conf" && log_info "  - syscoin.conf backed up"
+    [[ -f "$(resolve_coin_dir xmy)/myriadcoin.conf" ]] && cp "$(resolve_coin_dir xmy)/myriadcoin.conf" "${BACKUP_PATH}/myriadcoin.conf" && log_info "  - myriadcoin.conf backed up"
+    [[ -f "$(resolve_coin_dir fbtc)/fractal.conf" ]] && cp "$(resolve_coin_dir fbtc)/fractal.conf" "${BACKUP_PATH}/fractal.conf" && log_info "  - fractal.conf backed up"
     # Legacy location (older installs may have config here)
     [[ -f "${INSTALL_DIR}/config/digibyte.conf" ]] && [[ ! -L "${INSTALL_DIR}/config/digibyte.conf" ]] && \
         cp "${INSTALL_DIR}/config/digibyte.conf" "${BACKUP_PATH}/digibyte-legacy.conf" && log_info "  - digibyte.conf (legacy) backed up"
@@ -975,92 +1043,105 @@ rollback_to_backup() {
     fi
 
     # Restore all coin config files (support all coins)
+    # Uses resolve_coin_dir to restore to multi-disk paths when configured.
     # SHA-256d coins
     if [[ -f "$backup_path/digibyte.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir dgb)
         log_info "Restoring digibyte.conf..."
-        mkdir -p "${INSTALL_DIR}/dgb"
-        cp "$backup_path/digibyte.conf" "${INSTALL_DIR}/dgb/digibyte.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/dgb/digibyte.conf"
-        chmod 600 "${INSTALL_DIR}/dgb/digibyte.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/digibyte.conf" "$_rd/digibyte.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/digibyte.conf"
+        chmod 600 "$_rd/digibyte.conf"
     fi
     if [[ -f "$backup_path/bitcoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir btc)
         log_info "Restoring bitcoin.conf..."
-        mkdir -p "${INSTALL_DIR}/btc"
-        cp "$backup_path/bitcoin.conf" "${INSTALL_DIR}/btc/bitcoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/btc/bitcoin.conf"
-        chmod 600 "${INSTALL_DIR}/btc/bitcoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/bitcoin.conf" "$_rd/bitcoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoin.conf"
+        chmod 600 "$_rd/bitcoin.conf"
     fi
     if [[ -f "$backup_path/bitcoincash.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir bch)
         log_info "Restoring bitcoincash.conf..."
-        mkdir -p "${INSTALL_DIR}/bch"
-        cp "$backup_path/bitcoincash.conf" "${INSTALL_DIR}/bch/bitcoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/bch/bitcoin.conf"
-        chmod 600 "${INSTALL_DIR}/bch/bitcoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/bitcoincash.conf" "$_rd/bitcoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoin.conf"
+        chmod 600 "$_rd/bitcoin.conf"
     fi
     if [[ -f "$backup_path/bitcoinii.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir bc2)
         log_info "Restoring bitcoinii.conf..."
-        mkdir -p "${INSTALL_DIR}/bc2"
-        cp "$backup_path/bitcoinii.conf" "${INSTALL_DIR}/bc2/bitcoinii.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/bc2/bitcoinii.conf"
-        chmod 600 "${INSTALL_DIR}/bc2/bitcoinii.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/bitcoinii.conf" "$_rd/bitcoinii.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoinii.conf"
+        chmod 600 "$_rd/bitcoinii.conf"
     fi
     # Scrypt coins
     if [[ -f "$backup_path/litecoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir ltc)
         log_info "Restoring litecoin.conf..."
-        mkdir -p "${INSTALL_DIR}/ltc"
-        cp "$backup_path/litecoin.conf" "${INSTALL_DIR}/ltc/litecoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/ltc/litecoin.conf"
-        chmod 600 "${INSTALL_DIR}/ltc/litecoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/litecoin.conf" "$_rd/litecoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/litecoin.conf"
+        chmod 600 "$_rd/litecoin.conf"
     fi
     if [[ -f "$backup_path/dogecoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir doge)
         log_info "Restoring dogecoin.conf..."
-        mkdir -p "${INSTALL_DIR}/doge"
-        cp "$backup_path/dogecoin.conf" "${INSTALL_DIR}/doge/dogecoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/doge/dogecoin.conf"
-        chmod 600 "${INSTALL_DIR}/doge/dogecoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/dogecoin.conf" "$_rd/dogecoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/dogecoin.conf"
+        chmod 600 "$_rd/dogecoin.conf"
     fi
     if [[ -f "$backup_path/pepecoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir pep)
         log_info "Restoring pepecoin.conf..."
-        mkdir -p "${INSTALL_DIR}/pep"
-        cp "$backup_path/pepecoin.conf" "${INSTALL_DIR}/pep/pepecoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/pep/pepecoin.conf"
-        chmod 600 "${INSTALL_DIR}/pep/pepecoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/pepecoin.conf" "$_rd/pepecoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/pepecoin.conf"
+        chmod 600 "$_rd/pepecoin.conf"
     fi
     if [[ -f "$backup_path/catcoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir cat)
         log_info "Restoring catcoin.conf..."
-        mkdir -p "${INSTALL_DIR}/cat"
-        cp "$backup_path/catcoin.conf" "${INSTALL_DIR}/cat/catcoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/cat/catcoin.conf"
-        chmod 600 "${INSTALL_DIR}/cat/catcoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/catcoin.conf" "$_rd/catcoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/catcoin.conf"
+        chmod 600 "$_rd/catcoin.conf"
     fi
     # SHA-256d merge-mineable coins (AuxPoW)
     if [[ -f "$backup_path/namecoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir nmc)
         log_info "Restoring namecoin.conf..."
-        mkdir -p "${INSTALL_DIR}/nmc"
-        cp "$backup_path/namecoin.conf" "${INSTALL_DIR}/nmc/namecoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/nmc/namecoin.conf"
-        chmod 600 "${INSTALL_DIR}/nmc/namecoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/namecoin.conf" "$_rd/namecoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/namecoin.conf"
+        chmod 600 "$_rd/namecoin.conf"
     fi
     if [[ -f "$backup_path/syscoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir sys)
         log_info "Restoring syscoin.conf..."
-        mkdir -p "${INSTALL_DIR}/sys"
-        cp "$backup_path/syscoin.conf" "${INSTALL_DIR}/sys/syscoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/sys/syscoin.conf"
-        chmod 600 "${INSTALL_DIR}/sys/syscoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/syscoin.conf" "$_rd/syscoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/syscoin.conf"
+        chmod 600 "$_rd/syscoin.conf"
     fi
     if [[ -f "$backup_path/myriadcoin.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir xmy)
         log_info "Restoring myriadcoin.conf..."
-        mkdir -p "${INSTALL_DIR}/xmy"
-        cp "$backup_path/myriadcoin.conf" "${INSTALL_DIR}/xmy/myriadcoin.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/xmy/myriadcoin.conf"
-        chmod 600 "${INSTALL_DIR}/xmy/myriadcoin.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/myriadcoin.conf" "$_rd/myriadcoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/myriadcoin.conf"
+        chmod 600 "$_rd/myriadcoin.conf"
     fi
     if [[ -f "$backup_path/fractal.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir fbtc)
         log_info "Restoring fractal.conf..."
-        mkdir -p "${INSTALL_DIR}/fbtc"
-        cp "$backup_path/fractal.conf" "${INSTALL_DIR}/fbtc/fractal.conf"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/fbtc/fractal.conf"
-        chmod 600 "${INSTALL_DIR}/fbtc/fractal.conf"
+        mkdir -p "$_rd"
+        cp "$backup_path/fractal.conf" "$_rd/fractal.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/fractal.conf"
+        chmod 600 "$_rd/fractal.conf"
     fi
     # Legacy location restore (for older backups)
     if [[ -f "$backup_path/digibyte-legacy.conf" ]] && [[ -d "${INSTALL_DIR}/config" ]]; then
@@ -1372,6 +1453,15 @@ stop_services() {
 start_services() {
     log_info "Starting Spiral Pool services..."
     systemctl daemon-reload || true
+
+    # Clear any StartLimitBurst failures from prior crash loops — without this,
+    # systemd refuses to start services that hit the restart limit before upgrade.
+    # This affects ALL services including blockchain daemons (bitcoind-bch, etc.)
+    for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
+                     bitcoind bitcoind-bch bitcoiniid digibyted litecoind dogecoind \
+                     pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+        systemctl reset-failed "$svc_reset" 2>/dev/null || true
+    done
 
     # HA awareness: On backup nodes, only start stratum (sentinel/dash managed by ha-role-watcher)
     local is_ha_backup=false
@@ -2967,7 +3057,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V1.2.1 - CONVERGENT SPIRAL${NC}"
+echo -e "                                     ${DIM}V1.2.2 - CONVERGENT SPIRAL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3622,7 +3712,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v1.2.1 — Convergent Spiral  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v1.2.2 — Convergent Spiral  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -3748,6 +3838,9 @@ main() {
     # Initialize — MUST run before --rollback to populate POOL_USER and service names
     detect_services
     detect_pool_user
+
+    # WSL2 pre-flight: check clock drift and memory before upgrade proceeds
+    wsl2_preflight_checks
 
     # Check if pool user has a password set (needed for HA SSH, interactive sessions, sudo)
     # passwd --status returns: username L/NP/P ... (L=locked, NP=no password, P=password set)

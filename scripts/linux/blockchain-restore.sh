@@ -38,7 +38,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.2.2"
 SCRIPT_NAME="$(basename "$0")"
 
 POOL_USER="${POOL_USER:-spiraluser}"
@@ -54,21 +54,37 @@ if [[ ! "$INSTALL_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]]; then
     exit 1
 fi
 
-# Coin symbol → data directory mapping
+# Multi-disk support: check if CHAIN_MOUNT_POINT is set in coins.env
+_CHAIN_MOUNT_POINT=""
+if [[ -f "${INSTALL_DIR}/config/coins.env" ]]; then
+    _CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "${INSTALL_DIR}/config/coins.env" 2>/dev/null || echo "")
+fi
+
+# Resolve coin data directory (respects CHAIN_MOUNT_POINT if set and dir exists)
+_chain_dir() {
+    local coin_lower="$1"
+    if [[ -n "$_CHAIN_MOUNT_POINT" && -d "${_CHAIN_MOUNT_POINT}/${coin_lower}" ]]; then
+        echo "${_CHAIN_MOUNT_POINT}/${coin_lower}"
+    else
+        echo "${INSTALL_DIR}/${coin_lower}"
+    fi
+}
+
+# Coin symbol → data directory mapping (multi-disk aware)
 declare -A COIN_DIRS=(
-    ["BTC"]="${INSTALL_DIR}/btc"
-    ["BCH"]="${INSTALL_DIR}/bch"
-    ["BC2"]="${INSTALL_DIR}/bc2"
-    ["LTC"]="${INSTALL_DIR}/ltc"
-    ["DOGE"]="${INSTALL_DIR}/doge"
-    ["DGB"]="${INSTALL_DIR}/dgb"
-    ["PEP"]="${INSTALL_DIR}/pep"
-    ["CAT"]="${INSTALL_DIR}/cat"
-    ["NMC"]="${INSTALL_DIR}/nmc"
-    ["SYS"]="${INSTALL_DIR}/sys"
-    ["XMY"]="${INSTALL_DIR}/xmy"
-    ["FBTC"]="${INSTALL_DIR}/fbtc"
-    ["QBX"]="${INSTALL_DIR}/qbx"
+    ["BTC"]="$(_chain_dir btc)"
+    ["BCH"]="$(_chain_dir bch)"
+    ["BC2"]="$(_chain_dir bc2)"
+    ["LTC"]="$(_chain_dir ltc)"
+    ["DOGE"]="$(_chain_dir doge)"
+    ["DGB"]="$(_chain_dir dgb)"
+    ["PEP"]="$(_chain_dir pep)"
+    ["CAT"]="$(_chain_dir cat)"
+    ["NMC"]="$(_chain_dir nmc)"
+    ["SYS"]="$(_chain_dir sys)"
+    ["XMY"]="$(_chain_dir xmy)"
+    ["FBTC"]="$(_chain_dir fbtc)"
+    ["QBX"]="$(_chain_dir qbx)"
 )
 
 # Coin symbol → display label

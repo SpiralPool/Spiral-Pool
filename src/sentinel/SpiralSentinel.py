@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v1.2.1 - CONVERGENT SPIRAL EDITION                                 ║
+║  Spiral Sentinel v1.2.2 - CONVERGENT SPIRAL EDITION                                 ║
 ║  Autonomous SHA-256 Solo Mining Monitor (DGB/BTC/BCH/BC2)                   ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "1.2.1-CONVERGENT_SPIRAL"
+__version__ = "1.2.2-CONVERGENT_SPIRAL"
 __codename__ = "CONVERGENT_SPIRAL"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -5374,7 +5374,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V1.2.1-CONVERGENT_SPIRAL"
+                "sentinel_version": "V1.2.2-CONVERGENT_SPIRAL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -5393,7 +5393,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V1.2.1-CONVERGENT_SPIRAL"
+                "sentinel_version": "V1.2.2-CONVERGENT_SPIRAL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -10124,7 +10124,7 @@ def calc_odds(net_phs, fleet_ths, coin=None):
     dpb = 1 / (blocks_per_day * clamped / 100) if clamped > 0 else float('inf')
     return {"share_pct": share, "daily_odds_pct": daily * 100, "weekly_odds_pct": weekly * 100, "days_per_block": dpb}
 
-# === PROFITABILITY TRACKER (v1.2.1 — NOT ACTIVE) ===
+# === PROFITABILITY TRACKER (v1.2.2 — NOT ACTIVE) ===
 # This module computes per-coin profitability rankings within each algorithm family.
 # It is NOT wired to any API endpoint or report loop yet. To activate in a future
 # release, expose compute_profitability_rankings() via a /api/profitability route.

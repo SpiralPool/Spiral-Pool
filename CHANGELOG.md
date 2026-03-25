@@ -7,6 +7,51 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 
 ---
 
+## [1.2.2] — 2026-03-25
+
+### Fixed
+
+**Installer — Reinstall / Upgrade Guard Pattern (all 13 coins)**
+- **Daemon not stopped before config regeneration on reinstall** — if a daemon was already running and the user reinstalled, the installer would regenerate config files underneath a live daemon, causing port conflicts, stale PID files, and LevelDB lock contention. All 13 coin install functions now stop the running daemon (`systemctl stop`), call `reset-failed` (clears systemd's `StartLimitBurst` crash counter), and remove stale PID files before reconfiguring.
+- **Reinstall skipped config regeneration entirely** — all 13 install functions had an early `return` when the binary already existed (`if [[ -f .../bitcoind ]]; then return`). This meant reinstalling skipped config regeneration, systemd service creation, and all downstream setup. Changed to an `*_binary_exists` + `*_download_needed` guard pattern: binary download is skipped, but config regen, service file, and wallet setup always run.
+- **RPC password recovery on reinstall** — if `coins.env` was corrupted or truncated during a reinstall, all `*_RPC_PASSWORD` variables would be empty. The installer would then generate new passwords that don't match the passwords already written in each daemon's conf file, causing RPC auth failures on every coin. Added a 13-coin password recovery loop that reads `rpcpassword=` from each daemon's existing conf file before falling back to generating a new password.
+- **BCH-specific empty password guard** — added an additional safety net for BCH: if `BCH_RPC_PASSWORD` is still empty after `coins.env` parsing and the recovery loop, attempts to recover from the existing `bitcoin.conf` before generating a new password. BCH was the coin triggering the crash report.
+
+**Installer — WSL2 Resource Scaling (DGB, BTC, BCH)**
+- **Daemons OOM-killed on WSL2** — `dbcache=8192` (8 GB) was hardcoded for DGB, BTC, and BCH regardless of available RAM. WSL2 instances typically have limited memory via `.wslconfig`, and 8 GB dbcache would consume all available RAM, triggering OOM kills. All three coins now detect WSL2 (`/proc/version` check), cap dbcache to 25% of total RAM (floor 1024 MB, ceiling 4096 MB), and scale `MemoryMax`/`MemoryHigh` systemd limits proportionally.
+
+**Installer — systemd Service Files (all 13 coins)**
+- **DGB missing PIDFile directive** — DGB systemd service had `Type=forking` but no `PIDFile=` or `-pid=` argument. systemd couldn't reliably track the daemon process, leading to false "active (running)" status when the daemon had already exited. Added `PIDFile=` to service and `-pid=` to `ExecStart`.
+- **BC2 missing PIDFile directive** — same fix as DGB. Bitcoin II systemd service now has `PIDFile=` and `-pid=` argument.
+- **BTC missing PIDFile directive** — Bitcoin Knots systemd service now has `PIDFile=` and `-pid=` argument.
+- **BCH missing PIDFile directive** — Bitcoin Cash systemd service now has `PIDFile=` and `-pid=` argument.
+- **LimitNOFILE=65535 (off-by-one)** — 11 coin systemd services used `LimitNOFILE=65535` instead of the correct `65536` (2^16). While functionally harmless on most kernels, 65536 is the conventional power-of-two value. Standardized across all coins.
+
+**Installer — BCH Config**
+- **BCH missing `blockmaxsize` setting** — BCH config had `excessiveblocksize=32000000` (accept 32 MB blocks from the network) but was missing `blockmaxsize=32000000` (generate blocks up to 32 MB when mining). Without this, mined blocks would be capped at the Bitcoin Core default of 2 MB.
+
+**Multi-Disk Storage (CHAIN_MOUNT_POINT)**
+- **CHAIN_MOUNT_POINT grep pattern included literal quotes** — `coins.env` writes values as `CHAIN_MOUNT_POINT="/mnt/data"` (with quotes), but the `grep -oP '\K\S+'` pattern extracted `"/mnt/data"` including the quote characters. Every `-d` directory check silently failed, causing all multi-disk setups to fall back to `$INSTALL_DIR/<coin>/` regardless of configuration. Fixed across 12 instances in 5 files: `install.sh`, `spiralctl.sh`, `blockchain-export.sh`, `blockchain-restore.sh`, `wait-for-node.sh`.
+- **spiralctl.sh `get_coin_cli()` ignored multi-disk paths** — all 13 coin CLI commands used hardcoded `$INSTALL_DIR/<coin>/` paths instead of checking `CHAIN_MOUNT_POINT`. Coin daemon CLI commands (getblockchaininfo, stop, etc.) would target the wrong config file on multi-disk setups. Added `_chain_dir()` helper and updated all 13 coin entries.
+- **spiralctl.sh Tor status check hardcoded DGB path** — used `$INSTALL_DIR/dgb/digibyte.conf` instead of `$(_chain_dir dgb)/digibyte.conf`
+- **blockchain-export.sh missing multi-disk support** — all 13 `COIN_DIRS` entries were hardcoded to `$INSTALL_DIR/<coin>/`. Added `_chain_dir()` helper with `CHAIN_MOUNT_POINT` lookup.
+- **blockchain-restore.sh missing multi-disk support** — same fix as blockchain-export.sh
+- **ha-replicate.sh missing multi-disk support** — all 13 `BLOCKCHAIN_DIRS` entries were hardcoded. Added `_chain_dir()` helper with `CHAIN_MOUNT_POINT` lookup.
+
+**Daemon & Docker Config**
+- **pool-mode.sh BC2 wallet commands hardcoded `/spiralpool/`** — 5 occurrences in the BC2 wallet creation block used `/spiralpool/bc2/bitcoinii.conf` instead of `$SPIRALPOOL_DIR/bc2/bitcoinii.conf`, failing on non-default install paths.
+- **DigiByte Docker config missing `zmqpubrawblock`** — `digibyte.conf.template` had `zmqpubhashblock` and `zmqpubrawtx` but was missing `zmqpubrawblock`. All other 12 ZMQ-enabled coins had all three topics. Docker-mode DGB would miss raw block notifications.
+
+**HA & Recovery**
+- **ha-role-watcher.sh recovery health check matched error pages** — `grep -q "enabled"` on the HA status endpoint would match HTML error pages containing the word "enabled" anywhere, causing false-positive health checks. Replaced with `jq -e '.enabled == true'` for proper JSON validation.
+
+**Regtest & Testing**
+- **regtest.sh PepeCoin SIGABRT crash** — ZMQ arguments (`-zmqpubhashblock`, `-zmqpubrawblock`) were passed unconditionally to all coin daemons. PepeCoin v1.1.0 is compiled without ZMQ support and crashes with SIGABRT on startup when zmqpub* arguments are present. ZMQ args now conditionally skipped for PEP.
+- **regtest-ha-full.sh missing 5 coins** — script advertised support for 13 coins but only implemented 8 in the case statement. Added NMC, SYS, XMY, FBTC, and QBX with correct port configurations.
+- All version strings, documentation, themes, and config files bumped to 1.2.2
+
+---
+
 ## [1.2.1] — 2026-03-24
 
 ### Added

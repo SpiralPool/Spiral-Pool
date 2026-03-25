@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.2.2"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -62,21 +62,37 @@ INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 POSTGRES_DATA_DIR="/var/lib/postgresql/${POSTGRES_VERSION}/main"
 
-# Blockchain data directories (standard Spiral Pool layout)
+# Multi-disk support: check if CHAIN_MOUNT_POINT is set in coins.env
+_CHAIN_MOUNT_POINT=""
+if [[ -f "${INSTALL_DIR}/config/coins.env" ]]; then
+    _CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "${INSTALL_DIR}/config/coins.env" 2>/dev/null || echo "")
+fi
+
+# Resolve coin data directory (respects CHAIN_MOUNT_POINT if set and dir exists)
+_chain_dir() {
+    local coin_lower="$1"
+    if [[ -n "$_CHAIN_MOUNT_POINT" && -d "${_CHAIN_MOUNT_POINT}/${coin_lower}" ]]; then
+        echo "${_CHAIN_MOUNT_POINT}/${coin_lower}"
+    else
+        echo "${INSTALL_DIR}/${coin_lower}"
+    fi
+}
+
+# Blockchain data directories (multi-disk aware)
 declare -A BLOCKCHAIN_DIRS=(
-    ["bitcoin"]="${INSTALL_DIR}/btc"
-    ["bitcoin-cash"]="${INSTALL_DIR}/bch"
-    ["litecoin"]="${INSTALL_DIR}/ltc"
-    ["dogecoin"]="${INSTALL_DIR}/doge"
-    ["digibyte"]="${INSTALL_DIR}/dgb"
-    ["bitcoinii"]="${INSTALL_DIR}/bc2"
-    ["pepecoin"]="${INSTALL_DIR}/pep"
-    ["catcoin"]="${INSTALL_DIR}/cat"
-    ["namecoin"]="${INSTALL_DIR}/nmc"
-    ["syscoin"]="${INSTALL_DIR}/sys"
-    ["myriadcoin"]="${INSTALL_DIR}/xmy"
-    ["fractal"]="${INSTALL_DIR}/fbtc"
-    ["qbitx"]="${INSTALL_DIR}/qbx"
+    ["bitcoin"]="$(_chain_dir btc)"
+    ["bitcoin-cash"]="$(_chain_dir bch)"
+    ["litecoin"]="$(_chain_dir ltc)"
+    ["dogecoin"]="$(_chain_dir doge)"
+    ["digibyte"]="$(_chain_dir dgb)"
+    ["bitcoinii"]="$(_chain_dir bc2)"
+    ["pepecoin"]="$(_chain_dir pep)"
+    ["catcoin"]="$(_chain_dir cat)"
+    ["namecoin"]="$(_chain_dir nmc)"
+    ["syscoin"]="$(_chain_dir sys)"
+    ["myriadcoin"]="$(_chain_dir xmy)"
+    ["fractal"]="$(_chain_dir fbtc)"
+    ["qbitx"]="$(_chain_dir qbx)"
 )
 
 # rsync flags for blockchain data (large files, sparse files, hardlinks)

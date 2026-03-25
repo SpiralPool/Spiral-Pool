@@ -6,6 +6,8 @@ server=1
 daemon=0
 printtoconsole=1
 txindex=1
+listen=1
+port=12024
 
 # RPC Configuration
 rpcuser=${RPC_USER}
@@ -20,6 +22,7 @@ rpcport=14022
 # ZMQ for block notifications
 zmqpubhashblock=tcp://0.0.0.0:28532
 zmqpubrawtx=tcp://0.0.0.0:28532
+zmqpubrawblock=tcp://0.0.0.0:28532
 
 # Performance (optimized for fast sync)
 dbcache=8192

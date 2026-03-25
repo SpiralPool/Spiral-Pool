@@ -733,8 +733,11 @@ func (c *ConfigV2) ValidateCredentials() error {
 		}
 	}
 
-	// Check per-coin daemon node credentials
+	// Check per-coin daemon node credentials (enabled coins only)
 	for i, coin := range c.Coins {
+		if !coin.Enabled {
+			continue
+		}
 		coinUpper := strings.ToUpper(coin.Symbol)
 		for j, node := range coin.Nodes {
 			if node.Host != "" {

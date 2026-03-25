@@ -10,7 +10,7 @@
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 1.2.1                                                         ║
+# ║   Version: 1.2.2                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -35,7 +35,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="1.2.1"
+    VERSION="1.2.2"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -4827,6 +4827,45 @@ detect_existing_native_install() {
                 # DGB also uses the generic RPC_PASSWORD for single-coin mode
                 [[ -n "$DGB_RPC_PASSWORD" ]] && RPC_PASSWORD="$DGB_RPC_PASSWORD"
 
+                # Safety net: if coins.env was corrupted/truncated and a password came
+                # back empty, try to recover it from the daemon's own config file.
+                # Without this, reinstall generates a NEW password that doesn't match
+                # what's in bitcoin.conf, causing RPC auth failures.
+                local _coin_sym _coin_dir _conf_name _pass_var
+                declare -A _PASS_RECOVERY=(
+                    [BCH]="bch:bitcoin.conf"
+                    [BTC]="btc:bitcoin.conf"
+                    [BC2]="bc2:bitcoinii.conf"
+                    [LTC]="ltc:litecoin.conf"
+                    [DOGE]="doge:dogecoin.conf"
+                    [DGB]="dgb:digibyte.conf"
+                    [PEP]="pep:pepecoin.conf"
+                    [CAT]="cat:catcoin.conf"
+                    [NMC]="nmc:namecoin.conf"
+                    [SYS]="sys:syscoin.conf"
+                    [XMY]="xmy:myriadcoin.conf"
+                    [FBTC]="fbtc:fractal.conf"
+                    [QBX]="qbx:qbitx.conf"
+                )
+                for _coin_sym in "${!_PASS_RECOVERY[@]}"; do
+                    _pass_var="${_coin_sym}_RPC_PASSWORD"
+                    if [[ -z "${!_pass_var}" ]]; then
+                        _coin_dir="${_PASS_RECOVERY[$_coin_sym]%%:*}"
+                        _conf_name="${_PASS_RECOVERY[$_coin_sym]#*:}"
+                        # Check both standard and multi-disk paths
+                        local _conf_path
+                        _conf_path="$(get_blockchain_dir "$_coin_dir" 2>/dev/null || echo "${INSTALL_DIR:-/spiralpool}/${_coin_dir}")/${_conf_name}"
+                        if [[ -f "$_conf_path" ]]; then
+                            local _recovered
+                            _recovered=$(grep -E "^rpcpassword=" "$_conf_path" 2>/dev/null | head -1 | cut -d= -f2)
+                            if [[ -n "$_recovered" ]]; then
+                                eval "${_pass_var}=\"\$_recovered\""
+                                log_warn "Recovered ${_coin_sym} RPC password from ${_conf_path} (coins.env was empty)"
+                            fi
+                        fi
+                    fi
+                done
+
                 # Preserve existing pool addresses
                 DGB_POOL_ADDRESS=$(grep -oP '^DGB_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 BTC_POOL_ADDRESS=$(grep -oP '^BTC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
@@ -6665,6 +6704,51 @@ logtimestamps=1
 EOF
     chmod 640 "$CONFIG_DIR/catcoin.conf"
     log_success "Generated catcoin.conf"
+}
+
+generate_docker_qbx_config() {
+    local CONFIG_DIR="$SCRIPT_DIR/docker/config"
+
+    cat > "$CONFIG_DIR/qbitx.conf" << EOF
+# Q-BitX Configuration
+# Docker Multi-Coin - Generated $(date)
+# SHA-256d Post-Quantum Bitcoin Fork (standalone, not merge-mineable)
+
+# Network
+server=1
+daemon=0
+txindex=1
+listen=1
+# P2P port remapped from default 8334 to 8345 to avoid NMC conflict
+port=8345
+
+# RPC Configuration
+rpcuser=spiralqbx
+rpcpassword=$QBX_RPC_PASSWORD
+rpcbind=0.0.0.0
+rpcallowip=127.0.0.1
+rpcport=8344
+rpcthreads=8
+
+# ZMQ (block notifications)
+zmqpubhashblock=tcp://127.0.0.1:28344
+zmqpubrawtx=tcp://127.0.0.1:28344
+
+# Performance
+dbcache=4096
+maxmempool=300
+par=0
+maxconnections=100
+
+# Wallet
+disablewallet=0
+
+# Logging
+printtoconsole=1
+logtimestamps=1
+EOF
+    chmod 640 "$CONFIG_DIR/qbitx.conf"
+    log_success "Generated qbitx.conf"
 }
 
 validate_docker_disk_requirements() {
@@ -14986,7 +15070,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V1.2.1 — CONVERGENT SPIRAL EDITION${NC}"
+echo -e "                                     ${DIM}V1.2.2 — CONVERGENT SPIRAL EDITION${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -15044,14 +15128,26 @@ install_digibyte() {
     local DGB_DIR
     DGB_DIR=$(get_blockchain_dir "dgb")
 
+    # Stop any running DGB daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet digibyted 2>/dev/null; then
+        log "Stopping existing DGB daemon before reconfiguration..."
+        sudo systemctl stop digibyted 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed digibyted 2>/dev/null || true
+    [[ -f "$DGB_DIR/digibyted.pid" ]] && sudo rm -f "$DGB_DIR/digibyted.pid"
+
+    local dgb_binary_exists=false
     if [[ -f "$DGB_DIR/bin/digibyted" ]]; then
-        log "DigiByte already installed"
-        return
+        log "DigiByte binary already installed — skipping download"
+        dgb_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local dgb_download_needed=true
-    if copy_binaries_from_primary "DigiByte Core" "$DGB_DIR/bin" "$DGB_DIR/bin"; then
+    [[ "$dgb_binary_exists" == "true" ]] && dgb_download_needed=false
+    if [[ "$dgb_download_needed" == "true" ]] && copy_binaries_from_primary "DigiByte Core" "$DGB_DIR/bin" "$DGB_DIR/bin"; then
         sudo mkdir -p "$DGB_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$DGB_DIR"
         if [[ -f "$DGB_DIR/bin/digibyted" ]]; then
@@ -15204,6 +15300,26 @@ blocksonly=0
 nblocks=64"
     fi
 
+    # WSL2-aware resource sizing: default 8192MB dbcache but cap to 25% of total
+    # RAM on WSL2 to avoid OOM kills (WSL2 has limited memory via .wslconfig).
+    local DGB_DBCACHE=8192
+    local DGB_MEM_MAX="12G"
+    local DGB_MEM_HIGH="11G"
+    if grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+        local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+        if [[ "$total_mb" -gt 0 ]]; then
+            local wsl_cap=$((total_mb / 4))
+            [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
+            [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
+            DGB_DBCACHE=$wsl_cap
+            local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+            [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
+            DGB_MEM_MAX="${mem_max_gb}G"
+            DGB_MEM_HIGH="$(( mem_max_gb - 1 ))G"
+            log "WSL2 detected: DGB dbcache=${DGB_DBCACHE}MB, MemoryMax=${DGB_MEM_MAX} (${total_mb}MB total RAM)"
+        fi
+    fi
+
     sudo tee "$DGB_DIR/digibyte.conf" > /dev/null << EOF
 # DigiByte Core Configuration
 # Spiral Pool v3 - Solo Mining Pool
@@ -15233,8 +15349,8 @@ zmqpubhashblock=tcp://127.0.0.1:$ZMQ_PORT
 zmqpubrawtx=tcp://127.0.0.1:$ZMQ_PORT
 
 # === PERFORMANCE OPTIMIZATION ===
-# Database cache (8GB - optimized for faster sync)
-dbcache=8192
+# Database cache (scaled for WSL2 if applicable)
+dbcache=$DGB_DBCACHE
 # Memory pool limit
 maxmempool=300
 # Par = parallel script verification threads (4 cores for stability)
@@ -15252,6 +15368,9 @@ shrinkdebugfile=1
 # Reduce debug log size during sync
 debuglogfile=debug.log
 maxdebugfilesize=50
+
+# === PID FILE ===
+pid=$(get_blockchain_dir dgb)/digibyted.pid
 
 # === WALLET ===
 disablewallet=0
@@ -15322,8 +15441,9 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=$DGB_DIR/bin/digibyted -daemon -conf=$(get_blockchain_dir dgb)/digibyte.conf -datadir=$(get_blockchain_dir dgb)
+ExecStart=$DGB_DIR/bin/digibyted -daemon -conf=$(get_blockchain_dir dgb)/digibyte.conf -datadir=$(get_blockchain_dir dgb) -pid=$(get_blockchain_dir dgb)/digibyted.pid
 ExecStop=$DGB_DIR/bin/digibyte-cli -conf=$(get_blockchain_dir dgb)/digibyte.conf -datadir=$(get_blockchain_dir dgb) stop
+PIDFile=$(get_blockchain_dir dgb)/digibyted.pid
 
 # === SELF-HEALING / AUTO-RESTART ===
 # Restart=always ensures service restarts on any exit (crash, kill, clean exit)
@@ -15336,9 +15456,9 @@ TimeoutStartSec=infinity
 TimeoutStopSec=600
 
 # === RESOURCE LIMITS FOR FAST SYNC ===
-# Allow up to 12GB memory (dbcache + UTXO set + mempool overhead)
-MemoryMax=12G
-MemoryHigh=11G
+# Memory scaled for WSL2 if applicable (dbcache + UTXO set + mempool overhead)
+MemoryMax=$DGB_MEM_MAX
+MemoryHigh=$DGB_MEM_HIGH
 # Increase open file limits for many peer connections
 LimitNOFILE=65536
 LimitNPROC=65536
@@ -15449,19 +15569,33 @@ install_bitcoin() {
 
     log_step "Installing Bitcoin Knots $BITCOIN_KNOTS_VERSION"
 
+    # Stop any running BTC daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet bitcoind 2>/dev/null; then
+        log "Stopping existing BTC daemon before reconfiguration..."
+        sudo systemctl stop bitcoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed bitcoind 2>/dev/null || true
+    local _btc_pid_dir
+    _btc_pid_dir=$(get_blockchain_dir "btc")
+    [[ -f "$_btc_pid_dir/bitcoind.pid" ]] && sudo rm -f "$_btc_pid_dir/bitcoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local BTC_DIR
     BTC_DIR=$(get_blockchain_dir "btc")
     local BTC_DATA="$BTC_DIR"
 
+    local btc_binary_exists=false
     if [[ -f "$BTC_DIR/bin/bitcoind" ]]; then
-        log "Bitcoin Knots already installed"
-        return
+        log "Bitcoin Knots binary already installed — skipping download"
+        btc_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local btc_download_needed=true
-    if copy_binaries_from_primary "Bitcoin Knots" "$BTC_DIR/bin" "$BTC_DIR/bin"; then
+    [[ "$btc_binary_exists" == "true" ]] && btc_download_needed=false
+    if [[ "$btc_download_needed" == "true" ]] && copy_binaries_from_primary "Bitcoin Knots" "$BTC_DIR/bin" "$BTC_DIR/bin"; then
         sudo mkdir -p "$BTC_DATA"
         sudo chown -R "$POOL_USER:$POOL_USER" "$BTC_DIR"
         if [[ -f "$BTC_DIR/bin/bitcoind" ]]; then
@@ -15630,6 +15764,26 @@ blockstallingtimeout=10
 nblocks=64"
     fi
 
+    # WSL2-aware resource sizing: default 8192MB dbcache but cap to 25% of total
+    # RAM on WSL2 to avoid OOM kills (WSL2 has limited memory via .wslconfig).
+    local BTC_DBCACHE=8192
+    local BTC_MEM_MAX="12G"
+    local BTC_MEM_HIGH="10G"
+    if grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+        local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+        if [[ "$total_mb" -gt 0 ]]; then
+            local wsl_cap=$((total_mb / 4))
+            [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
+            [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
+            BTC_DBCACHE=$wsl_cap
+            local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+            [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
+            BTC_MEM_MAX="${mem_max_gb}G"
+            BTC_MEM_HIGH="$(( mem_max_gb - 1 ))G"
+            log "WSL2 detected: BTC dbcache=${BTC_DBCACHE}MB, MemoryMax=${BTC_MEM_MAX} (${total_mb}MB total RAM)"
+        fi
+    fi
+
     sudo tee "$BTC_DATA/bitcoin.conf" > /dev/null << EOF
 # Bitcoin Knots Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
@@ -15659,8 +15813,8 @@ zmqpubhashblock=tcp://127.0.0.1:28332
 zmqpubrawtx=tcp://127.0.0.1:28332
 
 # === PERFORMANCE OPTIMIZATION ===
-# Database cache (8GB - optimized for faster sync)
-dbcache=8192
+# Database cache (scaled for WSL2 if applicable)
+dbcache=$BTC_DBCACHE
 # Memory pool limit
 maxmempool=300
 # Par = parallel script verification threads (4 cores for stability)
@@ -15726,8 +15880,9 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=$BTC_DIR/bin/bitcoind -daemon -conf=$BTC_DATA/bitcoin.conf -datadir=$BTC_DATA
+ExecStart=$BTC_DIR/bin/bitcoind -daemon -conf=$BTC_DATA/bitcoin.conf -datadir=$BTC_DATA -pid=$BTC_DATA/bitcoind.pid
 ExecStop=$BTC_DIR/bin/bitcoin-cli -conf=$BTC_DATA/bitcoin.conf -datadir=$BTC_DATA stop
+PIDFile=$BTC_DATA/bitcoind.pid
 
 # === SELF-HEALING / AUTO-RESTART ===
 # Restart=always ensures service restarts on any exit (crash, kill, clean exit)
@@ -15740,8 +15895,8 @@ TimeoutStartSec=infinity
 TimeoutStopSec=600
 
 # === RESOURCE LIMITS ===
-MemoryMax=12G
-MemoryHigh=10G
+MemoryMax=$BTC_MEM_MAX
+MemoryHigh=$BTC_MEM_HIGH
 LimitNOFILE=65536
 LimitNPROC=65536
 Nice=-5
@@ -15778,19 +15933,34 @@ install_bitcoincash() {
 
     log_step "Installing Bitcoin Cash Node (BCHN) $BCHN_VERSION"
 
+    # Stop any running BCH daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet bitcoind-bch 2>/dev/null; then
+        log "Stopping existing BCH daemon before reconfiguration..."
+        sudo systemctl stop bitcoind-bch 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed bitcoind-bch 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _bch_pid_dir
+    _bch_pid_dir=$(get_blockchain_dir "bch")
+    [[ -f "$_bch_pid_dir/bitcoind.pid" ]] && sudo rm -f "$_bch_pid_dir/bitcoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local BCH_DIR
     BCH_DIR=$(get_blockchain_dir "bch")
     local BCH_DATA="$BCH_DIR"
 
+    local bch_binary_exists=false
     if [[ -f "$BCH_DIR/bin/bitcoind" ]]; then
-        log "Bitcoin Cash Node already installed"
-        return
+        log "Bitcoin Cash Node binary already installed — skipping download"
+        bch_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local bch_download_needed=true
-    if copy_binaries_from_primary "Bitcoin Cash Node" "$BCH_DIR/bin" "$BCH_DIR/bin"; then
+    [[ "$bch_binary_exists" == "true" ]] && bch_download_needed=false
+    if [[ "$bch_download_needed" == "true" ]] && copy_binaries_from_primary "Bitcoin Cash Node" "$BCH_DIR/bin" "$BCH_DIR/bin"; then
         sudo mkdir -p "$BCH_DATA"
         sudo chown -R "$POOL_USER:$POOL_USER" "$BCH_DIR"
         if [[ -f "$BCH_DIR/bin/bitcoind" ]]; then
@@ -15868,6 +16038,45 @@ install_bitcoincash() {
 
     fi  # end bch_download_needed
 
+    # WSL2-aware resource sizing: default 8192MB dbcache but cap to 25% of total
+    # RAM on WSL2 to avoid OOM kills (WSL2 has limited memory via .wslconfig).
+    local BCH_DBCACHE=8192
+    local BCH_MEM_MAX="10G"
+    local BCH_MEM_HIGH="8G"
+    if grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
+        local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+        if [[ "$total_mb" -gt 0 ]]; then
+            local wsl_cap=$((total_mb / 4))
+            # Floor at 1024MB, cap at 4096MB for WSL2
+            [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
+            [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
+            BCH_DBCACHE=$wsl_cap
+            # Scale systemd memory limits proportionally
+            local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+            [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
+            BCH_MEM_MAX="${mem_max_gb}G"
+            BCH_MEM_HIGH="$(( mem_max_gb - 1 ))G"
+            log "WSL2 detected: BCH dbcache=${BCH_DBCACHE}MB, MemoryMax=${BCH_MEM_MAX} (${total_mb}MB total RAM)"
+        fi
+    fi
+
+    # Ensure RPC password is non-empty before writing config.
+    # On reinstall, coins.env may have been lost/corrupted, leaving BCH_RPC_PASSWORD empty.
+    # An empty rpcpassword= in bitcoin.conf causes auth failures or open RPC.
+    if [[ -z "$BCH_RPC_PASSWORD" ]]; then
+        # Try to recover from existing config file first
+        if [[ -f "$BCH_DATA/bitcoin.conf" ]]; then
+            BCH_RPC_PASSWORD=$(grep -E "^rpcpassword=" "$BCH_DATA/bitcoin.conf" 2>/dev/null | head -1 | cut -d= -f2)
+        fi
+        # If still empty, generate a new one
+        if [[ -z "$BCH_RPC_PASSWORD" ]]; then
+            BCH_RPC_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+            log_warn "BCH RPC password was empty — generated new password"
+        else
+            log "Recovered BCH RPC password from existing bitcoin.conf"
+        fi
+    fi
+
     # Generate BCH configuration based on Tor/clearnet setting
     # NOTE: BCH uses unique ports to avoid conflict with BTC
     # RPC: 8432 (not 8332), P2P: 8433 (not 8333), ZMQ: 28432
@@ -15940,8 +16149,8 @@ zmqpubhashblock=tcp://127.0.0.1:28432
 zmqpubrawtx=tcp://127.0.0.1:28432
 
 # === PERFORMANCE OPTIMIZATION ===
-# Database cache (8GB - maximizes UTXO cache for faster sync)
-dbcache=8192
+# Database cache (maximizes UTXO cache for faster sync; reduced on WSL2)
+dbcache=$BCH_DBCACHE
 # Memory pool limit
 maxmempool=300
 # Par = parallel script verification threads (4 cores for stability)
@@ -15960,6 +16169,7 @@ shrinkdebugfile=1
 
 # === BCH-SPECIFIC SETTINGS ===
 # Enable 32MB blocks (BCH protocol)
+blockmaxsize=32000000
 excessiveblocksize=32000000
 
 # === ASSUME VALID (skip signature verification for known good blocks) ===
@@ -15996,8 +16206,9 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=$BCH_DIR/bin/bitcoind -daemon -conf=$BCH_DATA/bitcoin.conf -datadir=$BCH_DATA
+ExecStart=$BCH_DIR/bin/bitcoind -daemon -conf=$BCH_DATA/bitcoin.conf -datadir=$BCH_DATA -pid=$BCH_DATA/bitcoind.pid
 ExecStop=$BCH_DIR/bin/bitcoin-cli -conf=$BCH_DATA/bitcoin.conf -datadir=$BCH_DATA stop
+PIDFile=$BCH_DATA/bitcoind.pid
 
 # === SELF-HEALING / AUTO-RESTART ===
 # Restart=always ensures service restarts on any exit (crash, kill, clean exit)
@@ -16010,8 +16221,8 @@ TimeoutStartSec=infinity
 TimeoutStopSec=600
 
 # === RESOURCE LIMITS ===
-MemoryMax=10G
-MemoryHigh=8G
+MemoryMax=$BCH_MEM_MAX
+MemoryHigh=$BCH_MEM_HIGH
 LimitNOFILE=65536
 LimitNPROC=65536
 Nice=-5
@@ -16049,20 +16260,34 @@ install_bitcoinii() {
 
     log_step "Installing Bitcoin II Core $BITCOINII_VERSION"
 
+    # Stop any running BC2 daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet bitcoiniid 2>/dev/null; then
+        log "Stopping existing BC2 daemon before reconfiguration..."
+        sudo systemctl stop bitcoiniid 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed bitcoiniid 2>/dev/null || true
+    local _bc2_pid_dir
+    _bc2_pid_dir=$(get_blockchain_dir "bc2")
+    [[ -f "$_bc2_pid_dir/bitcoiniid.pid" ]] && sudo rm -f "$_bc2_pid_dir/bitcoiniid.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local BC2_DIR
     BC2_DIR=$(get_blockchain_dir "bc2")
     local BC2_DATA="$BC2_DIR"
 
     # Check if already installed (Bitcoin II uses capital "II": bitcoinIId)
+    local bc2_binary_exists=false
     if [[ -f "$BC2_DIR/bin/bitcoinIId" ]]; then
-        log "Bitcoin II Core already installed"
-        return
+        log "Bitcoin II Core binary already installed — skipping download"
+        bc2_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local bc2_download_needed=true
-    if copy_binaries_from_primary "Bitcoin II Core" "$BC2_DIR/bin" "$BC2_DIR/bin"; then
+    [[ "$bc2_binary_exists" == "true" ]] && bc2_download_needed=false
+    if [[ "$bc2_download_needed" == "true" ]] && copy_binaries_from_primary "Bitcoin II Core" "$BC2_DIR/bin" "$BC2_DIR/bin"; then
         sudo mkdir -p "$BC2_DATA"
         sudo chown -R "$POOL_USER:$POOL_USER" "$BC2_DIR"
         if [[ -f "$BC2_DIR/bin/bitcoinIId" ]]; then
@@ -16271,6 +16496,9 @@ par=0
 
 $BC2_NETWORK_CONFIG
 
+# === PID FILE ===
+pid=$BC2_DATA/bitcoiniid.pid
+
 # === WALLET ===
 disablewallet=0
 addresstype=bech32
@@ -16322,8 +16550,9 @@ Type=forking
 User=$POOL_USER
 Group=$POOL_USER
 # IMPORTANT: Bitcoin II binaries use capital "II": bitcoinIId, bitcoinII-cli
-ExecStart=$BC2_DIR/bin/bitcoinIId -daemon -conf=$BC2_DATA/bitcoinii.conf -datadir=$BC2_DATA
+ExecStart=$BC2_DIR/bin/bitcoinIId -daemon -conf=$BC2_DATA/bitcoinii.conf -datadir=$BC2_DATA -pid=$BC2_DATA/bitcoiniid.pid
 ExecStop=$BC2_DIR/bin/bitcoinII-cli -conf=$BC2_DATA/bitcoinii.conf -datadir=$BC2_DATA stop
+PIDFile=$BC2_DATA/bitcoiniid.pid
 
 # === SELF-HEALING / AUTO-RESTART ===
 # Restart=always ensures service restarts on any exit (crash, kill, clean exit)
@@ -16383,19 +16612,34 @@ install_litecoin() {
 
     log_step "Installing Litecoin Core $LITECOIN_VERSION"
 
+    # Stop any running LTC daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet litecoind 2>/dev/null; then
+        log "Stopping existing LTC daemon before reconfiguration..."
+        sudo systemctl stop litecoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed litecoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _ltc_pid_dir
+    _ltc_pid_dir=$(get_blockchain_dir "ltc")
+    [[ -f "$_ltc_pid_dir/litecoind.pid" ]] && sudo rm -f "$_ltc_pid_dir/litecoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local LTC_DIR
     LTC_DIR=$(get_blockchain_dir "ltc")
     local LTC_BIN_DIR="$INSTALL_DIR/ltc-bin"
 
+    local ltc_binary_exists=false
     if [[ -f "$LTC_BIN_DIR/bin/litecoind" ]]; then
-        log "Litecoin Core already installed"
-        return 0
+        log "Litecoin Core binary already installed — skipping download"
+        ltc_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local ltc_download_needed=true
-    if copy_binaries_from_primary "Litecoin Core" "$LTC_BIN_DIR/bin" "$LTC_BIN_DIR/bin"; then
+    [[ "$ltc_binary_exists" == "true" ]] && ltc_download_needed=false
+    if [[ "$ltc_download_needed" == "true" ]] && copy_binaries_from_primary "Litecoin Core" "$LTC_BIN_DIR/bin" "$LTC_BIN_DIR/bin"; then
         sudo mkdir -p "$LTC_BIN_DIR" "$LTC_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$LTC_BIN_DIR" "$LTC_DIR"
         if [[ -f "$LTC_BIN_DIR/bin/litecoind" ]]; then
@@ -16560,7 +16804,7 @@ RestartSec=30
 # Note: WatchdogSec removed - blockchain daemons don't support sd_notify
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Some blockchain daemons crash with SIGABRT under modern systemd
@@ -16595,19 +16839,34 @@ install_dogecoin() {
 
     log_step "Installing Dogecoin Core $DOGECOIN_VERSION"
 
+    # Stop any running DOGE daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet dogecoind 2>/dev/null; then
+        log "Stopping existing DOGE daemon before reconfiguration..."
+        sudo systemctl stop dogecoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed dogecoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _doge_pid_dir
+    _doge_pid_dir=$(get_blockchain_dir "doge")
+    [[ -f "$_doge_pid_dir/dogecoind.pid" ]] && sudo rm -f "$_doge_pid_dir/dogecoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local DOGE_DIR
     DOGE_DIR=$(get_blockchain_dir "doge")
     local DOGE_BIN_DIR="$INSTALL_DIR/doge-bin"
 
+    local doge_binary_exists=false
     if [[ -f "$DOGE_BIN_DIR/bin/dogecoind" ]]; then
-        log "Dogecoin Core already installed"
-        return 0
+        log "Dogecoin Core binary already installed — skipping download"
+        doge_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local doge_download_needed=true
-    if copy_binaries_from_primary "Dogecoin Core" "$DOGE_BIN_DIR/bin" "$DOGE_BIN_DIR/bin"; then
+    [[ "$doge_binary_exists" == "true" ]] && doge_download_needed=false
+    if [[ "$doge_download_needed" == "true" ]] && copy_binaries_from_primary "Dogecoin Core" "$DOGE_BIN_DIR/bin" "$DOGE_BIN_DIR/bin"; then
         sudo mkdir -p "$DOGE_BIN_DIR" "$DOGE_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$DOGE_BIN_DIR" "$DOGE_DIR"
         if [[ -f "$DOGE_BIN_DIR/bin/dogecoind" ]]; then
@@ -16765,7 +17024,7 @@ RestartSec=30
 # Note: WatchdogSec removed - blockchain daemons don't support sd_notify
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Dogecoin v1.14.x (Bitcoin Core 0.14.x base) crashes with SIGABRT
@@ -16801,19 +17060,34 @@ install_pepecoin() {
 
     log_step "Installing PepeCoin Core $PEPECOIN_VERSION"
 
+    # Stop any running PEP daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet pepecoind 2>/dev/null; then
+        log "Stopping existing PEP daemon before reconfiguration..."
+        sudo systemctl stop pepecoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed pepecoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _pep_pid_dir
+    _pep_pid_dir=$(get_blockchain_dir "pep")
+    [[ -f "$_pep_pid_dir/pepecoind.pid" ]] && sudo rm -f "$_pep_pid_dir/pepecoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local PEP_DIR
     PEP_DIR=$(get_blockchain_dir "pep")
     local PEP_BIN_DIR="$INSTALL_DIR/pep-bin"
 
+    local pep_binary_exists=false
     if [[ -f "$PEP_BIN_DIR/bin/pepecoind" ]]; then
-        log "PepeCoin Core already installed"
-        return 0
+        log "PepeCoin Core binary already installed — skipping download"
+        pep_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local pep_download_needed=true
-    if copy_binaries_from_primary "PepeCoin Core" "$PEP_BIN_DIR/bin" "$PEP_BIN_DIR/bin"; then
+    [[ "$pep_binary_exists" == "true" ]] && pep_download_needed=false
+    if [[ "$pep_download_needed" == "true" ]] && copy_binaries_from_primary "PepeCoin Core" "$PEP_BIN_DIR/bin" "$PEP_BIN_DIR/bin"; then
         sudo mkdir -p "$PEP_BIN_DIR" "$PEP_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$PEP_BIN_DIR" "$PEP_DIR"
         if [[ -f "$PEP_BIN_DIR/bin/pepecoind" ]]; then
@@ -16971,7 +17245,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # PepeCoin (old Bitcoin Core base) crashes with SIGABRT
@@ -17006,19 +17280,34 @@ install_catcoin() {
 
     log_step "Installing Catcoin Core $CATCOIN_VERSION"
 
+    # Stop any running CAT daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet catcoind 2>/dev/null; then
+        log "Stopping existing CAT daemon before reconfiguration..."
+        sudo systemctl stop catcoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed catcoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _cat_pid_dir
+    _cat_pid_dir=$(get_blockchain_dir "cat")
+    [[ -f "$_cat_pid_dir/catcoind.pid" ]] && sudo rm -f "$_cat_pid_dir/catcoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local CAT_DIR
     CAT_DIR=$(get_blockchain_dir "cat")
     local CAT_BIN_DIR="$INSTALL_DIR/cat-bin"
 
+    local cat_binary_exists=false
     if [[ -f "$CAT_BIN_DIR/bin/catcoind" ]]; then
-        log "Catcoin Core already installed"
-        return 0
+        log "Catcoin Core binary already installed — skipping download"
+        cat_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local cat_download_needed=true
-    if copy_binaries_from_primary "Catcoin Core" "$CAT_BIN_DIR/bin" "$CAT_BIN_DIR/bin"; then
+    [[ "$cat_binary_exists" == "true" ]] && cat_download_needed=false
+    if [[ "$cat_download_needed" == "true" ]] && copy_binaries_from_primary "Catcoin Core" "$CAT_BIN_DIR/bin" "$CAT_BIN_DIR/bin"; then
         sudo mkdir -p "$CAT_BIN_DIR" "$CAT_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$CAT_BIN_DIR" "$CAT_DIR"
         if [[ -f "$CAT_BIN_DIR/bin/catcoind" ]]; then
@@ -17187,7 +17476,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Some blockchain daemons crash with SIGABRT under modern systemd
@@ -17221,19 +17510,34 @@ install_namecoin() {
 
     log_step "Installing Namecoin Core $NAMECOIN_VERSION"
 
+    # Stop any running NMC daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet namecoind 2>/dev/null; then
+        log "Stopping existing NMC daemon before reconfiguration..."
+        sudo systemctl stop namecoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed namecoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _nmc_pid_dir
+    _nmc_pid_dir=$(get_blockchain_dir "nmc")
+    [[ -f "$_nmc_pid_dir/namecoind.pid" ]] && sudo rm -f "$_nmc_pid_dir/namecoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local NMC_DIR
     NMC_DIR=$(get_blockchain_dir "nmc")
     local NMC_BIN_DIR="$INSTALL_DIR/nmc-bin"
 
+    local nmc_binary_exists=false
     if [[ -f "$NMC_BIN_DIR/bin/namecoind" ]]; then
-        log "Namecoin Core already installed"
-        return 0
+        log "Namecoin Core binary already installed — skipping download"
+        nmc_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local nmc_download_needed=true
-    if copy_binaries_from_primary "Namecoin Core" "$NMC_BIN_DIR/bin" "$NMC_BIN_DIR/bin"; then
+    [[ "$nmc_binary_exists" == "true" ]] && nmc_download_needed=false
+    if [[ "$nmc_download_needed" == "true" ]] && copy_binaries_from_primary "Namecoin Core" "$NMC_BIN_DIR/bin" "$NMC_BIN_DIR/bin"; then
         sudo mkdir -p "$NMC_BIN_DIR" "$NMC_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$NMC_BIN_DIR" "$NMC_DIR"
         if [[ -f "$NMC_BIN_DIR/bin/namecoind" ]]; then
@@ -17393,7 +17697,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Namecoin Core v28.0 crashes with SIGABRT under modern systemd
@@ -17427,19 +17731,34 @@ install_syscoin() {
 
     log_step "Installing Syscoin Core $SYSCOIN_VERSION"
 
+    # Stop any running SYS daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet syscoind 2>/dev/null; then
+        log "Stopping existing SYS daemon before reconfiguration..."
+        sudo systemctl stop syscoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed syscoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _sys_pid_dir
+    _sys_pid_dir=$(get_blockchain_dir "sys")
+    [[ -f "$_sys_pid_dir/syscoind.pid" ]] && sudo rm -f "$_sys_pid_dir/syscoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local SYS_DIR
     SYS_DIR=$(get_blockchain_dir "sys")
     local SYS_BIN_DIR="$INSTALL_DIR/sys-bin"
 
+    local sys_binary_exists=false
     if [[ -f "$SYS_BIN_DIR/bin/syscoind" ]]; then
-        log "Syscoin Core already installed"
-        return 0
+        log "Syscoin Core binary already installed — skipping download"
+        sys_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local sys_download_needed=true
-    if copy_binaries_from_primary "Syscoin Core" "$SYS_BIN_DIR/bin" "$SYS_BIN_DIR/bin"; then
+    [[ "$sys_binary_exists" == "true" ]] && sys_download_needed=false
+    if [[ "$sys_download_needed" == "true" ]] && copy_binaries_from_primary "Syscoin Core" "$SYS_BIN_DIR/bin" "$SYS_BIN_DIR/bin"; then
         sudo mkdir -p "$SYS_BIN_DIR" "$SYS_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$SYS_BIN_DIR" "$SYS_DIR"
         if [[ -f "$SYS_BIN_DIR/bin/syscoind" ]]; then
@@ -17594,7 +17913,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # Syscoin 5.0 needs more memory
 MemoryMax=4G
@@ -17630,19 +17949,34 @@ install_myriad() {
 
     log_step "Installing Myriad Core $MYRIAD_VERSION"
 
+    # Stop any running XMY daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet myriadcoind 2>/dev/null; then
+        log "Stopping existing XMY daemon before reconfiguration..."
+        sudo systemctl stop myriadcoind 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed myriadcoind 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _xmy_pid_dir
+    _xmy_pid_dir=$(get_blockchain_dir "xmy")
+    [[ -f "$_xmy_pid_dir/myriadcoind.pid" ]] && sudo rm -f "$_xmy_pid_dir/myriadcoind.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local XMY_DIR
     XMY_DIR=$(get_blockchain_dir "xmy")
     local XMY_BIN_DIR="$INSTALL_DIR/xmy-bin"
 
+    local xmy_binary_exists=false
     if [[ -f "$XMY_BIN_DIR/bin/myriadcoind" ]]; then
-        log "Myriad Core already installed"
-        return 0
+        log "Myriad Core binary already installed — skipping download"
+        xmy_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local xmy_download_needed=true
-    if copy_binaries_from_primary "Myriad Core" "$XMY_BIN_DIR/bin" "$XMY_BIN_DIR/bin"; then
+    [[ "$xmy_binary_exists" == "true" ]] && xmy_download_needed=false
+    if [[ "$xmy_download_needed" == "true" ]] && copy_binaries_from_primary "Myriad Core" "$XMY_BIN_DIR/bin" "$XMY_BIN_DIR/bin"; then
         sudo mkdir -p "$XMY_BIN_DIR" "$XMY_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$XMY_BIN_DIR" "$XMY_DIR"
         if [[ -f "$XMY_BIN_DIR/bin/myriadcoind" ]]; then
@@ -17811,7 +18145,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Some blockchain daemons crash with SIGABRT under modern systemd
@@ -17851,19 +18185,34 @@ install_fbtc() {
 
     log_step "Installing Fractal Bitcoin $FBTC_VERSION"
 
+    # Stop any running FBTC daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet fractald 2>/dev/null; then
+        log "Stopping existing FBTC daemon before reconfiguration..."
+        sudo systemctl stop fractald 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed fractald 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _fbtc_pid_dir
+    _fbtc_pid_dir=$(get_blockchain_dir "fbtc")
+    [[ -f "$_fbtc_pid_dir/fractald.pid" ]] && sudo rm -f "$_fbtc_pid_dir/fractald.pid"
+
     # Use multi-disk storage path if configured, otherwise standard location
     local FBTC_DIR
     FBTC_DIR=$(get_blockchain_dir "fbtc")
     local FBTC_BIN_DIR="$INSTALL_DIR/fbtc-bin"
 
+    local fbtc_binary_exists=false
     if [[ -f "$FBTC_BIN_DIR/bin/bitcoind" ]]; then
-        log "Fractal Bitcoin already installed"
-        return 0
+        log "Fractal Bitcoin binary already installed — skipping download"
+        fbtc_binary_exists=true
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local fbtc_download_needed=true
-    if copy_binaries_from_primary "Fractal Bitcoin" "$FBTC_BIN_DIR/bin" "$FBTC_BIN_DIR/bin"; then
+    [[ "$fbtc_binary_exists" == "true" ]] && fbtc_download_needed=false
+    if [[ "$fbtc_download_needed" == "true" ]] && copy_binaries_from_primary "Fractal Bitcoin" "$FBTC_BIN_DIR/bin" "$FBTC_BIN_DIR/bin"; then
         sudo mkdir -p "$FBTC_BIN_DIR" "$FBTC_DIR"
         sudo chown -R "$POOL_USER:$POOL_USER" "$FBTC_BIN_DIR" "$FBTC_DIR"
         if [[ -f "$FBTC_BIN_DIR/bin/bitcoind" ]]; then
@@ -18009,7 +18358,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Some blockchain daemons crash with SIGABRT under modern systemd
@@ -18045,6 +18394,19 @@ install_qbx() {
     fi
 
     log_step "Installing Q-BitX"
+
+    # Stop any running QBX daemon before reconfiguring (prevents port conflicts,
+    # stale PID files, and LevelDB lock contention on reinstall)
+    if systemctl is-active --quiet qbitxd 2>/dev/null; then
+        log "Stopping existing QBX daemon before reconfiguration..."
+        sudo systemctl stop qbitxd 2>/dev/null || true
+        sleep 2
+    fi
+    sudo systemctl reset-failed qbitxd 2>/dev/null || true
+    # Remove stale PID file that can prevent daemon from starting
+    local _qbx_pid_dir
+    _qbx_pid_dir=$(get_blockchain_dir "qbx")
+    [[ -f "$_qbx_pid_dir/qbitxd.pid" ]] && sudo rm -f "$_qbx_pid_dir/qbitxd.pid"
 
     # Use multi-disk storage path if configured, otherwise standard location
     local QBX_DIR
@@ -18184,7 +18546,7 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-LimitNOFILE=65535
+LimitNOFILE=65536
 
 # NOTE: Systemd security hardening intentionally omitted.
 # Some blockchain daemons crash with SIGABRT under modern systemd
@@ -20573,7 +20935,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="1.2.1"
+    local BUILD_VERSION="1.2.2"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -21590,7 +21952,7 @@ RestartSec=10
 TimeoutStopSec=120
 # Note: WatchdogSec removed - service doesn't implement sd_notify
 
-LimitNOFILE=65535
+LimitNOFILE=65536
 Environment=GOMAXPROCS=0
 # Patroni REST API credentials for HA installs (no-op on standalone — file absent)
 EnvironmentFile=-/spiralpool/config/patroni-api.conf
@@ -22560,7 +22922,7 @@ RestartSec=10
 TimeoutStopSec=30
 # Note: WatchdogSec removed - service doesn't implement sd_notify
 
-LimitNOFILE=65535
+LimitNOFILE=65536
 Environment=GOMAXPROCS=0
 # Patroni REST API credentials for HA installs (no-op on standalone -- file absent)
 EnvironmentFile=-/spiralpool/config/patroni-api.conf
@@ -23902,7 +24264,7 @@ MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 LOG_FILE="$INSTALL_DIR/logs/health-monitor.log"
@@ -24721,7 +25083,7 @@ _MULTI_DISK="false"; _CHAIN_MOUNT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     _MULTI_DISK=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    _CHAIN_MOUNT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    _CHAIN_MOUNT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() {
     local c="$1"
@@ -24947,7 +25309,7 @@ MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 
@@ -26952,7 +27314,7 @@ MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 BACKUP_DIR="$INSTALL_DIR/backups"
@@ -28666,11 +29028,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V1.2.1-CONVERGENT_SPIRAL: Create backup command
+    # V1.2.2-CONVERGENT_SPIRAL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V1.2.1-CONVERGENT_SPIRAL
+# Spiral Pool Backup Utility - V1.2.2-CONVERGENT_SPIRAL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -28683,7 +29045,7 @@ MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 BACKUP_DIR="${INSTALL_DIR}/backups"
@@ -28715,7 +29077,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V1.2.2-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -29064,7 +29426,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "1.2.1",
+    "version": "1.2.2",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -29331,7 +29693,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V1.2.2-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -29384,11 +29746,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V1.2.1-CONVERGENT_SPIRAL: Create restore command
+    # V1.2.2-CONVERGENT_SPIRAL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V1.2.1-CONVERGENT_SPIRAL
+# Spiral Pool Restore Utility - V1.2.2-CONVERGENT_SPIRAL
 # Restores backups created by spiralpool-backup
 #
 
@@ -29401,7 +29763,7 @@ MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 _env="$INSTALL_DIR/config/coins.env"
 if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
 fi
 get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
 # Standard pool user - hardcoded (no customization)
@@ -29435,7 +29797,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V1.2.2-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -29757,7 +30119,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V1.2.2-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -34344,7 +34706,7 @@ CONFIG_FILE="$INSTALL_DIR/config/coins.env"
 MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
 if [[ -f "$CONFIG_FILE" ]] && [[ ! -L "$CONFIG_FILE" ]]; then
     MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "false")
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$CONFIG_FILE" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$CONFIG_FILE" 2>/dev/null || echo "")
     # Only extract known boolean variables using grep
     # SHA-256d coins
     ENABLE_DGB=$(grep -oP '^ENABLE_DGB=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
@@ -34774,6 +35136,7 @@ BCH_POOL_ADDRESS=$BCH_POOL_ADDRESS
 BC2_POOL_ADDRESS=$BC2_POOL_ADDRESS
 LTC_POOL_ADDRESS=$LTC_POOL_ADDRESS
 DOGE_POOL_ADDRESS=$DOGE_POOL_ADDRESS
+DGB_SCRYPT_ADDRESS=$DGB_SCRYPT_ADDRESS
 PEP_POOL_ADDRESS=$PEP_POOL_ADDRESS
 CAT_POOL_ADDRESS=$CAT_POOL_ADDRESS
 NMC_POOL_ADDRESS=$NMC_POOL_ADDRESS
@@ -34871,6 +35234,13 @@ start_services() {
             fi
         done
     }
+
+    # Clear any StartLimitBurst failures from prior crash loops (reinstall scenario)
+    for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
+                     digibyted bitcoind bitcoind-bch bitcoiniid litecoind dogecoind \
+                     pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+        systemctl reset-failed "$svc_reset" 2>/dev/null || true
+    done
 
     # Start enabled blockchain daemons
     # SHA-256d coins
@@ -35425,7 +35795,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V1.2.1 - CONVERGENT SPIRAL${NC}"
+    echo -e "                                     ${DIM}V1.2.2 - CONVERGENT SPIRAL${NC}"
     echo ""
 }
 

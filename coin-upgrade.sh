@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V1.2.1-CONVERGENT_SPIRAL
+#                   V1.2.2-CONVERGENT_SPIRAL
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary.
 # Config files, wallets, blockchain data, and pool settings are NEVER modified.
@@ -110,7 +110,7 @@ declare -A COIN_DAEMON_CMD=(
 
 # /usr/local/bin CLI command (symlink name)
 declare -A COIN_CLI_CMD=(
-    [BTC]="bitcoin-cli"     [BCH]="bitcoin-cli"     [BC2]="bitcoin-cli"
+    [BTC]="bitcoin-cli"     [BCH]="bitcoin-cli-bch"  [BC2]="bitcoinii-cli"
     [DGB]="digibyte-cli"    [LTC]="litecoin-cli"    [DOGE]="dogecoin-cli"
     [PEP]="pepecoin-cli"    [CAT]="catcoin-cli"     [NMC]="namecoin-cli"
     [SYS]="syscoin-cli"     [XMY]="myriadcoin-cli"  [FBTC]="fractal-cli"
@@ -628,6 +628,10 @@ upgrade_coin() {
     # ── Step 5: Start daemon ──────────────────────────────────────────────────
     log_step "Step 5/5 — Start ${coin} daemon"
 
+    # Clear any StartLimitBurst failures from prior crash loops — without this,
+    # systemd refuses to start the daemon if it crashed 5+ times before upgrade.
+    sudo systemctl reset-failed "$svc" 2>/dev/null || true
+
     if [[ "$do_reindex" == "true" ]]; then
         # Write a systemd drop-in that appends -reindex to ExecStart.
         # The drop-in is removed immediately after start so the next
@@ -847,7 +851,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V1.2.1-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V1.2.2-CONVERGENT_SPIRAL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

@@ -240,7 +240,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "1.2.1-CONVERGENT_SPIRAL-V2",
+		Version:  "1.2.2-CONVERGENT_SPIRAL-V2",
 		Pools:    pools,
 	}
 
