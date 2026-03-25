@@ -811,6 +811,11 @@ func (cp *CoinPool) handleShare(share *protocol.Share) *protocol.ShareResult {
 		// Submit to pipeline for DB persistence (after block handling)
 		cp.sharePipeline.Submit(share)
 
+		// Track accepted share count on the session (used by connections API for dashboard)
+		if session, ok := cp.stratumServer.GetSession(share.SessionID); ok {
+			session.IncrementShareCount()
+		}
+
 		// Update VARDIFF - use aggressive retarget for ramp-up and deviation correction
 		// CRITICAL: Only run vardiff when enabled in config. When disabled (e.g. regtest),
 		// keep fixed initial difficulty. Without this guard, difficulty ramps to impossible

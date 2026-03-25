@@ -1324,6 +1324,11 @@ func (p *Pool) handleShare(share *protocol.Share) *protocol.ShareResult {
 		// Submit to pipeline for DB persistence (after block handling)
 		p.sharePipeline.Submit(share)
 
+		// Track accepted share count on the session (used by connections API for dashboard)
+		if session, ok := p.stratumServer.GetSession(share.SessionID); ok {
+			session.IncrementShareCount()
+		}
+
 		// Update VARDIFF
 		// CRITICAL: Only run vardiff when enabled in config. When disabled (e.g. regtest),
 		// keep fixed initial difficulty. Without this guard, difficulty ramps to impossible

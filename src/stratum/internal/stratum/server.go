@@ -353,8 +353,21 @@ func (s *Server) Stop() error {
 	})
 
 	// FIX O-1: Wait for all connection goroutines (keepalive loops) to finish
-	// This prevents orphaned goroutines after shutdown
-	s.connWg.Wait()
+	// This prevents orphaned goroutines after shutdown.
+	// Use a timeout to prevent shutdown from hanging if a goroutine is stuck
+	// (e.g., blocked on a cancelled DB context). Without this, systemd SIGKILL's
+	// the process after TimeoutStopSec, which can lose in-flight block submissions.
+	connDone := make(chan struct{})
+	go func() {
+		s.connWg.Wait()
+		close(connDone)
+	}()
+	select {
+	case <-connDone:
+		// All connection goroutines finished cleanly
+	case <-time.After(10 * time.Second):
+		s.logger.Warn("Timeout waiting for connection goroutines to finish — proceeding with shutdown")
+	}
 
 	// Stop rate limiter background goroutines (cleanupLoop, persistLoop)
 	if s.rateLimiter != nil {
