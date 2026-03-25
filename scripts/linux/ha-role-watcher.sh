@@ -549,7 +549,7 @@ attempt_etcd_quorum_recovery() {
     # Step 4: Wait for stratum API to come back
     local stratum_ready=0
     for i in $(seq 1 30); do
-        if curl -s --max-time 2 "http://localhost:${HA_STATUS_PORT}/status" 2>/dev/null | grep -q "enabled"; then
+        if curl -s --max-time 2 "http://localhost:${HA_STATUS_PORT}/status" 2>/dev/null | jq -e '.enabled == true' >/dev/null 2>&1; then
             stratum_ready=1
             break
         fi

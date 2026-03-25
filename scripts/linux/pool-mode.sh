@@ -2253,7 +2253,7 @@ check_node_installed() {
             [ -x "/usr/local/bin/fractald" ] || systemctl is-enabled fractald &>/dev/null 2>&1
             ;;
         QBX)
-            [ -x "/usr/local/bin/qbitxd" ] || systemctl is-enabled qbitxd &>/dev/null 2>&1
+            [ -x "/usr/local/bin/qbitx" ] || systemctl is-enabled qbitxd &>/dev/null 2>&1
             ;;
         DGB-SCRYPT)
             # DGB-SCRYPT uses the same node as DGB (DigiByte Core)
@@ -2387,14 +2387,14 @@ get_wallet_address() {
                 2)
                     echo -e "${CYAN}Attempting to auto-generate BC2 address...${NC}" >&2
                     # Check if wallet exists, create if not
-                    if ! bitcoinii-cli -conf=/spiralpool/bc2/bitcoinii.conf listwallets 2>/dev/null | grep -q "pool"; then
+                    if ! bitcoinii-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf listwallets 2>/dev/null | grep -q "pool"; then
                         echo "Creating BC2 pool wallet..." >&2
-                        bitcoinii-cli -conf=/spiralpool/bc2/bitcoinii.conf createwallet "pool" 2>/dev/null || true
+                        bitcoinii-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf createwallet "pool" 2>/dev/null || true
                         # Ensure wallet is loaded after creation
-                        bitcoinii-cli -conf=/spiralpool/bc2/bitcoinii.conf loadwallet "pool" 2>/dev/null || true
+                        bitcoinii-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf loadwallet "pool" 2>/dev/null || true
                     fi
                     # BC2 uses older Bitcoin codebase - no address_type parameter supported
-                    address=$(bitcoinii-cli -conf=/spiralpool/bc2/bitcoinii.conf -rpcwallet=pool getnewaddress "pool" 2>/dev/null)
+                    address=$(bitcoinii-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -rpcwallet=pool getnewaddress "pool" 2>/dev/null)
                     if [ -z "$address" ]; then
                         echo -e "${RED}Error: Failed to generate BC2 address. Check node status.${NC}" >&2
                         return 1
@@ -3488,6 +3488,133 @@ install_node_if_needed() {
                 echo -e "${GREEN}✓ DGB-SCRYPT uses existing DigiByte node${NC}"
             fi
             ;;
+
+        PEP)
+            echo "Downloading PepeCoin Core..."
+            cd /tmp
+            PEP_VERSION="1.1.0"
+            PEP_FILENAME="pepecoin-${PEP_VERSION}-${ARCH_SUFFIX}.tar.gz"
+
+            if [ ! -f "$PEP_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/pepecoinppc/pepecoin/releases/download/v${PEP_VERSION}/${PEP_FILENAME}"
+            fi
+
+            tar -xzf "$PEP_FILENAME"
+            cp "pepecoin-${PEP_VERSION}/bin/pepecoind" /usr/local/bin/
+            cp "pepecoin-${PEP_VERSION}/bin/pepecoin-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ PepeCoin Core ${PEP_VERSION} installed${NC}"
+            ;;
+
+        CAT)
+            echo "Downloading Catcoin Core..."
+            cd /tmp
+            CAT_VERSION="2.1.1"
+            local CAT_FILENAME="Catcoin-Linux.zip"
+            local CAT_DIRNAME="Catcoin-Linux"
+            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
+                CAT_FILENAME="Catcoin-AArch.zip"
+                CAT_DIRNAME="Catcoin-AArch"
+            fi
+
+            if [ ! -f "$CAT_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/CatcoinCore/catcoincore/releases/download/v${CAT_VERSION}/${CAT_FILENAME}"
+            fi
+
+            unzip -o "$CAT_FILENAME"
+            cp "${CAT_DIRNAME}/catcoind" /usr/local/bin/
+            cp "${CAT_DIRNAME}/catcoin-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ Catcoin Core ${CAT_VERSION} installed${NC}"
+            ;;
+
+        NMC)
+            echo "Downloading Namecoin Core..."
+            cd /tmp
+            NMC_VERSION="28.0"
+            NMC_FILENAME="namecoin-${NMC_VERSION}-${ARCH_SUFFIX}.tar.gz"
+
+            if [ ! -f "$NMC_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://www.namecoin.org/files/namecoin-core/namecoin-core-${NMC_VERSION}/${NMC_FILENAME}"
+            fi
+
+            tar -xzf "$NMC_FILENAME"
+            cp "namecoin-${NMC_VERSION}/bin/namecoind" /usr/local/bin/
+            cp "namecoin-${NMC_VERSION}/bin/namecoin-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ Namecoin Core ${NMC_VERSION} installed${NC}"
+            ;;
+
+        SYS)
+            echo "Downloading Syscoin Core..."
+            cd /tmp
+            SYS_VERSION="5.0.5"
+            SYS_FILENAME="syscoin-${SYS_VERSION}-${ARCH_SUFFIX}.tar.gz"
+
+            if [ ! -f "$SYS_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/syscoin/syscoin/releases/download/v${SYS_VERSION}/${SYS_FILENAME}"
+            fi
+
+            tar -xzf "$SYS_FILENAME"
+            cp "syscoin-${SYS_VERSION}/bin/syscoind" /usr/local/bin/
+            cp "syscoin-${SYS_VERSION}/bin/syscoin-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ Syscoin Core ${SYS_VERSION} installed${NC}"
+            ;;
+
+        XMY)
+            echo "Downloading Myriad Core..."
+            cd /tmp
+            XMY_VERSION="0.18.1.0"
+            XMY_FILENAME="myriadcoin-${XMY_VERSION}-${ARCH_SUFFIX}.tar.gz"
+
+            if [ ! -f "$XMY_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/myriadteam/myriadcoin/releases/download/v${XMY_VERSION}/${XMY_FILENAME}"
+            fi
+
+            tar -xzf "$XMY_FILENAME"
+            # Myriad tarball uses inconsistent directory naming — auto-detect
+            local XMY_EXTRACTED=$(ls -d myriadcoin-*/ 2>/dev/null | head -1 | tr -d '/')
+            cp "${XMY_EXTRACTED}/bin/myriadcoind" /usr/local/bin/
+            cp "${XMY_EXTRACTED}/bin/myriadcoin-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ Myriad Core ${XMY_VERSION} installed${NC}"
+            ;;
+
+        FBTC)
+            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
+                echo -e "${RED}Fractal Bitcoin does not provide ARM64 binaries — skipping${NC}"
+                return 1
+            fi
+            echo "Downloading Fractal Bitcoin..."
+            cd /tmp
+            FBTC_VERSION="0.3.0"
+            FBTC_FILENAME="fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz"
+
+            if [ ! -f "$FBTC_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${FBTC_VERSION}/${FBTC_FILENAME}"
+            fi
+
+            tar -xzf "$FBTC_FILENAME"
+            cp "fractald-${FBTC_VERSION}-x86_64-linux-gnu/bin/bitcoind" /usr/local/bin/fractald
+            cp "fractald-${FBTC_VERSION}-x86_64-linux-gnu/bin/bitcoin-cli" /usr/local/bin/fractal-cli
+            echo -e "${GREEN}✓ Fractal Bitcoin ${FBTC_VERSION} installed${NC}"
+            ;;
+
+        QBX)
+            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
+                echo -e "${RED}Q-BitX does not provide ARM64 binaries — skipping${NC}"
+                return 1
+            fi
+            echo "Downloading Q-BitX..."
+            cd /tmp
+            QBX_VERSION="0.2.0"
+            QBX_FILENAME="qbitx-linux-x86_64-v${QBX_VERSION}.zip"
+
+            if [ ! -f "$QBX_FILENAME" ]; then
+                wget -q --show-progress --max-redirect=5 "https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/${QBX_FILENAME}"
+            fi
+
+            unzip -o "$QBX_FILENAME"
+            cp "qbitx" /usr/local/bin/
+            cp "qbitx-cli" /usr/local/bin/
+            echo -e "${GREEN}✓ Q-BitX ${QBX_VERSION} installed${NC}"
+            ;;
     esac
 }
 
@@ -3537,8 +3664,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/digibyted -daemon -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf -pid=$SPIRALPOOL_DIR/dgb/digibyted.pid
-ExecStop=/usr/local/bin/digibyte-cli -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf stop
+ExecStart=/usr/local/bin/digibyted -daemon -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf -datadir=$SPIRALPOOL_DIR/dgb -pid=$SPIRALPOOL_DIR/dgb/digibyted.pid
+ExecStop=/usr/local/bin/digibyte-cli -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf -datadir=$SPIRALPOOL_DIR/dgb stop
 PIDFile=$SPIRALPOOL_DIR/dgb/digibyted.pid
 Restart=always
 RestartSec=30
@@ -3598,8 +3725,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/bitcoind -daemon -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf -pid=$SPIRALPOOL_DIR/btc/bitcoind.pid
-ExecStop=/usr/local/bin/bitcoin-cli -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf stop
+ExecStart=/usr/local/bin/bitcoind -daemon -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf -datadir=$SPIRALPOOL_DIR/btc -pid=$SPIRALPOOL_DIR/btc/bitcoind.pid
+ExecStop=/usr/local/bin/bitcoin-cli -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf -datadir=$SPIRALPOOL_DIR/btc stop
 PIDFile=$SPIRALPOOL_DIR/btc/bitcoind.pid
 Restart=always
 RestartSec=30
@@ -3658,8 +3785,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/bitcoind-bch -daemon -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf -pid=$SPIRALPOOL_DIR/bch/bitcoind.pid
-ExecStop=/usr/local/bin/bitcoin-cli-bch -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf stop
+ExecStart=/usr/local/bin/bitcoind-bch -daemon -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf -datadir=$SPIRALPOOL_DIR/bch -pid=$SPIRALPOOL_DIR/bch/bitcoind.pid
+ExecStop=/usr/local/bin/bitcoin-cli-bch -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf -datadir=$SPIRALPOOL_DIR/bch stop
 PIDFile=$SPIRALPOOL_DIR/bch/bitcoind.pid
 Restart=always
 RestartSec=30
@@ -3704,6 +3831,7 @@ zmqpubrawtx=tcp://127.0.0.1:28338
 dbcache=512
 par=0
 disablewallet=0
+pid=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 debuglogfile=$SPIRALPOOL_DIR/bc2/debug.log
 printtoconsole=0
 prune=0
@@ -3725,8 +3853,9 @@ Type=forking
 User=$POOL_USER
 Group=$POOL_USER
 # Bitcoin II uses capital "II" in binary names: bitcoinIId, bitcoinII-cli
-ExecStart=$SPIRALPOOL_DIR/bc2/bin/bitcoinIId -daemon -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -datadir=$SPIRALPOOL_DIR/bc2
+ExecStart=$SPIRALPOOL_DIR/bc2/bin/bitcoinIId -daemon -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -datadir=$SPIRALPOOL_DIR/bc2 -pid=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 ExecStop=$SPIRALPOOL_DIR/bc2/bin/bitcoinII-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -datadir=$SPIRALPOOL_DIR/bc2 stop
+PIDFile=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
@@ -3787,8 +3916,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/litecoind -daemon -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf -pid=$SPIRALPOOL_DIR/ltc/litecoind.pid
-ExecStop=/usr/local/bin/litecoin-cli -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf stop
+ExecStart=/usr/local/bin/litecoind -daemon -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf -datadir=$SPIRALPOOL_DIR/ltc -pid=$SPIRALPOOL_DIR/ltc/litecoind.pid
+ExecStop=/usr/local/bin/litecoin-cli -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf -datadir=$SPIRALPOOL_DIR/ltc stop
 PIDFile=$SPIRALPOOL_DIR/ltc/litecoind.pid
 Restart=always
 RestartSec=30
@@ -3851,8 +3980,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/dogecoind -daemon -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf -pid=$SPIRALPOOL_DIR/doge/dogecoind.pid
-ExecStop=/usr/local/bin/dogecoin-cli -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf stop
+ExecStart=/usr/local/bin/dogecoind -daemon -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf -datadir=$SPIRALPOOL_DIR/doge -pid=$SPIRALPOOL_DIR/doge/dogecoind.pid
+ExecStop=/usr/local/bin/dogecoin-cli -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf -datadir=$SPIRALPOOL_DIR/doge stop
 PIDFile=$SPIRALPOOL_DIR/doge/dogecoind.pid
 Restart=always
 RestartSec=30
@@ -3882,6 +4011,415 @@ EOF
             # Add firewall rule for DGB-SCRYPT stratum port
             ufw allow 3336/tcp comment "DGB-SCRYPT Stratum V1" 2>/dev/null || true
             ufw allow 3337/tcp comment "DGB-SCRYPT Stratum V2" 2>/dev/null || true
+            ;;
+
+        PEP)
+            mkdir -p "$SPIRALPOOL_DIR/pep"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/pep"
+
+            cat > "$SPIRALPOOL_DIR/pep/pepecoin.conf" << EOF
+# PEPECOIN CORE - SPIRAL POOL CONFIGURATION
+# Algorithm: Scrypt (merge-mineable with LTC)
+# ZMQ DISABLED - PepeCoin v1.1.0 compiled without ZMQ; crashes with SIGABRT if zmqpub* present
+listen=1
+port=33874
+maxconnections=125
+datadir=$SPIRALPOOL_DIR/pep
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=33873
+dbcache=4096
+par=0
+disablewallet=0
+debuglogfile=$SPIRALPOOL_DIR/pep/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/pep/pepecoin.conf"
+            chmod 600 "$SPIRALPOOL_DIR/pep/pepecoin.conf"
+
+            cat > /etc/systemd/system/pepecoind.service << EOF
+[Unit]
+Description=PepeCoin Core Daemon
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/pepecoind -daemon -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep
+ExecStop=/usr/local/bin/pepecoin-cli -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep stop
+PIDFile=$SPIRALPOOL_DIR/pep/pepecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 33874/tcp comment "PepeCoin P2P" 2>/dev/null || true
+            ufw allow 10335/tcp comment "PEP Stratum V1" 2>/dev/null || true
+            ufw allow 10336/tcp comment "PEP Stratum V2" 2>/dev/null || true
+            ;;
+
+        CAT)
+            mkdir -p "$SPIRALPOOL_DIR/cat"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/cat"
+
+            cat > "$SPIRALPOOL_DIR/cat/catcoin.conf" << EOF
+# CATCOIN CORE - SPIRAL POOL CONFIGURATION
+# Algorithm: Scrypt (standalone, no merge mining)
+listen=1
+port=9933
+maxconnections=125
+datadir=$SPIRALPOOL_DIR/cat
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=9932
+zmqpubhashblock=tcp://127.0.0.1:28932
+zmqpubrawtx=tcp://127.0.0.1:28932
+dbcache=4096
+par=0
+disablewallet=0
+debuglogfile=$SPIRALPOOL_DIR/cat/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/cat/catcoin.conf"
+            chmod 600 "$SPIRALPOOL_DIR/cat/catcoin.conf"
+
+            cat > /etc/systemd/system/catcoind.service << EOF
+[Unit]
+Description=Catcoin Core Daemon
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/catcoind -daemon -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat
+ExecStop=/usr/local/bin/catcoin-cli -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat stop
+PIDFile=$SPIRALPOOL_DIR/cat/catcoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 9933/tcp comment "Catcoin P2P" 2>/dev/null || true
+            ufw allow 12335/tcp comment "CAT Stratum V1" 2>/dev/null || true
+            ufw allow 12336/tcp comment "CAT Stratum V2" 2>/dev/null || true
+            ;;
+
+        NMC)
+            mkdir -p "$SPIRALPOOL_DIR/nmc"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/nmc"
+
+            cat > "$SPIRALPOOL_DIR/nmc/namecoin.conf" << EOF
+# NAMECOIN CORE - SPIRAL POOL CONFIGURATION
+# SHA-256d AuxPoW (merge-mineable with Bitcoin since 2011)
+listen=1
+port=8334
+maxconnections=125
+datadir=$SPIRALPOOL_DIR/nmc
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=8336
+zmqpubhashblock=tcp://127.0.0.1:28336
+zmqpubrawtx=tcp://127.0.0.1:28336
+dbcache=4096
+par=0
+disablewallet=0
+maxmempool=300
+debuglogfile=$SPIRALPOOL_DIR/nmc/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/nmc/namecoin.conf"
+            chmod 600 "$SPIRALPOOL_DIR/nmc/namecoin.conf"
+
+            cat > /etc/systemd/system/namecoind.service << EOF
+[Unit]
+Description=Namecoin Core Daemon (AuxPoW merge-mined with Bitcoin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/namecoind -daemon -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc
+ExecStop=/usr/local/bin/namecoin-cli -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc stop
+PIDFile=$SPIRALPOOL_DIR/nmc/namecoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 8334/tcp comment "Namecoin P2P" 2>/dev/null || true
+            ufw allow 14335/tcp comment "NMC Stratum V1" 2>/dev/null || true
+            ufw allow 14336/tcp comment "NMC Stratum V2" 2>/dev/null || true
+            ;;
+
+        SYS)
+            mkdir -p "$SPIRALPOOL_DIR/sys"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/sys"
+
+            cat > "$SPIRALPOOL_DIR/sys/syscoin.conf" << EOF
+# SYSCOIN CORE - SPIRAL POOL CONFIGURATION
+# SHA-256d AuxPoW (merge-mineable with Bitcoin)
+listen=1
+port=8369
+maxconnections=200
+maxoutconnections=40
+datadir=$SPIRALPOOL_DIR/sys
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=8370
+zmqpubhashblock=tcp://127.0.0.1:28370
+zmqpubrawtx=tcp://127.0.0.1:28370
+dbcache=4096
+par=0
+disablewallet=0
+maxmempool=300
+debuglogfile=$SPIRALPOOL_DIR/sys/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/sys/syscoin.conf"
+            chmod 600 "$SPIRALPOOL_DIR/sys/syscoin.conf"
+
+            cat > /etc/systemd/system/syscoind.service << EOF
+[Unit]
+Description=Syscoin Core Daemon (AuxPoW merge-mined with Bitcoin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/syscoind -daemon -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys
+ExecStop=/usr/local/bin/syscoin-cli -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys stop
+PIDFile=$SPIRALPOOL_DIR/sys/syscoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 8369/tcp comment "Syscoin P2P" 2>/dev/null || true
+            ufw allow 15335/tcp comment "SYS Stratum V1" 2>/dev/null || true
+            ufw allow 15336/tcp comment "SYS Stratum V2" 2>/dev/null || true
+            ;;
+
+        XMY)
+            mkdir -p "$SPIRALPOOL_DIR/xmy"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xmy"
+
+            cat > "$SPIRALPOOL_DIR/xmy/myriadcoin.conf" << EOF
+# MYRIAD CORE - SPIRAL POOL CONFIGURATION
+# Multi-algo (SHA256d AuxPoW) - merge-mineable with Bitcoin
+listen=1
+port=10888
+maxconnections=150
+maxoutconnections=30
+datadir=$SPIRALPOOL_DIR/xmy
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=10889
+zmqpubhashblock=tcp://127.0.0.1:28889
+zmqpubrawtx=tcp://127.0.0.1:28889
+dbcache=4096
+par=0
+disablewallet=0
+maxmempool=300
+debuglogfile=$SPIRALPOOL_DIR/xmy/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
+            chmod 600 "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
+
+            cat > /etc/systemd/system/myriadcoind.service << EOF
+[Unit]
+Description=Myriad Core Daemon (AuxPoW merge-mined with Bitcoin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/myriadcoind -daemon -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy
+ExecStop=/usr/local/bin/myriadcoin-cli -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy stop
+PIDFile=$SPIRALPOOL_DIR/xmy/myriadcoind.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 10888/tcp comment "Myriad P2P" 2>/dev/null || true
+            ufw allow 17335/tcp comment "XMY Stratum V1" 2>/dev/null || true
+            ufw allow 17336/tcp comment "XMY Stratum V2" 2>/dev/null || true
+            ;;
+
+        FBTC)
+            mkdir -p "$SPIRALPOOL_DIR/fbtc"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/fbtc"
+
+            cat > "$SPIRALPOOL_DIR/fbtc/fractal.conf" << EOF
+# FRACTAL BITCOIN - SPIRAL POOL CONFIGURATION
+# SHA-256d AuxPoW (merge-mineable with Bitcoin)
+listen=1
+port=8341
+maxconnections=200
+maxoutconnections=40
+datadir=$SPIRALPOOL_DIR/fbtc
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=8340
+zmqpubhashblock=tcp://127.0.0.1:28340
+zmqpubrawtx=tcp://127.0.0.1:28340
+dbcache=4096
+par=0
+disablewallet=0
+maxmempool=300
+debuglogfile=$SPIRALPOOL_DIR/fbtc/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/fbtc/fractal.conf"
+            chmod 600 "$SPIRALPOOL_DIR/fbtc/fractal.conf"
+
+            cat > /etc/systemd/system/fractald.service << EOF
+[Unit]
+Description=Fractal Bitcoin Daemon (AuxPoW merge-mined with Bitcoin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/fractald -daemon -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc
+ExecStop=/usr/local/bin/fractal-cli -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc stop
+PIDFile=$SPIRALPOOL_DIR/fbtc/fractald.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 8341/tcp comment "Fractal Bitcoin P2P" 2>/dev/null || true
+            ufw allow 18335/tcp comment "FBTC Stratum V1" 2>/dev/null || true
+            ufw allow 18336/tcp comment "FBTC Stratum V2" 2>/dev/null || true
+            ;;
+
+        QBX)
+            mkdir -p "$SPIRALPOOL_DIR/qbx"
+            chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/qbx"
+
+            cat > "$SPIRALPOOL_DIR/qbx/qbitx.conf" << EOF
+# Q-BITX - SPIRAL POOL CONFIGURATION
+# SHA-256d Post-Quantum Bitcoin Fork (standalone, not merge-mineable)
+# P2P port remapped from default 8334 to 8345 to avoid NMC conflict
+listen=1
+port=8345
+maxconnections=100
+maxoutconnections=20
+datadir=$SPIRALPOOL_DIR/qbx
+server=1
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcport=8344
+zmqpubhashblock=tcp://127.0.0.1:28344
+zmqpubrawtx=tcp://127.0.0.1:28344
+dbcache=4096
+par=0
+disablewallet=0
+maxmempool=300
+debuglogfile=$SPIRALPOOL_DIR/qbx/debug.log
+printtoconsole=0
+prune=0
+EOF
+            chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/qbx/qbitx.conf"
+            chmod 600 "$SPIRALPOOL_DIR/qbx/qbitx.conf"
+
+            cat > /etc/systemd/system/qbitxd.service << EOF
+[Unit]
+Description=Q-BitX Daemon (Post-Quantum Bitcoin Fork, SHA-256d)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=forking
+User=$POOL_USER
+Group=$POOL_USER
+ExecStart=/usr/local/bin/qbitx -daemon -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx
+ExecStop=/usr/local/bin/qbitx-cli -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx stop
+PIDFile=$SPIRALPOOL_DIR/qbx/qbitxd.pid
+Restart=always
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ufw allow 8345/tcp comment "Q-BitX P2P" 2>/dev/null || true
+            ufw allow 20335/tcp comment "QBX Stratum V1" 2>/dev/null || true
+            ufw allow 20336/tcp comment "QBX Stratum V2" 2>/dev/null || true
             ;;
     esac
 
@@ -4354,7 +4892,7 @@ generate_config() {
 
     # Start config file
     cat > "$CONFIG_FILE" << EOF
-# Spiral Pool v1.2.1 Configuration
+# Spiral Pool v1.2.2 Configuration
 # Generated by pool-mode.sh on $(date)
 # Mode: $([ ${#coins[@]} -eq 1 ] && echo "Solo" || echo "Multi-Coin")
 # Coins: ${coins[*]}

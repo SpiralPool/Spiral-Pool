@@ -410,9 +410,10 @@ setup_coin() {
             LEGACY_WALLET=1     # PepeCoin lacks createwallet/loadwallet RPC
             MINE_BEFORE_PEER=1; PREMINE_CMD="generate 1"  # PEP needs block before peer (IBD lock)
             DAEMON_CMD="${PEPECOIND:-pepecoind}"; CLI_CMD="${PEPECOINCLI:-pepecoin-cli}"
-            RPC_PORT_DEF=18570; P2P_PORT_DEF=18571; ZMQ_PORT_DEF=29362
-            STRATUM_PORT_DEF=16357; STRATUM_V2_PORT_DEF=17346; API_PORT_DEF=14026; METRICS_PORT_DEF=19124
-            HA_STRATUM=16358; HA_API=14027; HA_METRICS=19125
+            # Ports remapped: was 18570/18571/29362/14026 which collided with QBX
+            RPC_PORT_DEF=18572; P2P_PORT_DEF=18573; ZMQ_PORT_DEF=29364
+            STRATUM_PORT_DEF=16357; STRATUM_V2_PORT_DEF=17346; API_PORT_DEF=14028; METRICS_PORT_DEF=19124
+            HA_STRATUM=16358; HA_API=14029; HA_METRICS=19125
             DB_NAME_DEF=spiralstratum_pep_regtest; WALLET_NAME=regtest-pool-pep
             POOL_ID=pep_regtest; DATA_DIR=.pepecoin
             DAEMON_LOG=pepecoind-regtest.log; DAEMON_STARTUP=pepecoind-startup.log
@@ -1302,13 +1303,20 @@ DAEMON_ARGS=(
     -listen=0
     -connect=0
     -dnsseed=0
-    -zmqpubhashblock="tcp://127.0.0.1:$ZMQ_PORT"
-    -zmqpubrawblock="tcp://127.0.0.1:$ZMQ_PORT"
     -txindex=1
     -fallbackfee=0.0001
     -printtoconsole=0
     -debuglogfile="$LOG_DIR/$DAEMON_LOG"
 )
+
+# ZMQ block notifications: PepeCoin v1.1.0 is compiled WITHOUT ZMQ support and
+# crashes with SIGABRT if zmqpub* arguments are present. Skip for PEP.
+if [[ "$COIN" != "pep" ]]; then
+    DAEMON_ARGS+=(
+        -zmqpubhashblock="tcp://127.0.0.1:$ZMQ_PORT"
+        -zmqpubrawblock="tcp://127.0.0.1:$ZMQ_PORT"
+    )
+fi
 
 # Fractal Bitcoin: binary is bitcoind (defaults to ~/.bitcoin), must override datadir
 # Without this, FBTC would collide with BTC's data directory

@@ -317,9 +317,59 @@ setup_environment() {
             POOL_ID="pool_cat_scrypt"
             POOL_ADDRESS="9test00000000000000000000000000000"
             ;;
+        nmc)
+            POOL_COIN_NAME="namecoin"
+            DAEMON_HOST="namecoin"
+            DAEMON_RPC_PORT=8336
+            DAEMON_ZMQ_PORT=28336
+            STRATUM_PORT=14335
+            STRATUM_PORT_V2=14336
+            POOL_ID="pool_nmc_sha256"
+            POOL_ADDRESS="NCtestaddr000000000000000000000000"
+            ;;
+        sys)
+            POOL_COIN_NAME="syscoin"
+            DAEMON_HOST="syscoin"
+            DAEMON_RPC_PORT=8370
+            DAEMON_ZMQ_PORT=28370
+            STRATUM_PORT=15335
+            STRATUM_PORT_V2=15336
+            POOL_ID="pool_sys_sha256"
+            POOL_ADDRESS="sys1qtest0000000000000000000000000000000"
+            ;;
+        xmy)
+            POOL_COIN_NAME="myriadcoin"
+            DAEMON_HOST="myriadcoin"
+            DAEMON_RPC_PORT=10889
+            DAEMON_ZMQ_PORT=28889
+            STRATUM_PORT=17335
+            STRATUM_PORT_V2=17336
+            POOL_ID="pool_xmy_sha256"
+            POOL_ADDRESS="Mtest000000000000000000000000000000"
+            ;;
+        fbtc)
+            POOL_COIN_NAME="fractalbitcoin"
+            DAEMON_HOST="fractalbitcoin"
+            DAEMON_RPC_PORT=8340
+            DAEMON_ZMQ_PORT=28340
+            STRATUM_PORT=18335
+            STRATUM_PORT_V2=18336
+            POOL_ID="pool_fbtc_sha256"
+            POOL_ADDRESS="bc1qtest000000000000000000000000000000"
+            ;;
+        qbx)
+            POOL_COIN_NAME="qbitx"
+            DAEMON_HOST="qbitx"
+            DAEMON_RPC_PORT=8344
+            DAEMON_ZMQ_PORT=28344
+            STRATUM_PORT=20335
+            STRATUM_PORT_V2=20336
+            POOL_ID="pool_qbx_sha256"
+            POOL_ADDRESS="1testaddr00000000000000000000000000"
+            ;;
         *)
             log_error "Unknown coin: $COIN"
-            log_info "Supported: btc, dgb, ltc, doge, bch, bc2, pep, cat"
+            log_info "Supported: btc, dgb, ltc, doge, bch, bc2, pep, cat, nmc, sys, xmy, fbtc, qbx"
             exit 1
             ;;
     esac

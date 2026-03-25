@@ -207,7 +207,7 @@ get_rpc_creds() {
         _multi=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
         if [[ "$_multi" == "true" ]]; then
             local _cmp
-            _cmp=$(grep -oP '^CHAIN_MOUNT_POINT=\K\S+$' "$_env" 2>/dev/null || echo "")
+            _cmp=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
             [[ -n "$_cmp" && -d "$_cmp" ]] && base_dir="$_cmp"
         fi
     fi

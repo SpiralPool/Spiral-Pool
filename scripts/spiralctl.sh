@@ -35,9 +35,23 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-1.2.1}"
+VERSION="${VERSION:-1.2.2}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
+
+# Multi-disk support: resolve coin data directory (respects CHAIN_MOUNT_POINT from coins.env)
+_CHAIN_MOUNT_POINT=""
+if [[ -f "$INSTALL_DIR/config/coins.env" ]]; then
+    _CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "")
+fi
+_chain_dir() {
+    local coin_lower="$1"
+    if [[ -n "$_CHAIN_MOUNT_POINT" && -d "${_CHAIN_MOUNT_POINT}/${coin_lower}" ]]; then
+        echo "${_CHAIN_MOUNT_POINT}/${coin_lower}"
+    else
+        echo "${INSTALL_DIR}/${coin_lower}"
+    fi
+}
 
 # Colors
 RED='\033[0;31m'
@@ -190,19 +204,19 @@ get_coin_daemon() {
 
 get_coin_cli() {
     case "${1^^}" in
-        DGB|DGB-SCRYPT) echo "digibyte-cli -conf=$INSTALL_DIR/dgb/digibyte.conf" ;;
-        BTC) echo "bitcoin-cli -conf=$INSTALL_DIR/btc/bitcoin.conf" ;;
-        BCH) echo "bitcoin-cli-bch -conf=$INSTALL_DIR/bch/bitcoin.conf" ;;
-        BC2) echo "bitcoinii-cli -conf=$INSTALL_DIR/bc2/bitcoinii.conf" ;;
-        FBTC) echo "fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf" ;;
-        LTC) echo "litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf" ;;
-        QBX) echo "qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf" ;;
-        DOGE) echo "dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf" ;;
-        NMC) echo "namecoin-cli -conf=$INSTALL_DIR/nmc/namecoin.conf" ;;
-        PEP|PEPECOIN|MEME) echo "pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf" ;;
-        CAT|CATCOIN) echo "catcoin-cli -conf=$INSTALL_DIR/cat/catcoin.conf" ;;
-        SYS) echo "syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf" ;;
-        XMY) echo "myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf" ;;
+        DGB|DGB-SCRYPT) echo "digibyte-cli -conf=$(_chain_dir dgb)/digibyte.conf" ;;
+        BTC) echo "bitcoin-cli -conf=$(_chain_dir btc)/bitcoin.conf" ;;
+        BCH) echo "bitcoin-cli-bch -conf=$(_chain_dir bch)/bitcoin.conf" ;;
+        BC2) echo "bitcoinii-cli -conf=$(_chain_dir bc2)/bitcoinii.conf" ;;
+        FBTC) echo "fractal-cli -conf=$(_chain_dir fbtc)/fractal.conf" ;;
+        LTC) echo "litecoin-cli -conf=$(_chain_dir ltc)/litecoin.conf" ;;
+        QBX) echo "qbitx-cli -conf=$(_chain_dir qbx)/qbitx.conf" ;;
+        DOGE) echo "dogecoin-cli -conf=$(_chain_dir doge)/dogecoin.conf" ;;
+        NMC) echo "namecoin-cli -conf=$(_chain_dir nmc)/namecoin.conf" ;;
+        PEP|PEPECOIN|MEME) echo "pepecoin-cli -conf=$(_chain_dir pep)/pepecoin.conf" ;;
+        CAT|CATCOIN) echo "catcoin-cli -conf=$(_chain_dir cat)/catcoin.conf" ;;
+        SYS) echo "syscoin-cli -conf=$(_chain_dir sys)/syscoin.conf" ;;
+        XMY) echo "myriadcoin-cli -conf=$(_chain_dir xmy)/myriadcoin.conf" ;;
         *) echo "" ;;
     esac
 }
@@ -566,7 +580,7 @@ cmd_tor() {
             echo -e "─────────────────────────────────────────────────────────────────────────"
             if systemctl is-active --quiet tor 2>/dev/null; then
                 echo -e "  Tor Service             ${GREEN}● Running${NC}"
-                if grep -q "^proxy=" "$INSTALL_DIR/dgb/digibyte.conf" 2>/dev/null; then
+                if grep -q "^proxy=" "$(_chain_dir dgb)/digibyte.conf" 2>/dev/null; then
                     echo -e "  DigiByte via Tor        ${GREEN}● Enabled${NC}"
                 else
                     echo -e "  DigiByte via Tor        ${DIM}○ Disabled${NC}"
@@ -6126,7 +6140,7 @@ cmd_coin_upgrade() {
     local script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
     if [[ ! -x "$script" ]]; then
         log_error "coin-upgrade.sh not found at ${script}"
-        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.2.1+."
+        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.2.2+."
         exit 1
     fi
     # Pass all arguments through — supports --check, --coin <TICKER>, --reindex, --list
@@ -7155,7 +7169,7 @@ check_interval = cfg.get("check_interval", 120)
 if not isinstance(check_interval, (int, float)) or check_interval < 10:
     issues.append(f"check_interval={check_interval} is unusually low (< 10s)")
 
-# v1.2.1 new alert config range checks
+# v1.2.2 new alert config range checks
 disk_warn = cfg.get("disk_warn_pct", 85)
 disk_crit = cfg.get("disk_critical_pct", 95)
 if disk_warn >= disk_crit:
