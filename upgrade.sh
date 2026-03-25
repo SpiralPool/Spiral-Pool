@@ -1499,6 +1499,13 @@ start_services() {
         done
 
         if [[ "$should_start" == "true" ]] && [[ -f "/etc/systemd/system/${service}.service" ]]; then
+            # Clean stale gunicorn socket before starting dashboard
+            if [[ "$service" == "$DASHBOARD_SERVICE" ]]; then
+                local dash_dir
+                dash_dir=$(grep -oP 'WorkingDirectory=\K[^\s]+' "/etc/systemd/system/${service}.service" 2>/dev/null || echo "")
+                [[ -n "$dash_dir" ]] && rm -f "$dash_dir/gunicorn.ctl" 2>/dev/null || true
+                find "${dash_dir:-/dev/null}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            fi
             systemctl start --no-block "$service" 2>/dev/null || true
             sleep 1
             log_info "  - ${service} starting"
@@ -2389,11 +2396,19 @@ update_dashboard() {
     dash_port=$(grep -oP '0\.0\.0\.0:\K[0-9]+' /etc/systemd/system/spiraldash.service 2>/dev/null | head -1)
     [[ -z "$dash_port" ]] && dash_port="$DASHBOARD_PORT"
     fuser -k "${dash_port}/tcp" 2>/dev/null || true
+    # Clean stale gunicorn control socket left by killed processes
+    rm -f "$DASHBOARD_INSTALL/gunicorn.ctl" 2>/dev/null || true
     sleep 1
 
     # Update dashboard files
     log_info "[2/3] Updating dashboard files..."
     mkdir -p "$DASHBOARD_INSTALL"
+
+    # Clear stale bytecode cache — old .pyc files from the previous version can
+    # cause import hangs or crashes when the new .py files have changed signatures
+    find "$DASHBOARD_INSTALL" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    # Clean stale gunicorn control socket (left by pkill -9 during stop)
+    rm -f "$DASHBOARD_INSTALL/gunicorn.ctl" 2>/dev/null || true
 
     # Copy Python files
     cp "$DASHBOARD_SOURCE"/*.py "$DASHBOARD_INSTALL/" 2>/dev/null || true
@@ -2506,8 +2521,15 @@ SUDOERS_EOF
 
     # Start dashboard service if it was running before (unless skip-start)
     if [[ "$SKIP_START" == "false" ]] && [[ "$dashboard_was_running" == "true" ]]; then
-        systemctl start --no-block "$DASHBOARD_SERVICE" || log_warn "Failed to start $DASHBOARD_SERVICE"
-        log_info "  - Dashboard service starting"
+        systemctl start "$DASHBOARD_SERVICE" || log_warn "Failed to start $DASHBOARD_SERVICE"
+        # Verify the worker actually booted (gunicorn master can start but worker hang)
+        sleep 3
+        if curl -sf -o /dev/null --max-time 5 "http://127.0.0.1:${dash_port}/" 2>/dev/null; then
+            log_info "  - Dashboard service running"
+        else
+            log_warn "  - Dashboard not responding — restarting..."
+            systemctl restart "$DASHBOARD_SERVICE" || true
+        fi
     fi
     echo
 }
@@ -3569,25 +3591,68 @@ show_summary() {
     echo
     echo -e "${CYAN}Service Status:${NC}"
 
-    # Brief wait so services have time to transition from deactivating/inactive
-    sleep 5
+    # Wait up to 120s for services to come up (stratum excluded — it depends on
+    # blockchain node readiness via wait-for-node.sh and can take much longer)
+    local wait_services=("$DASHBOARD_SERVICE" "$SENTINEL_SERVICE")
+    local max_wait=120
+    local waited=0
+    local all_ready=false
 
+    echo -e "  ${DIM}Waiting for services to start (up to ${max_wait}s)...${NC}"
+
+    while [[ $waited -lt $max_wait ]]; do
+        all_ready=true
+        for svc in "${wait_services[@]}"; do
+            # Only wait for services that were running before upgrade
+            local was_running=false
+            for wr in "${SERVICES_WERE_RUNNING[@]}"; do
+                [[ "$wr" == "$svc" ]] && was_running=true && break
+            done
+            [[ "$was_running" != "true" ]] && continue
+            [[ ! -f "/etc/systemd/system/${svc}.service" ]] && continue
+
+            local st; st=$(systemctl is-active "$svc" 2>/dev/null) || true
+            if [[ "$st" != "active" ]]; then
+                all_ready=false
+                break
+            fi
+        done
+        [[ "$all_ready" == "true" ]] && break
+        sleep 5
+        waited=$((waited + 5))
+        # Progress update every 15s
+        if [[ $((waited % 15)) -eq 0 ]]; then
+            echo -e "  ${DIM}Still waiting... (${waited}s)${NC}"
+        fi
+    done
+
+    # Final status display
     local all_active=true
     for service in "$STRATUM_SERVICE" "$DASHBOARD_SERVICE" "$SENTINEL_SERVICE"; do
+        # Skip services that weren't running before upgrade
+        local was_running=false
+        for wr in "${SERVICES_WERE_RUNNING[@]}"; do
+            [[ "$wr" == "$service" ]] && was_running=true && break
+        done
+        if [[ "$was_running" != "true" ]]; then
+            printf "  %-24s ${DIM}%s${NC}\n" "$service" "not started (wasn't running)"
+            continue
+        fi
+
         local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
         [[ -z "$status" ]] && status="inactive"
         case "$status" in
-            active)     printf "  %-24s ${GREEN}%s${NC}\n" "$service" "Running" ;;
-            activating) printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting"; all_active=false ;;
-            *)          printf "  %-24s ${YELLOW}%s${NC}\n" "$service" "$status"; all_active=false ;;
+            active)       printf "  %-24s ${GREEN}%s${NC}\n" "$service" "Running" ;;
+            activating)   printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting"; all_active=false ;;
+            deactivating) printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Restarting"; all_active=false ;;
+            *)            printf "  %-24s ${YELLOW}%s${NC}\n" "$service" "$status"; all_active=false ;;
         esac
     done
 
     if [[ "$all_active" != "true" ]]; then
         echo
-        echo -e "  ${YELLOW}Note:${NC} Services may take up to 30 seconds to fully start."
-        echo -e "  If any show inactive/deactivating, wait a moment and check:"
-        echo -e "    systemctl is-active $STRATUM_SERVICE $DASHBOARD_SERVICE $SENTINEL_SERVICE"
+        echo -e "  ${YELLOW}Note:${NC} Stratum may still be starting (waiting for blockchain node)."
+        echo -e "  Monitor with: journalctl -fu $STRATUM_SERVICE"
     fi
 
     echo

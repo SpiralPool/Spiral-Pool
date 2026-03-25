@@ -7609,8 +7609,7 @@ docker_main() {
 
     # Select coin mode (reuses existing function, loop for 'b' back navigation)
     while true; do
-        select_coin_mode
-        [[ $? -eq 1 ]] && continue || break
+        if select_coin_mode; then break; fi
     done
 
     # Validate requirements
@@ -7799,9 +7798,10 @@ select_coin_mode() {
                 case "${merge_choice,,}" in
                     y|yes)
                         MERGE_MINING_REQUESTED="true"
-                        select_merge_mining_parent
-                        if [[ $? -eq 1 ]]; then continue; fi  # back from parent selection
-                        return 0
+                        if select_merge_mining_parent; then
+                            return 0
+                        fi
+                        continue  # back from parent selection
                         ;;
                     n|no)
                         MERGE_MINING_REQUESTED="false"
@@ -7849,17 +7849,19 @@ select_coin_mode() {
                 case $pool_type in
                     1)
                         COIN_MODE="single"
-                        select_solo_coin_no_merge
-                        if [[ $? -eq 1 ]]; then continue; fi  # back from coin selection
-                        echo ""
-                        return 0
+                        if select_solo_coin_no_merge; then
+                            echo ""
+                            return 0
+                        fi
+                        continue  # back from coin selection
                         ;;
                     2)
                         COIN_MODE="multi"
-                        select_multi_coins
-                        if [[ $? -eq 1 ]]; then continue; fi  # back from coin selection
-                        echo ""
-                        return 0
+                        if select_multi_coins; then
+                            echo ""
+                            return 0
+                        fi
+                        continue  # back from coin selection
                         ;;
                     b|B)
                         _coin_step=1
@@ -7984,8 +7986,9 @@ select_merge_mining_parent() {
                 echo -e "  ${GREEN}✓${NC} Bitcoin selected as merge mining parent"
                 echo ""
                 # Select which SHA-256d aux chains to enable
-                select_aux_chains "BTC" "sha256d"
-                if [[ $? -eq 1 ]]; then select_merge_mining_parent; return $?; fi
+                if ! select_aux_chains "BTC" "sha256d"; then
+                    if select_merge_mining_parent; then return 0; else return 1; fi
+                fi
                 break
                 ;;
             2)
@@ -8003,8 +8006,9 @@ select_merge_mining_parent() {
                 echo -e "  ${GREEN}✓${NC} Litecoin selected as merge mining parent"
                 echo ""
                 # Select which Scrypt aux chains to enable
-                select_aux_chains "LTC" "scrypt"
-                if [[ $? -eq 1 ]]; then select_merge_mining_parent; return $?; fi
+                if ! select_aux_chains "LTC" "scrypt"; then
+                    if select_merge_mining_parent; then return 0; else return 1; fi
+                fi
                 break
                 ;;
             3)
@@ -8022,8 +8026,9 @@ select_merge_mining_parent() {
                 echo -e "  ${GREEN}✓${NC} DigiByte selected as merge mining parent"
                 echo ""
                 # Select which SHA-256d aux chains to enable
-                select_aux_chains "DGB" "sha256d"
-                if [[ $? -eq 1 ]]; then select_merge_mining_parent; return $?; fi
+                if ! select_aux_chains "DGB" "sha256d"; then
+                    if select_merge_mining_parent; then return 0; else return 1; fi
+                fi
                 break
                 ;;
             4)
@@ -14761,8 +14766,12 @@ MINERDBEOF
     sudo ufw default deny incoming > /dev/null 2>&1
     sudo ufw default allow outgoing > /dev/null 2>&1
     # Single-coin mode: open generic stratum ports (empty in multi-coin mode)
-    [[ -n "$STRATUM_PORT" ]]    && sudo ufw allow $STRATUM_PORT/tcp > /dev/null 2>&1    # Stratum V1 (miners)
-    [[ -n "$STRATUM_V2_PORT" ]] && sudo ufw allow $STRATUM_V2_PORT/tcp > /dev/null 2>&1 # Stratum V2 (miners)
+    if [[ -n "$STRATUM_PORT" ]]; then
+        sudo ufw allow "$STRATUM_PORT/tcp" > /dev/null 2>&1    # Stratum V1 (miners)
+    fi
+    if [[ -n "$STRATUM_V2_PORT" ]]; then
+        sudo ufw allow "$STRATUM_V2_PORT/tcp" > /dev/null 2>&1 # Stratum V2 (miners)
+    fi
     sudo ufw limit $API_PORT/tcp > /dev/null 2>&1         # Pool API (rate-limited: max 6 new conn/30s per IP)
     # Dashboard — home: plain allow (LAN, minimal bot traffic); cloud: port stays CLOSED (use SSH tunnel)
     # The dashboard is HTTP only. Exposing it on the public internet is insecure regardless of rate limiting.
@@ -23058,7 +23067,8 @@ Type=simple
 User=$POOL_USER
 Group=$POOL_USER
 WorkingDirectory=$DASH_DIR
-ExecStart=$DASH_DIR/venv/bin/gunicorn --bind 0.0.0.0:$DASHBOARD_PORT --workers 1 --threads 4 --timeout 120 dashboard:app
+ExecStartPre=-/bin/rm -f $DASH_DIR/gunicorn.ctl
+ExecStart=$DASH_DIR/venv/bin/gunicorn --bind 0.0.0.0:$DASHBOARD_PORT --worker-class gthread --workers 1 --threads 4 --timeout 120 dashboard:app
 
 # === INSTALLATION PATHS ===
 # Tell dashboard where to find data files (miners.json, etc.)
@@ -23116,6 +23126,9 @@ EOF
 # Spiral Pool Dashboard - Service control permissions
 # Allows the dashboard and wallet generator to control pool services
 # These are the ONLY commands the pool user can run with sudo
+
+# Clear StartLimitBurst failures (reinstall / crash-loop recovery)
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed *
 
 # Pool service control (stratum + sentinel) - start, stop, restart, enable
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start spiralstratum
@@ -35239,7 +35252,7 @@ start_services() {
     for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
                      digibyted bitcoind bitcoind-bch bitcoiniid litecoind dogecoind \
                      pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
-        systemctl reset-failed "$svc_reset" 2>/dev/null || true
+        sudo systemctl reset-failed "$svc_reset" 2>/dev/null || true
     done
 
     # Start enabled blockchain daemons
@@ -36492,16 +36505,18 @@ main() {
             2)
                 if [[ "$CLI_MODE" != "interactive" ]]; then
                     apply_cli_coin_config; _step=3
-                else
-                    select_coin_mode
-                    if [[ $? -eq 1 ]]; then _step=1; continue; fi
+                elif select_coin_mode; then
                     _step=3
+                else
+                    _step=1; continue
                 fi
                 ;;
             3)
-                select_ha_mode
-                if [[ $? -eq 1 ]]; then _step=2; continue; fi
-                break
+                if select_ha_mode; then
+                    break
+                else
+                    _step=2; continue
+                fi
                 ;;
         esac
     done

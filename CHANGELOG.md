@@ -50,6 +50,22 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 - **regtest-ha-full.sh missing 5 coins** — script advertised support for 13 coins but only implemented 8 in the case statement. Added NMC, SYS, XMY, FBTC, and QBX with correct port configurations.
 - All version strings, documentation, themes, and config files bumped to 1.2.2
 
+**Installer — Firewall & Back Navigation**
+- **Silent exit at "Configuring firewall..."** — `[[ -n "$STRATUM_PORT" ]] && sudo ufw allow ...` returns exit 1 when the variable is empty, which under `set -e` kills the entire installer. Replaced with `if/then` guards for both `STRATUM_PORT` and `STRATUM_V2_PORT`.
+- **Back navigation ('b') kills installer** — `select_coin_mode`, `select_ha_mode`, `select_merge_mining_parent`, and `select_aux_chains` all use `return 1` to signal "go back". Under `set -e`, checking the return with `func; if [[ $? -eq 1 ]]` exits the script before the `$?` check runs. Rewrote all callers to use `if func; then` pattern.
+- **`systemctl reset-failed` polkit auth failure** — `start_services()` called `systemctl reset-failed` without `sudo`, triggering polkit authentication prompts in non-interactive mode. Added `sudo` and added `reset-failed *` to the sudoers NOPASSWD allowlist.
+
+**Installer — Dashboard Service**
+- **Stale gunicorn control socket prevents dashboard start** — added `ExecStartPre=-/bin/rm -f gunicorn.ctl` to the spiraldash systemd service file and explicit `--worker-class gthread` to the `ExecStart` line.
+
+**Upgrade — Dashboard Not Starting**
+- **Dashboard hangs after upgrade** — stale `__pycache__` bytecode from the previous Python version and leftover `gunicorn.ctl` sockets from killed processes caused the dashboard to hang or fail on restart. `update_dashboard()` now cleans both before copying new files. Changed dashboard start from `--no-block` to blocking with a health check and automatic restart on failure.
+- **Upgrade summary not waiting for services** — the summary screen now polls dashboard and sentinel for up to 120 seconds before reporting status, skipping stratum (which depends on blockchain node sync).
+
+**Stratum Server**
+- **Stratum hangs on shutdown (120s → SIGKILL)** — `connWg.Wait()` in `server.go:Stop()` had no timeout, hanging indefinitely when connection goroutines were stuck. Added a 10-second select timeout before proceeding with shutdown.
+- **ESP32 miners showing 0 shares on dashboard** — `Session.IncrementShareCount()` existed but was never called in production code. Added the call in both `pool.go` (V1) and `coinpool.go` (V2) when a share is accepted. The dashboard's ESP32 panel reads this counter via the connections API.
+
 ---
 
 ## [1.2.1] — 2026-03-24
