@@ -19,6 +19,7 @@ Versioning follows `MAJOR.MINOR.PATCH` — patch releases are applied in-place o
 
 ### Fixed
 
+- **LED celebration ignoring quiet hours** — the stratum Go code (`pool.go`, `coinpool.go`) launched `block-celebrate.sh` directly on block found, bypassing Sentinel's quiet hours check. The bash script now reads Sentinel's `quiet_hours_start`, `quiet_hours_end`, and `display_timezone` from config.json and enforces quiet hours at startup. Additionally, running celebrations now check periodically and stop early if quiet hours begin mid-celebration. `--force` flag added for manual override.
 - **MOTD not updating on upgrade** — `update_motd()` in upgrade.sh used `cat >` to write to `/etc/update-motd.d/`, which silently fails without root. Now uses `sudo tee` matching install.sh.
 - **Dashboard section ordering** — Lifetime Statistics section now renders below Statistics (charts) instead of above it
 - **Flaky stress test** — `TestRapidFireHeightUpdates` widened stale RPC tolerance from 0 to 1; on slow CI runners a goroutine can slip through the cancellation window

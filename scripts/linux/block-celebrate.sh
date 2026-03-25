@@ -61,6 +61,54 @@ GOLD='\033[1;33m'
 NC='\033[0m'
 
 #===============================================================================
+# QUIET HOURS — suppress LED celebration during configured quiet window
+#===============================================================================
+# Reads quiet_hours_start, quiet_hours_end, and display_timezone from
+# Sentinel config.json. Defaults: 22:00-06:00, America/New_York.
+# Called at startup (skip entirely) and periodically during celebration
+# (stop early if quiet hours begin mid-celebration).
+
+SENTINEL_CONFIG_PATHS=(
+    "/spiralpool/config/sentinel/config.json"
+    "${HOME}/.spiralsentinel/config.json"
+)
+
+_read_sentinel_config_val() {
+    local key="$1" default="$2"
+    for cfg in "${SENTINEL_CONFIG_PATHS[@]}"; do
+        if [[ -f "$cfg" ]]; then
+            # Simple JSON extraction — no jq dependency
+            local val
+            val=$(grep -o "\"${key}\"[[:space:]]*:[[:space:]]*[^,}]*" "$cfg" 2>/dev/null \
+                  | head -1 | sed 's/.*:[[:space:]]*//' | tr -d '"' | tr -d ' ')
+            if [[ -n "$val" ]]; then
+                echo "$val"
+                return
+            fi
+        fi
+    done
+    echo "$default"
+}
+
+is_quiet_hours() {
+    local qs qe tz_name hour_now
+    qs=$(_read_sentinel_config_val "quiet_hours_start" "22")
+    qe=$(_read_sentinel_config_val "quiet_hours_end" "6")
+    tz_name=$(_read_sentinel_config_val "display_timezone" "America/New_York")
+
+    # Get current hour in the configured timezone
+    hour_now=$(TZ="$tz_name" date '+%-H' 2>/dev/null || date '+%-H')
+
+    if (( qs < qe )); then
+        # Simple range (e.g., 8-18)
+        (( hour_now >= qs && hour_now < qe ))
+    else
+        # Overnight range (e.g., 22-6)
+        (( hour_now >= qs || hour_now < qe ))
+    fi
+}
+
+#===============================================================================
 # LOGGING
 #===============================================================================
 log() {
@@ -304,6 +352,11 @@ celebrate_miner() {
     local phase=0
 
     while (( $(date +%s) < end_time )); do
+        # Stop early if quiet hours have started (check every cycle)
+        if is_quiet_hours 2>/dev/null; then
+            log "Quiet hours started — stopping celebration on $ip"
+            break
+        fi
         case $((phase % 24)) in
             0)
                 # OPENING BURST: Rapid gold-white strobe
@@ -517,6 +570,7 @@ Options:
   --miners "IP ..."   Space-separated list of miner IPs (auto-discovers if not set)
   --scan              Force rescan for miners (ignore cache)
   --list              List discovered miners and exit
+  --force             Bypass quiet hours check
   -h, --help          Show this help message
 
 Examples:
@@ -543,6 +597,7 @@ main() {
     local duration="$CELEBRATION_DURATION"
     local miners_arg=""
     local force_scan=false
+    local force_celebrate=false
     local list_only=false
     local test_mode=false
 
@@ -571,6 +626,10 @@ main() {
                 force_scan=true
                 shift
                 ;;
+            --force)
+                force_celebrate=true
+                shift
+                ;;
             --list)
                 list_only=true
                 shift
@@ -586,6 +645,15 @@ main() {
                 ;;
         esac
     done
+
+    # Quiet hours check — skip celebration if quiet hours are active
+    # (unless --force or --test was passed)
+    if [[ "$force_celebrate" != "true" ]] && [[ "$test_mode" != "true" ]]; then
+        if is_quiet_hours; then
+            log "Quiet hours active — LED celebration suppressed (use --force to override)"
+            exit 0
+        fi
+    fi
 
     # Get miners
     local miners=()
