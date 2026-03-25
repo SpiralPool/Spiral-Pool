@@ -82,6 +82,7 @@ wsl --install -d Ubuntu
 
 **WSL2 limitations:**
 
+- Windows can kill WSL2 mid-operation (shutdown, sleep, updates), corrupting chain data — install the [graceful shutdown hook](#graceful-shutdown-hook)
 - Blockchain sync takes 2-4x longer than native Linux (I/O overhead)
 - Bridge networking only (no host mode)
 - Not recommended for production mining
@@ -748,7 +749,7 @@ Database HA provides automatic PostgreSQL failover only. VIP failover (Keepalive
 
 ## WSL2 Native Path *(Experimental — not recommended for production)*
 
-> **WSL2 support is experimental.** Windows can terminate WSL2 without warning (updates, sleep, hibernate, memory pressure), systemd reliability is reduced, I/O is 2–4× slower due to the virtual disk, clocks drift after sleep, and HA is non-functional. Use this path for evaluation and development only. For 24/7 production mining, use native Ubuntu on dedicated hardware.
+> **WSL2 support is experimental.** Windows can terminate WSL2 without warning (updates, sleep, hibernate, memory pressure), which corrupts LevelDB chain data and forces a full resync. Systemd reliability is reduced, I/O is 2–4× slower due to the virtual disk, clocks drift after sleep, and HA is non-functional. Install the [graceful shutdown hook](#graceful-shutdown-hook) to mitigate chain corruption. Use this path for evaluation and development only. For 24/7 production mining, use native Ubuntu on dedicated hardware.
 
 An alternative to Docker Desktop is running `install.sh` directly inside WSL2 Ubuntu. This gives broader feature support than Docker — multi-coin, Stratum V2, and merge mining work. Note that keepalived/VIP HA and multi-node clustering require native Linux and will not function correctly inside WSL2.
 
@@ -793,6 +794,38 @@ What it does:
 Point your ASIC at your Windows LAN IP with the standard stratum port (e.g. `192.168.1.161:20335` for QBX). The proxy handles the rest.
 
 > **Note:** The proxy must be running whenever miners need to connect. Portproxy rules are ephemeral — a reboot or `wsl --shutdown` wipes them. Firewall rules and the Task Scheduler entry persist. The auto-start task re-applies portproxy rules at next logon.
+
+### Graceful Shutdown Hook
+
+Windows can kill the WSL2 VM during shutdown, restart, or sleep without giving coin daemons time to flush their LevelDB databases. This corrupts `blocks/` and `chainstate/` directories and forces a full blockchain resync — hours to days depending on the coin.
+
+The shutdown hook installs a Windows Task Scheduler entry that gracefully stops all Spiral Pool services and coin daemons **before** Windows shuts down or sleeps:
+
+```powershell
+# Run from an Administrator PowerShell
+.\scripts\windows\wsl2-shutdown-hook.ps1
+```
+
+The hook triggers on:
+- **Windows shutdown / restart** (Event ID 1074)
+- **Windows sleep / hibernate** (Event ID 42)
+
+Stop order:
+1. `spiralsentinel`, `spiraldash`, `spiralpool-health`, `spiralpool-ha-watcher`
+2. `spiralstratum` (flushes pending shares to PostgreSQL)
+3. All coin daemons (clean LevelDB shutdown)
+4. `sync` (flush filesystem buffers)
+
+Logs are written to `%APPDATA%\SpiralPool\shutdown-hook.log`.
+
+To remove: `.\scripts\windows\wsl2-shutdown-hook.ps1 -Uninstall`
+
+> **If chain data is already corrupted** (daemon fails with "Initialization sanity check failed" or "block storage can't be opened"), clear and resync:
+> ```bash
+> sudo systemctl stop bitcoind-bch   # replace with your coin's service name
+> sudo rm -rf /spiralpool/bch/blocks /spiralpool/bch/chainstate
+> sudo systemctl start bitcoind-bch
+> ```
 
 ---
 

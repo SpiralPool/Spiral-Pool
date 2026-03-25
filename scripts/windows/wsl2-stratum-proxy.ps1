@@ -73,7 +73,10 @@ Write-Host "    up a Task Scheduler entry to handle this automatically." -Foregr
 Write-Host ""
 Write-Host "  Windows can terminate WSL2 without warning" -ForegroundColor White
 Write-Host "    Windows Updates, sleep, hibernate, and memory pressure can all kill" -ForegroundColor Gray
-Write-Host "    the WSL2 instance mid-operation. On native Linux this cannot happen." -ForegroundColor Gray
+Write-Host "    the WSL2 instance mid-operation, corrupting LevelDB chain data and" -ForegroundColor Gray
+Write-Host "    requiring a full resync. Run wsl2-shutdown-hook.ps1 to install a" -ForegroundColor Gray
+Write-Host "    Task Scheduler hook that gracefully stops all services before" -ForegroundColor Gray
+Write-Host "    Windows shuts down, restarts, or sleeps." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  I/O performance" -ForegroundColor White
 Write-Host "    Blockchain sync is 2-4x slower due to the virtual disk (.vhdx)." -ForegroundColor Gray
@@ -609,6 +612,41 @@ foreach (`$port in `$ports) {
         Write-Host "  Portproxy rules are active for this session." -ForegroundColor Gray
         Write-Host "  Re-run this script after each reboot to restore port forwarding." -ForegroundColor Gray
     }
+}
+Write-Host ""
+
+# ─── Graceful shutdown hook ─────────────────────────────────────────────────
+Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+Write-Host "  GRACEFUL SHUTDOWN HOOK" -ForegroundColor White
+Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Windows can kill WSL2 without warning during shutdown, restart," -ForegroundColor White
+Write-Host "  or sleep. This corrupts LevelDB chain data (blocks/chainstate)" -ForegroundColor White
+Write-Host "  and forces a full resync — hours to days depending on the coin." -ForegroundColor White
+Write-Host ""
+Write-Host "  The shutdown hook installs a Task Scheduler entry that gracefully" -ForegroundColor White
+Write-Host "  stops all Spiral Pool services and coin daemons BEFORE Windows" -ForegroundColor White
+Write-Host "  shuts down or sleeps." -ForegroundColor White
+Write-Host ""
+
+$shutdownHookScript = Join-Path $PSScriptRoot "wsl2-shutdown-hook.ps1"
+$shutdownHookInstalled = $null -ne (Get-ScheduledTask -TaskName "SpiralPool-WSL2-GracefulShutdown" -ErrorAction SilentlyContinue)
+
+if ($shutdownHookInstalled) {
+    Write-Host "  Shutdown hook is already installed." -ForegroundColor Green
+} elseif (Test-Path $shutdownHookScript) {
+    $setupShutdownHook = Read-Host "  Install graceful shutdown hook? (RECOMMENDED) [Y/N]"
+    if ($setupShutdownHook -match '^[Yy]') {
+        Write-Host ""
+        & $shutdownHookScript
+    } else {
+        Write-Host ""
+        Write-Host "  Skipped. You can install it later with:" -ForegroundColor Gray
+        Write-Host "    .\scripts\windows\wsl2-shutdown-hook.ps1" -ForegroundColor Gray
+    }
+} else {
+    Write-Host "  [!] wsl2-shutdown-hook.ps1 not found in scripts\windows\." -ForegroundColor Yellow
+    Write-Host "  Download it from the Spiral Pool repository and run it manually." -ForegroundColor Gray
 }
 Write-Host ""
 
