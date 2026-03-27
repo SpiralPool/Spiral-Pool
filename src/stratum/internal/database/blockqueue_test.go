@@ -679,8 +679,9 @@ func TestBlockQueue_ConcurrentEnqueueDequeue(t *testing.T) {
 			for i := 0; i < opsPerGoroutine; i++ {
 				entry, commit := q.DequeueWithCommit()
 				if entry != nil {
-					commit()
-					dequeued.Add(1)
+					if commit() {
+						dequeued.Add(1)
+					}
 				}
 			}
 		}()
