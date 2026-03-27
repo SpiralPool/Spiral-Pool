@@ -270,10 +270,11 @@ _service_uptime() {
 # Returns "" if the timer is not found or not scheduled.
 _timer_next_run() {
     local timer="$1"
-    systemctl show "$timer" --property=NextElapseUSecRealtime 2>/dev/null \
-        | sed 's/NextElapseUSecRealtime=//' \
-        | grep -v '^0$' \
-        | xargs -I{} date -d "@$(( {} / 1000000 ))" "+%Y-%m-%d %H:%M" 2>/dev/null
+    local usec
+    usec=$(systemctl show "$timer" --property=NextElapseUSecRealtime 2>/dev/null \
+        | sed 's/NextElapseUSecRealtime=//')
+    [[ -z "$usec" || "$usec" == "0" ]] && return
+    date -d "@$(( usec / 1000000 ))" "+%Y-%m-%d %H:%M" 2>/dev/null
 }
 
 cmd_status() {
