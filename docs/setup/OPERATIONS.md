@@ -766,4 +766,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Convergent Spiral 1.2.2*
+*Spiral Pool — Convergent Spiral 1.2.3*

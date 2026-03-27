@@ -288,5 +288,5 @@ This project includes AI-generated visual assets (logo, images). AI-generated co
 
 *This notice is provided to clarify trademark ownership and usage. It is not legal advice.*
 
-*Spiral Pool v1.2.2 - Trademark Notice*
+*Spiral Pool v1.2.3 - Trademark Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

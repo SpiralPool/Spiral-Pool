@@ -69,7 +69,7 @@ All Other Themes
 The following themes are original works by Spiral Pool, licensed under
 BSD-3-Clause. They do not use color palettes from external projects:
 
-  Codename:   black-ice (V1.0), convergent-spiral (V1.2.2)
+  Codename:   black-ice (V1.0), convergent-spiral (V1.2.3)
   Core:       cyberpunk, 1337-h4x0r
   Nature:     midnight-aurora, ocean-depths, solar-flare, wood-paneling
   Seasonal:   autumn-harvest, spring-bloom, summer-vibes, winter-frost

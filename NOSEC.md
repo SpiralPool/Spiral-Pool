@@ -281,5 +281,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v1.2.2 - Security Architecture Decisions*
+*Spiral Pool v1.2.3 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

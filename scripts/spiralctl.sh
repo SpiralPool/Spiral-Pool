@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-1.2.2}"
+VERSION="${VERSION:-1.2.3}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -6141,7 +6141,7 @@ cmd_coin_upgrade() {
     local script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
     if [[ ! -x "$script" ]]; then
         log_error "coin-upgrade.sh not found at ${script}"
-        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.2.2+."
+        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.2.3+."
         exit 1
     fi
     # Pass all arguments through — supports --check, --coin <TICKER>, --reindex, --list
@@ -7170,7 +7170,7 @@ check_interval = cfg.get("check_interval", 120)
 if not isinstance(check_interval, (int, float)) or check_interval < 10:
     issues.append(f"check_interval={check_interval} is unusually low (< 10s)")
 
-# v1.2.2 new alert config range checks
+# v1.2.3 new alert config range checks
 disk_warn = cfg.get("disk_warn_pct", 85)
 disk_crit = cfg.get("disk_critical_pct", 95)
 if disk_warn >= disk_crit:

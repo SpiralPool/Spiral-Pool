@@ -205,7 +205,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 
 Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`
 
-### New Alert Types (v1.2.2)
+### New Alert Types (v1.2.3)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -775,7 +775,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "1.2.2-CONVERGENT_SPIRAL"}
+{"alive": true, "uptime_s": 3600, "version": "1.2.3-CONVERGENT_SPIRAL"}
 ```
 
 ### `GET /cooldowns`
@@ -793,4 +793,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Convergent Spiral 1.2.2*
+*Spiral Sentinel &mdash; Convergent Spiral 1.2.3*

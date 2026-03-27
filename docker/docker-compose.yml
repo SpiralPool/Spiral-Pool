@@ -912,7 +912,7 @@ services:
         condition: service_healthy
     environment:
       - POOL_API_URL=http://stratum:4000
-      # Dashboard Authentication (v1.2.2)
+      # Dashboard Authentication (v1.2.3)
       - DASHBOARD_AUTH_ENABLED=${DASHBOARD_AUTH_ENABLED:-true}
       - DASHBOARD_SESSION_LIFETIME=${DASHBOARD_SESSION_LIFETIME:-24}
       - DASHBOARD_API_KEY=${DASHBOARD_API_KEY:-}

@@ -41,7 +41,7 @@ You are solely responsible for:
 - Backing up all data and maintaining disaster recovery procedures
 - Any tax obligations arising from cryptocurrency mining
 - Conducting your own security assessment before deployment
-- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v1.2.2 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
+- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v1.2.3 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
 
 ## 5A. Tor Network Functionality
 
@@ -276,5 +276,5 @@ These Terms, together with the BSD-3-Clause License and the following supplement
 
 *By using Spiral Pool, you acknowledge that you have read, understood, and agree to be bound by these Terms of Use.*
 
-*Spiral Pool v1.2.2 - Terms of Use*
+*Spiral Pool v1.2.3 - Terms of Use*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

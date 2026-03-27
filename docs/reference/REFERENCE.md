@@ -445,4 +445,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Convergent Spiral 1.2.2*
+*Spiral Pool — Convergent Spiral 1.2.3*

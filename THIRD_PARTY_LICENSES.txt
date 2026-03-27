@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v1.2.2 - Third-Party Licenses
+Spiral Pool v1.2.3 - Third-Party Licenses
 ================================================================================
 
 This software incorporates or depends on the following third-party components.

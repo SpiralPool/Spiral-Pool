@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "1.2.2"
+$Script:Version = "1.2.3"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v1.2.2" -ForegroundColor DarkGray
+    Write-Host "                           v1.2.3" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -1397,7 +1397,7 @@ function New-EnvironmentFile {
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v1.2.2 Docker Configuration
+# Spiral Pool v1.2.3 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 
@@ -1455,7 +1455,7 @@ DASHBOARD_PORT=$($Config.DashboardPort)
 METRICS_PORT=$($Config.MetricsPort)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DASHBOARD AUTHENTICATION (v1.2.2)
+# DASHBOARD AUTHENTICATION (v1.2.3)
 # ═══════════════════════════════════════════════════════════════════════════════
 DASHBOARD_AUTH_ENABLED=true
 DASHBOARD_SESSION_LIFETIME=24
@@ -1756,7 +1756,7 @@ function Show-Summary {
     Write-Host "  Password: x" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
-    Write-Host "    DASHBOARD AUTHENTICATION (v1.2.2)" -ForegroundColor White
+    Write-Host "    DASHBOARD AUTHENTICATION (v1.2.3)" -ForegroundColor White
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  On first access, you'll be prompted to create an admin password." -ForegroundColor DarkGray

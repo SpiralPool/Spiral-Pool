@@ -135,7 +135,7 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 | Theme | Category |
 |-------|----------|
 | **V1.0 — Black Ice** | Codename |
-| **V1.2.2 — Convergent Spiral** | Codename |
+| **V1.2.3 — Convergent Spiral** | Codename |
 | **cyberpunk** (default) | Core |
 | 1337-h4x0r | Core |
 | dracula | Developer |
@@ -510,4 +510,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Convergent Spiral 1.2.2*
+*Spiral Dash &mdash; Convergent Spiral 1.2.3*

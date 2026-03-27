@@ -35,7 +35,7 @@ def find_manifest_path() -> Path:
     script_dir = Path(__file__).parent
     paths = [
         script_dir.parent / "config" / "coins.manifest.yaml",
-        script_dir.parent / "RELEASE-V1.2.2-CONVERGENT_SPIRAL" / "config" / "coins.manifest.yaml",
+        script_dir.parent / "RELEASE-V1.2.3-CONVERGENT_SPIRAL" / "config" / "coins.manifest.yaml",
         Path("/spiralpool/config/coins.manifest.yaml"),
     ]
     for p in paths:

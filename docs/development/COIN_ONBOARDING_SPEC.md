@@ -329,4 +329,4 @@ QBX (Q-BitX)
 
 ---
 
-*Spiral Pool — Convergent Spiral 1.2.2 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Convergent Spiral 1.2.3 — Built on what came before. Growing toward phi.*

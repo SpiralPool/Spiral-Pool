@@ -33,7 +33,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
-__version__ = "1.2.2-CONVERGENT_SPIRAL"
+__version__ = "1.2.3-CONVERGENT_SPIRAL"
 
 logger = logging.getLogger(__name__)
 
