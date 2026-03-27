@@ -105,8 +105,6 @@ Database connections use PostgreSQL's native `sslmode` parameter via the `pgx` d
 
 **Production path:** `internal/config/config.go` (`ConnectionString()`) builds the connection URL with `sslmode=<mode>`. The `pgx` driver handles TLS negotiation. Default is `require` when no mode is specified. CA certificate path is appended via `sslrootcert=` when `SSLRootCert` is configured.
 
-**Note:** `internal/database/replication.go` contains a `BuildTLSConfig()` helper that constructs a Go `tls.Config` struct. This code is not called from production — it exists for potential future use with direct TLS connections. Its `verify-ca` implementation is incomplete (behaves like `verify-full` due to missing `VerifyPeerCertificate` callback). Production connections are unaffected because they use the `pgx` driver's native sslmode handling.
-
 **Design rationale:** The `require` mode is appropriate for internal database networks where man-in-the-middle is not the threat model. For untrusted networks, operators should configure `verify-ca` or `verify-full` mode with `sslRootCert` in their config.
 
 ## Code-Level Security Verification

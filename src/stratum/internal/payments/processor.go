@@ -999,41 +999,6 @@ func (p *Processor) executePendingPayments(ctx context.Context) error {
 	return nil
 }
 
-// CalculateBlockReward is DEPRECATED and should NOT be used.
-//
-// The actual block reward is obtained from the daemon's getblocktemplate RPC
-// response (CoinbaseValue field), which includes both the block subsidy AND
-// transaction fees. This function is kept only for reference.
-//
-// NOTE: This formula is DigiByte-specific and uses approximate values.
-// For accurate rewards, always use the daemon's CoinbaseValue.
-//
-// Deprecated: Use daemon.BlockTemplate.CoinbaseValue instead. Test-only.
-func CalculateBlockReward(height uint64) float64 {
-	// WARNING: This is an approximation for DigiByte SHA-256 only.
-	// Actual block rewards come from the daemon's getblocktemplate response.
-	//
-	// DigiByte parameters (approximate):
-	// - Initial total reward: 8000 DGB (not 2157 as previously stated)
-	// - SHA-256 share: ~20% of block reward
-	// - Current reward at 20M+ blocks: ~277-280 DGB for SHA-256
-	//
-	// DO NOT USE THIS FOR PAYMENTS - it ignores transaction fees
-	// and uses outdated halving parameters.
-	initialReward := 8000.0 * 0.2 // ~1600 DGB initial for SHA-256
-
-	// DigiByte has a complex halving schedule (not exactly 210,000 blocks)
-	// This is a rough approximation only
-	halvings := height / 1050000 // More accurate for DGB
-
-	reward := initialReward
-	for i := uint64(0); i < halvings; i++ {
-		reward /= 2
-	}
-
-	return reward
-}
-
 // Stats returns payment processor statistics.
 type Stats struct {
 	PendingBlocks   int       `json:"pendingBlocks"`

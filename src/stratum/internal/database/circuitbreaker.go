@@ -284,22 +284,6 @@ func (bq *BlockQueue) Enqueue(block *Block) bool {
 	return true
 }
 
-// Dequeue removes and returns the oldest block from the queue.
-// Returns nil if the queue is empty.
-// DEPRECATED: Use DequeueWithCommit for crash-safe processing.
-func (bq *BlockQueue) Dequeue() *BlockQueueEntry {
-	bq.mu.Lock()
-	defer bq.mu.Unlock()
-
-	if len(bq.entries) == 0 {
-		return nil
-	}
-
-	entry := bq.entries[0]
-	bq.entries = bq.entries[1:]
-	return entry
-}
-
 // DequeueWithCommit provides crash-safe block processing.
 // FIX C-1: Returns the oldest block and a commit function.
 // The block is NOT removed until commit() is called.

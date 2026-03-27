@@ -295,3 +295,38 @@ Complete mapping of type keys to device families:
 \* CGMiner may be disabled by default on these devices. See Best-Effort section for details.
 
 \* Pool API: ESP32 miners have no device-level API. Sentinel polls the pool's stratum connections endpoint instead. See [Pool API](#pool-api-no-direct-device-api) section for requirements.
+
+---
+
+## Known Monitoring Limitations
+
+The following device families have reduced monitoring capabilities due to manufacturer firmware restrictions. These are hardware/firmware limitations, not Spiral Pool bugs.
+
+### Devices Requiring Manual CGMiner Enablement
+
+These miners ship with CGMiner API **disabled by default**. Auto-scan will not detect them until CGMiner is manually enabled. Mining is unaffected — only Sentinel monitoring requires CGMiner.
+
+| Device | How to Enable CGMiner | Without CGMiner |
+|--------|----------------------|-----------------|
+| **iPollo** V1/V1 Mini/G1 | Web UI settings or SSH: add `--api-listen --api-network --api-allow W:0/0` to cgminer flags | Must be manually added; shows as offline |
+| **Innosilicon** A10/A10 Pro/A11/T2T/T3 | Telnet to port 8100 (password: `innot1t2` or `t1t2t3a5`), add API flags, reboot | Must be manually added; shows as offline |
+| **Elphapex** DG1/DG1+/DG Home | Unknown — CGMiner availability unconfirmed | Must be manually added; monitoring unreliable |
+
+**Why these native APIs are not implemented:**
+- **iPollo**: Uses a proprietary LuCI CGI web interface. Endpoints are undocumented and would require reverse-engineering. Firmware updates may change endpoints without notice.
+- **Innosilicon**: Uses an HTTP REST API with JWT authentication ([dragon-rest](https://github.com/brndnmtthws/dragon-rest)). Integration would require maintaining session management for a proprietary auth flow that varies across firmware versions.
+- **Elphapex**: Uses custom LuCI CGI endpoints (e.g. `/cgi-bin/luci/setworkmode.cgi`). Endpoints are completely undocumented and untested.
+
+Implementing proprietary APIs is fragile — firmware updates from the manufacturer can break integrations without warning. CGMiner on port 4028 is the stable, universal protocol supported across all ASIC manufacturers.
+
+### Devices With No Monitoring API
+
+| Device | Reason | What Sentinel Can Track | What Sentinel Cannot Track |
+|--------|--------|------------------------|---------------------------|
+| **ESP32** NerdMiner / BitMaker / ESP32 Miner V2 | Hardware limitation — sealed embedded device with no HTTP or CGMiner API | Online/offline, hashrate, shares, difficulty (via pool API) | Temperature, fan speed, uptime, power consumption |
+
+This is a hardware limitation of the ESP32 platform. The chip runs a bare Stratum client with no management interface. No software change can add device-level monitoring for ESP32 miners.
+
+### Stratum URL Mismatch
+
+Stratum URL mismatch detection (alerting when a miner is pointed at the wrong pool) is not yet implemented for any device type. This is planned for a future release.

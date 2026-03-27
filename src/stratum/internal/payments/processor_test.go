@@ -90,39 +90,6 @@ func TestDefaultBlockMaturityConfirmations(t *testing.T) {
 	}
 }
 
-func TestCalculateBlockReward_Deprecated(t *testing.T) {
-	// This function is deprecated but test it still works for reference
-
-	// Test at height 0 (initial reward)
-	reward := CalculateBlockReward(0)
-	if reward <= 0 {
-		t.Error("Reward at height 0 should be positive")
-	}
-
-	// Test at high height (should be much smaller)
-	highReward := CalculateBlockReward(10000000)
-	if highReward <= 0 {
-		t.Error("Reward at high height should be positive")
-	}
-
-	// High height should have lower reward due to halvings
-	if highReward >= reward {
-		t.Error("Reward should decrease with height due to halvings")
-	}
-}
-
-func TestCalculateBlockReward_Halvings(t *testing.T) {
-	// Test halving behavior
-	beforeHalving := CalculateBlockReward(1000000)
-	afterHalving := CalculateBlockReward(1100000)
-
-	// After halving, reward should be ~half
-	ratio := afterHalving / beforeHalving
-	if ratio > 0.6 || ratio < 0.4 {
-		t.Logf("Warning: halving ratio %f may not be exactly 0.5 (depends on exact halving schedule)", ratio)
-	}
-}
-
 func TestStats_Fields(t *testing.T) {
 	stats := &Stats{
 		PendingBlocks:   5,
@@ -434,9 +401,7 @@ func TestBlockRewardVerification(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Note: The CalculateBlockReward function is DEPRECATED
-			// This test documents expected behavior for reference
-			// Actual rewards must come from daemon's CoinbaseValue field
+			// Actual rewards come from daemon's CoinbaseValue field
 			t.Logf("%s at height %d: expected ~%.4f %s (verify via daemon)",
 				tc.coin, tc.blockHeight, tc.expectedReward, tc.coin)
 		})
@@ -491,12 +456,6 @@ func TestBlockMaturity_CoinbaseMaturityMatch(t *testing.T) {
 // =============================================================================
 // BENCHMARKS
 // =============================================================================
-
-func BenchmarkCalculateBlockReward(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		CalculateBlockReward(uint64(i * 100000))
-	}
-}
 
 func BenchmarkGetBlockMaturity(b *testing.B) {
 	cfg := &config.PaymentsConfig{BlockMaturity: 100}

@@ -112,7 +112,7 @@ func TestBlockQueue_Enqueue_MultipleItemsFIFO(t *testing.T) {
 // Dequeue tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-func TestBlockQueue_Dequeue_FIFO(t *testing.T) {
+func TestBlockQueue_DequeueWithCommit_FIFO(t *testing.T) {
 	t.Parallel()
 
 	q := NewBlockQueue(10)
@@ -120,21 +120,24 @@ func TestBlockQueue_Dequeue_FIFO(t *testing.T) {
 	q.Enqueue(&Block{Height: 200})
 	q.Enqueue(&Block{Height: 300})
 
-	// Dequeue should return items in FIFO order.
-	entry1 := q.Dequeue()
+	// DequeueWithCommit should return items in FIFO order.
+	entry1, commit1 := q.DequeueWithCommit()
 	if entry1 == nil || entry1.Block.Height != 100 {
-		t.Errorf("First Dequeue: height = %v, want 100", entryHeight(entry1))
+		t.Errorf("First DequeueWithCommit: height = %v, want 100", entryHeight(entry1))
 	}
+	commit1()
 
-	entry2 := q.Dequeue()
+	entry2, commit2 := q.DequeueWithCommit()
 	if entry2 == nil || entry2.Block.Height != 200 {
-		t.Errorf("Second Dequeue: height = %v, want 200", entryHeight(entry2))
+		t.Errorf("Second DequeueWithCommit: height = %v, want 200", entryHeight(entry2))
 	}
+	commit2()
 
-	entry3 := q.Dequeue()
+	entry3, commit3 := q.DequeueWithCommit()
 	if entry3 == nil || entry3.Block.Height != 300 {
-		t.Errorf("Third Dequeue: height = %v, want 300", entryHeight(entry3))
+		t.Errorf("Third DequeueWithCommit: height = %v, want 300", entryHeight(entry3))
 	}
+	commit3()
 
 	// Queue should now be empty.
 	if q.Len() != 0 {
@@ -142,18 +145,21 @@ func TestBlockQueue_Dequeue_FIFO(t *testing.T) {
 	}
 }
 
-func TestBlockQueue_Dequeue_Empty(t *testing.T) {
+func TestBlockQueue_DequeueWithCommit_Empty(t *testing.T) {
 	t.Parallel()
 
 	q := NewBlockQueue(10)
 
-	entry := q.Dequeue()
+	entry, commit := q.DequeueWithCommit()
 	if entry != nil {
-		t.Errorf("Dequeue() on empty queue returned %+v, want nil", entry)
+		t.Errorf("DequeueWithCommit() on empty queue returned %+v, want nil", entry)
+	}
+	if commit() {
+		t.Error("commit() on empty dequeue should return false")
 	}
 }
 
-func TestBlockQueue_Dequeue_RemovesItem(t *testing.T) {
+func TestBlockQueue_DequeueWithCommit_RemovesItem(t *testing.T) {
 	t.Parallel()
 
 	q := NewBlockQueue(10)
@@ -163,7 +169,8 @@ func TestBlockQueue_Dequeue_RemovesItem(t *testing.T) {
 		t.Fatalf("Pre-dequeue Len() = %d, want 1", q.Len())
 	}
 
-	_ = q.Dequeue()
+	_, commit := q.DequeueWithCommit()
+	commit()
 
 	if q.Len() != 0 {
 		t.Errorf("Post-dequeue Len() = %d, want 0", q.Len())
@@ -422,7 +429,8 @@ func TestBlockQueue_UpdateEntryError_OnlyAffectsFirst(t *testing.T) {
 	}
 
 	// Dequeue first, check second is untouched.
-	q.Dequeue()
+	_, commitFirst := q.DequeueWithCommit()
+	commitFirst()
 	second := q.Peek()
 	if second.Attempts != 0 || second.LastError != "" {
 		t.Errorf("Second entry: Attempts=%d LastError=%q, want 0/empty",
@@ -525,7 +533,8 @@ func TestBlockQueue_DequeueFreesCapacity(t *testing.T) {
 	}
 
 	// Dequeue one item.
-	q.Dequeue()
+	_, commitOne := q.DequeueWithCommit()
+	commitOne()
 
 	// Now there should be room.
 	ok = q.Enqueue(&Block{Height: 3})
@@ -668,7 +677,9 @@ func TestBlockQueue_ConcurrentEnqueueDequeue(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < opsPerGoroutine; i++ {
-				if q.Dequeue() != nil {
+				entry, commit := q.DequeueWithCommit()
+				if entry != nil {
+					commit()
 					dequeued.Add(1)
 				}
 			}
@@ -914,7 +925,10 @@ func BenchmarkBlockQueue_Dequeue(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		q.Dequeue()
+		entry, commit := q.DequeueWithCommit()
+		if entry != nil {
+			commit()
+		}
 	}
 }
 

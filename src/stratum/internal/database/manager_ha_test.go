@@ -634,10 +634,13 @@ func TestBlockQueue_EmptyDrain_NilReturn(t *testing.T) {
 		t.Errorf("DrainAll on empty queue returned %v (len=%d), want nil", result, len(result))
 	}
 
-	// Dequeue on empty queue.
-	entry := q.Dequeue()
-	if entry != nil {
-		t.Errorf("Dequeue on empty queue returned non-nil: %+v", entry)
+	// DequeueWithCommit on empty queue (additional check).
+	entryEmpty, commitEmpty := q.DequeueWithCommit()
+	if entryEmpty != nil {
+		t.Errorf("DequeueWithCommit on empty queue returned non-nil: %+v", entryEmpty)
+	}
+	if commitEmpty() {
+		t.Error("commit() on empty dequeue should return false")
 	}
 
 	// DequeueWithCommit on empty queue.

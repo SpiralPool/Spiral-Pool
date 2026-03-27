@@ -31,8 +31,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -2355,55 +2353,6 @@ func DefaultTLSConfig() TLSConfig {
 		CertFile:   "/etc/spiralpool/ssl/client.crt",
 		KeyFile:    "/etc/spiralpool/ssl/client.key",
 	}
-}
-
-// BuildTLSConfig creates a tls.Config from the configuration
-func (tc *TLSConfig) BuildTLSConfig() (*tls.Config, error) {
-	if !tc.Enabled || tc.Mode == "disable" {
-		return nil, nil
-	}
-
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-
-	// Load CA certificate if specified
-	if tc.CACertFile != "" && fileExistsSecure(tc.CACertFile) {
-		caCert, err := os.ReadFile(tc.CACertFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
-		}
-
-		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, fmt.Errorf("failed to parse CA certificate")
-		}
-		tlsConfig.RootCAs = caCertPool
-	}
-
-	// Load client certificate if specified
-	if tc.CertFile != "" && tc.KeyFile != "" {
-		if fileExistsSecure(tc.CertFile) && fileExistsSecure(tc.KeyFile) {
-			cert, err := tls.LoadX509KeyPair(tc.CertFile, tc.KeyFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load client certificate: %w", err)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-		}
-	}
-
-	// Set verification mode
-	switch tc.Mode {
-	case "require":
-		tlsConfig.InsecureSkipVerify = true
-	case "verify-ca":
-		tlsConfig.InsecureSkipVerify = false
-	case "verify-full":
-		tlsConfig.InsecureSkipVerify = false
-		// Server name verification is automatic
-	}
-
-	return tlsConfig, nil
 }
 
 // GetConnectionStringWithTLS adds TLS parameters to a connection string

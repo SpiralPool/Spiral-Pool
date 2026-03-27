@@ -114,10 +114,6 @@ type Session struct {
 	// RED-TEAM: Pre-auth message counter to prevent subscribe spam attacks
 	preAuthMessages uint32 // Atomic: messages received before authorization
 
-	// DEPRECATED: Direct field access - use atomic methods instead
-	// These are kept for backward compatibility but should not be used
-	Authorized bool // DEPRECATED: Use SetAuthorized/IsAuthorized
-	Subscribed bool // DEPRECATED: Use SetSubscribed/IsSubscribed
 }
 
 // SetDiffSent atomically marks that initial difficulty has been sent.
@@ -150,8 +146,6 @@ func (s *Session) SetAuthorized(authorized bool) {
 		val = 1
 	}
 	atomic.StoreUint32(&s.authorized, val)
-	// NOTE: Deprecated field s.Authorized is not updated atomically.
-	// Use IsAuthorized() for thread-safe reads.
 }
 
 // IsAuthorized atomically checks if the session is authorized.
@@ -168,8 +162,6 @@ func (s *Session) SetSubscribed(subscribed bool) {
 		val = 1
 	}
 	atomic.StoreUint32(&s.subscribed, val)
-	// NOTE: Deprecated field s.Subscribed is not updated atomically.
-	// Use IsSubscribed() for thread-safe reads.
 }
 
 // IsSubscribed atomically checks if the session is subscribed.

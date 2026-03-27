@@ -2,8 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 //
 // Tests for payment processor lifecycle: Start() V39 enforcement,
-// processLoop() graceful shutdown, processMatureBlocks() stub guard,
-// and CalculateBlockReward() deprecation.
+// processLoop() graceful shutdown, and processMatureBlocks() stub guard.
 package payments
 
 import (
@@ -530,81 +529,7 @@ func TestExecutePendingPayments_SOLO_ReturnsNil(t *testing.T) {
 }
 
 // =============================================================================
-// Part 4: CalculateBlockReward() deprecation
-// =============================================================================
-
-// TestCalculateBlockReward_ReturnsPositiveValues verifies the deprecated
-// CalculateBlockReward() function still returns reasonable positive values.
-// This function is DEPRECATED — actual rewards come from daemon's CoinbaseValue.
-func TestCalculateBlockReward_ReturnsPositiveValues(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name     string
-		height   uint64
-		minValue float64 // Minimum reasonable reward
-	}{
-		{"genesis", 0, 100.0},         // Initial reward should be large
-		{"early block", 100, 100.0},   // Still in first era
-		{"mid block", 500000, 0.001},  // Should still be positive
-		{"late block", 5000000, 0.001}, // Very late, small but positive
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			reward := CalculateBlockReward(tc.height)
-			if reward <= 0 {
-				t.Errorf("CalculateBlockReward(%d) = %f, expected positive value", tc.height, reward)
-			}
-			if reward < tc.minValue {
-				t.Logf("WARNING: CalculateBlockReward(%d) = %f, below expected minimum %f "+
-					"(this function is DEPRECATED and approximate)", tc.height, reward, tc.minValue)
-			}
-		})
-	}
-}
-
-// TestCalculateBlockReward_DecreasesThroughHalvings verifies that rewards
-// decrease as block height increases through halving epochs.
-func TestCalculateBlockReward_DecreasesThroughHalvings(t *testing.T) {
-	t.Parallel()
-
-	heights := []uint64{0, 1050000, 2100000, 3150000, 4200000}
-	var prevReward float64
-
-	for i, height := range heights {
-		reward := CalculateBlockReward(height)
-		if reward <= 0 {
-			t.Errorf("CalculateBlockReward(%d) = %f, should be positive", height, reward)
-			continue
-		}
-		if i > 0 && reward >= prevReward {
-			t.Errorf("Reward at height %d (%f) should be less than at height %d (%f)",
-				height, reward, heights[i-1], prevReward)
-		}
-		prevReward = reward
-	}
-}
-
-// TestCalculateBlockReward_InitialRewardIsDigiByteSpecific verifies the initial
-// reward matches the DigiByte SHA-256 approximation documented in the code.
-func TestCalculateBlockReward_InitialRewardIsDigiByteSpecific(t *testing.T) {
-	t.Parallel()
-
-	reward := CalculateBlockReward(0)
-
-	// From the code: initialReward := 8000.0 * 0.2 = 1600 DGB for SHA-256
-	expected := 1600.0
-	if reward != expected {
-		t.Errorf("CalculateBlockReward(0) = %f, expected %f (DigiByte SHA-256 initial)", reward, expected)
-	}
-}
-
-// =============================================================================
-// Part 5: getEffectiveInterval() edge cases
+// Part 4: getEffectiveInterval() edge cases
 // =============================================================================
 
 // TestGetEffectiveInterval_ExplicitValue verifies that an explicit interval

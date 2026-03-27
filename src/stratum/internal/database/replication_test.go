@@ -153,44 +153,6 @@ func TestTLSConfigConnectionString(t *testing.T) {
 	}
 }
 
-func TestBuildTLSConfig(t *testing.T) {
-	// Disabled TLS should return nil
-	disabledCfg := TLSConfig{Enabled: false}
-	tlsConfig, err := disabledCfg.BuildTLSConfig()
-	if err != nil {
-		t.Errorf("BuildTLSConfig() with disabled should not error: %v", err)
-	}
-	if tlsConfig != nil {
-		t.Error("BuildTLSConfig() with disabled should return nil")
-	}
-
-	// Enabled TLS with require mode
-	requireCfg := TLSConfig{Enabled: true, Mode: "require"}
-	tlsConfig, err = requireCfg.BuildTLSConfig()
-	if err != nil {
-		t.Errorf("BuildTLSConfig() error: %v", err)
-	}
-	if tlsConfig == nil {
-		t.Fatal("BuildTLSConfig() should return non-nil config")
-	}
-	if !tlsConfig.InsecureSkipVerify {
-		t.Error("require mode should skip verification")
-	}
-
-	// Enabled TLS with verify-full mode
-	verifyFullCfg := TLSConfig{Enabled: true, Mode: "verify-full"}
-	tlsConfig, err = verifyFullCfg.BuildTLSConfig()
-	if err != nil {
-		t.Errorf("BuildTLSConfig() error: %v", err)
-	}
-	if tlsConfig == nil {
-		t.Fatal("BuildTLSConfig() should return non-nil config")
-	}
-	if tlsConfig.InsecureSkipVerify {
-		t.Error("verify-full mode should not skip verification")
-	}
-}
-
 // =============================================================================
 // SECURITY - CREDENTIAL ENCRYPTION TESTS
 // =============================================================================

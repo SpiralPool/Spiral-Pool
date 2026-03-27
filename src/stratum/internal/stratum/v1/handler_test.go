@@ -227,9 +227,9 @@ func TestHandleSubmitUnauthorized(t *testing.T) {
 	h := NewHandler(1.0, true, 0x1fffe000)
 
 	session := &protocol.Session{
-		ID:         1,
-		Authorized: false, // Not authorized
+		ID: 1,
 	}
+	// Session starts unauthorized by default (atomic zero).
 	// FSM: Must subscribe to test unauthorized case (otherwise "Not subscribed" error)
 	session.SetSubscribed(true)
 
