@@ -70,6 +70,7 @@ log_info() { echo -e "${CYAN}ℹ${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
 log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; }
+prompt_input() { echo -ne "  ${GREEN}▸${NC} ${WHITE}${1}${NC}"; }
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
