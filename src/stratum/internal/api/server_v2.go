@@ -108,6 +108,8 @@ func (s *ServerV2) RegisterPool(poolID string, provider CoinPoolProvider) {
 
 // SetSentinelProvider sets the sentinel alert provider for the /api/sentinel/alerts endpoint.
 func (s *ServerV2) SetSentinelProvider(provider SentinelAlertProvider) {
+	s.poolProvidersMu.Lock()
+	defer s.poolProvidersMu.Unlock()
 	s.sentinelProvider = provider
 }
 
@@ -240,7 +242,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "1.2.3-CONVERGENT_SPIRAL-V2",
+		Version:  "2.0.0-PHI_HASH_REACTOR-V2",
 		Pools:    pools,
 	}
 
@@ -437,7 +439,11 @@ func (s *ServerV2) handleSentinelAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if s.sentinelProvider == nil {
+	s.poolProvidersMu.RLock()
+	sp := s.sentinelProvider
+	s.poolProvidersMu.RUnlock()
+
+	if sp == nil {
 		s.writeJSON(w, []SentinelAlert{})
 		return
 	}
@@ -453,7 +459,7 @@ func (s *ServerV2) handleSentinelAlerts(w http.ResponseWriter, r *http.Request) 
 		since = parsed
 	}
 
-	alerts := s.sentinelProvider.GetSentinelAlerts(since)
+	alerts := sp.GetSentinelAlerts(since)
 	if alerts == nil {
 		alerts = []SentinelAlert{}
 	}

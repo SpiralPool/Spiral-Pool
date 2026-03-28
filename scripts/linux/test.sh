@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
 #
-# Spiral Pool v1.2.3 - Complete Test Suite
+# Spiral Pool v2.0.0 - Complete Test Suite
 # Tests environment, installs dependencies, runs all tests, then optionally installs
 #
 # Usage: chmod +x test.sh && ./test.sh
@@ -73,7 +73,7 @@ cat << 'EOF'
    ___) | |_) | | | | (_| | | |  __/ (_) | (_) | |
   |____/| .__/|_|_|  \__,_|_| |_|   \___/ \___/|_|
         |_|
-              v1.2.3 Complete Test Suite
+              v2.0.0 Complete Test Suite
               SHA256d: DGB | BTC | BCH | BC2 | QBX
               Scrypt:  LTC | DOGE | DGB-SCRYPT | PEP | CAT
 EOF
@@ -435,7 +435,7 @@ echo ""
 
 if [ "$FAILED" -eq 0 ]; then
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  ALL TESTS PASSED! Spiral Pool v1.2.3 is ready.${NC}"
+    echo -e "${GREEN}  ALL TESTS PASSED! Spiral Pool v2.0.0 is ready.${NC}"
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${WHITE}Features Verified:${NC}"

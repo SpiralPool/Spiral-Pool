@@ -2,7 +2,7 @@
   "name": "Spiral Pool Default",
   "id": "spiral-pool-default",
   "author": "Spiral Pool",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "The complete Spiral Pool dashboard experience with all statistics, charts, and miner management",
   "preview": "default-preview.png",
   "layout": {

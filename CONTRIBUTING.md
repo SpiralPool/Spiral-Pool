@@ -1,6 +1,6 @@
 # Contributing to Spiral Pool
 
-**Last Updated:** 2026-03-18
+**Last Updated:** 2026-03-27
 
 Thank you for your interest in contributing to Spiral Pool! This document outlines the contribution process and requirements.
 
@@ -136,5 +136,5 @@ If you have questions about contributing, please open an issue for discussion or
 
 ---
 
-*This contributing guide is part of the Spiral Pool v1.2.3 release.*
+*This contributing guide is part of the Spiral Pool v2.0.0 release.*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

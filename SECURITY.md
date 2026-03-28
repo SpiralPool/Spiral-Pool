@@ -1,6 +1,6 @@
 # Security Policy
 
-**Last Updated:** 2026-03-18
+**Last Updated:** 2026-03-27
 
 ## Reporting a Vulnerability
 
@@ -63,8 +63,10 @@ Spiral Pool is mining pool software that:
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 2.0.x   | Supported |
+| 1.2.x   | Supported |
 | 1.1.x   | Supported |
-| 1.0.x   | Supported |
+| 1.0.x   | End of life |
 
 Security updates may be released for the current major version at maintainer discretion. No update schedule, timeline, or commitment is guaranteed. Support may be discontinued at any time without notice.
 
@@ -176,5 +178,5 @@ See [OPERATIONS.md Section 10](docs/setup/OPERATIONS.md#10-operator-legal-protec
 
 *Security is a shared responsibility. This policy describes how to report vulnerabilities and provides general security guidance. You are responsible for securing your deployment.*
 
-*Spiral Pool v1.2.3 - Security Policy*
+*Spiral Pool v2.0.0 - Security Policy*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 # Spiral Pool Database Initialization
 # This script runs automatically when the PostgreSQL container starts for the first time.
-# V1.2.3-CONVERGENT_SPIRAL with Merge Mining (AuxPoW) Support
+# V2.0.0-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
 #
 # NOTE: The Go pool application creates pool-specific tables via migrations
 # (e.g., shares_btc_regtest, blocks_btc_regtest). This file provides base
@@ -56,7 +56,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
         reward NUMERIC(28,12) CHECK (reward >= 0),
         source VARCHAR(64),
         hash VARCHAR(128),
-        created TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+        created TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
         orphan_mismatch_count INTEGER DEFAULT 0 CHECK (orphan_mismatch_count >= 0),
         stability_check_count INTEGER DEFAULT 0 CHECK (stability_check_count >= 0),
         last_verified_tip VARCHAR(64) DEFAULT '',

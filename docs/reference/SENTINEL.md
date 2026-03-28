@@ -89,6 +89,9 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `pool_id` | string | `"dgb_sha256_1"` | Legacy single-coin pool ID |
 | `wallet_address` | string | `""` | Legacy single-coin wallet address |
 | `push_device_hints` | bool | `true` | Push device info to pool for difficulty hints |
+| `pool_url` | string | `""` | Expected stratum URL for mismatch detection (e.g. `stratum+tcp://192.168.1.21:20335`) |
+| `fallback_pool_urls` | list | `[]` | Additional valid pool URLs (HA failover, VIP, etc.) |
+| `firmware_auto_detect` | bool | `true` | Probe BraiinsOS/Vnish on port 80 when CGMiner probe fails on antminer devices |
 | `update_check_enabled` | bool | `true` | Periodically check for Spiral Pool updates |
 | `update_check_interval` | int | `21600` | Seconds between update checks (6 hours) |
 | `auto_update_mode` | string | `"notify"` | `"notify"` (alert only), `"auto"` (run upgrade.sh), or `"disabled"` |
@@ -205,7 +208,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 
 Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`
 
-### New Alert Types (v1.2.3)
+### New Alert Types (v2.0.0)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -379,6 +382,7 @@ When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap
 | Alert Type | Trigger | Quiet Hours | Cooldown |
 |------------|---------|-------------|----------|
 | `stratum_url_mismatch` | Miner pointing at unexpected pool URL | Bypasses | None |
+| `wallet_mismatch` | Configured wallet not found in coin node (startup check) | N/A | One-shot |
 
 ### Coin Node
 
@@ -775,7 +779,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "1.2.3-CONVERGENT_SPIRAL"}
+{"alive": true, "uptime_s": 3600, "version": "2.0.0-PHI_HASH_REACTOR"}
 ```
 
 ### `GET /cooldowns`
@@ -793,4 +797,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Convergent Spiral 1.2.3*
+*Spiral Sentinel &mdash; Phi Hash Reactor 2.0.0*

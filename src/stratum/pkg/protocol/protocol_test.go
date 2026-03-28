@@ -592,3 +592,111 @@ func BenchmarkSession_ConcurrentIncrementShareCount(b *testing.B) {
 		}
 	})
 }
+
+// =============================================================================
+// JOB CLONE DEEP COPY TESTS
+// =============================================================================
+
+// TestJob_Clone_DeepCopySlices verifies that Clone() produces a fully
+// independent copy — mutating slices on the original must not affect the clone.
+func TestJob_Clone_DeepCopySlices(t *testing.T) {
+	original := &Job{
+		ID:              "test-job",
+		MerkleBranches:  []string{"aaa", "bbb", "ccc"},
+		Target:          []byte{0x00, 0xff, 0x01},
+		TransactionData: []string{"tx1", "tx2"},
+		AuxMerkleBranch: []string{"aux1", "aux2"},
+		AuxBlocks: []AuxBlockData{
+			{
+				Symbol:        "DOGE",
+				ChainID:       98,
+				Hash:          []byte{0x01, 0x02},
+				Target:        []byte{0x03, 0x04},
+				Height:        100,
+				CoinbaseValue: 500000000,
+				ChainIndex:    3,
+				Difficulty:    1234.5,
+				Bits:          0x1d00ffff,
+			},
+		},
+		NetworkTarget: "00000000ffff",
+	}
+
+	clone := original.Clone()
+
+	// Verify values match
+	if clone.ID != original.ID {
+		t.Errorf("Clone ID mismatch: got %q, want %q", clone.ID, original.ID)
+	}
+	if len(clone.MerkleBranches) != len(original.MerkleBranches) {
+		t.Fatalf("MerkleBranches length mismatch: got %d, want %d", len(clone.MerkleBranches), len(original.MerkleBranches))
+	}
+
+	// Verify AuxBlockData value fields are copied
+	if clone.AuxBlocks[0].CoinbaseValue != 500000000 {
+		t.Errorf("Clone AuxBlocks[0].CoinbaseValue not copied: got %d, want 500000000", clone.AuxBlocks[0].CoinbaseValue)
+	}
+	if clone.AuxBlocks[0].ChainIndex != 3 {
+		t.Errorf("Clone AuxBlocks[0].ChainIndex not copied: got %d, want 3", clone.AuxBlocks[0].ChainIndex)
+	}
+	if clone.AuxBlocks[0].Difficulty != 1234.5 {
+		t.Errorf("Clone AuxBlocks[0].Difficulty not copied: got %f, want 1234.5", clone.AuxBlocks[0].Difficulty)
+	}
+	if clone.AuxBlocks[0].Bits != 0x1d00ffff {
+		t.Errorf("Clone AuxBlocks[0].Bits not copied: got %d, want %d", clone.AuxBlocks[0].Bits, uint32(0x1d00ffff))
+	}
+
+	// Mutate original slices — clone must not be affected
+	original.MerkleBranches[0] = "MUTATED"
+	if clone.MerkleBranches[0] == "MUTATED" {
+		t.Error("Clone MerkleBranches shares backing array with original — shallow copy bug")
+	}
+
+	original.Target[0] = 0xDE
+	if clone.Target[0] == 0xDE {
+		t.Error("Clone Target shares backing array with original — shallow copy bug")
+	}
+
+	original.TransactionData[0] = "MUTATED_TX"
+	if clone.TransactionData[0] == "MUTATED_TX" {
+		t.Error("Clone TransactionData shares backing array with original — shallow copy bug")
+	}
+
+	original.AuxMerkleBranch[0] = "MUTATED_AUX"
+	if clone.AuxMerkleBranch[0] == "MUTATED_AUX" {
+		t.Error("Clone AuxMerkleBranch shares backing array with original — shallow copy bug")
+	}
+
+	original.AuxBlocks[0].Hash[0] = 0xFF
+	if clone.AuxBlocks[0].Hash[0] == 0xFF {
+		t.Error("Clone AuxBlocks[0].Hash shares backing array with original — shallow copy bug")
+	}
+
+	original.AuxBlocks[0].Target[0] = 0xEE
+	if clone.AuxBlocks[0].Target[0] == 0xEE {
+		t.Error("Clone AuxBlocks[0].Target shares backing array with original — shallow copy bug")
+	}
+}
+
+// TestJob_Clone_NilSlices verifies Clone() handles nil slices gracefully.
+func TestJob_Clone_NilSlices(t *testing.T) {
+	original := &Job{
+		ID:   "nil-test",
+		NBits: "1d00ffff",
+	}
+
+	clone := original.Clone()
+
+	if clone.ID != "nil-test" {
+		t.Errorf("Clone ID = %q, want %q", clone.ID, "nil-test")
+	}
+	if clone.MerkleBranches != nil {
+		t.Error("Clone should have nil MerkleBranches when original is nil")
+	}
+	if clone.Target != nil {
+		t.Error("Clone should have nil Target when original is nil")
+	}
+	if clone.AuxBlocks != nil {
+		t.Error("Clone should have nil AuxBlocks when original is nil")
+	}
+}

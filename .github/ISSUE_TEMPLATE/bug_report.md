@@ -28,7 +28,7 @@ What actually happened.
 
 - **OS:** Ubuntu 24.04 LTS
 - **Architecture:** x86_64 (amd64)
-- **Spiral Pool Version:** (e.g., 1.0.0)
+- **Spiral Pool Version:** (e.g., 2.0.0)
 - **Coin(s) Affected:** (e.g., BTC, LTC, DGB)
 - **Deployment:** Native / Docker
 - **Hardware:** Bare Metal / Self-Hosted VM (specify hypervisor)

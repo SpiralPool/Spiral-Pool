@@ -1088,4 +1088,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Convergent Spiral 1.2.3*
+*Spiral Pool — Phi Hash Reactor 2.0.0*

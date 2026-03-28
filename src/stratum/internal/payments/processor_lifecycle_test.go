@@ -625,8 +625,8 @@ func TestProcessCycle_HA_BackupSkipsCycle(t *testing.T) {
 		db:           store,
 		daemonClient: rpc,
 		stopCh:       make(chan struct{}),
-		haEnabled:    true,
 	}
+	p.haEnabled.Store(true)
 	p.isMaster.Store(false) // This node is backup
 
 	p.processCycle(context.Background())
@@ -662,8 +662,8 @@ func TestProcessCycle_HA_MasterProcesses(t *testing.T) {
 		db:           store,
 		daemonClient: rpc,
 		stopCh:       make(chan struct{}),
-		haEnabled:    true,
 	}
+	p.haEnabled.Store(true)
 	p.isMaster.Store(true) // This node is master
 
 	p.processCycle(context.Background())

@@ -528,9 +528,9 @@ detect_current_version() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.3")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
     elif [[ -f "/usr/local/bin/stratum" ]]; then
-        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.3")
+        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
     else
         CURRENT_VERSION="unknown"
     fi
@@ -538,7 +538,7 @@ detect_current_version() {
     # Validate version format
     if [[ "$CURRENT_VERSION" != "unknown" ]]; then
         if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
-            CURRENT_VERSION="1.2.3"
+            CURRENT_VERSION="2.0.0"
         fi
     fi
 
@@ -606,9 +606,9 @@ check_for_updates() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "1.2.3")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
     else
-        CURRENT_VERSION="1.2.3"
+        CURRENT_VERSION="2.0.0"
     fi
 
     local RELEASE_URL=""
@@ -1869,6 +1869,196 @@ except Exception as e:
     fi
 }
 
+# ============================================================================
+# CRITICAL V2.0 CONFIG MIGRATION (always runs — prevents 401s and broken features)
+# ============================================================================
+# These migrations are REQUIRED for stratum v2.0 to function correctly.
+# Unlike fix_config_issues() which is opt-in (--fix-config), these run on every
+# upgrade because skipping them causes hard failures:
+#   - Missing global.admin_api_key → Sentinel gets 401 from stratum
+#   - Missing metrics section → dashboard shows no data
+#   - Missing api section → dashboard can't connect to stratum API
+#   - Stale sentinel config.json → Sentinel auto-discovery bypassed with wrong key
+# ============================================================================
+migrate_v2_config() {
+    local CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
+    local MIGRATIONS_APPLIED=0
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return
+    fi
+
+    log_info "Checking v2.0 config compatibility..."
+
+    # --- Metrics section (required for dashboard to poll stratum) ---
+    if grep -q "^metrics:" "$CONFIG_FILE" 2>/dev/null; then
+        if ! grep -A5 "^metrics:" "$CONFIG_FILE" | grep -q "enabled:"; then
+            log_info "  - Adding: enabled: true to metrics section"
+            sed -i '/^metrics:/a\  enabled: true' "$CONFIG_FILE" || true
+            MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+        fi
+        if ! grep -A5 "^metrics:" "$CONFIG_FILE" | grep -q "listen:"; then
+            log_info "  - Adding: listen: 0.0.0.0:9100 to metrics section"
+            sed -i '/^metrics:/a\  listen: "0.0.0.0:9100"' "$CONFIG_FILE" || true
+            MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+        fi
+    else
+        local recovered_metrics_token=""
+        local checkpoint_file="/var/lib/spiralpool/.checkpoint"
+        if [[ -f "$checkpoint_file" ]]; then
+            recovered_metrics_token=$(grep -oP '^METRICS_TOKEN="\K[^"]+' "$checkpoint_file" 2>/dev/null || echo "")
+        fi
+        log_info "  - Adding: Prometheus metrics section (required for dashboard)"
+        if [[ -n "$recovered_metrics_token" ]]; then
+            recovered_metrics_token="${recovered_metrics_token//[$'\n\r']/}"
+            recovered_metrics_token="${recovered_metrics_token//\"/}"
+            recovered_metrics_token="${recovered_metrics_token//\$/}"
+            recovered_metrics_token="${recovered_metrics_token//\`/}"
+            log_info "  - Recovered metrics auth token from checkpoint"
+            cat >> "$CONFIG_FILE" << METRICS_EOF
+
+# Prometheus Metrics (added by upgrade.sh v2.0 migration)
+metrics:
+  enabled: true
+  listen: "0.0.0.0:9100"
+  authToken: "$recovered_metrics_token"
+METRICS_EOF
+        else
+            cat >> "$CONFIG_FILE" << 'METRICS_EOF'
+
+# Prometheus Metrics (added by upgrade.sh v2.0 migration)
+metrics:
+  enabled: true
+  listen: "0.0.0.0:9100"
+METRICS_EOF
+        fi
+        unset recovered_metrics_token
+        MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+    fi
+
+    # --- API section (required for dashboard to connect to stratum) ---
+    if ! grep -q "^api:" "$CONFIG_FILE" 2>/dev/null; then
+        local recovered_api_key=""
+        local checkpoint_file="/var/lib/spiralpool/.checkpoint"
+        if [[ -f "$checkpoint_file" ]]; then
+            recovered_api_key=$(grep -oP '^ADMIN_API_KEY="?\K[^"\s]+' "$checkpoint_file" 2>/dev/null || echo "")
+        fi
+        if [[ -z "$recovered_api_key" ]]; then
+            recovered_api_key=$(grep -oP '(?:adminApiKey|admin_api_key):\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+        fi
+        log_info "  - Adding: API section (required for dashboard)"
+        if [[ -n "$recovered_api_key" ]]; then
+            recovered_api_key="${recovered_api_key//[$'\n\r']/}"
+            recovered_api_key="${recovered_api_key//\"/}"
+            recovered_api_key="${recovered_api_key//\$/}"
+            recovered_api_key="${recovered_api_key//\`/}"
+            log_info "  - Recovered admin API key from checkpoint"
+            cat >> "$CONFIG_FILE" << API_EOF
+
+# API Server (added by upgrade.sh v2.0 migration)
+api:
+  enabled: true
+  listen: "0.0.0.0:4000"
+  adminApiKey: "$recovered_api_key"
+API_EOF
+        else
+            cat >> "$CONFIG_FILE" << 'API_EOF'
+
+# API Server (added by upgrade.sh v2.0 migration)
+api:
+  enabled: true
+  listen: "0.0.0.0:4000"
+API_EOF
+        fi
+        unset recovered_api_key
+        MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+    fi
+
+    # --- Admin API key v1→v2 migration (CRITICAL: prevents Sentinel 401s) ---
+    # v1 config: api: { adminApiKey: "..." }
+    # v2 config: global: { admin_api_key: "..." }
+    # The v2 stratum binary ONLY reads global.admin_api_key — v1 location is ignored.
+    local v2_key=""
+    local v1_key=""
+    v2_key=$(grep -oP '^\s+admin_api_key:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    v1_key=$(grep -oP '^\s+adminApiKey:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+
+    if [[ -z "$v2_key" ]]; then
+        local new_key=""
+        if [[ -n "$v1_key" ]]; then
+            new_key="$v1_key"
+            log_info "  - Migrating: adminApiKey (v1) → admin_api_key under global: (v2)"
+        else
+            local checkpoint_file="/var/lib/spiralpool/.checkpoint"
+            if [[ -f "$checkpoint_file" ]]; then
+                new_key=$(grep -oP '^ADMIN_API_KEY="?\K[^"\s]+' "$checkpoint_file" 2>/dev/null || echo "")
+            fi
+            if [[ -z "$new_key" ]]; then
+                new_key=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32 || LC_ALL=C tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32)
+                log_info "  - Generating: admin_api_key (missing from config)"
+                log_warn "  ┌──────────────────────────────────────────────────────────┐"
+                log_warn "  │  NEW API KEY GENERATED — save this for dashboard access: │"
+                log_warn "  │  $new_key  │"
+                log_warn "  └──────────────────────────────────────────────────────────┘"
+            else
+                log_info "  - Recovering: admin_api_key from checkpoint"
+            fi
+        fi
+        new_key="${new_key//[$'\n\r']/}"
+        new_key="${new_key//\"/}"
+        new_key="${new_key//\$/}"
+        new_key="${new_key//\`/}"
+        if grep -q "^global:" "$CONFIG_FILE" 2>/dev/null; then
+            sed -i "/^global:/a\\  admin_api_key: \"${new_key}\"" "$CONFIG_FILE" 2>/dev/null || true
+        else
+            sed -i "1s/^/global:\n  admin_api_key: \"${new_key}\"\n/" "$CONFIG_FILE" 2>/dev/null || true
+        fi
+        unset new_key
+        MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+    fi
+    unset v1_key v2_key
+
+    # --- Sync admin API key to Sentinel config.json (prevents 401 on stratum kick) ---
+    local final_api_key=""
+    final_api_key=$(grep -oP '^\s+admin_api_key:\s*"?\K[^"\s]+' "$CONFIG_FILE" 2>/dev/null | head -1 || echo "")
+    if [[ -n "$final_api_key" ]]; then
+        for sentinel_cfg in \
+            "${INSTALL_DIR}/config/sentinel/config.json" \
+            "/home/${POOL_USER}/.spiralsentinel/config.json"; do
+            if [[ -f "$sentinel_cfg" ]]; then
+                local old_sentinel_key=""
+                old_sentinel_key=$(python3 -c "import json; d=json.load(open('$sentinel_cfg')); print(d.get('pool_admin_api_key',''))" 2>/dev/null || echo "")
+                if [[ "$old_sentinel_key" != "$final_api_key" ]]; then
+                    python3 -c "
+import json, sys
+cfg_path = '$sentinel_cfg'
+try:
+    with open(cfg_path) as f:
+        d = json.load(f)
+    d['pool_admin_api_key'] = '$final_api_key'
+    with open(cfg_path, 'w') as f:
+        json.dump(d, f, indent=2)
+except Exception as e:
+    print(f'Warning: could not update {cfg_path}: {e}', file=sys.stderr)
+" 2>/dev/null || true
+                    chown "${POOL_USER}:${POOL_USER}" "$sentinel_cfg" 2>/dev/null || true
+                    log_info "  - Synced admin_api_key to $(basename $(dirname $sentinel_cfg))/config.json"
+                    MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
+                fi
+            fi
+        done
+    fi
+    unset final_api_key
+
+    if [[ $MIGRATIONS_APPLIED -gt 0 ]]; then
+        chown "${POOL_USER}:${POOL_USER}" "$CONFIG_FILE" 2>/dev/null || true
+        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+        log_success "Applied $MIGRATIONS_APPLIED v2.0 config migrations"
+    else
+        log_info "  - Config already v2.0 compatible"
+    fi
+}
+
 # Fix database ownership to ensure migrations work
 # This is needed when tables were created by postgres user but app runs as spiralstratum
 # Also grants schema creation privileges for Go binary table creation
@@ -2353,6 +2543,90 @@ deploy_stratum() {
     echo
 }
 
+# ============================================================================
+# DASHBOARD TLS — Self-signed certificate generation
+# ============================================================================
+generate_dashboard_cert() {
+    local CERT_DIR="$INSTALL_DIR/certs"
+    local CERT_FILE="$CERT_DIR/dashboard.crt"
+    local KEY_FILE="$CERT_DIR/dashboard.key"
+
+    # Skip if cert already exists and is valid
+    if [[ -f "$CERT_FILE" ]] && [[ -f "$KEY_FILE" ]]; then
+        if openssl x509 -checkend 86400 -noout -in "$CERT_FILE" 2>/dev/null; then
+            return 0
+        fi
+        log_info "Dashboard TLS certificate expired — regenerating"
+    fi
+
+    mkdir -p "$CERT_DIR"
+
+    # Build Subject Alternative Names (SANs) for LAN access
+    local san_entries="DNS:localhost,DNS:$(hostname)"
+    local lan_ips
+    lan_ips=$(ip -4 addr show 2>/dev/null | grep -oP 'inet \K[0-9.]+' | grep -v '^127\.' || hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' || true)
+    for ip in $lan_ips; do
+        san_entries="${san_entries},IP:${ip}"
+    done
+    san_entries="${san_entries},IP:127.0.0.1"
+
+    log_info "Generating self-signed TLS certificate for dashboard..."
+    openssl req -x509 \
+        -newkey rsa:2048 \
+        -keyout "$KEY_FILE" \
+        -out "$CERT_FILE" \
+        -sha256 \
+        -days 3650 \
+        -nodes \
+        -subj "/O=Spiral Pool/CN=$(hostname)" \
+        -addext "subjectAltName=${san_entries}" \
+        -addext "basicConstraints=CA:FALSE" \
+        -addext "keyUsage=digitalSignature,keyEncipherment" \
+        -addext "extendedKeyUsage=serverAuth" \
+        2>/dev/null
+
+    if [[ $? -eq 0 ]] && [[ -f "$CERT_FILE" ]]; then
+        chown "${POOL_USER}:${POOL_USER}" "$CERT_FILE" "$KEY_FILE"
+        chmod 640 "$KEY_FILE"
+        chmod 644 "$CERT_FILE"
+        log_success "Dashboard TLS certificate generated (self-signed, 10-year validity)"
+    else
+        log_warn "Failed to generate TLS certificate — dashboard will fall back to HTTP"
+        return 1
+    fi
+}
+
+# Migrate existing HTTP-only dashboard to HTTPS
+migrate_dashboard_https() {
+    local SERVICE_FILE="/etc/systemd/system/spiraldash.service"
+    [[ ! -f "$SERVICE_FILE" ]] && return
+
+    # Check if the service already uses HTTPS
+    if grep -q "certfile" "$SERVICE_FILE" 2>/dev/null; then
+        return  # Already HTTPS
+    fi
+
+    # Generate cert if missing
+    if ! generate_dashboard_cert; then
+        log_warn "Skipping HTTPS migration — cert generation failed"
+        return
+    fi
+
+    log_info "Migrating dashboard to HTTPS..."
+
+    # Add --certfile and --keyfile to ExecStart line
+    sed -i "s|ExecStart=\(.*gunicorn\) --bind|ExecStart=\1 --bind|" "$SERVICE_FILE"
+    sed -i "s|--bind \([^ ]*\)|--bind \1 --certfile=${INSTALL_DIR}/certs/dashboard.crt --keyfile=${INSTALL_DIR}/certs/dashboard.key|" "$SERVICE_FILE"
+
+    # Add /certs to ReadWritePaths if not already there
+    if ! grep -q "certs" "$SERVICE_FILE" 2>/dev/null; then
+        sed -i "s|ReadWritePaths=\(.*\)|ReadWritePaths=\1 ${INSTALL_DIR}/certs|" "$SERVICE_FILE"
+    fi
+
+    systemctl daemon-reload 2>/dev/null || true
+    log_success "Dashboard migrated to HTTPS"
+}
+
 update_dashboard() {
     echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${MAGENTA}  DASHBOARD UPDATE${NC}"
@@ -2506,6 +2780,19 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart catcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart fractald
 # Q-BitX
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart qbitxd
+
+# Log viewer - allow journalctl to read any service logs from dashboard
+# Dashboard validates service names against ALLOWED_SERVICES whitelist before invoking
+$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
+
+# System package updates - apt-get update/upgrade from dashboard
+$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get *
+
+# Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade
+$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
+
+# Database health check - allow psql as postgres user
+$POOL_USER ALL=(postgres) NOPASSWD: /usr/bin/psql -c SELECT\ 1
 SUDOERS_EOF
         chmod 440 "$DASH_SUDOERS"
         chown root:root "$DASH_SUDOERS"
@@ -2514,6 +2801,59 @@ SUDOERS_EOF
         else
             log_warn "  - Sudoers syntax error, removing"
             rm -f "$DASH_SUDOERS"
+        fi
+    else
+        # v2.0 migration: append entries missing from older installs
+        local sudoers_changed=false
+        if ! grep -q "journalctl" "$DASH_SUDOERS" 2>/dev/null; then
+            log_info "  - Adding log viewer permissions (v2.0)..."
+            cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
+
+# Log viewer - allow journalctl to read any service logs from dashboard (v2.0)
+# Dashboard validates service names against ALLOWED_SERVICES whitelist before invoking
+$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
+SUDOERS_APPEND
+            sudoers_changed=true
+        fi
+        if ! grep -q "apt-get" "$DASH_SUDOERS" 2>/dev/null; then
+            log_info "  - Adding system update permissions (v2.0)..."
+            cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
+
+# System package updates - apt-get update/upgrade from dashboard (v2.0)
+$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get *
+SUDOERS_APPEND
+            sudoers_changed=true
+        fi
+        if ! grep -q "upgrade.sh" "$DASH_SUDOERS" 2>/dev/null; then
+            log_info "  - Adding auto-update permissions (v2.0)..."
+            cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
+
+# Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade (v2.0)
+$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
+SUDOERS_APPEND
+            sudoers_changed=true
+        fi
+        if ! grep -q "psql" "$DASH_SUDOERS" 2>/dev/null; then
+            log_info "  - Adding database health check permissions (v2.0)..."
+            cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
+
+# Database health check - allow psql as postgres user (v2.0)
+$POOL_USER ALL=(postgres) NOPASSWD: /usr/bin/psql -c SELECT\ 1
+SUDOERS_APPEND
+            sudoers_changed=true
+        fi
+        if [[ "$sudoers_changed" == "true" ]]; then
+            chmod 440 "$DASH_SUDOERS"
+            chown root:root "$DASH_SUDOERS"
+            if visudo -c -f "$DASH_SUDOERS" > /dev/null 2>&1; then
+                log_info "  - Dashboard sudoers updated with v2.0 entries"
+            else
+                log_warn "  - Sudoers syntax error after v2.0 append — reverting"
+                # Remove the appended lines by regenerating from scratch
+                # (next upgrade will recreate if file is removed)
+                rm -f "$DASH_SUDOERS"
+                log_warn "  - Removed broken sudoers file — will be recreated on next upgrade"
+            fi
         fi
     fi
 
@@ -3079,7 +3419,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V1.2.3 - CONVERGENT SPIRAL${NC}"
+echo -e "                                     ${DIM}V2.0.0 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3712,13 +4052,13 @@ notify_coin_upgrades() {
     # Read Discord webhook URL from Sentinel config
     local webhook
     webhook=$(python3 - <<'PYEOF' 2>/dev/null
-import yaml, os, sys
+import json, os, sys
 for path in [
-    "/spiralpool/config/sentinel/config.yaml",
-    os.path.expanduser("~spiraluser/.spiralsentinel/config.yaml"),
+    "/spiralpool/config/sentinel/config.json",
+    os.path.expanduser("~spiraluser/.spiralsentinel/config.json"),
 ]:
     try:
-        data = yaml.safe_load(open(path))
+        data = json.load(open(path))
         url = (data or {}).get("discord_webhook_url", "")
         if url and "YOUR" not in url and url.startswith("https://discord.com/api/webhooks/"):
             print(url)
@@ -3777,7 +4117,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v1.2.3 — Convergent Spiral  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.0.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -4118,12 +4458,17 @@ SSHDEOF
     local ORIG_SKIP_START="$SKIP_START"
     SKIP_START="true"
 
-    # Run config fixes ONLY when explicitly requested with --fix-config or --full.
-    # Upgrades should update binaries/code only — config.yaml is user-owned and
-    # must not be modified without explicit opt-in.
+    # Run cosmetic config fixes ONLY when explicitly requested with --fix-config or --full.
+    # These are non-critical fixes (coin names, pool IDs, duration formats) that are
+    # safe to skip — config.yaml is user-owned and shouldn't be modified without opt-in.
     if $FIX_CONFIG; then
         fix_config_issues
     fi
+
+    # CRITICAL v2.0 config migrations — always run regardless of flags.
+    # These prevent hard failures: 401 Sentinel errors, missing metrics/API sections.
+    # Each migration is idempotent (checks before modifying) and safe to re-run.
+    migrate_v2_config
 
     # Fix database ownership when stratum is being updated (ensures migrations can run)
     # This is needed when tables were created by postgres but app runs as spiralstratum
@@ -4140,6 +4485,7 @@ SSHDEOF
     # Update version, scripts, and utilities
     update_utility_scripts
     migrate_ha_sudoers
+    migrate_dashboard_https
     update_motd
     update_version_file
     update_upgrade_script

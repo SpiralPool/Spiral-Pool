@@ -22,6 +22,41 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha256-SERKgtTty1vsDxll+qzd4Y2cF9swY9BCq62i9wXJ9Uo=" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js" integrity="sha256-v0JBvHP+9/EcWaKDpp/oBRzdMcbY/1orm6IZ54Mfz3Y=" crossorigin="anonymous"></script>
     <style>
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            background: var(--bg-secondary, rgba(15, 23, 42, 0.95));
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding: 0 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .tab-nav-btn {
+            font-family: var(--font-display, 'Rajdhani', sans-serif);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted, #6b7280);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            padding: 0.75rem 1.25rem;
+            cursor: pointer;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .tab-nav-btn:hover {
+            color: var(--text-primary, #e2e8f0);
+        }
+        .tab-nav-btn.active {
+            color: var(--neon-cyan, #00d4ff);
+            border-bottom-color: var(--neon-cyan, #00d4ff);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
         /* Coin and Mode Badges */
         .coin-badge {
             font-family: var(--font-mono);
@@ -63,6 +98,18 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
+        }
+
+        .pruned-badge {
+            background: rgba(255, 193, 7, 0.15);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            color: #ffc107;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .restart-btn {
@@ -781,11 +828,17 @@
             max-width: 380px;
         }
 
-        /* Statistics Chart Grid (2x2 KlingEx-style) */
+        /* Statistics Chart Grid (3x2 KlingEx-style) */
         .stats-chart-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 1rem;
+        }
+        @media (max-width: 900px) {
+            .stats-chart-grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 600px) {
+            .stats-chart-grid { grid-template-columns: 1fr; }
         }
 
         .stats-chart-card {
@@ -1197,6 +1250,59 @@
             margin-top: 0.4rem;
         }
 
+        /* Avalon three-mode selector */
+        .avalon-mode-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.6rem;
+            margin: 0.5rem 0 1rem;
+        }
+
+        .avalon-mode-btn {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            padding: 0.75rem 0.5rem;
+            cursor: pointer;
+            text-align: center;
+            transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+            color: var(--text-secondary);
+        }
+
+        .avalon-mode-btn:hover {
+            border-color: rgba(0, 212, 255, 0.5);
+            color: var(--text-primary);
+        }
+
+        .avalon-mode-btn.selected {
+            border-color: var(--neon-cyan, #00d4ff);
+            background: rgba(0, 212, 255, 0.08);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.15);
+            color: var(--neon-cyan, #00d4ff);
+        }
+
+        .avalon-mode-btn .mode-label {
+            font-family: var(--font-display);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+            margin-bottom: 0.3rem;
+        }
+
+        .avalon-mode-btn .mode-desc {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            display: block;
+            line-height: 1.3;
+        }
+
+        .avalon-mode-btn.selected .mode-desc {
+            color: var(--text-secondary);
+        }
+
         .modal-buttons {
             display: flex;
             gap: 1rem;
@@ -1494,6 +1600,56 @@
 
         .detail-stat .stat-value.blocks-value {
             color: var(--neon-purple, #a78bfa);
+        }
+
+        .detail-hashboards {
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .detail-hashboards .hashboard-title {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted, #6b7280);
+            margin-bottom: 0.5rem;
+        }
+
+        .hashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+        }
+
+        .hashboard-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            padding: 0.5rem 0.6rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .hashboard-card .hb-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            color: var(--text-muted, #6b7280);
+            margin-bottom: 0.25rem;
+        }
+
+        .hashboard-card .hb-temps {
+            font-family: var(--font-mono, 'Share Tech Mono', monospace);
+            font-size: 0.95rem;
+        }
+
+        .hashboard-card .hb-chip {
+            color: var(--neon-orange, #fb923c);
+        }
+
+        .hashboard-card .hb-board {
+            color: var(--text-muted, #6b7280);
+            font-size: 0.8rem;
         }
 
         .detail-device-info {
@@ -1835,6 +1991,31 @@
     </script>
 </head>
 <body class="dashboard-page">
+    <!-- HTTP Insecure Connection Warning -->
+    <div id="http-warning-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:99999; background:linear-gradient(90deg, #8b0000, #cc0000, #8b0000); color:#fff; text-align:center; padding:12px 20px; font-family:var(--font-body, sans-serif); font-size:0.9rem; font-weight:600; box-shadow:0 2px 10px rgba(0,0,0,0.5); letter-spacing:0.5px;">
+        &#9888; INSECURE CONNECTION &mdash; You are using HTTP. Your login credentials and data are transmitted in plain text.
+        <br><span style="font-weight:400; font-size:0.8rem;">
+            Switch to <a href="#" id="https-redirect-link" style="color:#ffcc00; text-decoration:underline; font-weight:600;">HTTPS</a> for a secure connection.
+            A self-signed TLS certificate is configured by default &mdash; accept the browser warning on first visit.
+        </span>
+        <button onclick="document.getElementById('http-warning-banner').style.display='none'" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:#fff; font-size:1.2rem; cursor:pointer; padding:5px;" title="Dismiss">&times;</button>
+    </div>
+    <script>
+        (function() {
+            if (window.location.protocol === 'http:') {
+                var banner = document.getElementById('http-warning-banner');
+                if (banner) {
+                    banner.style.display = 'block';
+                    document.body.style.paddingTop = '70px';
+                }
+                var link = document.getElementById('https-redirect-link');
+                if (link) {
+                    link.href = 'https://' + window.location.host + window.location.pathname;
+                }
+            }
+        })();
+    </script>
+
     <!-- Cyberpunk grid background -->
     <div class="cyber-grid"></div>
     <div class="cyber-glow"></div>
@@ -1852,43 +2033,103 @@
         <div class="confetti-container" id="confetti-container"></div>
     </div>
 
-    <!-- Overclock Warning Modal -->
+    <!-- Device Configuration Modal (Overclock + Fan Control) -->
     <div id="overclock-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <span class="warning-icon">⚠️</span>
-                <h3>Overclock Settings</h3>
+                <span class="warning-icon">&#x2699;&#xFE0F;</span>
+                <h3>Device Configuration</h3>
             </div>
             <div class="modal-warning">
-                <p><strong>DISCLAIMER:</strong> Modifying frequency and voltage settings beyond manufacturer specifications may cause irreversible hardware damage, system instability, data loss, increased power consumption, and fire hazards. These modifications will void your device warranty. The authors of Spiral Pool Dashboard accept no liability for any damage, loss, or injury resulting from the use of these overclocking features. By proceeding, you acknowledge that you are solely responsible for any consequences.</p>
+                <p><strong>DISCLAIMER:</strong> Modifying frequency, voltage, and fan settings beyond manufacturer specifications may cause irreversible hardware damage, system instability, data loss, increased power consumption, and fire hazards. These modifications will void your device warranty. The authors of Spiral Pool Dashboard accept no liability for any damage, loss, or injury resulting from the use of these features. By proceeding, you acknowledge that you are solely responsible for any consequences.</p>
             </div>
             <div id="avalon-experimental-warning" class="modal-warning" style="display: none; background: rgba(255, 165, 0, 0.15); border-color: rgba(255, 165, 0, 0.4);">
-                <p><strong>EXPERIMENTAL:</strong> Canaan/Avalon ASIC overclocking via CGMiner API is experimental. Command format and voltage scaling may vary by model. Test with small changes first.</p>
+                <p><strong>EXPERIMENTAL:</strong> Canaan/Avalon ASIC configuration via CGMiner API is experimental. Command format and voltage scaling may vary by model. Test with small changes first.</p>
             </div>
             <div class="modal-device-name" id="overclock-device-name">--</div>
-            <div class="modal-input-group">
-                <label>Frequency</label>
-                <div class="modal-input-row">
-                    <input type="number" id="overclock-frequency" min="100" max="1200" step="25" placeholder="575">
-                    <span class="input-unit">MHz</span>
+
+            <!-- Overclock Section (AxeOS/Vnish/ePIC) -->
+            <div id="config-overclock-section">
+                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin: 0.75rem 0 0.5rem;">Performance</div>
+                <div class="modal-input-group">
+                    <label>Frequency</label>
+                    <div class="modal-input-row">
+                        <input type="number" id="overclock-frequency" min="100" max="1200" step="25" placeholder="575">
+                        <span class="input-unit">MHz</span>
+                    </div>
+                    <div class="modal-input-hint">Recommended: 400-600 MHz. Max safe: ~725 MHz (device dependent)</div>
                 </div>
-                <div class="modal-input-hint">Recommended: 400-600 MHz. Max safe: ~725 MHz (device dependent)</div>
-            </div>
-            <div class="modal-input-group">
-                <label>Core Voltage</label>
-                <div class="modal-input-row">
-                    <input type="number" id="overclock-voltage" min="1000" max="1400" step="10" placeholder="1200">
-                    <span class="input-unit">mV</span>
+                <div class="modal-input-group">
+                    <label>Core Voltage</label>
+                    <div class="modal-input-row">
+                        <input type="number" id="overclock-voltage" min="1000" max="1400" step="10" placeholder="1200">
+                        <span class="input-unit">mV</span>
+                    </div>
+                    <div class="modal-input-hint">Recommended: 1150-1250 mV. Higher voltage = more heat!</div>
                 </div>
-                <div class="modal-input-hint">Recommended: 1150-1250 mV. Higher voltage = more heat!</div>
             </div>
+
+            <!-- Avalon Mode Section (Canaan/Avalon only) -->
+            <div id="config-avalon-mode-section" style="display: none;">
+                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin: 0.75rem 0 0.5rem;">Power Mode</div>
+                <div class="avalon-mode-grid">
+                    <button class="avalon-mode-btn" id="avalon-mode-efficiency" onclick="selectAvalonMode('efficiency')">
+                        <span class="mode-label">&#x1F4A4; Efficiency</span>
+                        <span class="mode-desc" id="avalon-mode-efficiency-desc">Low power, quiet</span>
+                    </button>
+                    <button class="avalon-mode-btn" id="avalon-mode-balanced" onclick="selectAvalonMode('balanced')">
+                        <span class="mode-label">&#x26A1; Balanced</span>
+                        <span class="mode-desc" id="avalon-mode-balanced-desc">Standard operation</span>
+                    </button>
+                    <button class="avalon-mode-btn" id="avalon-mode-high" onclick="selectAvalonMode('high')">
+                        <span class="mode-label">&#x1F525; High</span>
+                        <span class="mode-desc" id="avalon-mode-high-desc">Max performance</span>
+                    </button>
+                </div>
+                <div class="modal-input-hint" id="avalon-mode-hint">Select a mode. Settings applied via CGMiner API (workmode/freq/voltage).</div>
+            </div>
+
+            <!-- Fan Control Section -->
+            <div id="config-fan-section" style="display: none;">
+                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin: 0.75rem 0 0.5rem;">Fan Control</div>
+                <div class="modal-input-group">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="config-auto-fan" checked>
+                        Auto Fan (PID temperature control)
+                    </label>
+                </div>
+                <div id="config-fan-auto-fields">
+                    <div class="modal-input-group">
+                        <label>Target Temperature</label>
+                        <div class="modal-input-row">
+                            <input type="number" id="config-temp-target" min="35" max="66" step="1" placeholder="60">
+                            <span class="input-unit">&#x00B0;C</span>
+                        </div>
+                        <div class="modal-input-hint">AxeOS range: 35-66&#x00B0;C. Firmware adjusts fan speed to maintain this target.</div>
+                    </div>
+                </div>
+                <div id="config-fan-manual-fields" style="display: none;">
+                    <div class="modal-input-group">
+                        <label>Fan Speed</label>
+                        <div class="modal-input-row">
+                            <input type="number" id="config-fan-speed" min="0" max="100" step="5" placeholder="100">
+                            <span class="input-unit">%</span>
+                        </div>
+                        <div class="modal-input-hint">0-100%. Fixed speed, no automatic temperature adjustment.</div>
+                    </div>
+                </div>
+                <div id="config-fan-avalon-hint" style="display: none;">
+                    <div class="modal-input-hint" style="margin-top: 4px;">Avalon: Fan runs PID control between min-max bounds. 0 = full auto range.</div>
+                </div>
+            </div>
+
             <div class="modal-checkbox">
                 <input type="checkbox" id="overclock-confirm">
                 <label for="overclock-confirm">I have read and accept the disclaimer. I assume full responsibility for any damage.</label>
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn cancel" onclick="closeOverclockModal()">Cancel</button>
-                <button class="modal-btn confirm" id="overclock-apply-btn" onclick="applyOverclock()" disabled>Apply Settings</button>
+                <button class="modal-btn confirm" id="overclock-apply-btn" onclick="applyConfiguration()" disabled>Apply Settings</button>
             </div>
         </div>
     </div>
@@ -1916,6 +2157,10 @@
                 <div class="chart-header">
                     <span>Hashrate History</span>
                     <div class="chart-period-selector">
+                        <button onclick="loadMinerHistory(0.25)" class="period-btn">15m</button>
+                        <button onclick="loadMinerHistory(1)" class="period-btn">1h</button>
+                        <button onclick="loadMinerHistory(6)" class="period-btn">6h</button>
+                        <button onclick="loadMinerHistory(12)" class="period-btn">12h</button>
                         <button onclick="loadMinerHistory(24)" class="period-btn active">24h</button>
                         <button onclick="loadMinerHistory(168)" class="period-btn">7d</button>
                         <button onclick="loadMinerHistory(720)" class="period-btn">30d</button>
@@ -1971,6 +2216,12 @@
                 </div>
             </div>
 
+            <!-- Per-Hashboard Stats -->
+            <div id="detail-hashboards" class="detail-hashboards" style="display: none;">
+                <div class="hashboard-title">Hashboard Temperatures</div>
+                <div id="detail-hashboard-grid" class="hashboard-grid"></div>
+            </div>
+
             <!-- Device Info -->
             <div class="detail-device-info">
                 <div class="info-row">
@@ -1988,12 +2239,15 @@
                 <div class="info-row">
                     <span>Pool:</span><span id="detail-pool">--</span>
                 </div>
+                <div class="info-row" id="detail-tags-row" style="display: none;">
+                    <span>Tags:</span><span id="detail-tags">--</span>
+                </div>
             </div>
 
             <!-- Actions -->
             <div class="detail-actions" id="detail-actions" style="display: none;">
                 <button class="action-btn restart-btn" onclick="restartFromDetail()">⟳ Restart</button>
-                <button class="action-btn overclock-btn" id="detail-overclock-btn" onclick="overclockFromDetail()">⚡ Overclock</button>
+                <button class="action-btn overclock-btn" id="detail-overclock-btn" onclick="overclockFromDetail()">&#x2699; Configure</button>
                 <button class="action-btn pool-btn" onclick="showPoolConfig()" title="Pool Connection Info">🌐 Info</button>
                 <button class="action-btn schedule-btn" id="detail-schedule-btn" onclick="showScheduleConfig()" title="Power Mode / Schedule" style="display: none;">🕐 Schedule</button>
             </div>
@@ -2117,7 +2371,7 @@
                 </div>
 
                 <!-- Profile Descriptions -->
-                <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
                     <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Power Profiles:</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem; font-size: 0.75rem;">
                         <div><span class="profile-badge efficiency">Efficiency</span><br><span style="color: var(--text-muted);">Low power, reduced hashrate</span></div>
@@ -2251,18 +2505,30 @@
                             style="width: 100%; padding: 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-primary); border-radius: 6px; color: var(--text-primary); font-family: var(--font-body); font-size: 0.85rem;">
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <!-- Surfaces -->
+                    <div style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px;">Surfaces</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.75rem;">
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Background</label>
-                            <input type="color" id="ct-bg-primary" value="#0f1419" data-var="bg-primary" onchange="customThemeLive()" style="width: 100%; height: 28px; border: none; border-radius: 4px; cursor: pointer;">
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Background</label>
+                            <input type="color" id="ct-bg-primary" value="#0f1419" data-var="bg-primary" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Cards</label>
-                            <input type="color" id="ct-bg-card" value="#1e2433" data-var="bg-card" onchange="customThemeLive()" style="width: 100%; height: 28px; border: none; border-radius: 4px; cursor: pointer;">
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Cards</label>
+                            <input type="color" id="ct-bg-card" value="#1e2433" data-var="bg-card" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
+                        </div>
+                        <div>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Text</label>
+                            <input type="color" id="ct-text-primary" value="#f1f5f9" data-var="text-primary" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
+                        </div>
+                        <div>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Text Dim</label>
+                            <input type="color" id="ct-text-secondary" value="#a1a9b8" data-var="text-secondary" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.75rem;">
+                    <!-- Accent Colors -->
+                    <div style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px;">Accent Colors</div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin-bottom: 0.75rem;">
                         <div>
                             <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Blue</label>
                             <input type="color" id="ct-neon-blue" value="#3b9dff" data-var="neon-blue" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
@@ -2279,9 +2545,6 @@
                             <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Pink</label>
                             <input type="color" id="ct-neon-pink" value="#d458a8" data-var="neon-pink" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.75rem;">
                         <div>
                             <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Orange</label>
                             <input type="color" id="ct-neon-orange" value="#fb923c" data-var="neon-orange" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
@@ -2300,33 +2563,32 @@
                         </div>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.4rem; margin-bottom: 0.75rem;">
+                    <!-- Chart Colors -->
+                    <div style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px;">Chart Colors</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin-bottom: 0.75rem;">
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.6rem; display: block; margin-bottom: 2px;">Pool HR</label>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Pool HR</label>
                             <input type="color" id="ct-chart-pool-hashrate" value="#fb923c" data-var="chart-pool-hashrate" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.6rem; display: block; margin-bottom: 2px;">Net HR</label>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Net HR</label>
                             <input type="color" id="ct-chart-network-hashrate" value="#3b9dff" data-var="chart-network-hashrate" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.6rem; display: block; margin-bottom: 2px;">Difficulty</label>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Difficulty</label>
                             <input type="color" id="ct-chart-difficulty" value="#9175f0" data-var="chart-difficulty" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.6rem; display: block; margin-bottom: 2px;">Workers</label>
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Workers</label>
                             <input type="color" id="ct-chart-workers" value="#4ade80" data-var="chart-workers" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.75rem;">
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Text</label>
-                            <input type="color" id="ct-text-primary" value="#f1f5f9" data-var="text-primary" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Blocks</label>
+                            <input type="color" id="ct-chart-blocks-found" value="#ffd700" data-var="chart-blocks-found" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                         <div>
-                            <label style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-bottom: 2px;">Text Dim</label>
-                            <input type="color" id="ct-text-secondary" value="#a1a9b8" data-var="text-secondary" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
+                            <label style="color: var(--text-muted); font-size: 0.65rem; display: block; margin-bottom: 2px;">Shares</label>
+                            <input type="color" id="ct-chart-shares-rate" value="#4ade80" data-var="chart-shares-rate" onchange="customThemeLive()" style="width: 100%; height: 24px; border: none; border-radius: 4px; cursor: pointer;">
                         </div>
                     </div>
 
@@ -2376,13 +2638,25 @@
         </div>
     </aside>
 
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-nav-btn active" onclick="switchTab('overview')">Overview</button>
+        <button class="tab-nav-btn" onclick="switchTab('management')">Management</button>
+    </nav>
+
     <!-- Main Content -->
     <main class="dashboard-content">
-        <!-- System Warnings Banner Area -->
+        <!-- System Warnings Banner Area (always visible) -->
         <div id="system-warnings-container" class="system-warnings-container"></div>
+
+        <!-- Wallet Mismatch Warning (populated by fetchHealthData) -->
+        <div id="wallet-mismatch-banner"></div>
 
         <!-- H-3: Wrong Pool Detection Banner (hidden by default, shown via JS when detected) -->
         <div id="wrong-pool-banner" style="display: none;"></div>
+
+    <!-- ═══════════════ TAB: OVERVIEW ═══════════════ -->
+    <div id="tab-overview" class="tab-content active">
 
         <!-- Stats Overview -->
         <section class="stats-overview">
@@ -2408,7 +2682,7 @@
                 <div class="stat-value">
                     <span id="blocks-found">0</span>
                 </div>
-                <div class="stat-sub">Pool session</div>
+                <div class="stat-sub">Pool total</div>
             </div>
 
             <div class="stat-card last-block">
@@ -2442,6 +2716,14 @@
                     <span id="miners-online">-</span>
                 </div>
                 <div class="stat-sub"><span id="fleet-count"></span> <span id="avg-temp"></span></div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value">
+                    <span id="pool-uptime">--</span>
+                </div>
+                <div class="stat-sub" id="pool-uptime-sub"></div>
             </div>
         </section>
 
@@ -2519,47 +2801,36 @@
                             <canvas id="chart-workers"></canvas>
                         </div>
                     </div>
+                    <div class="stats-chart-card">
+                        <div class="stats-chart-header">
+                            <div class="stats-chart-label">
+                                <span class="stats-chart-dot" style="background: var(--chart-blocks-found)"></span>
+                                Blocks Found
+                            </div>
+                            <div class="stats-chart-value" id="chart-val-blocks-found" style="color: var(--chart-blocks-found)">0</div>
+                        </div>
+                        <div class="stats-chart-body">
+                            <canvas id="chart-blocks-found"></canvas>
+                        </div>
+                    </div>
+                    <div class="stats-chart-card">
+                        <div class="stats-chart-header">
+                            <div class="stats-chart-label">
+                                <span class="stats-chart-dot" style="background: var(--chart-shares-rate)"></span>
+                                Shares Rate
+                            </div>
+                            <div class="stats-chart-value" id="chart-val-shares-rate" style="color: var(--chart-shares-rate)">--</div>
+                        </div>
+                        <div class="stats-chart-body">
+                            <canvas id="chart-shares-rate"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Lifetime Stats -->
-        <section class="collapsible-section lifetime-section" id="lifetime-section" data-section-id="lifetime">
-            <div class="collapsible-header" onclick="toggleSection('lifetime-section')">
-                <span class="drag-handle" title="Drag to reorder">⠿</span>
-                <h3>📊 Lifetime Statistics</h3>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                    <button class="clear-stats-btn" onclick="event.stopPropagation(); clearLifetimeStats()" title="Reset all lifetime statistics">
-                        🗑 Clear Stats
-                    </button>
-                    <span class="collapsible-toggle">▼</span>
-                </div>
-            </div>
-            <div class="collapsible-content">
-            <div class="lifetime-grid">
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">⚡</div>
-                    <div class="lifetime-value" id="lifetime-shares">--</div>
-                    <div class="lifetime-label" title="All-time shares accepted by this pool">Pool Shares</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">🏆</div>
-                    <div class="lifetime-value" id="lifetime-blocks">0</div>
-                    <div class="lifetime-label">Blocks Found</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">💎</div>
-                    <div class="lifetime-value" id="lifetime-best-diff">--</div>
-                    <div class="lifetime-label">Best Share</div>
-                </div>
-                <div class="lifetime-card">
-                    <div class="lifetime-icon">⏱</div>
-                    <div class="lifetime-value" id="lifetime-uptime">--</div>
-                    <div class="lifetime-label">Uptime</div>
-                </div>
-            </div>
-            </div><!-- /collapsible-content -->
-        </section>
+        <!-- Fleet Group Summary Bar -->
+        <div id="fleet-group-summary" class="fleet-group-bar" style="display:none;"></div>
 
         <!-- Miners Section -->
         <section class="collapsible-section miners-section" id="miners-section" data-section-id="miners">
@@ -2791,20 +3062,215 @@
             </div>
         </section>
 
+        <!-- System Management -->
         </div><!-- /sortable-sections -->
+    </div><!-- /tab-overview -->
+
+    <!-- ═══════════════ TAB: MANAGEMENT ═══════════════ -->
+    <div id="tab-management" class="tab-content">
+
+        <div style="padding: 0.5rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+
+                <!-- System Resources -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">System Resources</div>
+                    <div id="mgmt-system-info" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Service Control -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Services</div>
+                    <div id="mgmt-services" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Disk Usage -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Disk Usage</div>
+                    <div id="mgmt-disks" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Worker Groups -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Worker Groups</div>
+                        <button onclick="showCreateGroupDialog()" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">+ New</button>
+                    </div>
+                    <div id="mgmt-groups" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- System Updates -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">System Updates</div>
+                        <div style="display: flex; gap: 4px;">
+                            <button onclick="applySystemUpdates()" id="btn-apply-updates" style="background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--neon-green, #4ade80); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Apply</button>
+                            <button onclick="refreshSystemUpdates()" id="btn-refresh-updates" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="mgmt-updates" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Spiral Pool Upgrade -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Spiral Pool Upgrade</div>
+                        <div style="display: flex; gap: 4px;">
+                            <button onclick="applyPoolUpgrade()" id="btn-pool-upgrade" style="background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.3); color: var(--neon-orange, #fb923c); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Upgrade</button>
+                            <button onclick="checkPoolUpgrade()" id="btn-pool-check" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Check</button>
+                        </div>
+                    </div>
+                    <div id="mgmt-pool-upgrade" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Click Check to look for updates</div>
+                    </div>
+                </div>
+
+                <!-- Export Data -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Export Data</div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                            <span style="color:var(--text-primary, #e2e8f0);">Block History</span>
+                            <span style="display:flex;gap:6px;"><a href="/api/export/blocks" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/blocks?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                            <span style="color:var(--text-primary, #e2e8f0);">Earnings Summary</span>
+                            <span style="display:flex;gap:6px;"><a href="/api/export/earnings" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/earnings?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                            <span style="color:var(--text-primary, #e2e8f0);">Hashrate History</span>
+                            <span style="display:flex;gap:6px;"><a href="/api/export/hashrate" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/hashrate?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Miner Management (full width) -->
+            <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03)); margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Miner Management</div>
+                    <button onclick="refreshMinerManagement()" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Refresh</button>
+                </div>
+                <div style="color: var(--neon-orange, #fb923c); font-size: 0.65rem; margin-bottom: 0.5rem; padding: 4px 8px; background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.15); border-radius: 4px;">
+                    Changing frequency, voltage, or fan settings beyond manufacturer specs may cause hardware damage and void warranty.
+                </div>
+                <div id="mgmt-miners" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                    <div style="color: var(--text-muted);">Loading miners...</div>
+                </div>
+            </div>
+
+            <!-- Log Viewer (full width) -->
+            <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Log Viewer</div>
+                        <select id="log-service-select" onchange="loadServiceLogs()" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary, #e2e8f0); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);">
+                            <option value="">Select service...</option>
+                            <option value="spiralstratum">spiralstratum</option>
+                            <option value="spiralsentinel">spiralsentinel</option>
+                            <option value="spiraldash">spiraldash</option>
+                            <option value="spiralpool-health">spiralpool-health</option>
+                            <option value="spiralpool-ha-watcher">spiralpool-ha-watcher</option>
+                        </select>
+                        <select id="log-severity-filter" onchange="filterLogsBySeverity()" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: var(--text-primary, #e2e8f0); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);">
+                            <option value="all">All levels</option>
+                            <option value="error">Errors only</option>
+                            <option value="warning">Warnings+</option>
+                            <option value="info">Info+</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <button onclick="toggleLogAutoRefresh()" id="btn-log-live" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">&#9679; Live</button>
+                        <button onclick="toggleLogPause()" id="btn-log-pause" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Pause</button>
+                        <button onclick="loadServiceLogs()" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Reload</button>
+                    </div>
+                </div>
+                <div id="mgmt-logs" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.75rem; max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 0.5rem; color: var(--text-muted, #94a3b8); white-space: pre-wrap; word-break: break-all;">
+                    <span style="color: var(--text-muted);">Select a service to view logs...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Type Breakdown -->
+        <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03)); margin: 0 0.5rem 1rem;">
+            <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Device Types</div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 2rem; flex-wrap: wrap; padding: 0.5rem;">
+                <div style="width: 220px; height: 220px;">
+                    <canvas id="chart-device-types"></canvas>
+                </div>
+                <div id="device-type-legend" style="font-size: 0.8rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);"></div>
+            </div>
+        </div>
+
+    </div><!-- /tab-management -->
+
     </main>
 
     <!-- Footer -->
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v1.2.3</span>
+            <span>Spiral Pool Dashboard v2.0.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
     </footer>
 
     <script>
+        // Tab Navigation
+        let currentTab = 'overview';
+        let mgmtRefreshInterval = null;
+
+        function switchTab(tabName) {
+            currentTab = tabName;
+            // Update tab buttons
+            document.querySelectorAll('.tab-nav-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent.toLowerCase().trim() === tabName);
+            });
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.toggle('active', el.id === 'tab-' + tabName);
+            });
+            // When switching to management, force immediate data refresh and start live polling
+            if (tabName === 'management') {
+                lastMgmtUpdate = 0;
+                lastUpdatesCheck = 0;
+                updateManagementInfo();
+                loadWorkerGroups();
+                refreshMinerManagement();
+                checkSystemUpdates();
+                // Start 10-second refresh for management data
+                if (!mgmtRefreshInterval) {
+                    mgmtRefreshInterval = setInterval(() => {
+                        if (currentTab === 'management') {
+                            lastMgmtUpdate = 0;
+                            updateManagementInfo();
+                        }
+                    }, 10000);
+                }
+            }
+            localStorage.setItem('activeTab', tabName);
+        }
+
+        // Restore active tab on load
+        (function() {
+            const saved = localStorage.getItem('activeTab');
+            if (saved === 'management') {
+                setTimeout(() => switchTab('management'), 100);
+            }
+        })();
+
         // Collapsible Section Toggle
         function toggleSection(sectionId) {
             const section = document.getElementById(sectionId);
@@ -2819,7 +3285,7 @@
         // Restore collapsed states on load
         function restoreCollapsedStates() {
             const defaultCollapsed = ['earnings-section', 'health-section'];
-            const sections = ['charts-section', 'lifetime-section', 'miners-section', 'earnings-section', 'health-section', 'activity-section'];
+            const sections = ['charts-section', 'miners-section', 'earnings-section', 'health-section', 'activity-section', 'management-section'];
             sections.forEach(sectionId => {
                 const state = localStorage.getItem('section_' + sectionId);
                 const section = document.getElementById(sectionId);
@@ -2958,7 +3424,9 @@
             'pool_hashrate':    { canvasId: 'chart-pool-hashrate',    cssVar: '--chart-pool-hashrate',    valueId: 'chart-val-pool-hashrate',    fill: true },
             'network_hashrate': { canvasId: 'chart-network-hashrate', cssVar: '--chart-network-hashrate', valueId: 'chart-val-network-hashrate', fill: true },
             'network_difficulty':{ canvasId: 'chart-difficulty',       cssVar: '--chart-difficulty',       valueId: 'chart-val-difficulty',       fill: true },
-            'connected_miners': { canvasId: 'chart-workers',          cssVar: '--chart-workers',          valueId: 'chart-val-workers',          fill: true }
+            'connected_miners': { canvasId: 'chart-workers',          cssVar: '--chart-workers',          valueId: 'chart-val-workers',          fill: true },
+            'blocks_found':     { canvasId: 'chart-blocks-found',     cssVar: '--chart-blocks-found',     valueId: 'chart-val-blocks-found',     fill: false, chartType: 'bar' },
+            'shares_rate':      { canvasId: 'chart-shares-rate',      cssVar: '--chart-shares-rate',      valueId: 'chart-val-shares-rate',      fill: true }
         };
 
         // History data: {metric: {period: [{time, value, timestamp}]}}
@@ -2978,6 +3446,93 @@
             '7d':  { maxPoints: 336, intervalMs: 30 * 60 * 1000,     label: '7 Days' },
             '30d': { maxPoints: 360, intervalMs: 2 * 60 * 60 * 1000, label: '30 Days' }
         };
+
+        // =====================================================================
+        // Device Type Breakdown Chart
+        // =====================================================================
+        let deviceTypeChart = null;
+        const deviceTypeColors = [
+            '#fb923c', '#00d4ff', '#4ade80', '#facc15', '#f87171',
+            '#a78bfa', '#38bdf8', '#f472b6', '#34d399', '#fbbf24',
+            '#818cf8', '#22d3ee', '#fb7185', '#a3e635', '#e879f9'
+        ];
+
+        function updateDeviceTypeChart(deviceGroups) {
+            if (!deviceGroups || Object.keys(deviceGroups).length === 0) {
+                const section = document.getElementById('device-breakdown-section');
+                if (section) section.style.display = 'none';
+                return;
+            }
+            const section = document.getElementById('device-breakdown-section');
+            if (section) section.style.display = '';
+
+            const labels = [];
+            const counts = [];
+            const colors = [];
+            let i = 0;
+            for (const [name, group] of Object.entries(deviceGroups).sort((a, b) => b[1].count - a[1].count)) {
+                if (group.count > 0) {
+                    labels.push(name);
+                    counts.push(group.count);
+                    colors.push(deviceTypeColors[i % deviceTypeColors.length]);
+                    i++;
+                }
+            }
+
+            const canvas = document.getElementById('chart-device-types');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            if (deviceTypeChart) {
+                deviceTypeChart.data.labels = labels;
+                deviceTypeChart.data.datasets[0].data = counts;
+                deviceTypeChart.data.datasets[0].backgroundColor = colors;
+                deviceTypeChart.update('none');
+            } else {
+                deviceTypeChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: counts,
+                            backgroundColor: colors,
+                            borderWidth: 0,
+                            hoverOffset: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        cutout: '55%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                        const pct = ((ctx.parsed / total) * 100).toFixed(1);
+                                        return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Build custom legend
+            const legendEl = document.getElementById('device-type-legend');
+            if (legendEl) {
+                legendEl.innerHTML = labels.map((label, idx) => {
+                    const total = counts.reduce((a, b) => a + b, 0);
+                    const pct = total > 0 ? ((counts[idx] / total) * 100).toFixed(0) : '0';
+                    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">` +
+                        `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${colors[idx]}"></span>` +
+                        `<span style="color:var(--text-primary,#f1f5f9)">${escapeHtml(label)}</span>` +
+                        `<span style="color:var(--text-muted,#6b7280)">${counts[idx]} (${pct}%)</span></div>`;
+                }).join('');
+            }
+        }
 
         // Read a CSS custom property value
         function getChartColor(cssVar) {
@@ -3021,6 +3576,10 @@
                 return function(ctx) { return formatHashrateValue(ctx.parsed.y); };
             } else if (metricKey === 'network_difficulty') {
                 return function(ctx) { return formatDifficultyValue(ctx.parsed.y); };
+            } else if (metricKey === 'blocks_found') {
+                return function(ctx) { return Math.round(ctx.parsed.y) + ' blocks'; };
+            } else if (metricKey === 'shares_rate') {
+                return function(ctx) { return ctx.parsed.y.toFixed(2) + ' shares/s'; };
             } else {
                 return function(ctx) { return Math.round(ctx.parsed.y) + ' workers'; };
             }
@@ -3032,34 +3591,41 @@
                 return function(v) { return v > 0 ? formatHashrateValue(v) : '0'; };
             } else if (metricKey === 'network_difficulty') {
                 return function(v) { return v > 0 ? formatDifficultyValue(v) : '0'; };
+            } else if (metricKey === 'blocks_found') {
+                return function(v) { return Math.round(v); };
+            } else if (metricKey === 'shares_rate') {
+                return function(v) { return v > 0 ? v.toFixed(1) + '/s' : '0'; };
             } else {
                 return function(v) { return Math.round(v); };
             }
         }
 
-        // Initialize all 4 stats charts
+        // Initialize all stats charts
         function initStatsCharts() {
             Object.entries(statsMetrics).forEach(([metricKey, cfg]) => {
                 const canvas = document.getElementById(cfg.canvasId);
                 if (!canvas) return;
                 const ctx = canvas.getContext('2d');
                 const color = getChartColor(cfg.cssVar);
+                const isBar = cfg.chartType === 'bar';
 
                 statsCharts[metricKey] = new Chart(ctx, {
-                    type: 'line',
+                    type: isBar ? 'bar' : 'line',
                     data: {
                         labels: [],
                         datasets: [{
                             data: [],
                             borderColor: color,
-                            backgroundColor: hexToRgba(color, 0.08),
-                            borderWidth: 2,
+                            backgroundColor: isBar ? hexToRgba(color, 0.6) : hexToRgba(color, 0.08),
+                            borderWidth: isBar ? 1 : 2,
                             fill: cfg.fill,
-                            tension: 0.3,
+                            tension: isBar ? 0 : 0.3,
                             pointRadius: 0,
-                            pointHoverRadius: 3,
+                            pointHoverRadius: isBar ? 0 : 3,
                             pointHoverBackgroundColor: color,
-                            pointHoverBorderColor: '#fff'
+                            pointHoverBorderColor: '#fff',
+                            borderRadius: isBar ? 3 : 0,
+                            maxBarThickness: isBar ? 12 : undefined
                         }]
                     },
                     options: {
@@ -3090,13 +3656,14 @@
                             },
                             y: {
                                 display: true,
-                                beginAtZero: metricKey === 'connected_miners',
-                                grace: '10%',
+                                beginAtZero: metricKey === 'connected_miners' || metricKey === 'blocks_found' || metricKey === 'shares_rate',
+                                grace: isBar ? '0%' : '10%',
                                 grid: { color: 'rgba(255,255,255,0.03)', drawBorder: false },
                                 ticks: {
                                     color: '#64748b', maxTicksLimit: 4,
                                     font: { family: "'Share Tech Mono', monospace", size: 9 },
-                                    callback: getYTickCallback(metricKey)
+                                    callback: getYTickCallback(metricKey),
+                                    stepSize: metricKey === 'blocks_found' ? 1 : undefined
                                 }
                             }
                         }
@@ -3106,12 +3673,14 @@
         }
 
         // Update stats history for all metrics and periods
-        function updateStatsHistory(poolHashrateHps, networkHashrateHps, networkDifficulty, connectedMiners) {
+        function updateStatsHistory(poolHashrateHps, networkHashrateHps, networkDifficulty, connectedMiners, blocksFound, sharesRate) {
             const now = Date.now();
             const values = {
                 'pool_hashrate': poolHashrateHps,
                 'network_hashrate': networkHashrateHps,
                 'network_difficulty': networkDifficulty,
+                'blocks_found': blocksFound || 0,
+                'shares_rate': sharesRate || 0,
                 'connected_miners': connectedMiners
             };
 
@@ -3190,12 +3759,20 @@
                 const farmM = _lastTotalMiners || 0;
                 workEl.textContent = poolW + ' w' + (farmM > 0 ? ' \u00B7 ' + farmM + ' m' : '');
             }
+            // Blocks Found
+            const blocksEl = document.getElementById('chart-val-blocks-found');
+            if (blocksEl) blocksEl.textContent = _lastBlocksFound || 0;
+            // Shares Rate
+            const sharesEl = document.getElementById('chart-val-shares-rate');
+            if (sharesEl) sharesEl.textContent = _lastSharesRate > 0 ? _lastSharesRate.toFixed(2) + '/s' : '--';
         }
 
         // Track latest values for display
         let _lastNetworkHashrate = 0;
         let _lastConnectedMiners = 0;
         let _lastTotalMiners = 0;
+        let _lastBlocksFound = 0;
+        let _lastSharesRate = 0;
 
         // Change stats period (shared for all 4 charts)
         function changeStatsPeriod(period) {
@@ -3245,7 +3822,7 @@
                             if (tsMs - lastTs >= config.intervalMs * 0.8) {
                                 const d = new Date(tsMs);
                                 let label;
-                                if (period === '1h' || period === '6h') {
+                                if (period === '15m' || period === '1h' || period === '6h' || period === '12h') {
                                     label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                 } else if (period === '24h') {
                                     label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -3404,6 +3981,607 @@
                         monthlyFiatEl.textContent = sanityCheckFailed ? cur.symbol + '-- ' + cur.name : formatFiat(monthlyCoin * price, cur) + ' ' + cur.name;
                     }
                 }
+            }
+        }
+
+        // System management info
+        let lastMgmtUpdate = 0;
+        async function updateManagementInfo() {
+            const now = Date.now();
+            if (now - lastMgmtUpdate < 30000) return;  // Refresh every 30s
+            lastMgmtUpdate = now;
+
+            try {
+                const response = await fetch('/api/system/info');
+                if (!response.ok) return;
+                const info = await response.json();
+                if (!info.success) return;
+
+                // System resources
+                const sysEl = document.getElementById('mgmt-system-info');
+                if (sysEl && info.cpu && info.memory) {
+                    const uptimeH = Math.floor((info.uptime_seconds || 0) / 3600);
+                    const uptimeD = Math.floor(uptimeH / 24);
+                    const uptimeStr = uptimeD > 0 ? `${uptimeD}d ${uptimeH % 24}h` : `${uptimeH}h`;
+                    const memPct = info.memory.percent || 0;
+                    const memColor = memPct > 90 ? 'var(--neon-red, #f87171)' : memPct > 70 ? 'var(--neon-orange, #fb923c)' : 'var(--neon-green, #4ade80)';
+                    sysEl.innerHTML =
+                        `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Uptime</span><span style="color:var(--text-primary)">${uptimeStr}</span></div>` +
+                        `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">CPU Load</span><span style="color:var(--text-primary)">${info.cpu.load_1m} / ${info.cpu.load_5m} / ${info.cpu.load_15m} (${info.cpu.cores} cores)</span></div>` +
+                        `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Memory</span><span style="color:${memColor}">${info.memory.used_mb} / ${info.memory.total_mb} MB (${memPct}%)</span></div>` +
+                        (info.version ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Version</span><span style="color:var(--neon-cyan, #00d4ff)">${escapeHtml(String(info.version))}</span></div>` : '');
+                }
+
+                // Services (with restart buttons)
+                const svcEl = document.getElementById('mgmt-services');
+                if (svcEl && info.services) {
+                    svcEl.innerHTML = Object.entries(info.services).map(([name, status]) => {
+                        const color = status === 'active' ? 'var(--neon-green, #4ade80)' : status === 'inactive' ? 'var(--text-muted, #6b7280)' : 'var(--neon-red, #f87171)';
+                        const dot = status === 'active' ? '&#x25CF;' : '&#x25CB;';
+                        const btnStyle = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-muted);padding:1px 5px;border-radius:3px;cursor:pointer;font-size:0.65rem;font-family:inherit;';
+                        const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const htmlName = escapeHtml(name);
+                        const restartBtn = `<button onclick="serviceAction('${safeName}','restart')" style="${btnStyle}" title="Restart ${htmlName}">&#x21BB;</button>`;
+                        const startBtn = status !== 'active' ? `<button onclick="serviceAction('${safeName}','start')" style="${btnStyle}" title="Start ${htmlName}">&#x25B6;</button>` : '';
+                        const stopBtn = status === 'active' ? `<button onclick="serviceAction('${safeName}','stop')" style="${btnStyle}" title="Stop ${htmlName}">&#x25A0;</button>` : '';
+                        return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">` +
+                            `<span style="color:var(--text-primary)">${htmlName}</span>` +
+                            `<span style="display:flex;align-items:center;gap:4px;">` +
+                            `<span style="color:${color};font-size:0.8rem;">${dot} ${status}</span>` +
+                            `${startBtn}${stopBtn}${restartBtn}</span></div>`;
+                    }).join('');
+                }
+
+                // Disks
+                const diskEl = document.getElementById('mgmt-disks');
+                if (diskEl && info.disks) {
+                    diskEl.innerHTML = info.disks.map(d => {
+                        const color = d.percent > 90 ? 'var(--neon-red, #f87171)' : d.percent > 75 ? 'var(--neon-orange, #fb923c)' : 'var(--neon-green, #4ade80)';
+                        return `<div style="margin-bottom:6px;">` +
+                            `<div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span style="color:var(--text-muted)">${escapeHtml(String(d.mount))}</span><span style="color:${color}">${Number(d.used_gb)||0} / ${Number(d.total_gb)||0} GB (${Number(d.percent)||0}%)</span></div>` +
+                            `<div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;"><div style="height:100%;width:${d.percent}%;background:${color};border-radius:2px;"></div></div></div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                // Silently fail — management section is non-critical
+            }
+        }
+
+        // =====================================================================
+        // Service Control, Log Viewer, System Updates
+        // =====================================================================
+        async function serviceAction(service, action) {
+            if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${service}?`)) return;
+            try {
+                const response = await fetch(`/api/services/${service}/${action}`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    lastMgmtUpdate = 0;  // Force refresh
+                    updateManagementInfo();
+                } else {
+                    alert(result.error || `Failed to ${action} ${service}`);
+                }
+            } catch (e) {
+                alert(`Failed to ${action} ${service}: ${e.message}`);
+            }
+        }
+
+        let logRawLines = [];  // Store raw log lines for filtering
+        let logPaused = false;
+
+        async function loadServiceLogs() {
+            if (logPaused) return;  // Don't reload while paused
+            const select = document.getElementById('log-service-select');
+            const logsEl = document.getElementById('mgmt-logs');
+            if (!select || !logsEl) return;
+            const service = select.value;
+            if (!service) {
+                logsEl.innerHTML = '<span style="color: var(--text-muted);">Select a service to view logs...</span>';
+                return;
+            }
+            logsEl.innerHTML = '<span style="color: var(--text-muted);">Loading...</span>';
+            try {
+                const response = await fetch(`/api/logs/${service}?lines=200`);
+                const result = await response.json();
+                if (result.success && result.lines) {
+                    logRawLines = result.lines;
+                    renderFilteredLogs();
+                } else {
+                    logsEl.innerHTML = `<span style="color: var(--neon-red);">${escapeHtml(result.error || 'Failed to load logs')}</span>`;
+                }
+            } catch (e) {
+                logsEl.innerHTML = `<span style="color: var(--neon-red);">Error: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        function getLogSeverity(line) {
+            if (!line || typeof line !== 'string') return 'debug';
+            const lower = line.toLowerCase();
+            if (lower.includes('error') || lower.includes('critical') || lower.includes('fatal')) return 'error';
+            if (lower.includes('warning') || lower.includes('warn')) return 'warning';
+            if (lower.includes('info')) return 'info';
+            return 'debug';
+        }
+
+        function renderFilteredLogs() {
+            const logsEl = document.getElementById('mgmt-logs');
+            if (!logsEl) return;
+            const filter = (document.getElementById('log-severity-filter') || {}).value || 'all';
+            const severityOrder = {'error': 3, 'warning': 2, 'info': 1, 'debug': 0};
+            const minLevel = filter === 'all' ? 0 : (severityOrder[filter] || 0);
+
+            const filtered = logRawLines.filter(line => {
+                if (filter === 'all') return true;
+                return severityOrder[getLogSeverity(line)] >= minLevel;
+            });
+
+            logsEl.innerHTML = filtered.map(line => {
+                let color = 'var(--text-muted, #94a3b8)';
+                const sev = getLogSeverity(line);
+                if (sev === 'error') color = 'var(--neon-red, #f87171)';
+                else if (sev === 'warning') color = 'var(--neon-orange, #fb923c)';
+                else if (sev === 'info') color = 'var(--text-primary, #e2e8f0)';
+                return `<div style="color:${color};margin-bottom:1px;">${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`;
+            }).join('') || '<span style="color: var(--text-muted);">No logs matching filter</span>';
+            if (!logPaused) logsEl.scrollTop = logsEl.scrollHeight;
+        }
+
+        function filterLogsBySeverity() {
+            renderFilteredLogs();
+        }
+
+        function toggleLogPause() {
+            logPaused = !logPaused;
+            const btn = document.getElementById('btn-log-pause');
+            if (btn) {
+                btn.textContent = logPaused ? 'Resume' : 'Pause';
+                btn.style.color = logPaused ? 'var(--neon-orange, #fb923c)' : 'var(--text-muted)';
+            }
+        }
+
+        let logAutoRefreshInterval = null;
+        let logAutoRefreshActive = false;
+
+        function toggleLogAutoRefresh() {
+            const btn = document.getElementById('btn-log-live');
+            if (logAutoRefreshActive) {
+                // Stop auto-refresh
+                clearInterval(logAutoRefreshInterval);
+                logAutoRefreshInterval = null;
+                logAutoRefreshActive = false;
+                if (btn) {
+                    btn.style.color = 'var(--text-muted)';
+                    btn.style.borderColor = 'rgba(255,255,255,0.1)';
+                }
+            } else {
+                // Start auto-refresh (every 2 seconds)
+                logAutoRefreshActive = true;
+                loadServiceLogs();
+                logAutoRefreshInterval = setInterval(loadServiceLogs, 2000);
+                if (btn) {
+                    btn.style.color = 'var(--neon-green, #22c55e)';
+                    btn.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+                }
+            }
+        }
+
+        let lastUpdatesCheck = 0;
+        async function checkSystemUpdates() {
+            const now = Date.now();
+            if (now - lastUpdatesCheck < 300000) return;  // Check every 5 min max
+            lastUpdatesCheck = now;
+            const el = document.getElementById('mgmt-updates');
+            if (!el) return;
+            try {
+                const response = await fetch('/api/system/updates');
+                const result = await response.json();
+                if (result.success) {
+                    const count = result.upgradable_count || 0;
+                    const color = count > 20 ? 'var(--neon-orange, #fb923c)' : count > 0 ? 'var(--neon-cyan, #00d4ff)' : 'var(--neon-green, #4ade80)';
+                    let html = `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Upgradable</span><span style="color:${color}">${count} packages</span></div>`;
+                    if (result.last_check) {
+                        const d = new Date(result.last_check);
+                        html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Last check</span><span style="color:var(--text-primary)">${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></div>`;
+                    }
+                    if (count > 0 && result.packages) {
+                        const shown = result.packages.slice(0, 5);
+                        html += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);">${shown.join(', ')}${count > 5 ? ` +${count - 5} more` : ''}</div>`;
+                    }
+                    el.innerHTML = html;
+                } else {
+                    el.innerHTML = `<div style="color:var(--text-muted);">${result.error || 'Unable to check'}</div>`;
+                }
+            } catch (e) {
+                el.innerHTML = '<div style="color:var(--text-muted);">Update check unavailable</div>';
+            }
+        }
+
+        async function refreshSystemUpdates() {
+            const btn = document.getElementById('btn-refresh-updates');
+            if (btn) { btn.disabled = true; btn.textContent = '...'; }
+            try {
+                const response = await fetch('/api/system/updates/refresh', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    lastUpdatesCheck = 0;  // Force recheck
+                    await checkSystemUpdates();
+                } else {
+                    alert(result.error || 'Failed to refresh');
+                }
+            } catch (e) {
+                alert(`Refresh failed: ${e.message}`);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Refresh'; }
+            }
+        }
+
+        async function applySystemUpdates() {
+            if (!confirm('Apply all available system package updates? This will run apt-get upgrade.')) return;
+            const btn = document.getElementById('btn-apply-updates');
+            if (btn) { btn.disabled = true; btn.textContent = 'Upgrading...'; }
+            try {
+                const response = await fetch('/api/system/updates/apply', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    lastUpdatesCheck = 0;
+                    await checkSystemUpdates();
+                    alert('Packages upgraded successfully.');
+                } else {
+                    alert(result.error || 'Failed to apply updates');
+                }
+            } catch (e) {
+                alert(`Upgrade failed: ${e.message}`);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Apply'; }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // SPIRAL POOL UPGRADE — Check and apply updates from GitHub
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        async function checkPoolUpgrade() {
+            const btn = document.getElementById('btn-pool-check');
+            const el = document.getElementById('mgmt-pool-upgrade');
+            if (btn) { btn.disabled = true; btn.textContent = '...'; }
+            try {
+                const response = await fetch('/api/system/pool-upgrade/check');
+                const result = await response.json();
+                if (result.success) {
+                    if (result.update_available) {
+                        let html = `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-orange, #fb923c);">Update available</span></div>`;
+                        if (result.current_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Current</span><span style="color:var(--text-primary)">${result.current_version}</span></div>`;
+                        if (result.latest_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Latest</span><span style="color:var(--neon-green, #4ade80)">${result.latest_version}</span></div>`;
+                        el.innerHTML = html;
+                    } else {
+                        el.innerHTML = `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-green, #4ade80);">Up to date</span></div>`;
+                    }
+                } else {
+                    el.innerHTML = `<div style="color:var(--text-muted);">${result.error || 'Check failed'}</div>`;
+                }
+            } catch (e) {
+                if (el) el.innerHTML = '<div style="color:var(--text-muted);">Version check unavailable</div>';
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Check'; }
+            }
+        }
+
+        async function applyPoolUpgrade() {
+            if (!confirm('Upgrade Spiral Pool from GitHub? This will download the latest release and restart all pool services.')) return;
+            const btn = document.getElementById('btn-pool-upgrade');
+            const el = document.getElementById('mgmt-pool-upgrade');
+            if (btn) { btn.disabled = true; btn.textContent = 'Upgrading...'; }
+            if (el) el.innerHTML = '<div style="color:var(--neon-cyan, #00d4ff);">Upgrading... This may take a few minutes. Services will restart.</div>';
+            try {
+                const response = await fetch('/api/system/pool-upgrade/apply', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    el.innerHTML = '<div style="color:var(--neon-green, #4ade80);">Upgrade complete! Services are restarting. Page will reload shortly.</div>';
+                    setTimeout(() => location.reload(), 10000);
+                } else {
+                    el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">${result.error || 'Upgrade failed'}</div>`;
+                    if (result.output) el.innerHTML += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;">${result.output}</div>`;
+                }
+            } catch (e) {
+                if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Upgrade failed: ${e.message}</div>`;
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // MINER MANAGEMENT — Fan, overclock, restart controls per miner
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // Device type → control capabilities
+        const AXEOS_TYPES = ['axeos', 'bitaxe', 'nmaxe', 'nerdaxe', 'nerdqaxe', 'nerdoctaxe', 'qaxe', 'qaxeplus', 'hammer', 'luckyminer', 'jingleminer', 'zyber'];
+        const AVALON_TYPES = ['avalon', 'canaan'];
+        const VNISH_TYPES = ['vnish'];          // Vnish firmware: fan + overclock via REST API
+        const EPIC_TYPES = ['epic'];            // ePIC BlockMiner: fan + overclock via HTTP REST
+        const LUXOS_TYPES = ['luxos'];          // LuxOS firmware: fan + freq via CGMiner sessions
+        const CGMINER_FREQ_TYPES = ['antminer', 'antminer_scrypt'];  // CGMiner ascset freq (experimental on stock firmware)
+        const RESTART_TYPES = ['whatsminer', 'innosilicon', 'goldshell', 'braiins', 'futurebit', 'ipollo', 'ebang', 'elphapex', 'gekkoscience'];
+
+        function getMinerControlType(type) {
+            const t = (type || '').toLowerCase();
+            if (AXEOS_TYPES.includes(t) || t.includes('axe')) return 'axeos';
+            if (AVALON_TYPES.includes(t) || t.includes('avalon') || t.includes('canaan')) return 'avalon';
+            if (VNISH_TYPES.includes(t)) return 'vnish';
+            if (EPIC_TYPES.includes(t)) return 'epic';
+            if (LUXOS_TYPES.includes(t)) return 'luxos';
+            if (CGMINER_FREQ_TYPES.includes(t)) return 'cgminer';
+            if (RESTART_TYPES.includes(t)) return 'restart_only';
+            return null;
+        }
+
+        const btnStyle = "background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);color:var(--neon-cyan);padding:1px 6px;border-radius:3px;cursor:pointer;font-size:0.7rem;";
+        const inputStyle = "width:60px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:var(--text-primary);padding:1px 4px;border-radius:3px;font-size:0.75rem;font-family:var(--font-mono);";
+        const restartBtnStyle = "background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);color:var(--neon-red,#f87171);padding:1px 6px;border-radius:3px;cursor:pointer;font-size:0.7rem;";
+
+        function buildFanSlider(eIp, fanSpeed, setFn) {
+            return `<div style="display:flex;align-items:center;gap:4px;">
+                <label style="color:var(--text-muted);font-size:0.7rem;min-width:28px;">Fan</label>
+                <input type="range" min="0" max="100" value="${fanSpeed}" id="fan-${eIp}" style="width:80px;accent-color:var(--neon-cyan);" oninput="this.nextElementSibling.textContent=this.value+'%'">
+                <span style="color:var(--text-primary);font-size:0.75rem;min-width:30px;">${fanSpeed}%</span>
+                <button onclick="${setFn}('${eIp}', document.getElementById('fan-${eIp}').value)" style="${btnStyle}">Set</button>
+            </div>`;
+        }
+
+        function buildFreqInput(eIp, freq, max, setFn) {
+            return `<div style="display:flex;align-items:center;gap:4px;">
+                <label style="color:var(--text-muted);font-size:0.7rem;min-width:28px;">Freq</label>
+                <input type="number" ${freq ? `value="${freq}"` : 'placeholder="---"'} id="freq-${eIp}" min="100" max="${max}" step="25" style="${inputStyle}">
+                <span style="color:var(--text-muted);font-size:0.7rem;">MHz</span>
+                <button onclick="${setFn}('${eIp}', document.getElementById('freq-${eIp}').value)" style="${btnStyle}">Set</button>
+            </div>`;
+        }
+
+        function buildVoltInput(eIp, volt, setFn) {
+            return `<div style="display:flex;align-items:center;gap:4px;">
+                <label style="color:var(--text-muted);font-size:0.7rem;min-width:28px;">Volt</label>
+                <input type="number" ${volt ? `value="${volt}"` : 'placeholder="---"'} id="volt-${eIp}" min="1000" max="1400" step="10" style="${inputStyle}">
+                <span style="color:var(--text-muted);font-size:0.7rem;">mV</span>
+                <button onclick="${setFn}('${eIp}', document.getElementById('volt-${eIp}').value)" style="${btnStyle}">Set</button>
+            </div>`;
+        }
+
+        function buildRestartBtn(eIp, eName, type) {
+            return `<button onclick="minerRestart('${eIp}', '${eName}', '${type}')" style="${restartBtnStyle}" title="Restart miner">Restart</button>`;
+        }
+
+        async function refreshMinerManagement() {
+            const el = document.getElementById('mgmt-miners');
+            if (!el) return;
+            try {
+                const resp = await fetch('/api/miners');
+                if (!resp.ok) { el.innerHTML = '<span style="color:var(--neon-red)">Failed to load miners</span>'; return; }
+                const data = await resp.json();
+                const miners = data.miners || {};
+                const entries = Object.entries(miners);
+
+                if (entries.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-muted)">No miners configured. <a href="/settings" style="color:var(--neon-cyan,#00d4ff)">Add devices in settings</a></span>';
+                    return;
+                }
+
+                el.innerHTML = entries.map(([name, m]) => {
+                    const ip = escapeHtml(m.ip || '');
+                    const type = (m.type || 'unknown').toLowerCase();
+                    const controlType = getMinerControlType(type);
+                    const eName = escapeHtml(name);
+                    const eIp = ip.replace(/'/g, "\\'");
+                    const safeType = type.replace(/'/g, "\\'");
+                    const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const typeBadge = escapeHtml(m.type || 'Unknown');
+                    const temp = m.temps ? (m.temps.chip || m.temps.board || '--') : '--';
+                    const fanRaw = m.fan_speed || 0;
+                    // If fan_speed > 100, it's RPM not percentage (Avalon, NMaxe report RPM)
+                    const fanIsRpm = fanRaw > 100;
+                    const fanPct = fanIsRpm ? Math.round(fanRaw / 60) : (fanRaw || 50);  // Rough RPM->% for slider
+                    const fanDisplay = fanRaw > 0 ? (fanIsRpm ? fanRaw + ' RPM' : fanRaw + '%') : '--';
+                    const freq = m.frequency || 0;
+                    const volt = m.core_voltage || 0;
+
+                    const isOnline = m.online === true;
+                    let controlParts = [];
+
+                    if (!isOnline) {
+                        controlParts.push('<span style="color:var(--neon-red,#ff5555);font-size:0.75rem;">Offline</span>');
+                    } else if (controlType === 'axeos') {
+                        controlParts.push(buildFanSlider(eIp, fanPct, 'setAxeosFan'));
+                        controlParts.push(buildFreqInput(eIp, freq, 800, 'setAxeosFreq'));
+                        controlParts.push(buildVoltInput(eIp, volt, 'setAxeosVolt'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'avalon') {
+                        controlParts.push(buildFanSlider(eIp, fanPct, 'setAvalonFan') + '<span style="color:var(--text-muted);font-size:0.65rem;margin-left:2px;">(0=auto)</span>');
+                        controlParts.push(buildFreqInput(eIp, freq, 1000, 'setCgminerFreq'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'vnish') {
+                        controlParts.push(buildFanSlider(eIp, fanPct, 'setVnishFan'));
+                        controlParts.push(buildFreqInput(eIp, freq, 1000, 'setVnishFreq'));
+                        controlParts.push(buildVoltInput(eIp, volt, 'setVnishVolt'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'epic') {
+                        controlParts.push(buildFanSlider(eIp, fanPct, 'setEpicFan'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'luxos') {
+                        controlParts.push(buildFanSlider(eIp, fanPct, 'setLuxosFan'));
+                        controlParts.push(buildFreqInput(eIp, freq, 1000, 'setLuxosFreq'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'cgminer') {
+                        controlParts.push(buildFreqInput(eIp, freq, 1000, 'setCgminerFreq'));
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else if (controlType === 'restart_only') {
+                        controlParts.push(buildRestartBtn(eIp, safeName, safeType));
+                    } else {
+                        controlParts.push('<span style="color:var(--text-muted);font-size:0.75rem;">No controls available</span>');
+                    }
+
+                    const controls = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">${controlParts.join('')}</div>`;
+
+                    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;padding:8px 10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;">
+                        <div style="min-width:140px;">
+                            <div style="color:var(--text-primary);font-size:0.8rem;font-weight:600;">${eName}</div>
+                            <div style="color:var(--text-muted);font-size:0.7rem;">${ip} · <span style="color:var(--neon-cyan,#00d4ff)">${typeBadge}</span></div>
+                        </div>
+                        <div style="display:flex;gap:12px;font-size:0.75rem;min-width:120px;">
+                            <span style="color:var(--text-muted)">Temp: <span style="color:var(--text-primary)">${temp}°C</span></span>
+                            <span style="color:var(--text-muted)">Fan: <span style="color:var(--text-primary)">${fanDisplay}</span></span>
+                        </div>
+                        <div style="flex:1;min-width:200px;">${controls}</div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                el.innerHTML = `<span style="color:var(--neon-red)">Error: ${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        async function minerCtrlPost(url, body, action) {
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const r = await resp.json();
+                if (!r.success) alert(action + ' failed: ' + (r.error || 'Unknown error'));
+            } catch (e) { alert(action + ' error: ' + e.message); }
+        }
+
+        function setAxeosFan(ip, speed) { minerCtrlPost('/api/miner/axeos/fan', {ip, fan_speed: parseInt(speed), auto_fan: false}, 'Fan set'); }
+        function setAvalonFan(ip, speed) { minerCtrlPost('/api/miner/cgminer/fan', {ip, port: 4028, fan_speed: parseInt(speed)}, 'Fan set'); }
+        function setAxeosFreq(ip, freq) { minerCtrlPost('/api/miner/axeos/frequency', {ip, frequency: parseInt(freq)}, 'Frequency set'); }
+        function setCgminerFreq(ip, freq) { minerCtrlPost('/api/miner/cgminer/frequency', {ip, port: 4028, frequency: parseInt(freq)}, 'Frequency set'); }
+        function setAxeosVolt(ip, volt) { minerCtrlPost('/api/miner/axeos/voltage', {ip, voltage: parseInt(volt)}, 'Voltage set'); }
+        // Vnish firmware controls — fan + manual overclock via REST /api/v1/settings
+        function setVnishFan(ip, speed) { minerCtrlPost('/api/miner/vnish/fan', {ip, fan_speed: parseInt(speed), auto_fan: false}, 'Fan set'); }
+        function setVnishFreq(ip, freq) { minerCtrlPost('/api/miner/vnish/overclock', {ip, frequency: parseInt(freq)}, 'Frequency set'); }
+        function setVnishVolt(ip, volt) { minerCtrlPost('/api/miner/vnish/overclock', {ip, voltage: parseInt(volt)}, 'Voltage set'); }
+        // ePIC BlockMiner controls — fan via HTTP REST /fanspeed
+        function setEpicFan(ip, speed) { minerCtrlPost('/api/miner/epic/fan', {ip, fan_speed: parseInt(speed), auto_fan: false}, 'Fan set'); }
+        // LuxOS firmware controls — fan + freq via CGMiner session commands
+        function setLuxosFan(ip, speed) { minerCtrlPost('/api/miner/luxos/fan', {ip, fan_speed: parseInt(speed), auto_fan: false}, 'Fan set'); }
+        function setLuxosFreq(ip, freq) { minerCtrlPost('/api/miner/luxos/frequency', {ip, frequency: parseInt(freq)}, 'Frequency set'); }
+        function minerRestart(ip, name, type) {
+            if (!confirm('Restart ' + name + '?')) return;
+            // Route to firmware-specific restart endpoints where available
+            const t = (type || '').toLowerCase();
+            if (t === 'epic') { minerCtrlPost('/api/miner/epic/restart', {ip}, 'Restart'); return; }
+            if (t === 'luxos') { minerCtrlPost('/api/miner/luxos/restart', {ip, port: 4028}, 'Restart'); return; }
+            minerCtrlPost('/api/device/restart', {ip, name, type}, 'Restart');
+        }
+
+        // Worker group management
+        async function loadWorkerGroups() {
+            try {
+                const response = await fetch('/api/fleet/groups');
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!data.success) return;
+                const groups = data.groups || {};
+                const el = document.getElementById('mgmt-groups');
+                if (!el) return;
+
+                const entries = Object.entries(groups);
+                if (entries.length === 0) {
+                    el.innerHTML = '<div style="color: var(--text-muted);">No groups created yet</div>';
+                    return;
+                }
+
+                el.innerHTML = entries.map(([name, group]) => {
+                    const count = (group.miners || []).length;
+                    const typeLabel = escapeHtml(group.type || 'custom');
+                    const minerList = (group.miners || []).map(m => escapeHtml(m)).join(', ');
+                    const eName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    return `<div style="margin-bottom:8px;padding:6px 8px;border:1px solid rgba(255,255,255,0.05);border-radius:4px;background:rgba(255,255,255,0.02);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                            <div><span style="color:var(--text-primary);font-weight:600;">${escapeHtml(name)}</span> <span style="color:var(--text-muted);font-size:0.75rem">(${typeLabel}, ${count} miners)</span></div>
+                            <div style="display:flex;gap:6px;">
+                                <button onclick="addMinerToGroup('${eName}')" style="background:none;border:none;color:var(--neon-cyan,#00d4ff);cursor:pointer;font-size:0.75rem;" title="Add miner">+ Add</button>
+                                <button onclick="deleteWorkerGroup('${eName}')" style="background:none;border:none;color:var(--neon-red,#f87171);cursor:pointer;font-size:0.8rem;" title="Delete group">&#x2715;</button>
+                            </div>
+                        </div>
+                        ${minerList ? `<div style="color:var(--text-muted);font-size:0.7rem;">${minerList}</div>` : `<div style="color:var(--text-muted);font-size:0.7rem;font-style:italic;">No miners — click + Add</div>`}
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                // Silently fail
+            }
+        }
+
+        async function showCreateGroupDialog() {
+            const name = prompt('Group name:');
+            if (!name || !name.trim()) return;
+            const type = prompt('Group type (location, model, custom):', 'custom');
+            if (!type) return;
+
+            try {
+                const response = await fetch('/api/fleet/groups', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name: name.trim(), type: type.trim(), miners: [] })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    loadWorkerGroups();
+                } else {
+                    alert('Failed to create group: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error creating group: ' + e.message);
+            }
+        }
+
+        async function addMinerToGroup(groupName) {
+            // Build list of available miners from cached data
+            const miners = latestData && latestData.miners ? Object.keys(latestData.miners) : [];
+            if (miners.length === 0) {
+                alert('No miners available. Wait for miner data to load.');
+                return;
+            }
+            const minerName = prompt('Enter miner name to add:\\n\\nAvailable: ' + miners.join(', '));
+            if (!minerName || !minerName.trim()) return;
+
+            try {
+                // Get current group to append
+                const getResp = await fetch('/api/fleet/groups');
+                const groups = (await getResp.json()).groups || {};
+                const current = groups[groupName] || {};
+                const currentMiners = current.miners || [];
+                if (currentMiners.includes(minerName.trim())) {
+                    alert('Miner already in group');
+                    return;
+                }
+                currentMiners.push(minerName.trim());
+
+                const response = await fetch(`/api/fleet/groups/${encodeURIComponent(groupName)}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ miners: currentMiners })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    loadWorkerGroups();
+                } else {
+                    alert('Failed to add miner: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteWorkerGroup(name) {
+            if (!confirm(`Delete group "${name}"?`)) return;
+            try {
+                const response = await fetch(`/api/fleet/groups/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                const result = await response.json();
+                if (result.success) {
+                    loadWorkerGroups();
+                } else {
+                    alert('Failed to delete group: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Error deleting group: ' + e.message);
             }
         }
 
@@ -3862,13 +5040,22 @@
         let overclockTarget = { name: '', ip: '', type: '', frequency: 500, voltage: 1200 };
 
         // Open overclock modal with warning
-        function openOverclockModal(name, ip, type, currentFreq, currentVoltage) {
+        function openOverclockModal(name, ip, type, currentFreq, currentVoltage, currentFanSpeed) {
+            const typeLower = (type || '').toLowerCase();
+            const isAvalon = typeLower.includes('avalon') || typeLower.includes('canaan');
+            const isAxeOS = typeLower.includes('axe') || ['nmaxe', 'nerdqaxe', 'qaxe', 'qaxeplus', 'bitaxe', 'hammer', 'luckyminer', 'jingleminer', 'zyber'].includes(typeLower);
+            const supportsFan = isAxeOS || isAvalon;
+
             overclockTarget = {
                 name: name,
                 ip: ip,
                 type: type,
                 frequency: currentFreq || 500,
-                voltage: currentVoltage || 1200
+                voltage: currentVoltage || 1200,
+                isAxeOS: isAxeOS,
+                isAvalon: isAvalon,
+                supportsFan: supportsFan,
+                avalonMode: null
             };
 
             document.getElementById('overclock-device-name').textContent = name;
@@ -3877,14 +5064,46 @@
             document.getElementById('overclock-confirm').checked = false;
             document.getElementById('overclock-apply-btn').disabled = true;
 
-            // Show experimental warning for Avalon/Canaan devices
-            const isAvalon = (type || '').toLowerCase().includes('avalon');
+            // Show/hide sections based on device type
             document.getElementById('avalon-experimental-warning').style.display = isAvalon ? 'block' : 'none';
+            document.getElementById('config-fan-section').style.display = supportsFan ? '' : 'none';
+            document.getElementById('config-fan-avalon-hint').style.display = isAvalon ? '' : 'none';
+
+            // For Avalon: show three-mode selector instead of raw freq/voltage inputs
+            document.getElementById('config-overclock-section').style.display = isAvalon ? 'none' : '';
+            document.getElementById('config-avalon-mode-section').style.display = isAvalon ? '' : 'none';
+
+            if (isAvalon) {
+                // Populate mode descriptions from the model name
+                const modelKey = _avalonModelKey(type);
+                const modeDescs = _avalonModeDescs(modelKey);
+                document.getElementById('avalon-mode-efficiency-desc').textContent = modeDescs.efficiency;
+                document.getElementById('avalon-mode-balanced-desc').textContent = modeDescs.balanced;
+                document.getElementById('avalon-mode-high-desc').textContent = modeDescs.high;
+                document.getElementById('avalon-mode-hint').textContent = `Model: ${modelKey} — settings applied via CGMiner API.`;
+                // Clear any previous selection
+                ['efficiency', 'balanced', 'high'].forEach(m =>
+                    document.getElementById(`avalon-mode-${m}`).classList.remove('selected'));
+            }
+
+            // Auto-fan checkbox toggle
+            const autoFanCb = document.getElementById('config-auto-fan');
+            autoFanCb.checked = true;  // Default to auto
+            document.getElementById('config-fan-auto-fields').style.display = '';
+            document.getElementById('config-fan-manual-fields').style.display = 'none';
+            document.getElementById('config-temp-target').value = 60;
+            document.getElementById('config-fan-speed').value = currentFanSpeed || 100;
 
             document.getElementById('overclock-modal').classList.add('active');
         }
 
-        // Close overclock modal
+        // Auto-fan checkbox toggle handler
+        document.getElementById('config-auto-fan').addEventListener('change', function() {
+            document.getElementById('config-fan-auto-fields').style.display = this.checked ? '' : 'none';
+            document.getElementById('config-fan-manual-fields').style.display = this.checked ? 'none' : '';
+        });
+
+        // Close configuration modal
         function closeOverclockModal() {
             document.getElementById('overclock-modal').classList.remove('active');
             document.getElementById('overclock-confirm').checked = false;
@@ -4057,6 +5276,32 @@
             }
 
             document.getElementById('detail-temp').textContent = miner.temps?.chip ? `${parseFloat(miner.temps.chip).toFixed(2)}°C` : '--';
+
+            // Per-hashboard temperatures (Antminer, Whatsminer, Innosilicon)
+            const hbContainer = document.getElementById('detail-hashboards');
+            const hbGrid = document.getElementById('detail-hashboard-grid');
+            const chipTemps = miner.temps?.chip_temps;
+            const boardTemps = miner.temps?.board_temps;
+            if (chipTemps && Array.isArray(chipTemps) && chipTemps.length > 1) {
+                hbGrid.innerHTML = '';
+                chipTemps.forEach((ct, i) => {
+                    const bt = boardTemps && boardTemps[i] != null ? boardTemps[i] : null;
+                    const card = document.createElement('div');
+                    card.className = 'hashboard-card';
+                    let html = `<div class="hb-label">Board ${i + 1}</div>`;
+                    html += `<div class="hb-temps"><span class="hb-chip">${isNaN(parseFloat(ct)) ? '--' : parseFloat(ct).toFixed(1)}°C</span>`;
+                    if (bt !== null) {
+                        html += ` <span class="hb-board">(PCB ${parseFloat(bt).toFixed(1)}°)</span>`;
+                    }
+                    html += '</div>';
+                    card.innerHTML = html;
+                    hbGrid.appendChild(card);
+                });
+                hbContainer.style.display = '';
+            } else {
+                hbContainer.style.display = 'none';
+            }
+
             document.getElementById('detail-power').textContent = miner.power_watts != null && miner.power_watts > 0 ? `${miner.power_watts}W` : '--';
 
             // Efficiency (W/TH) - lower is better
@@ -4102,7 +5347,21 @@
             document.getElementById('detail-frequency').textContent = miner.frequency ? `${miner.frequency} MHz` : '--';
             document.getElementById('detail-voltage').textContent = miner.voltage ? `${miner.voltage} mV` : '--';
             document.getElementById('detail-fan').textContent = miner.fan_speed ? `${miner.fan_speed} RPM` : '--';
+
+
             document.getElementById('detail-pool').textContent = formatPoolUrl(miner.pool_url);
+
+            // Per-miner tags
+            const tagsRow = document.getElementById('detail-tags-row');
+            const tagsEl = document.getElementById('detail-tags');
+            if (miner._tags && miner._tags.length > 0) {
+                tagsEl.innerHTML = miner._tags.map(t =>
+                    `<span style="display:inline-block;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.3);border-radius:3px;padding:1px 6px;margin:1px 2px;font-size:0.7rem;color:var(--neon-cyan,#00d4ff)">${escapeHtml(t)}</span>`
+                ).join('');
+                tagsRow.style.display = '';
+            } else {
+                tagsRow.style.display = 'none';
+            }
 
             // Show/hide actions based on device support
             const actionsEl = document.getElementById('detail-actions');
@@ -4123,7 +5382,7 @@
             }
             const overclockBtn = document.getElementById('detail-overclock-btn');
             const scheduleBtn = document.getElementById('detail-schedule-btn');
-            if (overclockBtn) overclockBtn.style.display = isAvalon ? 'none' : 'inline-flex';
+            if (overclockBtn) overclockBtn.style.display = 'inline-flex';
             if (scheduleBtn) {
                 scheduleBtn.style.display = isAvalon ? 'inline-flex' : 'none';
                 scheduleBtn.textContent = isAvalon ? '⚙ Mode' : '🕐 Schedule';
@@ -4137,8 +5396,9 @@
             // Update active button
             document.querySelectorAll('.chart-period-selector .period-btn').forEach(btn => {
                 btn.classList.remove('active');
-                // Match by hours value in onclick
-                if (btn.getAttribute('onclick')?.includes(`(${hours})`)) {
+                // Match by exact hours value in onclick (use regex to avoid substring collision e.g. 1 matching 12)
+                const onclick = btn.getAttribute('onclick') || '';
+                if (onclick.includes(`(${hours})`)) {
                     btn.classList.add('active');
                 }
             });
@@ -4313,7 +5573,7 @@
             // Capture before closeMinerDetailModal() nulls currentDetailMiner
             const miner = currentDetailMiner;
             closeMinerDetailModal();
-            openOverclockModal(miner.name, miner.ip, miner.type, miner.frequency, miner.voltage);
+            openOverclockModal(miner.name, miner.ip, miner.type, miner.frequency, miner.voltage, miner.fan_speed);
         }
 
         // ========================================
@@ -4658,48 +5918,172 @@
         });
 
         // Apply overclock settings
-        async function applyOverclock() {
-            const frequency = parseInt(document.getElementById('overclock-frequency').value);
-            const voltage = parseInt(document.getElementById('overclock-voltage').value);
+        // Map a miner type string to the AVALON_PROFILES model key used by the backend.
+        function _avalonModelKey(type) {
+            const t = (type || '').toLowerCase();
+            if (t.includes('nano3s'))   return 'nano3s';
+            if (t.includes('nano3'))    return 'nano3';
+            if (t.includes('avalon q') || t === 'avalon q') return 'avalon_q';
+            if (t.includes('a1566'))    return 'a1566';
+            if (t.includes('a1466'))    return 'a1466';
+            if (t.includes('a1366'))    return 'a1366';
+            if (t.includes('a1346'))    return 'a1346';
+            if (t.includes('a1246'))    return 'a1246';
+            if (t.includes('a1166'))    return 'a1166';
+            if (t.includes('a1066'))    return 'a1066';
+            if (t.includes('avalon8') || t.includes('av8')) return 'avalon8';
+            if (t.includes('avalon7') || t.includes('av7')) return 'avalon7';
+            return 'generic';
+        }
 
-            if (isNaN(frequency) || frequency < 100 || frequency > 1200) {
-                alert('Invalid frequency. Please enter a value between 100-1200 MHz.');
-                return;
-            }
+        // Per-model mode descriptions (mirrors AVALON_PROFILES in dashboard.py).
+        const _AVALON_MODE_DESCS = {
+            'nano3':    { efficiency: '~3 TH/s @ 70W, quiet',    balanced: '~4.5 TH/s @ 100W',          high: '~6 TH/s @ 140W' },
+            'nano3s':   { efficiency: '~3 TH/s @ 70W, quiet',    balanced: '~4.5 TH/s @ 100W',          high: '~6 TH/s @ 140W' },
+            'avalon_q': { efficiency: 'Eco: ~55 TH/s @ 875W, <40dB', balanced: 'Standard: ~80 TH/s @ 1450W', high: 'Super: ~90 TH/s @ 1800W' },
+            'a1066':    { efficiency: 'Normal: ~31 TH/s',         balanced: 'Normal: ~31 TH/s',           high: 'Performance: ~37 TH/s' },
+            'a1166':    { efficiency: 'Low power mode',           balanced: 'Normal operation',           high: 'High performance' },
+            'a1246':    { efficiency: '~75 TH/s, reduced power',  balanced: '~85 TH/s, normal',           high: '~90 TH/s, max' },
+            'a1346':    { efficiency: '~90 TH/s, efficiency',     balanced: '~100 TH/s, normal',          high: '~110 TH/s, max' },
+            'a1366':    { efficiency: '~105 TH/s, efficiency',    balanced: '~120 TH/s, normal',          high: '~130 TH/s, max' },
+            'a1466':    { efficiency: '~125 TH/s, efficiency',    balanced: '~140 TH/s, normal',          high: '~150 TH/s, max' },
+            'a1566':    { efficiency: '~155 TH/s, efficiency',    balanced: '~175 TH/s, normal',          high: '~185 TH/s, max' },
+            'avalon7':  { efficiency: 'Low freq, reduced power',  balanced: 'Standard operation',         high: 'High performance' },
+            'avalon8':  { efficiency: 'Efficiency mode',          balanced: 'Standard: ~800 MHz',         high: 'Performance mode' },
+            'generic':  { efficiency: 'Low power (conservative)', balanced: 'Normal (conservative)',      high: 'High (conservative)' },
+        };
 
-            if (isNaN(voltage) || voltage < 1000 || voltage > 1400) {
-                alert('Invalid voltage. Please enter a value between 1000-1400 mV.');
-                return;
-            }
+        function _avalonModeDescs(modelKey) {
+            return _AVALON_MODE_DESCS[modelKey] || _AVALON_MODE_DESCS['generic'];
+        }
 
+        function selectAvalonMode(mode) {
+            overclockTarget.avalonMode = mode;
+            ['efficiency', 'balanced', 'high'].forEach(m => {
+                document.getElementById(`avalon-mode-${m}`).classList.toggle('selected', m === mode);
+            });
+        }
+
+        async function applyConfiguration() {
             const applyBtn = document.getElementById('overclock-apply-btn');
             applyBtn.disabled = true;
             applyBtn.textContent = 'Applying...';
 
-            try {
-                const response = await fetch('/api/device/overclock', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        name: overclockTarget.name,
-                        ip: overclockTarget.ip,
-                        type: overclockTarget.type,
-                        frequency: frequency,
-                        voltage: voltage
-                    })
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const result = await response.json();
+            const results = [];
 
-                if (result.success) {
-                    alert(`${overclockTarget.name} overclock settings applied.\nFrequency: ${frequency} MHz\nVoltage: ${voltage} mV\n\nDevice will restart to apply changes.`);
+            try {
+                // Apply Avalon power mode (Efficiency / Balanced / High)
+                if (overclockTarget.isAvalon && overclockTarget.avalonMode) {
+                    const modelKey = _avalonModelKey(overclockTarget.type);
+                    const modeResponse = await fetch(`/api/avalon/schedules/${overclockTarget.ip}/apply`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ profile: overclockTarget.avalonMode, model: modelKey })
+                    });
+                    const modeResult = await modeResponse.json();
+                    if (modeResult.success) {
+                        const descs = _avalonModeDescs(modelKey);
+                        results.push(`Mode: ${overclockTarget.avalonMode} — ${descs[overclockTarget.avalonMode]}`);
+                    } else {
+                        results.push(`Mode change failed: ${modeResult.error || 'Unknown error'}`);
+                    }
+                }
+
+                // Apply overclock settings (AxeOS/Vnish/ePIC only, not Avalon)
+                if (!overclockTarget.isAvalon) {
+                    const frequency = parseInt(document.getElementById('overclock-frequency').value);
+                    const voltage = parseInt(document.getElementById('overclock-voltage').value);
+
+                    if (isNaN(frequency) || frequency < 100 || frequency > 1200) {
+                        alert('Invalid frequency. Please enter a value between 100-1200 MHz.');
+                        applyBtn.disabled = false;
+                        applyBtn.textContent = 'Apply Settings';
+                        return;
+                    }
+
+                    if (isNaN(voltage) || voltage < 1000 || voltage > 1400) {
+                        alert('Invalid voltage. Please enter a value between 1000-1400 mV.');
+                        applyBtn.disabled = false;
+                        applyBtn.textContent = 'Apply Settings';
+                        return;
+                    }
+
+                    const ocResponse = await fetch('/api/device/overclock', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: overclockTarget.name,
+                            ip: overclockTarget.ip,
+                            type: overclockTarget.type,
+                            frequency: frequency,
+                            voltage: voltage
+                        })
+                    });
+                    const ocResult = await ocResponse.json();
+                    if (ocResult.success) {
+                        results.push(`Frequency: ${frequency} MHz, Voltage: ${voltage} mV`);
+                    } else {
+                        results.push(`Overclock failed: ${ocResult.error || 'Unknown error'}`);
+                    }
+                }
+
+                // Apply fan settings if section is visible
+                if (overclockTarget.supportsFan) {
+                    const autoFan = document.getElementById('config-auto-fan').checked;
+
+                    if (overclockTarget.isAxeOS) {
+                        // AxeOS: PATCH /api/system via /api/miner/axeos/fan
+                        const fanPayload = {
+                            ip: overclockTarget.ip,
+                            auto_fan: autoFan
+                        };
+                        if (autoFan) {
+                            const tempTarget = parseInt(document.getElementById('config-temp-target').value);
+                            if (!isNaN(tempTarget) && tempTarget >= 35 && tempTarget <= 66) {
+                                fanPayload.temp_target = tempTarget;
+                            }
+                        } else {
+                            fanPayload.fan_speed = parseInt(document.getElementById('config-fan-speed').value) || 100;
+                        }
+                        const fanResponse = await fetch('/api/miner/axeos/fan', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(fanPayload)
+                        });
+                        const fanResult = await fanResponse.json();
+                        if (fanResult.success) {
+                            results.push(autoFan ? 'Fan: Auto mode' : `Fan: ${fanPayload.fan_speed}%`);
+                        } else {
+                            results.push(`Fan failed: ${fanResult.error || 'Unknown error'}`);
+                        }
+                    } else if (overclockTarget.isAvalon) {
+                        // Avalon: CGMiner ascset via /api/miner/cgminer/fan
+                        const fanSpeed = autoFan ? 0 : (parseInt(document.getElementById('config-fan-speed').value) || 100);
+                        const fanResponse = await fetch('/api/miner/cgminer/fan', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                ip: overclockTarget.ip,
+                                port: 4028,
+                                fan_speed: fanSpeed
+                            })
+                        });
+                        const fanResult = await fanResponse.json();
+                        if (fanResult.success) {
+                            results.push(fanSpeed === 0 ? 'Fan: Auto (PID 0-100%)' : `Fan: ${fanSpeed}%`);
+                        } else {
+                            results.push(`Fan failed: ${fanResult.error || 'Unknown error'}`);
+                        }
+                    }
+                }
+
+                if (results.length > 0) {
+                    alert(`${overclockTarget.name} configuration applied:\n${results.join('\n')}\n\nDevice may restart to apply changes.`);
                     closeOverclockModal();
                     setTimeout(refreshData, 5000);
-                } else {
-                    alert(`Failed to apply overclock: ${result.error || 'Unknown error'}`);
                 }
             } catch (e) {
-                alert(`Error applying overclock: ${e.message}`);
+                alert(`Error applying configuration: ${e.message}`);
             }
 
             applyBtn.disabled = false;
@@ -4741,7 +6125,10 @@
         // ============================================
 
         function toggleMinerView() {
-            minerViewMode = minerViewMode === 'flat' ? 'grouped' : 'flat';
+            // Cycle: flat → grouped → fleet → flat
+            if (minerViewMode === 'flat') minerViewMode = 'grouped';
+            else if (minerViewMode === 'grouped') minerViewMode = 'fleet';
+            else minerViewMode = 'flat';
             localStorage.setItem('miner_view_mode', minerViewMode);
             updateViewToggleButton();
             if (lastMinerData) updateMinerDisplay(lastMinerData);
@@ -4750,8 +6137,16 @@
         function updateViewToggleButton() {
             const icon = document.getElementById('view-toggle-icon');
             const label = document.getElementById('view-toggle-label');
-            if (icon) icon.textContent = minerViewMode === 'flat' ? '\u2504' : '\u2630';
-            if (label) label.textContent = minerViewMode === 'flat' ? 'Group' : 'Flat';
+            if (minerViewMode === 'flat') {
+                if (icon) icon.textContent = '\u2504';
+                if (label) label.textContent = 'Group';
+            } else if (minerViewMode === 'grouped') {
+                if (icon) icon.textContent = '\u2630';
+                if (label) label.textContent = 'Fleet';
+            } else {
+                if (icon) icon.textContent = '\u2B50';
+                if (label) label.textContent = 'Flat';
+            }
         }
 
         function toggleDeviceGroup(groupId) {
@@ -4802,7 +6197,9 @@
                 return;
             }
 
-            if (minerViewMode === 'grouped' && data.device_groups && Object.keys(data.device_groups).length > 0) {
+            if (minerViewMode === 'fleet' && data.fleet_groups && Object.keys(data.fleet_groups).length > 0) {
+                renderFleetGroupedMiners(miners, data.fleet_groups);
+            } else if (minerViewMode === 'grouped' && data.device_groups && Object.keys(data.device_groups).length > 0) {
                 renderGroupedMiners(miners, data.device_groups, data.coins);
             } else {
                 // Flat view (original behavior)
@@ -4916,6 +6313,111 @@
             return html;
         }
 
+        function renderFleetGroupedMiners(miners, fleetGroups) {
+            const grid = document.getElementById('miners-grid');
+            if (!grid) return;
+
+            const sortedGroups = Object.values(fleetGroups).sort((a, b) => a.name.localeCompare(b.name));
+            // Find ungrouped miners
+            const groupedMinerNames = new Set();
+            sortedGroups.forEach(g => (g.miners || []).forEach(n => groupedMinerNames.add(n)));
+            const ungroupedMiners = Object.keys(miners).filter(n => !groupedMinerNames.has(n));
+
+            let html = '';
+            for (const group of sortedGroups) {
+                if (group.count === 0) continue;
+                const groupId = 'fleet-' + group.name.replace(/[^a-zA-Z0-9]/g, '-');
+                const collapsed = isGroupCollapsed(groupId);
+                const hrDisplay = group.hashrate_ths >= 1
+                    ? group.hashrate_ths.toFixed(2) + ' TH/s'
+                    : (group.hashrate_ths * 1000).toFixed(2) + ' GH/s';
+                const allOffline = group.online_count === 0 && group.count > 0;
+                const sortedNames = (group.miners || []).slice().sort((a, b) => a.localeCompare(b));
+
+                html += '<div class="device-group">' +
+                    '<div class="device-group-header" onclick="toggleDeviceGroup(\'' + groupId + '\')">' +
+                        '<div class="device-group-title">' +
+                            '<span class="device-group-toggle">' + (collapsed ? '\u25B6' : '\u25BC') + '</span>' +
+                            '<span class="device-group-name">' + escapeHtml(group.name) + '</span>' +
+                            '<span class="device-group-count' + (allOffline ? ' all-offline' : '') + '">' + group.online_count + '/' + group.count + '</span>' +
+                        '</div>' +
+                        '<div class="device-group-stats">' +
+                            '<span class="dg-stat">' + hrDisplay + '</span>' +
+                            '<span class="dg-stat">' + group.power_watts.toFixed(0) + 'W</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="device-group-content' + (collapsed ? ' dg-collapsed' : '') + '" id="device-group-' + groupId + '">' +
+                        '<div class="device-group-grid">';
+                for (const name of sortedNames) {
+                    if (miners[name]) html += renderMinerCard(name, miners[name]);
+                }
+                html += '</div></div></div>';
+            }
+
+            // Render ungrouped miners
+            if (ungroupedMiners.length > 0) {
+                const groupId = 'fleet-ungrouped';
+                const collapsed = isGroupCollapsed(groupId);
+                const ungroupedHr = ungroupedMiners.reduce((sum, n) => {
+                    const m = miners[n];
+                    return sum + (m && m.online ? (m.hashrate_ths || (m.hashrate_ghs || 0) / 1000) : 0);
+                }, 0);
+                const ungroupedPw = ungroupedMiners.reduce((sum, n) => {
+                    const m = miners[n];
+                    return sum + (m && m.online && m.power_watts ? m.power_watts : 0);
+                }, 0);
+                const ungroupedOnline = ungroupedMiners.filter(n => miners[n] && miners[n].online).length;
+                const hrDisplay = ungroupedHr >= 1
+                    ? ungroupedHr.toFixed(2) + ' TH/s'
+                    : (ungroupedHr * 1000).toFixed(2) + ' GH/s';
+
+                html += '<div class="device-group">' +
+                    '<div class="device-group-header" onclick="toggleDeviceGroup(\'' + groupId + '\')">' +
+                        '<div class="device-group-title">' +
+                            '<span class="device-group-toggle">' + (collapsed ? '\u25B6' : '\u25BC') + '</span>' +
+                            '<span class="device-group-name">Ungrouped</span>' +
+                            '<span class="device-group-count">' + ungroupedOnline + '/' + ungroupedMiners.length + '</span>' +
+                        '</div>' +
+                        '<div class="device-group-stats">' +
+                            '<span class="dg-stat">' + hrDisplay + '</span>' +
+                            '<span class="dg-stat">' + ungroupedPw.toFixed(0) + 'W</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="device-group-content' + (collapsed ? ' dg-collapsed' : '') + '" id="device-group-' + groupId + '">' +
+                        '<div class="device-group-grid">';
+                for (const name of ungroupedMiners.sort()) {
+                    if (miners[name]) html += renderMinerCard(name, miners[name]);
+                }
+                html += '</div></div></div>';
+            }
+
+            grid.innerHTML = html;
+        }
+
+        function updateFleetGroupSummary(data) {
+            const bar = document.getElementById('fleet-group-summary');
+            if (!bar) return;
+            const groups = data.fleet_groups || {};
+            if (Object.keys(groups).length === 0) { bar.style.display = 'none'; return; }
+
+            bar.style.display = 'flex';
+            bar.innerHTML = Object.values(groups)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .filter(g => g.count > 0)
+                .map(g => {
+                    const hr = g.hashrate_ths >= 1
+                        ? g.hashrate_ths.toFixed(2) + ' TH/s'
+                        : (g.hashrate_ths * 1000).toFixed(2) + ' GH/s';
+                    const allOffline = g.online_count === 0 && g.count > 0;
+                    return '<div class="fg-chip">' +
+                        '<span class="fg-name">' + escapeHtml(g.name) + '</span>' +
+                        '<span class="fg-hr">' + hr + '</span>' +
+                        (g.power_watts > 0 ? '<span class="fg-power">' + g.power_watts.toFixed(0) + 'W</span>' : '') +
+                        '<span class="fg-count' + (allOffline ? ' all-offline' : '') + '">' + g.online_count + '/' + g.count + '</span>' +
+                    '</div>';
+                }).join('');
+        }
+
         // Render miner card
         function renderMinerCard(name, miner) {
             const isOnline = miner.online;
@@ -4956,9 +6458,9 @@
             const isAvalon = minerTypeLower === 'avalon' || minerTypeLower === 'canaan' || minerTypeLower.includes('avalon') || minerTypeLower.includes('canaan');
             const supportsRestart = ['axeos', 'nmaxe', 'nerdqaxe', 'qaxe', 'qaxeplus', 'bitaxe', 'hammer', 'avalon', 'canaan', 'antminer', 'antminer_scrypt', 'whatsminer', 'innosilicon', 'goldshell', 'futurebit', 'braiins', 'vnish', 'luxos', 'luckyminer', 'jingleminer', 'zyber', 'gekkoscience', 'ipollo', 'ebang', 'epic', 'elphapex'].includes(minerTypeLower) ||
                                    minerTypeLower.includes('axe') || minerTypeLower.includes('avalon') || minerTypeLower.includes('canaan') || minerTypeLower.includes('braiins') || minerTypeLower.includes('bos') || minerTypeLower.includes('vnish') || minerTypeLower.includes('luxos');
-            // Overclock supported on AxeOS-based miners only (frequency/voltage tuning)
+            // Configuration supported on AxeOS-based miners (freq/voltage/fan) and Avalon (freq/voltage/fan)
             const supportsOverclock = ['axeos', 'nmaxe', 'nerdqaxe', 'qaxe', 'qaxeplus', 'bitaxe', 'hammer', 'luckyminer', 'jingleminer', 'zyber'].includes(minerTypeLower) ||
-                                     minerTypeLower.includes('axe');
+                                     minerTypeLower.includes('axe') || minerTypeLower.includes('avalon') || minerTypeLower.includes('canaan');
             // SECURITY: Escape for JavaScript string contexts (onclick handlers)
             // NOTE: Backslashes MUST be escaped first, then quotes — reverse order causes double-escaping
             const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -5022,22 +6524,11 @@
                                 <div class="miner-stat-value" style="color: var(--neon-pink)">${formatDifficulty(miner.best_diff)}</div>
                             </div>
                         </div>
-                        ${supportsRestart && isOnline ? `
+                        ${isOnline ? `
                         <div class="miner-actions">
-                            ${isAvalon ? `
-                            <button class="miner-action-btn restart" onclick="event.stopPropagation(); window.open('http://${escapedIp}', '_blank')" title="Open Avalon Web UI">
-                                ⚙ Configure
+                            <button class="miner-action-btn restart" onclick="event.stopPropagation(); window.open('http://${escapedIp}', '_blank')" title="Open miner web interface">
+                                &#x1F310; Web UI
                             </button>
-                            ` : `
-                            <button class="miner-action-btn restart" onclick="event.stopPropagation(); restartMiner('${escapedName}', '${escapedIp}', '${escapedType}')" title="Restart Miner">
-                                ⟳ Restart
-                            </button>
-                            `}
-                            ${supportsOverclock ? `
-                            <button class="miner-action-btn overclock" onclick="event.stopPropagation(); openOverclockModal('${escapedName}', '${escapedIp}', '${escapedType}', ${miner.frequency || 500}, ${miner.voltage || 1200})" title="Overclock Settings">
-                                ⚡ Overclock
-                            </button>
-                            ` : ''}
                         </div>
                         ` : ''}
                     </div>
@@ -5054,6 +6545,19 @@
             const totals = data.totals || {};
             const lifetime = data.lifetime || {};
             const blockReward = data.block_reward || {};
+
+            // Merge per-miner tags into miner entries
+            const minerTags = data.miner_tags || {};
+            for (const [mId, tags] of Object.entries(minerTags)) {
+                // Match by name or IP
+                if (miners[mId]) {
+                    miners[mId]._tags = tags;
+                } else {
+                    for (const [mName, mData] of Object.entries(miners)) {
+                        if (mData.ip === mId) { mData._tags = tags; break; }
+                    }
+                }
+            }
 
             // Update coin info from API (multi-coin support)
             if (data.coin) {
@@ -5173,7 +6677,11 @@
             _lastNetworkHashrate = networkHashrateHps;
             _lastConnectedMiners = poolMinersConnected;
             _lastTotalMiners = totals.total_count || 0;
-            updateStatsHistory(poolHashrateHps, networkHashrateHps, networkDiff, poolMinersConnected);
+            const blocksFound = data.pool_blocks_found || 0;
+            const sharesRate = data.pool_shares_per_second || 0;
+            _lastBlocksFound = blocksFound;
+            _lastSharesRate = sharesRate;
+            updateStatsHistory(poolHashrateHps, networkHashrateHps, networkDiff, poolMinersConnected, blocksFound, sharesRate);
             updateStatsValueDisplays();
 
             // Power stats (optional elements - may not exist in all layouts)
@@ -5273,20 +6781,20 @@
                 avgTempEl.textContent = avgTemp ? `${avgTemp}°C` : '';
             }
 
-            // Update lifetime stats — use pool-accepted shares directly from Prometheus
-            const lifetimeShares = data.pool_accepted_shares > 0 ? data.pool_accepted_shares : (lifetime.total_pool_shares > 0 ? lifetime.total_pool_shares : 0);
-            document.getElementById('lifetime-shares').textContent = formatNumber(lifetimeShares);
-            document.getElementById('lifetime-blocks').textContent = lifetime.total_blocks || 0;
-            document.getElementById('lifetime-best-diff').textContent = formatDifficulty(lifetime.best_share_difficulty);
-
+            // Update uptime in top stats bar
             if (lifetime.uptime_start) {
                 const uptimeSeconds = (Date.now() / 1000) - lifetime.uptime_start;
-                document.getElementById('lifetime-uptime').textContent = formatUptime(uptimeSeconds);
+                const uptimeEl = document.getElementById('pool-uptime');
+                if (uptimeEl) uptimeEl.textContent = formatUptime(uptimeSeconds);
             }
 
             // Cache data for view toggle re-renders and render miners
             lastMinerData = data;
             updateMinerDisplay(data);
+            updateFleetGroupSummary(data);
+
+            // Update device type breakdown chart
+            updateDeviceTypeChart(data.device_groups);
 
             // Update last update time
             const updateTime = data.last_update ? new Date(data.last_update * 1000) : null;
@@ -5298,6 +6806,12 @@
 
             // Update electricity cost section
             updateElectricityCost();
+
+            // Update management info
+            updateManagementInfo();
+            loadWorkerGroups();
+            refreshMinerManagement();
+            checkSystemUpdates();
 
             // Update system warnings
             updateSystemWarnings(data.system_warnings || []);
@@ -5507,6 +7021,24 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
 
+                // Wallet mismatch warning banner
+                const warningsEl = document.getElementById('wallet-mismatch-banner');
+                if (warningsEl) {
+                    const issues = data.wallet_issues || [];
+                    if (issues.length > 0) {
+                        warningsEl.innerHTML = `<div style="background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.5);border-radius:6px;padding:0.75rem 1rem;margin:0.5rem 1rem;display:flex;align-items:center;gap:0.75rem;">` +
+                            `<span style="font-size:1.2rem;">&#x26A0;</span>` +
+                            `<div style="flex:1;">` +
+                            `<div style="color:var(--neon-red, #f87171);font-weight:600;font-size:0.85rem;margin-bottom:2px;">WALLET ADDRESS MISMATCH</div>` +
+                            `<div style="color:var(--text-muted, #94a3b8);font-size:0.75rem;">${issues.map(i => `${escapeHtml(i.coin)}: ${escapeHtml(i.issue)}`).join(' | ')}</div>` +
+                            `</div>` +
+                            `<span style="color:var(--text-muted);font-size:0.7rem;">Check Sentinel config</span>` +
+                            `</div>`;
+                    } else {
+                        warningsEl.innerHTML = '';
+                    }
+                }
+
                 // Update Pool Health
                 const pool = data.pool || {};
                 const poolStatus = document.getElementById('pool-status');
@@ -5600,8 +7132,9 @@
                                     <div class="health-status">
                                         <span class="status-dot ${dotClass}"></span>
                                         <span class="status-text">${statusText}</span>
+                                        ${n.pruned ? '<span class="pruned-badge">Pruned</span>' : ''}
                                     </div>
-                                    <button class="restart-btn" id="node-restart-btn-${escapeHtml(symbol)}" onclick="restartNode('${escapeHtml(symbol)}', '${escapeHtml(name)}')" title="Restart ${escapeHtml(name)}">🔄</button>
+                                    <button class="restart-btn" id="node-restart-btn-${escapeHtml(symbol)}" onclick="restartNode('${symbol.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}', '${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Restart ${escapeHtml(name)}">🔄</button>
                                 </div>
                             </div>
                             <div class="health-card-body">
@@ -5664,6 +7197,7 @@
                                 <div class="health-status">
                                     <span class="status-dot ${dotClass}"></span>
                                     <span class="status-text">${statusText}</span>
+                                    ${node.pruned ? '<span class="pruned-badge">Pruned</span>' : ''}
                                 </div>
                                 <button class="restart-btn" onclick="restartNode()" title="Restart Node">🔄</button>
                             </div>
@@ -5721,11 +7255,10 @@
 
                 if (result.success) {
                     // Update UI immediately
-                    document.getElementById('lifetime-shares').textContent = '0';
-                    document.getElementById('lifetime-blocks').textContent = '0';
-                    document.getElementById('lifetime-best-diff').textContent = '--';
-                    document.getElementById('lifetime-uptime').textContent = '--';
-                    document.getElementById('best-diff-alltime').textContent = '--';
+                    const poolUptimeEl = document.getElementById('pool-uptime');
+                    if (poolUptimeEl) poolUptimeEl.textContent = '--';
+                    const bestDiffEl = document.getElementById('best-diff-alltime');
+                    if (bestDiffEl) bestDiffEl.textContent = '--';
 
                     alert('Lifetime statistics have been cleared.');
                 } else {
@@ -6476,7 +8009,7 @@
                 name: name,
                 id: id,
                 author: 'Custom',
-                version: '1.0.0',
+                version: '2.0.0',
                 description: 'User-created custom theme',
                 category: 'Custom',
                 colors: colors,

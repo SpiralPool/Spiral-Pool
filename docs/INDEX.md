@@ -25,7 +25,7 @@ Getting started, installation, and deployment guides.
 |----------|-------------|
 | [OPERATIONS.md](setup/OPERATIONS.md) | Installation, configuration, monitoring, HA setup, upgrading, troubleshooting |
 | [CLOUD_OPERATIONS.md](setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment: dashboard SSH tunnel, firewall layout, SSH hardening, HTTPS options, provider-specific config |
-| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v1.2.3 (Convergent Spiral): compatibility, all coin types, step-by-step |
+| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v2.0.0 (Phi Hash Reactor): compatibility, all coin types, step-by-step |
 | [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 single-coin and multi-coin mode) |
 
 ## Architecture
@@ -77,4 +77,4 @@ Legal documents are in the repository root:
 
 ---
 
-*Spiral Pool -- Convergent Spiral 1.2.3*
+*Spiral Pool -- Phi Hash Reactor 2.0.0*

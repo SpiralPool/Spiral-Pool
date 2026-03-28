@@ -486,6 +486,60 @@ func TestCircuitBreaker_ExhaustionAndRecovery(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_HalfOpenProbeFailure verifies that a failed probe in
+// HalfOpen state transitions back to Open (with fresh cooldown) rather than
+// getting permanently stuck in HalfOpen.
+//
+// Code paths: database.CircuitBreaker.RecordFailure (circuitbreaker.go)
+// Invariant: Failed HalfOpen probe → Open → cooldown → can probe again.
+func TestCircuitBreaker_HalfOpenProbeFailure(t *testing.T) {
+	cfg := database.CircuitBreakerConfig{
+		FailureThreshold: 3,
+		CooldownPeriod:   50 * time.Millisecond,
+		InitialBackoff:   5 * time.Millisecond,
+		MaxBackoff:       100 * time.Millisecond,
+		BackoffFactor:    2.0,
+	}
+	cb := database.NewCircuitBreaker(cfg)
+
+	// Phase 1: Trip the circuit open
+	for i := 0; i < 3; i++ {
+		cb.RecordFailure()
+	}
+	if cb.State() != database.CircuitOpen {
+		t.Fatalf("Expected CircuitOpen after 3 failures, got %s", cb.State())
+	}
+
+	// Phase 2: Wait for cooldown, get HalfOpen probe
+	time.Sleep(60 * time.Millisecond)
+	allowed, _ := cb.AllowRequest()
+	if !allowed {
+		t.Fatal("Should allow probe after cooldown")
+	}
+	if cb.State() != database.CircuitHalfOpen {
+		t.Fatalf("Expected CircuitHalfOpen after probe allowed, got %s", cb.State())
+	}
+
+	// Phase 3: Probe FAILS — should go back to Open (not stay stuck in HalfOpen)
+	cb.RecordFailure()
+	if cb.State() != database.CircuitOpen {
+		t.Fatalf("Expected CircuitOpen after failed probe, got %s (would be stuck forever)", cb.State())
+	}
+
+	// Phase 4: Wait for cooldown again — should be able to probe again
+	time.Sleep(60 * time.Millisecond)
+	allowed, _ = cb.AllowRequest()
+	if !allowed {
+		t.Fatal("Should allow second probe after cooldown — circuit breaker must recover")
+	}
+
+	// Phase 5: This time the probe succeeds
+	cb.RecordSuccess()
+	if cb.State() != database.CircuitClosed {
+		t.Fatalf("Expected CircuitClosed after successful probe, got %s", cb.State())
+	}
+}
+
 // TestBlockQueue_CrashSafeDequeueWithCommit verifies the crash-safe dequeue pattern.
 //
 // Code paths: database.BlockQueue.DequeueWithCommit (circuitbreaker.go:303-335)

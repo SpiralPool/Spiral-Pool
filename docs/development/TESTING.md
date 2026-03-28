@@ -63,7 +63,7 @@ All tests are designed to run with `go test -race` and should produce zero data 
 
 | File | Focus |
 |------|-------|
-| `handlers_test.go` | REST API handler correctness; includes `POST /api/admin/kick` tests (v1.2.3) |
+| `handlers_test.go` | REST API handler correctness; includes `POST /api/admin/kick` tests (v2.0.0) |
 | `security_test.go` | API authentication, authorization |
 | `workers_test.go` | Worker stats API endpoints |
 

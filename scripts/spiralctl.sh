@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-1.2.3}"
+VERSION="${VERSION:-2.0.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -273,8 +273,13 @@ _timer_next_run() {
     local usec
     usec=$(systemctl show "$timer" --property=NextElapseUSecRealtime 2>/dev/null \
         | sed 's/NextElapseUSecRealtime=//')
-    [[ -z "$usec" || "$usec" == "0" ]] && return
-    date -d "@$(( usec / 1000000 ))" "+%Y-%m-%d %H:%M" 2>/dev/null
+    [[ -z "$usec" || "$usec" == "0" || "$usec" == "n/a" ]] && return
+    # Newer systemd returns a human-readable timestamp; older returns microseconds
+    if [[ "$usec" =~ ^[0-9]+$ ]]; then
+        date -d "@$(( usec / 1000000 ))" "+%Y-%m-%d %H:%M" 2>/dev/null
+    else
+        date -d "$usec" "+%Y-%m-%d %H:%M" 2>/dev/null
+    fi
 }
 
 cmd_status() {
@@ -544,7 +549,8 @@ cmd_status() {
         _shown_sched=1
         # Extract the cron schedule expression from the cron.d file
         local _cron_expr
-        _cron_expr=$(grep -v '^#' /etc/cron.d/spiralpool-backup 2>/dev/null | grep -v '^[[:space:]]*$' | head -1 | awk '{print $1,$2,$3,$4,$5}')
+        # Skip comments, blank lines, and env var lines (KEY=value) to find the actual cron entry
+        _cron_expr=$(grep -v '^#' /etc/cron.d/spiralpool-backup 2>/dev/null | grep -v '^[[:space:]]*$' | grep -v '^[A-Za-z_]*=' | head -1 | awk '{print $1,$2,$3,$4,$5}')
         if [[ -n "$_cron_expr" ]]; then
             printf "  %-28s %s\n" "Backup (cron)" "schedule: ${_cron_expr}"
         else
@@ -4255,12 +4261,106 @@ cmd_coin() {
             systemctl disable "$daemon"
             log_success "$coin disabled."
             ;;
+        prune)
+            check_root
+            if [[ -z "$coin" ]]; then
+                echo ""
+                echo -e "${WHITE}USAGE${NC}"
+                echo "    spiralctl coin prune <SYMBOL>"
+                echo ""
+                echo -e "${WHITE}DESCRIPTION${NC}"
+                echo "    Enable blockchain pruning for a coin to save disk space."
+                echo "    Sets prune=5000 (5 GB) in the daemon config and restarts."
+                echo "    All pool operations (mining, ZMQ, block submission) work on pruned nodes."
+                echo ""
+                echo -e "${WHITE}SAVINGS${NC}"
+                echo "    BTC: ~600 GB → 5 GB    DGB: ~60 GB → 5 GB"
+                echo "    BCH: ~200 GB → 5 GB    LTC: ~100 GB → 5 GB"
+                echo ""
+                echo -e "${YELLOW}⚠  This requires a full resync — blockchain data will be re-downloaded.${NC}"
+                return 0
+            fi
+            coin="${coin^^}"
+            daemon=$(get_coin_daemon "$coin")
+            if [[ -z "$daemon" ]]; then
+                log_error "Unknown coin: $coin"
+                exit 1
+            fi
+
+            # Resolve config file path from the CLI command
+            local coin_lower="${coin,,}"
+            # Handle DGB-SCRYPT → dgb
+            [[ "$coin_lower" == "dgb-scrypt" ]] && coin_lower="dgb"
+
+            local conf_name=""
+            case "$coin" in
+                DGB|DGB-SCRYPT) conf_name="digibyte.conf" ;;
+                BTC) conf_name="bitcoin.conf" ;;
+                BCH) conf_name="bitcoin.conf" ;;
+                BC2) conf_name="bitcoinii.conf" ;;
+                FBTC) conf_name="fractal.conf" ;;
+                LTC) conf_name="litecoin.conf" ;;
+                QBX) conf_name="qbitx.conf" ;;
+                DOGE) conf_name="dogecoin.conf" ;;
+                NMC) conf_name="namecoin.conf" ;;
+                PEP) conf_name="pepecoin.conf" ;;
+                CAT) conf_name="catcoin.conf" ;;
+                SYS) conf_name="syscoin.conf" ;;
+                XMY) conf_name="myriadcoin.conf" ;;
+                *) log_error "No config mapping for $coin"; exit 1 ;;
+            esac
+
+            local conf_file="$(_chain_dir "$coin_lower")/${conf_name}"
+            if [[ ! -f "$conf_file" ]]; then
+                log_error "Config file not found: $conf_file"
+                exit 1
+            fi
+
+            # Check if already pruned (prune=0 means NOT pruned — full node default)
+            if grep -qE "^prune=[1-9]" "$conf_file" 2>/dev/null; then
+                local current_prune
+                current_prune=$(grep "^prune=" "$conf_file" | head -1 | cut -d= -f2)
+                log_info "$coin is already configured with prune=${current_prune}"
+                return 0
+            fi
+
+            # Check for txindex (incompatible with pruning)
+            if grep -q "^txindex=1" "$conf_file" 2>/dev/null; then
+                log_warn "Removing txindex=1 (incompatible with pruning)"
+                sed -i 's/^txindex=1/#txindex=1  # disabled for pruning/' "$conf_file"
+            fi
+
+            echo ""
+            log_warn "This will enable pruning for $coin and restart the daemon."
+            log_warn "The blockchain data may need to resync from scratch."
+            echo ""
+            prompt_input "Continue? (y/N) "
+            read -r confirm
+            if [[ "${confirm,,}" != "y" ]]; then
+                log_info "Cancelled."
+                return 0
+            fi
+
+            # Add prune=5000 to config
+            echo "" >> "$conf_file"
+            echo "# Pruning enabled by spiralctl (saves 95%+ disk)" >> "$conf_file"
+            echo "prune=5000" >> "$conf_file"
+
+            # Restart the daemon
+            log_info "Restarting $daemon..."
+            systemctl restart "$daemon"
+            log_success "$coin pruning enabled (prune=5000, ~5 GB). Daemon restarted."
+            echo ""
+            echo -e "  ${DIM}Monitor sync progress: spiralctl sync${NC}"
+            echo ""
+            ;;
         *)
-            echo "Usage: spiralctl coin [status|list|enable|disable] <coin>"
+            echo "Usage: spiralctl coin [status|list|enable|disable|prune] <coin>"
             echo ""
             echo "  spiralctl coin status               Show all coins and their state"
             echo "  spiralctl coin enable <SYMBOL>      Add a supported coin to the pool"
             echo "  spiralctl coin disable <SYMBOL>     Stop and disable a coin daemon"
+            echo "  spiralctl coin prune <SYMBOL>       Enable blockchain pruning (~95% disk savings)"
             echo ""
             echo "For mining mode changes, use 'spiralctl mining':"
             echo "  spiralctl mining solo <coin>        Switch to solo mining"
@@ -6142,7 +6242,7 @@ cmd_coin_upgrade() {
     local script="${INSTALL_DIR}/scripts/coin-upgrade.sh"
     if [[ ! -x "$script" ]]; then
         log_error "coin-upgrade.sh not found at ${script}"
-        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v1.2.3+."
+        echo "Run 'sudo upgrade.sh' first to deploy it, or install Spiral Pool v2.0.0+."
         exit 1
     fi
     # Pass all arguments through — supports --check, --coin <TICKER>, --reindex, --list
@@ -6770,17 +6870,198 @@ PYEOF
             esac
             ;;
 
+        group)
+            local action_or_ip="${1:-}"
+            shift || true
+
+            # Resolve sentinel config path
+            local sentinel_cfg=""
+            local candidate_paths=(
+                "/home/${POOL_USER}/.spiralsentinel/config.json"
+                "${INSTALL_DIR}/config/sentinel/config.json"
+            )
+            for p in "${candidate_paths[@]}"; do
+                [[ -f "$p" ]] && sentinel_cfg="$p" && break
+            done
+            if [[ -z "$sentinel_cfg" ]]; then
+                log_error "Sentinel config not found"
+                exit 1
+            fi
+
+            case "$action_or_ip" in
+                list|"")
+                    python3 - "$sentinel_cfg" << 'PYEOF'
+import sys, json
+cfg_path = sys.argv[1]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+groups = cfg.get("miner_groups", {})
+if not groups:
+    print("  No miner groups configured.")
+else:
+    # Invert: group → list of IPs
+    by_group = {}
+    for ip, grp in sorted(groups.items()):
+        by_group.setdefault(grp, []).append(ip)
+    print()
+    for grp, ips in sorted(by_group.items()):
+        print(f"  [{grp}]")
+        for ip in ips:
+            print(f"    {ip}")
+    print()
+PYEOF
+                    ;;
+
+                clear)
+                    local ip="${1:-}"
+                    if [[ -z "$ip" ]]; then
+                        log_error "Usage: spiralctl miner group clear <IP>"
+                        exit 1
+                    fi
+                    check_root
+                    sudo python3 - "$sentinel_cfg" "$ip" << 'PYEOF'
+import sys, json
+cfg_path, ip = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+groups = cfg.get("miner_groups", {})
+if ip in groups:
+    del groups[ip]
+    cfg["miner_groups"] = groups
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"Removed {ip} from its group")
+else:
+    print(f"No group set for {ip}")
+PYEOF
+                    ;;
+
+                *)
+                    # spiralctl miner group <IP> <group-name>
+                    local ip="$action_or_ip"
+                    local group_name="${1:-}"
+                    if [[ -z "$group_name" ]]; then
+                        log_error "Usage: spiralctl miner group <IP> <group-name>"
+                        exit 1
+                    fi
+                    check_root
+                    sudo python3 - "$sentinel_cfg" "$ip" "$group_name" << 'PYEOF'
+import sys, json
+cfg_path, ip, group_name = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+if "miner_groups" not in cfg:
+    cfg["miner_groups"] = {}
+cfg["miner_groups"][ip] = group_name
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"Set group: {ip} → {group_name}")
+print("Restart spiralsentinel to apply: sudo systemctl restart spiralsentinel")
+PYEOF
+                    ;;
+            esac
+            ;;
+
+        tag)
+            local action_or_ip="${1:-list}"
+            shift 2>/dev/null || true
+
+            # Resolve sentinel config path (same logic as nick/group)
+            local sentinel_cfg=""
+            local tag_candidate_paths=(
+                "/home/${POOL_USER}/.spiralsentinel/config.json"
+                "${INSTALL_DIR}/config/sentinel/config.json"
+            )
+            for p in "${tag_candidate_paths[@]}"; do
+                [[ -f "$p" ]] && sentinel_cfg="$p" && break
+            done
+            if [[ -z "$sentinel_cfg" ]]; then
+                log_error "Sentinel config not found"
+                exit 1
+            fi
+
+            case "$action_or_ip" in
+                list|"")
+                    python3 - "$sentinel_cfg" << 'PYEOF'
+import sys, json
+cfg_path = sys.argv[1]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+tags = cfg.get("miner_tags", {})
+if not tags:
+    print("  No miner tags configured.")
+else:
+    print()
+    for ip, tag_list in sorted(tags.items()):
+        print(f"  {ip}: {', '.join(tag_list)}")
+    print()
+PYEOF
+                    ;;
+
+                clear)
+                    local ip="${1:-}"
+                    if [[ -z "$ip" ]]; then
+                        log_error "Usage: spiralctl miner tag clear <IP>"
+                        exit 1
+                    fi
+                    check_root
+                    sudo python3 - "$sentinel_cfg" "$ip" << 'PYEOF'
+import sys, json
+cfg_path, ip = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+tags = cfg.get("miner_tags", {})
+if ip in tags:
+    del tags[ip]
+    cfg["miner_tags"] = tags
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"Removed tags from {ip}")
+else:
+    print(f"No tags set for {ip}")
+PYEOF
+                    ;;
+
+                *)
+                    # spiralctl miner tag <IP> <tag1,tag2,...>
+                    local ip="$action_or_ip"
+                    local tag_csv="${1:-}"
+                    if [[ -z "$tag_csv" ]]; then
+                        log_error "Usage: spiralctl miner tag <IP> <tag1,tag2,...>"
+                        exit 1
+                    fi
+                    check_root
+                    sudo python3 - "$sentinel_cfg" "$ip" "$tag_csv" << 'PYEOF'
+import sys, json
+cfg_path, ip, tag_csv = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+if "miner_tags" not in cfg:
+    cfg["miner_tags"] = {}
+tags = [t.strip() for t in tag_csv.split(",") if t.strip()]
+cfg["miner_tags"][ip] = tags
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"Set tags: {ip} → {', '.join(tags)}")
+PYEOF
+                    ;;
+            esac
+            ;;
+
         *)
-            echo "Usage: spiralctl miner nick [list | <IP> <name> | clear <IP>]"
+            echo "Usage: spiralctl miner <command>"
             echo ""
-            echo "  nick list             List all miner nicknames"
-            echo "  nick <IP> <name>      Set a nickname for a miner IP"
-            echo "  nick clear <IP>       Remove the nickname for a miner IP"
+            echo "  nick  [list | <IP> <name> | clear <IP>]       Manage miner nicknames"
+            echo "  group [list | <IP> <name> | clear <IP>]       Manage miner groups"
+            echo "  tag   [list | <IP> <t1,t2> | clear <IP>]      Manage miner tags"
             echo ""
             echo "Examples:"
             echo "  spiralctl miner nick 192.168.1.50 \"Living Room Miner\""
             echo "  spiralctl miner nick list"
-            echo "  spiralctl miner nick clear 192.168.1.50"
+            echo "  spiralctl miner group 192.168.1.50 \"Garage\""
+            echo "  spiralctl miner group list"
+            echo "  spiralctl miner tag 192.168.1.50 \"asic,garage,s21\""
+            echo "  spiralctl miner tag list"
             exit 1
             ;;
     esac
@@ -7171,7 +7452,7 @@ check_interval = cfg.get("check_interval", 120)
 if not isinstance(check_interval, (int, float)) or check_interval < 10:
     issues.append(f"check_interval={check_interval} is unusually low (< 10s)")
 
-# v1.2.3 new alert config range checks
+# v2.0.0 new alert config range checks
 disk_warn = cfg.get("disk_warn_pct", 85)
 disk_crit = cfg.get("disk_critical_pct", 95)
 if disk_warn >= disk_crit:

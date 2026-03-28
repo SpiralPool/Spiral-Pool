@@ -151,7 +151,7 @@ type Processor struct {
 	// in split-brain scenarios. When haEnabled is true and isMaster is false,
 	// processCycle is a no-op.
 	isMaster  atomic.Bool
-	haEnabled bool
+	haEnabled atomic.Bool
 
 	// HA: Advisory lock for database-level payment fencing (defense-in-depth).
 	// When set, processCycle acquires a PostgreSQL advisory lock before processing.
@@ -181,7 +181,7 @@ func NewProcessor(cfg *config.PaymentsConfig, poolCfg *config.PoolConfig, db Blo
 // SetHAEnabled enables HA payment fencing.
 // When enabled, the processor will only run payment cycles if this node is master.
 func (p *Processor) SetHAEnabled(enabled bool) {
-	p.haEnabled = enabled
+	p.haEnabled.Store(enabled)
 }
 
 // SetMasterRole sets whether this node should process payments.
@@ -351,7 +351,7 @@ func (p *Processor) processLoop(ctx context.Context) {
 // processCycle runs a single payment processing cycle.
 func (p *Processor) processCycle(ctx context.Context) {
 	// HA payment fencing: skip processing on backup nodes
-	if p.haEnabled && !p.isMaster.Load() {
+	if p.haEnabled.Load() && !p.isMaster.Load() {
 		p.logger.Debug("Payment cycle skipped: this node is not master")
 		return
 	}
@@ -383,7 +383,7 @@ func (p *Processor) processCycle(ctx context.Context) {
 			// Lock acquired — re-check master status to close TOCTOU window.
 			// A VIP failover could have occurred during the lock acquisition timeout,
 			// making this node a backup while it still holds the advisory lock.
-			if p.haEnabled && !p.isMaster.Load() {
+			if p.haEnabled.Load() && !p.isMaster.Load() {
 				p.logger.Warnw("Lost master role during advisory lock acquisition — releasing lock and aborting cycle",
 					"lockID", lockID,
 				)

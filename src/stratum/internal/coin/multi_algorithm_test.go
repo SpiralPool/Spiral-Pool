@@ -9,7 +9,7 @@
 // 3. Mixed algorithm configurations (SHA-256d + Scrypt)
 // 4. Algorithm isolation (cross-algorithm confusion prevention)
 //
-// V1.1.0-PHI_FORGE: Multi-algorithm support (SHA-256d + Scrypt)
+// V2.0.0-PHI_HASH_REACTOR: Multi-algorithm support (SHA-256d + Scrypt)
 package coin
 
 import (

@@ -1,5 +1,5 @@
 {
-  "name": "V1.2.3 — Convergent Spiral",
+  "name": "V1.2 Convergent Spiral",
   "id": "convergent-spiral",
   "author": "Spiral Pool",
   "version": "1.2.3",
@@ -29,7 +29,9 @@
     "chart-pool-hashrate": "#f09828",
     "chart-network-hashrate": "#c89818",
     "chart-difficulty": "#9070d0",
-    "chart-workers": "#50b050"
+    "chart-workers": "#50b050",
+    "chart-blocks-found": "#ffe030",
+    "chart-shares-rate": "#50b050"
   },
   "gradients": {
     "primary": "linear-gradient(137.5deg, #c89818 0%, #ffe030 61.8%)",

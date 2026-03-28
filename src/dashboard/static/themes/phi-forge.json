@@ -1,5 +1,5 @@
 {
-  "name": "V1.1 — Phi Forge",
+  "name": "V1.1 Phi Forge",
   "id": "phi-forge",
   "author": "Spiral Pool",
   "version": "1.1.3",
@@ -29,7 +29,9 @@
     "chart-pool-hashrate": "#e89020",
     "chart-network-hashrate": "#d4a020",
     "chart-difficulty": "#8868c0",
-    "chart-workers": "#5cb85c"
+    "chart-workers": "#5cb85c",
+    "chart-blocks-found": "#ffd700",
+    "chart-shares-rate": "#5cb85c"
   },
   "gradients": {
     "primary": "linear-gradient(137.5deg, #d4a020 0%, #f0d060 61.8%)",

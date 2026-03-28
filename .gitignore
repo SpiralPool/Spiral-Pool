@@ -27,6 +27,7 @@ vendor/
 # Python artifacts
 # =========================
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.pyo

@@ -2,7 +2,7 @@
   "name": "Wood Paneling",
   "id": "wood-paneling",
   "author": "Spiral Pool",
-  "version": "1.2.3",
+  "version": "2.0.0",
   "description": "Rich walnut and mahogany — warm study with copper fixtures",
   "category": "Nature",
   "colors": {
@@ -29,7 +29,9 @@
     "chart-pool-hashrate": "#c86830",
     "chart-network-hashrate": "#c47a50",
     "chart-difficulty": "#8b5e3c",
-    "chart-workers": "#6b8a4e"
+    "chart-workers": "#6b8a4e",
+    "chart-blocks-found": "#d4a020",
+    "chart-shares-rate": "#6b8a4e"
   },
   "gradients": {
     "primary": "linear-gradient(135deg, #8b5e3c 0%, #6b4428 100%)",

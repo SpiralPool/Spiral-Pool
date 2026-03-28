@@ -49,6 +49,8 @@
     --chart-network-hashrate: var(--neon-blue);
     --chart-difficulty: var(--neon-purple);
     --chart-workers: var(--neon-green);
+    --chart-blocks-found: var(--neon-yellow);
+    --chart-shares-rate: var(--neon-green);
 
     /* Fonts */
     --font-display: 'Orbitron', sans-serif;
@@ -994,7 +996,7 @@ body {
 
 @media (min-width: 1600px) {
     .stats-overview {
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(8, 1fr);
     }
 }
 
@@ -1268,6 +1270,11 @@ body {
     border-radius: 3px;
 }
 
+.device-group-count.all-offline {
+    color: var(--status-offline);
+    background: rgba(255, 26, 26, 0.1);
+}
+
 .device-group-stats {
     display: flex;
     gap: 0.75rem;
@@ -1297,6 +1304,67 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 1.25rem;
+}
+
+/* Fleet group summary bar (user-defined groups) */
+.fleet-group-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--border-radius, 8px);
+}
+
+.fg-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.75rem;
+    background: rgba(0, 212, 255, 0.04);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    transition: border-color 0.2s ease;
+}
+
+.fg-chip:hover {
+    border-color: var(--border-accent);
+}
+
+.fg-name {
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.fg-hr {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--neon-blue);
+    font-weight: 500;
+}
+
+.fg-power {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.fg-count {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 0.1rem 0.35rem;
+    background: rgba(0, 212, 255, 0.06);
+    border-radius: 3px;
+}
+
+.fg-count.all-offline {
+    color: var(--status-offline);
+    background: rgba(255, 26, 26, 0.1);
 }
 
 .miners-grid {

@@ -673,18 +673,55 @@ func (j *Job) Clone() *Job {
 	invalidReason := j.InvalidReason
 	j.stateMu.RUnlock()
 
+	// Deep-copy slices to prevent shared backing arrays
+	var merkleBranches []string
+	if j.MerkleBranches != nil {
+		merkleBranches = make([]string, len(j.MerkleBranches))
+		copy(merkleBranches, j.MerkleBranches)
+	}
+	var target []byte
+	if j.Target != nil {
+		target = append([]byte(nil), j.Target...)
+	}
+	var txData []string
+	if j.TransactionData != nil {
+		txData = make([]string, len(j.TransactionData))
+		copy(txData, j.TransactionData)
+	}
+	var auxBlocks []AuxBlockData
+	if j.AuxBlocks != nil {
+		auxBlocks = make([]AuxBlockData, len(j.AuxBlocks))
+		for i, ab := range j.AuxBlocks {
+			auxBlocks[i] = AuxBlockData{
+				Symbol:        ab.Symbol,
+				ChainID:       ab.ChainID,
+				Hash:          append([]byte(nil), ab.Hash...),
+				Target:        append([]byte(nil), ab.Target...),
+				Height:        ab.Height,
+				CoinbaseValue: ab.CoinbaseValue,
+				ChainIndex:    ab.ChainIndex,
+				Difficulty:    ab.Difficulty,
+				Bits:          ab.Bits,
+			}
+		}
+	}
+	var auxMerkleBranch []string
+	if j.AuxMerkleBranch != nil {
+		auxMerkleBranch = make([]string, len(j.AuxMerkleBranch))
+		copy(auxMerkleBranch, j.AuxMerkleBranch)
+	}
 	return &Job{
 		ID:                    j.ID,
 		PrevBlockHash:         j.PrevBlockHash,
 		CoinBase1:             j.CoinBase1,
 		CoinBase2:             j.CoinBase2,
-		MerkleBranches:        j.MerkleBranches,
+		MerkleBranches:        merkleBranches,
 		Version:               j.Version,
 		NBits:                 j.NBits,
 		NTime:                 j.NTime,
 		CleanJobs:             j.CleanJobs,
 		Height:                j.Height,
-		Target:                j.Target,
+		Target:                target,
 		Difficulty:            j.Difficulty,
 		CreatedAt:             j.CreatedAt,
 		State:                 state,
@@ -692,14 +729,14 @@ func (j *Job) Clone() *Job {
 		InvalidReason:         invalidReason,
 		VersionRollingAllowed: j.VersionRollingAllowed,
 		VersionRollingMask:    j.VersionRollingMask,
-		TransactionData:       j.TransactionData,
+		TransactionData:       txData,
 		RawPrevBlockHash:      j.RawPrevBlockHash,
 		NetworkTarget:         j.NetworkTarget,
 		CoinbaseValue:         j.CoinbaseValue,
 		IsMergeJob:            j.IsMergeJob,
-		AuxBlocks:             j.AuxBlocks,
+		AuxBlocks:             auxBlocks,
 		AuxMerkleRoot:         j.AuxMerkleRoot,
-		AuxMerkleBranch:       j.AuxMerkleBranch,
+		AuxMerkleBranch:       auxMerkleBranch,
 		AuxTreeSize:           j.AuxTreeSize,
 		AuxMerkleNonce:        j.AuxMerkleNonce,
 	}

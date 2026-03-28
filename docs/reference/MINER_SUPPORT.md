@@ -250,7 +250,7 @@ Spiral Sentinel monitors all configured devices for these alert conditions:
 | Fan Failure (0 RPM) | N/A | N/A | Yes | Yes | Yes | Yes | Yes | N/A |
 | Hashboard Dead | N/A | N/A | Yes | N/A | N/A | N/A | N/A | N/A |
 | HW Error Rate | N/A | N/A | Yes | N/A | N/A | N/A | N/A | N/A |
-| Stratum URL Mismatch | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| Stratum URL Mismatch | Yes | N/A | Yes | N/A | Yes | Yes | Yes | N/A |
 | Hashrate Drop | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 
 \* Thermal shutdown alert for AxeOS covers: bitaxe, nerdaxe, luckyminer, jingleminer, zyber types.
@@ -329,4 +329,4 @@ This is a hardware limitation of the ESP32 platform. The chip runs a bare Stratu
 
 ### Stratum URL Mismatch
 
-Stratum URL mismatch detection (alerting when a miner is pointed at the wrong pool) is not yet implemented for any device type. This is planned for a future release.
+Stratum URL mismatch detection alerts when a miner is pointed at an unexpected pool — a common indicator of firmware hijacking or misconfiguration. Supported for all device types that expose pool URL via their API: AxeOS (HTTP), CGMiner (TCP pools command), Vnish (CGMiner), ePIC (HTTP), and LuxOS (CGMiner). Not available for Goldshell (HTTP API doesn't expose pool URL), BraiinsOS (pool URL not in REST API stats), or ESP32 (no device API).

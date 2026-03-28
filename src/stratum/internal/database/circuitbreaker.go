@@ -180,6 +180,13 @@ func (cb *CircuitBreaker) RecordFailure() time.Duration {
 		cb.currentBackoff = cb.cfg.MaxBackoff
 	}
 
+	// HalfOpen probe failed — immediately reopen with fresh cooldown
+	if cb.state == CircuitHalfOpen {
+		cb.state = CircuitOpen
+		cb.openedAt = time.Now()
+		cb.stateChanges++
+	}
+
 	// Check if we should open the circuit
 	if cb.failures >= cb.cfg.FailureThreshold && cb.state == CircuitClosed {
 		cb.state = CircuitOpen

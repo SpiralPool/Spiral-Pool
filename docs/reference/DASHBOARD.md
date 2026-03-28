@@ -135,7 +135,7 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 | Theme | Category |
 |-------|----------|
 | **V1.0 — Black Ice** | Codename |
-| **V1.2.3 — Convergent Spiral** | Codename |
+| **V2.0.0 — Phi Hash Reactor** | Codename |
 | **cyberpunk** (default) | Core |
 | 1337-h4x0r | Core |
 | dracula | Developer |
@@ -406,8 +406,29 @@ Per-device-type control endpoints for AxeOS, CGMiner, Whatsminer, BraiinsOS, Vni
 | GET | `/api/nodes` | User | All coin nodes |
 | GET | `/api/nodes/<symbol>` | User | Specific node status |
 | POST | `/api/nodes/<symbol>/restart` | Admin | Restart coin daemon |
+| POST | `/api/nodes/<symbol>/stop` | Admin | Stop coin daemon |
+| POST | `/api/nodes/<symbol>/start` | Admin | Start coin daemon |
 | GET | `/api/nodes/<symbol>/sync` | User | Sync progress |
 | POST | `/api/stratum/restart` | Admin | Restart stratum service |
+
+### Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/system/info` | User | System resources, services, disks, version |
+| POST | `/api/services/<service>/<action>` | Admin | Start/stop/restart a pool service |
+| GET | `/api/logs/<service>?lines=N` | Admin | Recent journalctl logs (10-500 lines) |
+| GET | `/api/system/updates` | Admin | Check available apt packages |
+| POST | `/api/system/updates/refresh` | Admin | Run apt-get update |
+| POST | `/api/system/updates/apply` | Admin | Apply available upgrades (apt-get upgrade) |
+
+### Data Export
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/export/blocks?format=csv\|json` | User | Block history with fiat values in user's currency |
+| GET | `/api/export/earnings?format=csv\|json` | User | Daily earnings summary with wallet balance |
+| GET | `/api/export/hashrate?format=csv\|json&period=24h` | User | Hashrate history (1h/6h/24h/7d/30d) |
 
 ### Financial
 
@@ -510,4 +531,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Convergent Spiral 1.2.3*
+*Spiral Dash &mdash; Phi Hash Reactor 2.0.0*

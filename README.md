@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Convergent Spiral V1.2.3 </em>
+  <em>Phi Hash Reactor V2.0.0 </em>
 </p>
 
 <p align="center">
@@ -65,9 +65,10 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
 | **Non-custodial solo payout** | Block reward embedded in coinbase tx &rarr; miner's wallet. No pool wallet, no custody |
 | **High availability** | VIP failover, Patroni replication, blockchain rsync, advisory lock payment fencing |
-| **Spiral Sentinel** | Autonomous monitoring: device discovery, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP. |
+| **Spiral Sentinel** | Autonomous monitoring: device discovery, BraiinsOS/Vnish auto-scan, stratum URL mismatch &amp; wallet mismatch detection, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, and generic webhooks (Zapier, Home Assistant, PagerDuty, etc.) |
 | **SimpleSwap Alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link. Operator-initiated only &mdash; no automatic swaps. See [TERMS.md 5D](TERMS.md). |
-| **Spiral Dash** | Real-time web dashboard with multi-theme support (port 1618) |
+| **Spiral Dash** | Overview and Management tabs. Interactive hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block finder history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups &amp; tags. Avalon time-based power schedules. Service control, log viewer, system updates, and system info panel. 23 built-in themes (port 1618) |
+| **Pruned node support** | Optional per-coin blockchain pruning (5 GB cap). Saves 95%+ disk &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB. All pool operations work on pruned nodes. Enable at install time or via `spiralctl coin prune <TICKER>` |
 | **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
 | **Prometheus metrics** | Per-session observability with worker-level labels |
 | **Runtime tuning** | Live operator control via `spiralctl` CLI |
@@ -169,7 +170,7 @@ QBX (standalone — no merge mining)
 |----------|--------|-------|
 | **Ubuntu 24.04.x LTS** | **Primary** | Native install. Docker available. **x86_64 only.** |
 | **Windows 11 &mdash; Docker Desktop** | **Experimental** | Via Docker Desktop + WSL2. See [Docker Guide](docs/setup/DOCKER_GUIDE.md). |
-| **Windows 11 &mdash; WSL2 Native** | **Experimental** | Run `install.sh` inside WSL2. Requires [port forwarding](scripts/windows/start-wsl2-proxy.bat) for miners. |
+| **Windows 11 &mdash; WSL2 Native** | **Experimental** | Run `install.sh` inside WSL2. Requires [port forwarding](scripts/windows/start-wsl2-proxy.bat) for miners. Install the [WSL2 shutdown hook](scripts/windows/wsl2-shutdown-hook.ps1) to prevent blockchain corruption on Windows restart/sleep. |
 | **ARM / Raspberry Pi** | **Not Tested** | All binaries target x86_64. ARM may not work. See [WARNINGS.md](WARNINGS.md). |
 
 ---
@@ -232,7 +233,7 @@ See [REFERENCE.md](docs/reference/REFERENCE.md) for all coin-specific stratum po
 
 ### Notifications
 
-Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/Jabber**, **ntfy**, and **SMTP email** for block discoveries, miner status changes, temperature warnings, and hashrate reports. Configure during installation or in `~/.spiralsentinel/config.json`. See [SENTINEL.md](docs/reference/SENTINEL.md) for setup details.
+Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/Jabber**, **ntfy**, **SMTP email**, and **generic webhooks** (HTTP POST to any URL &mdash; Zapier, Home Assistant, IFTTT, PagerDuty, n8n) for block discoveries, miner status changes, temperature warnings, and hashrate reports. Configure during installation or in `~/.spiralsentinel/config.json`. See [SENTINEL.md](docs/reference/SENTINEL.md) for setup details.
 
 ---
 
@@ -241,7 +242,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v1.2.3 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.0.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | Spiral Router, vardiff engine, share pipeline, database schema, HA |
@@ -307,4 +308,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Convergent Spiral 1.2.3 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.0.0 &mdash; Convergent difficulty. Minimal oscillation.*

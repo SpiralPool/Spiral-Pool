@@ -1,6 +1,6 @@
 # Security Architecture Decisions
 
-**Last Updated:** 2026-03-16
+**Last Updated:** 2026-03-27
 
 ## Purpose
 
@@ -279,5 +279,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v1.2.3 - Security Architecture Decisions*
+*Spiral Pool v2.0.0 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

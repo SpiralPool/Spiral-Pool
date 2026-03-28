@@ -361,7 +361,7 @@ func TestProcessCycle_HABackupNodeSkipsCycle(t *testing.T) {
 
 	rpc := newMockDaemonRPC()
 	proc := newTestProcessor(store, rpc, DefaultBlockMaturityConfirmations)
-	proc.haEnabled = true
+	proc.haEnabled.Store(true)
 	proc.isMaster.Store(false) // Backup node
 
 	proc.processCycle(context.Background())

@@ -1,6 +1,6 @@
 # Specific Hazard Warnings
 
-**Last Updated:** 2026-03-20
+**Last Updated:** 2026-03-27
 
 **READ THIS DOCUMENT BEFORE DEPLOYING SPIRAL POOL**
 
@@ -497,5 +497,5 @@ By deploying Spiral Pool, you acknowledge that:
 
 ---
 
-*Spiral Pool v1.2.3 - Specific Hazard Warnings*
+*Spiral Pool v2.0.0 - Specific Hazard Warnings*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

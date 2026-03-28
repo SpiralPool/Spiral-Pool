@@ -1,6 +1,6 @@
 # Export Control Notice
 
-**Last Updated:** 2026-03-18
+**Last Updated:** 2026-03-27
 
 ## Project Origin
 
@@ -173,5 +173,5 @@ This software is a neutral, **non-custodial** infrastructure tool. Like web serv
 
 *This notice is provided for informational purposes. It is not legal advice. Users with specific compliance questions should consult qualified legal counsel in their jurisdiction.*
 
-*Spiral Pool v1.2.3 - Export Control Notice*
+*Spiral Pool v2.0.0 - Export Control Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

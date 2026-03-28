@@ -2,7 +2,7 @@
   "name": "Nebula Command",
   "id": "nebula-command",
   "author": "Spiral Pool",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Stellar ops command console with plasma energy accents and stellar glow",
   "category": "Industrial",
   "colors": {

@@ -2,7 +2,7 @@
   "name": "Lottery & Lucky",
   "id": "lottery-lucky",
   "author": "Spiral Pool",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Focus on block finding luck, best difficulties, and the thrill of solo mining!",
   "preview": "lottery-preview.png",
   "layout": {
