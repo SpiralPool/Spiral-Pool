@@ -43,8 +43,9 @@ type Server struct {
 	listener net.Listener
 
 	// TLS listener for encrypted connections
-	tlsListener net.Listener
-	tlsConfig   *tls.Config
+	tlsListener    net.Listener
+	tlsTCPListener *net.TCPListener // underlying TCP listener for SetDeadline
+	tlsConfig      *tls.Config
 
 	// Rate limiter for DDoS protection
 	rateLimiter *security.RateLimiter
@@ -309,11 +310,15 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start TLS listener if configured
 	if s.tlsConfig != nil && s.cfg.TLS.ListenTLS != "" {
-		tlsListener, err := tls.Listen("tcp", s.cfg.TLS.ListenTLS, s.tlsConfig)
+		// Create TCP listener first so we can call SetDeadline for clean shutdown.
+		// tls.Listen() wraps the TCP listener in an unexported type that doesn't
+		// expose SetDeadline, causing the accept loop to block indefinitely.
+		tcpListener, err := net.Listen("tcp", s.cfg.TLS.ListenTLS)
 		if err != nil {
 			return fmt.Errorf("failed to start TLS listener on %s: %w", s.cfg.TLS.ListenTLS, err)
 		}
-		s.tlsListener = tlsListener
+		s.tlsTCPListener = tcpListener.(*net.TCPListener)
+		s.tlsListener = tls.NewListener(tcpListener, s.tlsConfig)
 
 		s.logger.Infow("Stratum TLS server started",
 			"address", s.cfg.TLS.ListenTLS,
@@ -389,8 +394,12 @@ func (s *Server) acceptLoop(ctx context.Context, listener net.Listener, isTLS bo
 		default:
 		}
 
-		// Accept with timeout for clean shutdown
-		if tcpListener, ok := listener.(*net.TCPListener); ok {
+		// Accept with timeout for clean shutdown.
+		// For TLS listeners, use the stored underlying TCP listener since
+		// tls.listener doesn't expose SetDeadline.
+		if isTLS && s.tlsTCPListener != nil {
+			_ = s.tlsTCPListener.SetDeadline(time.Now().Add(1 * time.Second)) // #nosec G104
+		} else if tcpListener, ok := listener.(*net.TCPListener); ok {
 			_ = tcpListener.SetDeadline(time.Now().Add(1 * time.Second)) // #nosec G104
 		}
 
@@ -1359,8 +1368,11 @@ func (s *Server) GetRouterProfiles() []RouterProfile {
 		return nil
 	}
 
-	profiles := make([]RouterProfile, 0, len(DefaultProfiles))
-	for class, profile := range DefaultProfiles {
+	// Use the router's active profiles which reflect algorithm selection
+	// and block-time scaling, not the unscaled DefaultProfiles constants.
+	activeProfiles := s.spiralRouter.GetAllProfiles()
+	profiles := make([]RouterProfile, 0, len(activeProfiles))
+	for class, profile := range activeProfiles {
 		profiles = append(profiles, RouterProfile{
 			Class:           class.String(),
 			InitialDiff:     profile.InitialDiff,

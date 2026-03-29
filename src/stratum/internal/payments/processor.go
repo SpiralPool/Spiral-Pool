@@ -443,6 +443,8 @@ func (p *Processor) processCycle(ctx context.Context) {
 	// V15 FIX: Track consecutive failures and warn operator.
 	// A processor that silently fails cycle after cycle leaves blocks
 	// stuck in "pending" forever — the miner is never paid.
+	// Lock protects consecutiveFailedCycles (read by health-check goroutine).
+	p.mu.Lock()
 	if cycleFailed {
 		p.consecutiveFailedCycles++
 		if p.consecutiveFailedCycles >= ConsecutiveFailureThreshold {
@@ -460,9 +462,11 @@ func (p *Processor) processCycle(ctx context.Context) {
 		}
 		p.consecutiveFailedCycles = 0
 	}
+	failedCycles := p.consecutiveFailedCycles
+	p.mu.Unlock()
 	// Export consecutive failure count to Prometheus for alerting
 	if p.metrics != nil {
-		p.metrics.SetPaymentProcessorFailedCycles(p.consecutiveFailedCycles)
+		p.metrics.SetPaymentProcessorFailedCycles(failedCycles)
 	}
 
 	// V28 FIX: Check for stale pending blocks and warn operator.

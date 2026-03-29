@@ -151,9 +151,14 @@ acquire_operation_lock() {
             log_error "Wait for it to finish or kill pid $holder_pid first."
             return 1
         fi
-        # PID is dead — stale flock, force clear and continue
+        # PID is dead — stale flock, force clear and re-acquire
         sudo rm -f "$SPIRALPOOL_LOCK_FILE" "${SPIRALPOOL_LOCK_FILE}.info" 2>/dev/null || true
-        log_warn "Cleared stale lock — continuing"
+        log_warn "Cleared stale lock — re-acquiring..."
+        if ! exec 200>"$SPIRALPOOL_LOCK_FILE" 2>/dev/null; then
+            log_warn "Could not re-create lock file — continuing without lock"
+        elif ! flock -w 5 -x 200 2>/dev/null; then
+            log_warn "Could not re-acquire lock after clearing stale — continuing without lock"
+        fi
     fi
 
     echo "operation=$operation pid=$$ started=$(date -Iseconds)" | \
@@ -273,8 +278,8 @@ AUTO_MODE=false
 UPDATE_STRATUM=true
 UPDATE_DASHBOARD=true
 UPDATE_SENTINEL=true
-UPDATE_SERVICES=true
-FIX_CONFIG=true
+UPDATE_SERVICES=false
+FIX_CONFIG=false
 SKIP_START=false
 
 # Track what services were running before upgrade
@@ -435,7 +440,7 @@ resolve_coin_dir() {
     # Check if coins.env records a multi-disk mount point
     local mount_point=""
     local coins_env="${INSTALL_DIR}/config/coins.env"
-    [[ -f "$coins_env" ]] && mount_point=$(grep -oP '^CHAIN_MOUNT_POINT=\K.+$' "$coins_env" 2>/dev/null || true)
+    [[ -f "$coins_env" ]] && mount_point=$(grep -oP '^CHAIN_MOUNT_POINT="?\K[^"]+' "$coins_env" 2>/dev/null || true)
     if [[ -n "$mount_point" ]] && [[ -d "$mount_point/$coin" ]]; then
         echo "$mount_point/$coin"
     else
@@ -587,9 +592,9 @@ detect_current_version() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.1")
     elif [[ -f "/usr/local/bin/stratum" ]]; then
-        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
+        CURRENT_VERSION=$("/usr/local/bin/stratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.1")
     else
         CURRENT_VERSION="unknown"
     fi
@@ -597,7 +602,7 @@ detect_current_version() {
     # Validate version format
     if [[ "$CURRENT_VERSION" != "unknown" ]]; then
         if ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
-            CURRENT_VERSION="2.0.0"
+            CURRENT_VERSION="2.0.1"
         fi
     fi
 
@@ -665,9 +670,9 @@ check_for_updates() {
     if [[ -f "${INSTALL_DIR}/VERSION" ]] && [[ ! -L "${INSTALL_DIR}/VERSION" ]]; then
         CURRENT_VERSION=$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")
     elif [[ -f "${INSTALL_DIR}/bin/spiralstratum" ]]; then
-        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.0")
+        CURRENT_VERSION=$("${INSTALL_DIR}/bin/spiralstratum" --version 2>/dev/null | grep -oP '\d+\.\d+(\.\d+)?' || echo "2.0.1")
     else
-        CURRENT_VERSION="2.0.0"
+        CURRENT_VERSION="2.0.1"
     fi
 
     local RELEASE_URL=""
@@ -1895,20 +1900,20 @@ API_EOF
             "/home/${POOL_USER}/.spiralsentinel/config.json"; do
             if [[ -f "$sentinel_cfg" ]]; then
                 local old_sentinel_key=""
-                old_sentinel_key=$(python3 -c "import json; d=json.load(open('$sentinel_cfg')); print(d.get('pool_admin_api_key',''))" 2>/dev/null || echo "")
+                old_sentinel_key=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pool_admin_api_key',''))" "$sentinel_cfg" 2>/dev/null || echo "")
                 if [[ "$old_sentinel_key" != "$final_api_key" ]]; then
                     python3 -c "
 import json, sys
-cfg_path = '$sentinel_cfg'
+cfg_path, new_key = sys.argv[1], sys.argv[2]
 try:
     with open(cfg_path) as f:
         d = json.load(f)
-    d['pool_admin_api_key'] = '$final_api_key'
+    d['pool_admin_api_key'] = new_key
     with open(cfg_path, 'w') as f:
         json.dump(d, f, indent=2)
 except Exception as e:
     print(f'Warning: could not update {cfg_path}: {e}', file=sys.stderr)
-" 2>/dev/null || true
+" "$sentinel_cfg" "$final_api_key" 2>/dev/null || true
                     chown "${POOL_USER}:${POOL_USER}" "$sentinel_cfg" 2>/dev/null || true
                     log_info "  - Synced admin_api_key to $(basename $(dirname $sentinel_cfg))/config.json"
                     FIXES_APPLIED=$((FIXES_APPLIED + 1))
@@ -2086,20 +2091,20 @@ API_EOF
             "/home/${POOL_USER}/.spiralsentinel/config.json"; do
             if [[ -f "$sentinel_cfg" ]]; then
                 local old_sentinel_key=""
-                old_sentinel_key=$(python3 -c "import json; d=json.load(open('$sentinel_cfg')); print(d.get('pool_admin_api_key',''))" 2>/dev/null || echo "")
+                old_sentinel_key=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pool_admin_api_key',''))" "$sentinel_cfg" 2>/dev/null || echo "")
                 if [[ "$old_sentinel_key" != "$final_api_key" ]]; then
                     python3 -c "
 import json, sys
-cfg_path = '$sentinel_cfg'
+cfg_path, new_key = sys.argv[1], sys.argv[2]
 try:
     with open(cfg_path) as f:
         d = json.load(f)
-    d['pool_admin_api_key'] = '$final_api_key'
+    d['pool_admin_api_key'] = new_key
     with open(cfg_path, 'w') as f:
         json.dump(d, f, indent=2)
 except Exception as e:
     print(f'Warning: could not update {cfg_path}: {e}', file=sys.stderr)
-" 2>/dev/null || true
+" "$sentinel_cfg" "$final_api_key" 2>/dev/null || true
                     chown "${POOL_USER}:${POOL_USER}" "$sentinel_cfg" 2>/dev/null || true
                     log_info "  - Synced admin_api_key to $(basename $(dirname $sentinel_cfg))/config.json"
                     MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
@@ -3275,7 +3280,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/spiralctl.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/spiralctl.sh"
         ln -sf "$SCRIPTS_DST/spiralctl.sh" /usr/local/bin/spiralctl
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/spiralctl.sh"
+        chown root:root "$SCRIPTS_DST/spiralctl.sh"
         ((++updated))
     fi
 
@@ -3540,7 +3545,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.0.0 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.0.1 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3666,6 +3671,11 @@ migrate_disable_ipv6() {
     # Disable IPv6 on existing installs — Spiral Pool is IPv4-only.
     # IPv6 causes routing cache corruption when network interfaces change
     # (keepalived VIP failover, sysctl changes), breaking outbound connectivity.
+    # Skip on WSL2 — the shared kernel doesn't support many net.* sysctl writes
+    # and the persistent sysctl.d file generates errors on every boot.
+    if [[ "$IS_WSL2" == "true" ]]; then
+        return 0
+    fi
     local sysctl_file="/etc/sysctl.d/99-spiralpool.conf"
     if [[ -f "$sysctl_file" ]]; then
         if ! grep -q 'disable_ipv6' "$sysctl_file" 2>/dev/null; then
@@ -3795,7 +3805,8 @@ migrate_runtime_dir() {
 # Spiral Pool runtime directory — lock files, temp data, miner caches
 d /run/spiralpool 0755 $POOL_USER $POOL_USER -
 TMPEOF
-    systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null || true
+    systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null || mkdir -p /run/spiralpool 2>/dev/null || true
+    chown "$POOL_USER:$POOL_USER" /run/spiralpool 2>/dev/null || true
     log_info "  Created tmpfiles.d config for /run/spiralpool/"
 }
 
@@ -4247,7 +4258,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.0.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.0.1 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

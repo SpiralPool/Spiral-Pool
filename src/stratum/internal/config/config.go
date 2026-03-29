@@ -491,7 +491,7 @@ type AuxChainConfig struct {
 }
 
 // SupportedCoins defines the coins supported by this pool.
-// V2.0.0-PHI_HASH_REACTOR: Supports SHA-256d and Scrypt algorithms.
+// V2.0.1-PHI_HASH_REACTOR: Supports SHA-256d and Scrypt algorithms.
 //
 // SHA-256d coins: BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC, QBX
 // Scrypt coins:   LTC, DOGE, DGB-SCRYPT, PEP, CAT

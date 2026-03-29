@@ -35,14 +35,14 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.0.0}"
+VERSION="${VERSION:-2.0.1}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
 # Multi-disk support: resolve coin data directory (respects CHAIN_MOUNT_POINT from coins.env)
 _CHAIN_MOUNT_POINT=""
 if [[ -f "$INSTALL_DIR/config/coins.env" ]]; then
-    _CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "")
+    _CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="?\K[^"]+' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "")
 fi
 _chain_dir() {
     local coin_lower="$1"
@@ -4209,6 +4209,23 @@ cmd_coin() {
                 exit 1
             fi
 
+            # SYS is merge-mining only — requires BTC parent chain
+            if [[ "$coin" == "SYS" ]]; then
+                local btc_daemon
+                btc_daemon=$(get_coin_daemon "BTC" 2>/dev/null || echo "")
+                if [[ -z "$btc_daemon" ]] || ! systemctl is-enabled --quiet "$btc_daemon" 2>/dev/null; then
+                    echo ""
+                    log_error "SYS (Syscoin) is a merge-mining-only coin."
+                    echo -e "  ${DIM}SYS requires BTC to be enabled first as the parent chain.${NC}"
+                    echo -e "  ${DIM}Enable BTC first:  ${NC}${CYAN}sudo spiralctl coin enable BTC${NC}"
+                    echo -e "  ${DIM}Then enable SYS:   ${NC}${CYAN}sudo spiralctl coin enable SYS${NC}"
+                    echo ""
+                    exit 1
+                fi
+                echo ""
+                log_info "SYS is a merge-mining coin. It will be mined alongside BTC."
+            fi
+
             # Check if already enabled
             local daemon
             daemon=$(get_coin_daemon "$coin" 2>/dev/null || echo "")
@@ -4236,10 +4253,20 @@ cmd_coin() {
                 return 0
             fi
 
-            local installer="${INSTALL_DIR}/install.sh"
-            if [[ ! -f "$installer" ]]; then
-                log_error "Installer not found at ${installer}"
-                echo -e "  ${DIM}Download it from: https://github.com/SpiralPool/Spiral-Pool${NC}"
+            local installer=""
+            for candidate in \
+                "${INSTALL_DIR}/install.sh" \
+                "$HOME/Spiral-Pool/install.sh" \
+                "/home/*/Spiral-Pool/install.sh"; do
+                # shellcheck disable=SC2086
+                for f in $candidate; do
+                    if [[ -f "$f" ]]; then installer="$f"; break 2; fi
+                done
+            done
+            if [[ -z "$installer" ]]; then
+                log_error "Installer not found."
+                echo -e "  ${DIM}Expected at: ${INSTALL_DIR}/install.sh${NC}"
+                echo -e "  ${DIM}Copy install.sh to ${INSTALL_DIR}/ or re-clone from: https://github.com/SpiralPool/Spiral-Pool${NC}"
                 exit 1
             fi
             exec sudo bash "$installer"
@@ -5682,9 +5709,20 @@ cmd_add_coin() {
         prompt_input "Would you like to run the installer now? [y/N]: "
         read -r run_installer
         if [[ "${run_installer,,}" == "y" || "${run_installer,,}" == "yes" ]]; then
-            local installer="${INSTALL_DIR}/install.sh"
-            if [[ ! -f "$installer" ]]; then
-                log_error "Installer not found at ${installer}"
+            local installer=""
+            for candidate in \
+                "${INSTALL_DIR}/install.sh" \
+                "$HOME/Spiral-Pool/install.sh" \
+                "/home/*/Spiral-Pool/install.sh"; do
+                # shellcheck disable=SC2086
+                for f in $candidate; do
+                    if [[ -f "$f" ]]; then installer="$f"; break 2; fi
+                done
+            done
+            if [[ -z "$installer" ]]; then
+                log_error "Installer not found."
+                echo -e "  ${DIM}Expected at: ${INSTALL_DIR}/install.sh${NC}"
+                echo -e "  ${DIM}Copy install.sh to ${INSTALL_DIR}/ or re-clone from: https://github.com/SpiralPool/Spiral-Pool${NC}"
                 exit 1
             fi
             exec sudo bash "$installer"

@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 1.2
+    Version: 2.0.1
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "2.0.0"
+$Script:Version = "2.0.1"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -72,20 +72,20 @@ $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $Script:CoinConfig = @{
-    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="60 GB";   CliName="digibyte-cli" }
-    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="600 GB";  CliName="bitcoin-cli" }
-    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="250 GB";  CliName="bitcoin-cli" }
-    BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  ZmqPort=28338; RpcUser="spiralbc2";  StratumPort=6333;  TlsPort=6335;  PoolCoin="bitcoinii";       Profile="bc2";        Algo="SHA256d"; Storage="10 GB";   CliName="bitcoinii-cli" }
-    NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  ZmqPort=28336; RpcUser="spiralnmc";  StratumPort=14335; TlsPort=14337; PoolCoin="namecoin";        Profile="nmc";        Algo="SHA256d"; Storage="15 GB";   CliName="namecoin-cli" }
-    SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
-    XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
-    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
-    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  ZmqPort=28344; RpcUser="spiralqbx";  StratumPort=20335; TlsPort=20337; PoolCoin="qbitx";            Profile="qbx";        Algo="SHA256d"; Storage="5 GB";    CliName="qbitx-cli" }
-    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
-    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
-    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="60 GB";   CliName="digibyte-cli" }
-    PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; ZmqPort=28873; RpcUser="spiralpep";  StratumPort=10335; TlsPort=10337; PoolCoin="pepecoin";        Profile="pep";        Algo="Scrypt";  Storage="5 GB";    CliName="pepecoin-cli" }
-    CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  ZmqPort=28932; RpcUser="spiralcat";  StratumPort=12335; TlsPort=12337; PoolCoin="catcoin";         Profile="cat";        Algo="Scrypt";  Storage="5 GB";    CliName="catcoin-cli" }
+    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="60 GB";   CliName="digibyte-cli" }
+    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  V2Port=4334;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="600 GB";  CliName="bitcoin-cli" }
+    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  V2Port=5334;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="250 GB";  CliName="bitcoin-cli" }
+    BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  ZmqPort=28338; RpcUser="spiralbc2";  StratumPort=6333;  V2Port=6334;  TlsPort=6335;  PoolCoin="bitcoinii";       Profile="bc2";        Algo="SHA256d"; Storage="10 GB";   CliName="bitcoinii-cli" }
+    NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  ZmqPort=28336; RpcUser="spiralnmc";  StratumPort=14335; V2Port=14336; TlsPort=14337; PoolCoin="namecoin";        Profile="nmc";        Algo="SHA256d"; Storage="15 GB";   CliName="namecoin-cli" }
+    SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; V2Port=15336; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
+    XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; V2Port=17336; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
+    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; V2Port=18336; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
+    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  ZmqPort=28344; RpcUser="spiralqbx";  StratumPort=20335; V2Port=20336; TlsPort=20337; PoolCoin="qbitx";            Profile="qbx";        Algo="SHA256d"; Storage="5 GB";    CliName="qbitx-cli" }
+    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
+    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
+    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="60 GB";   CliName="digibyte-cli" }
+    PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; ZmqPort=28873; RpcUser="spiralpep";  StratumPort=10335; V2Port=10336; TlsPort=10337; PoolCoin="pepecoin";        Profile="pep";        Algo="Scrypt";  Storage="5 GB";    CliName="pepecoin-cli" }
+    CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  ZmqPort=28932; RpcUser="spiralcat";  StratumPort=12335; V2Port=12336; TlsPort=12337; PoolCoin="catcoin";         Profile="cat";        Algo="Scrypt";  Storage="5 GB";    CliName="catcoin-cli" }
 }
 
 # Wallet address validation patterns per coin
@@ -131,7 +131,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.0.0" -ForegroundColor DarkGray
+    Write-Host "                           v2.0.1" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -388,82 +388,89 @@ function Show-DockerLimitations {
 }
 
 function Show-SoloCoinMenu {
-    Write-Host ""
-    Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
-    Write-Host "    SELECT COIN FOR SOLO MINING" -ForegroundColor White
-    Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
-    Write-Host ""
-    Write-Host "  SHA256d Coins:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "   [1] " -NoNewline -ForegroundColor Cyan
-    Write-Host "DGB  - DigiByte" -NoNewline -ForegroundColor Green
-    Write-Host "        ~60 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
-    Write-Host "   [2] " -NoNewline -ForegroundColor Cyan
-    Write-Host "BTC  - Bitcoin" -NoNewline -ForegroundColor Yellow
-    Write-Host "         ~600 GB  Port 4333" -ForegroundColor DarkGray
-    Write-Host "   [3] " -NoNewline -ForegroundColor Cyan
-    Write-Host "BCH  - Bitcoin Cash" -NoNewline -ForegroundColor White
-    Write-Host "    ~250 GB  Port 5333" -ForegroundColor DarkGray
-    Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
-    Write-Host "BC2  - Bitcoin II" -NoNewline -ForegroundColor White
-    Write-Host "      ~10 GB   Port 6333" -ForegroundColor DarkGray
-    Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
-    Write-Host "NMC  - Namecoin" -NoNewline -ForegroundColor White
-    Write-Host "       ~15 GB   Port 14335" -ForegroundColor DarkGray
-    Write-Host "   [6] " -NoNewline -ForegroundColor DarkGray
-    Write-Host "SYS  - Syscoin" -NoNewline -ForegroundColor DarkGray
-    Write-Host "        (merge-mining only, requires BTC)" -ForegroundColor DarkRed
-    Write-Host "   [7] " -NoNewline -ForegroundColor Cyan
-    Write-Host "XMY  - Myriadcoin" -NoNewline -ForegroundColor White
-    Write-Host "     ~8 GB    Port 17335" -ForegroundColor DarkGray
-    Write-Host "   [8] " -NoNewline -ForegroundColor Cyan
-    Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
-    Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
-    Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
-    Write-Host "QBX  - Q-BitX" -NoNewline -ForegroundColor White
-    Write-Host "         ~5 GB    Port 20335" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  Scrypt Coins:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
-    Write-Host "LTC  - Litecoin" -NoNewline -ForegroundColor Green
-    Write-Host "       ~150 GB  Port 7333" -ForegroundColor DarkGray
-    Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
-    Write-Host "DOGE - Dogecoin" -NoNewline -ForegroundColor White
-    Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
-    Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
-    Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
-    Write-Host " ~60 GB   Port 3336" -ForegroundColor DarkGray
-    Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
-    Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
-    Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
-    Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
-    Write-Host "CAT  - Catcoin" -NoNewline -ForegroundColor White
-    Write-Host "        ~5 GB    Port 12335" -ForegroundColor DarkGray
-    Write-Host ""
-
-    $choice = Read-Host "  Select coin (1-14) [default: 1]"
-    if ([string]::IsNullOrEmpty($choice)) { $choice = "1" }
-
     $coinMap = @{
         "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BC2"; "5"="NMC"; "6"="SYS"; "7"="XMY"; "8"="FBTC"; "9"="QBX"
         "10"="LTC"; "11"="DOGE"; "12"="DGB-SCRYPT"; "13"="PEP"; "14"="CAT"
     }
 
-    if ($coinMap.ContainsKey($choice)) {
-        if ($coinMap[$choice] -eq "SYS") {
-            Write-Host ""
-            Write-Host "  Syscoin (SYS) is a merge-mining-only coin and cannot be mined standalone." -ForegroundColor Red
-            Write-Host "  SYS must be merge-mined with BTC using the native Linux installer (install.sh)." -ForegroundColor Yellow
-            Write-Host "  Please select a different coin." -ForegroundColor Yellow
-            Write-Host ""
-            Write-Log "SYS selected but unavailable in Docker single-coin mode" "ERROR"
-            exit 1
+    while ($true) {
+        Write-Host ""
+        Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
+        Write-Host "    SELECT COIN FOR SOLO MINING" -ForegroundColor White
+        Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
+        Write-Host ""
+        Write-Host "  SHA256d Coins:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   [1] " -NoNewline -ForegroundColor Cyan
+        Write-Host "DGB  - DigiByte" -NoNewline -ForegroundColor Green
+        Write-Host "        ~60 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
+        Write-Host "   [2] " -NoNewline -ForegroundColor Cyan
+        Write-Host "BTC  - Bitcoin" -NoNewline -ForegroundColor Yellow
+        Write-Host "         ~600 GB  Port 4333" -ForegroundColor DarkGray
+        Write-Host "   [3] " -NoNewline -ForegroundColor Cyan
+        Write-Host "BCH  - Bitcoin Cash" -NoNewline -ForegroundColor White
+        Write-Host "    ~250 GB  Port 5333" -ForegroundColor DarkGray
+        Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
+        Write-Host "BC2  - Bitcoin II" -NoNewline -ForegroundColor White
+        Write-Host "      ~10 GB   Port 6333" -ForegroundColor DarkGray
+        Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
+        Write-Host "NMC  - Namecoin" -NoNewline -ForegroundColor White
+        Write-Host "       ~15 GB   Port 14335" -ForegroundColor DarkGray
+        Write-Host "   [6] " -NoNewline -ForegroundColor DarkGray
+        Write-Host "SYS  - Syscoin" -NoNewline -ForegroundColor DarkGray
+        Write-Host "        (merge-mining only, requires BTC)" -ForegroundColor DarkRed
+        Write-Host "   [7] " -NoNewline -ForegroundColor Cyan
+        Write-Host "XMY  - Myriadcoin" -NoNewline -ForegroundColor White
+        Write-Host "     ~8 GB    Port 17335" -ForegroundColor DarkGray
+        Write-Host "   [8] " -NoNewline -ForegroundColor Cyan
+        Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
+        Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
+        Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
+        Write-Host "QBX  - Q-BitX" -NoNewline -ForegroundColor White
+        Write-Host "         ~5 GB    Port 20335" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  Scrypt Coins:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
+        Write-Host "LTC  - Litecoin" -NoNewline -ForegroundColor Green
+        Write-Host "       ~150 GB  Port 7333" -ForegroundColor DarkGray
+        Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
+        Write-Host "DOGE - Dogecoin" -NoNewline -ForegroundColor White
+        Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
+        Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
+        Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
+        Write-Host " ~60 GB   Port 3336" -ForegroundColor DarkGray
+        Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
+        Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
+        Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
+        Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
+        Write-Host "CAT  - Catcoin" -NoNewline -ForegroundColor White
+        Write-Host "        ~5 GB    Port 12335" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  Enter 'b' to go back, 'q' to quit" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $choice = Read-Host "  Select coin (1-14, b=back, q=quit) [default: 1]"
+        if ([string]::IsNullOrEmpty($choice)) { $choice = "1" }
+
+        if ($choice -eq "b" -or $choice -eq "B") { return $null }
+        if ($choice -eq "q" -or $choice -eq "Q") {
+            Write-Host "  Installation cancelled." -ForegroundColor Yellow
+            exit 0
         }
-        return $coinMap[$choice]
-    } else {
-        Write-Log "Invalid coin selection: $choice" "ERROR"
-        exit 1
+
+        if ($coinMap.ContainsKey($choice)) {
+            if ($coinMap[$choice] -eq "SYS") {
+                Write-Host ""
+                Write-Host "  Syscoin (SYS) is a merge-mining-only coin and cannot be mined standalone." -ForegroundColor Red
+                Write-Host "  SYS must be merge-mined with BTC using the native Linux installer (install.sh)." -ForegroundColor Yellow
+                Write-Host "  Please select a different coin." -ForegroundColor Yellow
+                continue
+            }
+            return $coinMap[$choice]
+        } else {
+            Write-Host "  Invalid selection. Please enter 1-14." -ForegroundColor Red
+        }
     }
 }
 
@@ -527,11 +534,12 @@ function Test-PortAvailability {
 
     $portsToCheck = @(
         @{ Port = [int]$coinInfo.StratumPort; Name = "$SelectedCoin Stratum V1" }
+        @{ Port = [int]$coinInfo.V2Port; Name = "$SelectedCoin Stratum V2" }
         @{ Port = [int]$coinInfo.TlsPort; Name = "$SelectedCoin Stratum TLS" }
         @{ Port = [int]$(if ($Config.ApiPort) { $Config.ApiPort } else { 4000 }); Name = "REST API" }
         @{ Port = [int]$(if ($Config.DashboardPort) { $Config.DashboardPort } else { 1618 }); Name = "Dashboard" }
         @{ Port = [int]$(if ($Config.MetricsPort) { $Config.MetricsPort } else { 9100 }); Name = "Prometheus" }
-        @{ Port = 5432; Name = "PostgreSQL" }
+        @{ Port = 5433; Name = "PostgreSQL" }
         @{ Port = [int]$coinInfo.P2pPort; Name = "$SelectedCoin P2P" }
         @{ Port = [int]$coinInfo.RpcPort; Name = "$SelectedCoin RPC" }
     )
@@ -615,36 +623,48 @@ function Get-BlockchainStorageLocations {
     Write-Host ""
 
     $defaultPath = "$Script:InstallDir\data\$containerName"
-    Write-Host "  $SelectedCoin blockchain storage (~$storageSize required)" -ForegroundColor Cyan
-    $storagePath = Read-Host "  Path [$defaultPath]"
-    if ([string]::IsNullOrEmpty($storagePath)) {
-        $storagePath = $defaultPath
-    }
-
     $storageConfig = @{}
-    $storageConfig[$SelectedCoin] = $storagePath
 
-    # Validate path
-    $driveLetter = $storagePath.Substring(0, 2)
-    if (-not (Test-Path $driveLetter)) {
-        Write-Log "Drive $driveLetter does not exist" "ERROR"
-        exit 1
-    }
+    while ($true) {
+        Write-Host "  $SelectedCoin blockchain storage (~$storageSize required)" -ForegroundColor Cyan
+        $storagePath = Read-Host "  Path [$defaultPath]"
+        if ([string]::IsNullOrEmpty($storagePath)) {
+            $storagePath = $defaultPath
+        }
 
-    # Check free space
-    $volume = Get-Volume -DriveLetter $driveLetter.Substring(0,1) -ErrorAction SilentlyContinue
-    if ($volume) {
-        $freeGB = [math]::Round($volume.SizeRemaining / 1GB, 0)
-        # Parse required GB from storage string (e.g. "60 GB" -> 60)
-        $requiredGB = [int]($storageSize -replace '[^\d]', '')
-        if ($freeGB -lt $requiredGB) {
-            Write-Log "$SelectedCoin requires ~$storageSize but $driveLetter only has $freeGB GB free" "WARN"
-            $continue = Read-Host "  Continue anyway? (y/N)"
-            if ($continue -ne "y" -and $continue -ne "Y") {
-                exit 1
+        # Validate path — re-prompt on invalid drive
+        if ($storagePath.Length -lt 2 -or $storagePath[1] -ne ':') {
+            Write-Log "Invalid path format. Expected drive letter path like C:\..." "WARN"
+            Write-Host ""
+            continue
+        }
+        $driveLetter = $storagePath.Substring(0, 2)
+        if (-not (Test-Path $driveLetter)) {
+            Write-Log "Drive $driveLetter does not exist" "WARN"
+            Write-Host ""
+            continue
+        }
+
+        # Check free space
+        $volume = Get-Volume -DriveLetter $driveLetter.Substring(0,1) -ErrorAction SilentlyContinue
+        if ($volume) {
+            $freeGB = [math]::Round($volume.SizeRemaining / 1GB, 0)
+            # Parse required GB from storage string (e.g. "60 GB" -> 60)
+            $requiredGB = [int]($storageSize -replace '[^\d]', '')
+            if ($freeGB -lt $requiredGB) {
+                Write-Log "$SelectedCoin requires ~$storageSize but $driveLetter only has $freeGB GB free" "WARN"
+                $continue = Read-Host "  Continue anyway? (y/N)"
+                if ($continue -ne "y" -and $continue -ne "Y") {
+                    Write-Host ""
+                    continue
+                }
             }
         }
+
+        break
     }
+
+    $storageConfig[$SelectedCoin] = $storagePath
 
     # Create directory if it doesn't exist
     if (-not (Test-Path $storagePath)) {
@@ -974,34 +994,63 @@ function Configure-WSL2Networking {
             # Configure port forwarding as backup (coin-specific + utility ports)
             $ports = @(
                 $coinInfo.StratumPort,   # Stratum V1
+                $coinInfo.V2Port,        # Stratum V2
                 $coinInfo.TlsPort,       # Stratum TLS
-                $coinInfo.RpcPort,       # Daemon RPC
+                $coinInfo.RpcPort,       # Daemon RPC (localhost only)
                 $coinInfo.P2pPort,       # Daemon P2P
-                4000,                    # REST API
-                1618,                    # Dashboard
-                9100,                    # Prometheus metrics
-                5432                     # PostgreSQL
+                4000,                    # REST API (LAN-accessible)
+                1618,                    # Dashboard (LAN-accessible)
+                9100,                    # Prometheus metrics (LAN-accessible)
+                5433                     # PostgreSQL (localhost only, mapped to 5433 in docker-compose)
             )
 
-            foreach ($port in $ports) {
+            # Public ports (stratum, P2P, dashboard, API, metrics) — LAN-accessible
+            $publicPorts = @(
+                $coinInfo.StratumPort,
+                $coinInfo.V2Port,
+                $coinInfo.TlsPort,
+                $coinInfo.P2pPort,
+                4000,
+                1618,
+                9100
+            )
+            # Internal ports (RPC, DB) — localhost only, never LAN-exposed
+            $localPorts = @(
+                $coinInfo.RpcPort,
+                5433
+            )
+
+            foreach ($port in $publicPorts) {
                 netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>&1 | Out-Null
                 netsh interface portproxy add v4tov4 listenport=$port listenaddress=0.0.0.0 connectport=$port connectaddress=$wslIP 2>&1 | Out-Null
+            }
+            foreach ($port in $localPorts) {
+                netsh interface portproxy delete v4tov4 listenport=$port listenaddress=127.0.0.1 2>&1 | Out-Null
+                netsh interface portproxy add v4tov4 listenport=$port listenaddress=127.0.0.1 connectport=$port connectaddress=$wslIP 2>&1 | Out-Null
             }
 
             Write-Log "Configured netsh portproxy fallback for $SelectedCoin ports: $($ports -join ', ')" "OK"
 
             # Create update script for WSL IP changes (runs at boot)
-            $portsStr = ($ports | ForEach-Object { $_.ToString() }) -join ", "
+            $publicPortsStr = ($publicPorts | ForEach-Object { $_.ToString() }) -join ", "
+            $localPortsStr = ($localPorts | ForEach-Object { $_.ToString() }) -join ", "
             $updateScript = @"
 # Spiral Pool WSL2 Port Forwarding Update (Fallback for $SelectedCoin)
 # Docker Desktop usually handles this, but this ensures compatibility
 `$wslIP = (wsl hostname -I 2>&1).ToString().Trim().Split(' ')[0]
 if ([string]::IsNullOrEmpty(`$wslIP) -or `$wslIP -match "error") { exit }
 
-`$ports = @($portsStr)
-foreach (`$port in `$ports) {
+# Public ports — miners connect from LAN
+`$publicPorts = @($publicPortsStr)
+foreach (`$port in `$publicPorts) {
     netsh interface portproxy delete v4tov4 listenport=`$port listenaddress=0.0.0.0 2>&1 | Out-Null
     netsh interface portproxy add v4tov4 listenport=`$port listenaddress=0.0.0.0 connectport=`$port connectaddress=`$wslIP 2>&1 | Out-Null
+}
+# Internal ports — localhost only (RPC, DB)
+`$localPorts = @($localPortsStr)
+foreach (`$port in `$localPorts) {
+    netsh interface portproxy delete v4tov4 listenport=`$port listenaddress=127.0.0.1 2>&1 | Out-Null
+    netsh interface portproxy add v4tov4 listenport=`$port listenaddress=127.0.0.1 connectport=`$port connectaddress=`$wslIP 2>&1 | Out-Null
 }
 "@
 
@@ -1014,12 +1063,14 @@ foreach (`$port in `$ports) {
             # Create scheduled task to update ports at startup
             $action = New-ScheduledTaskAction -Execute "powershell.exe" `
                 -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
-            $trigger = New-ScheduledTaskTrigger -AtStartup
+            $trigger = New-ScheduledTaskTrigger -AtLogOn
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
             Unregister-ScheduledTask -TaskName "SpiralPoolWSLPorts" -Confirm:$false -ErrorAction SilentlyContinue
+            # Use current user (S4U logon) — SYSTEM cannot access Store-installed wsl.exe
+            $wslPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
             Register-ScheduledTask -TaskName "SpiralPoolWSLPorts" -Action $action -Trigger $trigger `
-                -Settings $settings -User "SYSTEM" -RunLevel Highest `
+                -Settings $settings -Principal $wslPrincipal `
                 -Description "Update Spiral Pool WSL2 port forwarding (fallback)" | Out-Null
 
             Write-Log "Created startup task for WSL2 port forwarding fallback" "OK"
@@ -1240,15 +1291,21 @@ function Get-PoolConfiguration {
     Write-Host ""
 
     # Get pool address interactively if not provided
-    if ([string]::IsNullOrEmpty($Address) -and $Interactive) {
-        Write-Host "  Enter your $CoinType wallet address for mining rewards." -ForegroundColor Cyan
-        Write-Host ""
-        $pattern = $Script:WalletPatterns[$CoinType]
-        if ($pattern) {
-            Write-Host "  Address will be validated for $CoinType format." -ForegroundColor DarkGray
+    if ($Interactive) {
+        while ([string]::IsNullOrEmpty($Address)) {
+            Write-Host "  Enter your $CoinType wallet address for mining rewards." -ForegroundColor Cyan
+            Write-Host ""
+            $pattern = $Script:WalletPatterns[$CoinType]
+            if ($pattern) {
+                Write-Host "  Address will be validated for $CoinType format." -ForegroundColor DarkGray
+            }
+            Write-Host ""
+            $Address = Read-Host "  $CoinType Pool Address"
+            if ([string]::IsNullOrEmpty($Address)) {
+                Write-Log "Wallet address is required" "WARN"
+                Write-Host ""
+            }
         }
-        Write-Host ""
-        $Address = Read-Host "  $CoinType Pool Address"
     }
 
     if ([string]::IsNullOrEmpty($Address)) {
@@ -1274,17 +1331,22 @@ function Get-PoolConfiguration {
     if ($Interactive) {
         Write-Host "  Coinbase message (appears in mined blocks, max 40 bytes)" -ForegroundColor DarkGray
         Write-Host "    a-z, 0-9 = 1 byte each    Emojis = 4 bytes each" -ForegroundColor DarkGray
-        $input = Read-Host "  Coinbase Text [Mined by Spiral Pool]"
-        if (-not [string]::IsNullOrEmpty($input)) {
+        $userInput = Read-Host "  Coinbase Text [Mined by Spiral Pool]"
+        if (-not [string]::IsNullOrEmpty($userInput)) {
             # Validate byte length (max 40 bytes UTF-8)
-            $byteCount = [System.Text.Encoding]::UTF8.GetByteCount($input)
+            $byteCount = [System.Text.Encoding]::UTF8.GetByteCount($userInput)
             if ($byteCount -gt 40) {
                 Write-Log "Coinbase text is $byteCount bytes (max 40). Truncating." "WARN"
-                # Truncate to 40 bytes
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($input)
-                $coinbaseText = [System.Text.Encoding]::UTF8.GetString($bytes, 0, 40)
+                # Truncate to 40 bytes on a character boundary (avoid splitting multi-byte chars)
+                $truncated = ""
+                foreach ($char in $userInput.ToCharArray()) {
+                    $test = $truncated + $char
+                    if ([System.Text.Encoding]::UTF8.GetByteCount($test) -gt 40) { break }
+                    $truncated = $test
+                }
+                $coinbaseText = $truncated
             } else {
-                $coinbaseText = $input
+                $coinbaseText = $userInput
                 Write-Log "Coinbase text: '$coinbaseText' ($byteCount bytes)" "OK"
             }
         }
@@ -1312,18 +1374,18 @@ function Get-PoolConfiguration {
 
         # API Port
         Write-Host "  REST API Port (pool statistics)" -ForegroundColor DarkGray
-        $input = Read-Host "  API Port [4000]"
-        if (-not [string]::IsNullOrEmpty($input)) { $apiPort = $input }
+        $userInput = Read-Host "  API Port [4000]"
+        if (-not [string]::IsNullOrEmpty($userInput)) { $apiPort = $userInput }
 
         # Dashboard Port
         Write-Host "  Dashboard Port (web interface)" -ForegroundColor DarkGray
-        $input = Read-Host "  Dashboard Port [1618]"
-        if (-not [string]::IsNullOrEmpty($input)) { $dashboardPort = $input }
+        $userInput = Read-Host "  Dashboard Port [1618]"
+        if (-not [string]::IsNullOrEmpty($userInput)) { $dashboardPort = $userInput }
 
         # Metrics Port
         Write-Host "  Prometheus Metrics Port" -ForegroundColor DarkGray
-        $input = Read-Host "  Metrics Port [9100]"
-        if (-not [string]::IsNullOrEmpty($input)) { $metricsPort = $input }
+        $userInput = Read-Host "  Metrics Port [9100]"
+        if (-not [string]::IsNullOrEmpty($userInput)) { $metricsPort = $userInput }
     }
 
     # Detect server IP (excluding virtual interfaces)
@@ -1351,10 +1413,15 @@ function Get-PoolConfiguration {
         }
     }
 
-    # Generate secure random passwords
+    # Generate secure random passwords using CSPRNG
     $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-    $dbPassword = -join (1..32 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
-    $rpcPassword = -join (1..32 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $dbBytes = New-Object byte[] 32
+    $rpcBytes = New-Object byte[] 32
+    $rng.GetBytes($dbBytes)
+    $rng.GetBytes($rpcBytes)
+    $dbPassword = -join ($dbBytes | ForEach-Object { $chars[$_ % $chars.Length] })
+    $rpcPassword = -join ($rpcBytes | ForEach-Object { $chars[$_ % $chars.Length] })
 
     return @{
         PoolAddress = $Address
@@ -1392,12 +1459,16 @@ function New-EnvironmentFile {
 
     $algoShort = if ($coinInfo.Algo -eq "SHA256d") { "sha256d" } else { "scrypt" }
     $poolId = "$($coinInfo.Profile)_${algoShort}_1"
-    $grafanaPassword = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+    $grafChars = (65..90) + (97..122) + (48..57)
+    $grafRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $grafBytes = New-Object byte[] 24
+    $grafRng.GetBytes($grafBytes)
+    $grafanaPassword = -join ($grafBytes | ForEach-Object { [char]$grafChars[$_ % $grafChars.Count] })
     # Derive env key: DGB-SCRYPT → DGB (shares digibyte container), BC2 → BC2, etc.
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.0.0 Docker Configuration
+# Spiral Pool v2.0.1 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 
@@ -1483,7 +1554,9 @@ EXPECTED_FLEET_THS=22
 "@
 
     $envPath = Join-Path $Script:InstallDir "docker\.env"
-    Set-Content -Path $envPath -Value $envContent -Encoding UTF8
+    # Write UTF-8 without BOM — PS 5.1's -Encoding UTF8 adds a BOM which breaks
+    # docker-compose .env parsing (BOM bytes become part of the first variable name)
+    [System.IO.File]::WriteAllText($envPath, $envContent, (New-Object System.Text.UTF8Encoding $false))
 
     # Protect .env file permissions
     try {
@@ -1543,6 +1616,16 @@ function Initialize-DockerEnvironment {
         exit 1
     }
 
+    # Copy config/ (coins.manifest.yaml, coin conf templates) for firewall and future use
+    $sourceConfig = Join-Path $PSScriptRoot "config"
+    if (Test-Path $sourceConfig) {
+        if (-not (Test-Path "$Script:InstallDir\config")) {
+            New-Item -ItemType Directory -Path "$Script:InstallDir\config" -Force | Out-Null
+        }
+        Copy-Item -Path "$sourceConfig\*" -Destination "$Script:InstallDir\config\" -Recurse -Force
+        Write-Log "Config files copied (coin manifest, templates)" "OK"
+    }
+
     # Copy src/ — the Dockerfiles use 'context: ..' and COPY src/stratum, src/dashboard,
     # src/sentinel from the build context (parent of docker/). Without this copy, docker
     # build fails with "COPY failed: file not found in build context".
@@ -1569,7 +1652,7 @@ function Start-SpiralPool {
     Write-Log "Starting Spiral Pool (profile: $Profile)..." "STEP"
 
     try {
-        Set-Location "$Script:InstallDir\docker"
+        Push-Location "$Script:InstallDir\docker"
 
         # Use Windows-specific docker-compose with bridge networking
         $composeFile = "docker-compose.yml"
@@ -1607,6 +1690,8 @@ function Start-SpiralPool {
     } catch {
         Write-Log "Failed to start containers: $_" "ERROR"
         return $false
+    } finally {
+        Pop-Location
     }
 }
 
@@ -1642,7 +1727,11 @@ try {
 
     if (-not `$dockerOK) {
         Log "Docker not running, starting..."
-        Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+        `$dockerExe = @(
+            "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+            "`$env:LOCALAPPDATA\Docker\Docker Desktop.exe"
+        ) | Where-Object { Test-Path `$_ } | Select-Object -First 1
+        if (`$dockerExe) { Start-Process `$dockerExe }
         Start-Sleep -Seconds 60
     }
 
@@ -1674,7 +1763,11 @@ Start-Sleep -Seconds 45  # Wait for Docker Desktop
 try { docker info 2>&1 | Out-Null; `$dockerOK = (`$LASTEXITCODE -eq 0) } catch {}
 
 if (-not `$dockerOK) {
-    Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    `$dockerExe = @(
+        "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+        "`$env:LOCALAPPDATA\Docker\Docker Desktop.exe"
+    ) | Where-Object { Test-Path `$_ } | Select-Object -First 1
+    if (`$dockerExe) { Start-Process `$dockerExe }
     Start-Sleep -Seconds 90
 }
 
@@ -1692,13 +1785,16 @@ docker compose -f `$composeFile --profile `$profile up -d
 
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
+        # Use current user (S4U logon) — Docker Desktop runs per-user, SYSTEM has no Docker context
+        $taskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
+
         # Health check task (every 5 minutes)
         $healthAction = New-ScheduledTaskAction -Execute "powershell.exe" `
             -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$healthPath`""
         $healthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
 
         Register-ScheduledTask -TaskName "SpiralPoolHealthCheck" -Action $healthAction `
-            -Trigger $healthTrigger -Settings $settings -User "SYSTEM" -RunLevel Highest `
+            -Trigger $healthTrigger -Settings $settings -Principal $taskPrincipal `
             -Description "Spiral Pool health monitoring" | Out-Null
 
         # Startup task
@@ -1707,7 +1803,7 @@ docker compose -f `$composeFile --profile `$profile up -d
         $startupTrigger = New-ScheduledTaskTrigger -AtStartup
 
         Register-ScheduledTask -TaskName "SpiralPoolStartup" -Action $startupAction `
-            -Trigger $startupTrigger -Settings $settings -User "SYSTEM" -RunLevel Highest `
+            -Trigger $startupTrigger -Settings $settings -Principal $taskPrincipal `
             -Description "Start Spiral Pool on boot" | Out-Null
 
         Write-Log "Scheduled tasks created (health check + auto-start)" "OK"
@@ -1954,22 +2050,33 @@ function Main {
         $soloCoin = $Coin
     } else {
         # Interactive mode: show limitations panel, then coin selection
-        Show-DockerLimitations
-        $soloCoin = Show-SoloCoinMenu
+        # Loop allows 'b' (back) to return to the limitations panel
+        while ($true) {
+            Show-DockerLimitations
+            $soloCoin = Show-SoloCoinMenu
+            if ($null -eq $soloCoin) { continue }  # User pressed 'b' — re-show
+
+            # Block SYS - merge-mining only, loop back to menu
+            if ($soloCoin -eq "SYS") {
+                Write-Host ""
+                Write-Host "  Syscoin (SYS) is a merge-mining-only coin and cannot be mined standalone." -ForegroundColor Red
+                Write-Host "  SYS must be merge-mined with BTC using the native Linux installer (install.sh)." -ForegroundColor Yellow
+                Write-Host "  Docker single-coin mode does not support merge-mining." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  Press Enter to return to coin selection..." -ForegroundColor DarkGray
+                Read-Host | Out-Null
+                continue
+            }
+
+            break
+        }
     }
 
-    # Block SYS - it is merge-mining only and cannot be mined standalone in Docker
+    # Validate coin exists in config (unattended mode may pass invalid coin)
     if ($soloCoin -eq "SYS") {
-        Write-Host ""
-        Write-Host "  Syscoin (SYS) is a merge-mining-only coin and cannot be mined standalone." -ForegroundColor Red
-        Write-Host "  SYS must be merge-mined with BTC using the native Linux installer (install.sh)." -ForegroundColor Yellow
-        Write-Host "  Docker single-coin mode does not support merge-mining." -ForegroundColor Yellow
-        Write-Host ""
         Write-Log "SYS is not available in Docker single-coin mode (merge-mining only)" "ERROR"
         exit 1
     }
-
-    # Validate coin exists in config
     if (-not $Script:CoinConfig.ContainsKey($soloCoin)) {
         Write-Log "Unknown coin: $soloCoin" "ERROR"
         exit 1

@@ -1041,7 +1041,9 @@ if [ "$POOL_MODE" = "single" ]; then
     fi
 
     # R-12 FIX: Atomic write (tempfile + mv).
-    envsubst < "$CONFIG_TEMPLATE" > "${CONFIG_OUTPUT}.tmp" && mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
+    # Commands split so set -e catches envsubst failure (left side of && is exempt).
+    envsubst < "$CONFIG_TEMPLATE" > "${CONFIG_OUTPUT}.tmp"
+    mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
     chmod 600 "${CONFIG_OUTPUT}"
 
     echo "Configuration generated:"

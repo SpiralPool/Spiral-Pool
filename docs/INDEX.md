@@ -27,6 +27,7 @@ Getting started, installation, and deployment guides.
 | [CLOUD_OPERATIONS.md](setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment: dashboard SSH tunnel, firewall layout, SSH hardening, HTTPS options, provider-specific config |
 | [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v2.0.0 (Phi Hash Reactor): compatibility, all coin types, step-by-step |
 | [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 single-coin and multi-coin mode) |
+| [WINDOWS_GUIDE.md](setup/WINDOWS_GUIDE.md) | Windows installation: Docker Desktop vs WSL2 Native, decision tree, troubleshooting |
 
 ## Architecture
 
@@ -77,4 +78,4 @@ Legal documents are in the repository root:
 
 ---
 
-*Spiral Pool -- Phi Hash Reactor 2.0.0*
+*Spiral Pool -- Phi Hash Reactor 2.0.1*

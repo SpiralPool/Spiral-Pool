@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.0.0"
+SCRIPT_VERSION="2.0.1"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -1181,17 +1181,12 @@ fi
 LOCK_DIR="/run/spiralpool"
 LOCK_FILE="${LOCK_DIR}/ha-replicate.lock"
 mkdir -p "$LOCK_DIR" 2>/dev/null || sudo mkdir -p "$LOCK_DIR"
-if [[ -f "$LOCK_FILE" ]]; then
-    local_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [[ -n "$local_pid" ]] && kill -0 "$local_pid" 2>/dev/null; then
-        die "Another ha-replicate instance is already running (PID $local_pid). If this is stale, remove $LOCK_FILE"
-    else
-        log WARN "Removing stale lock file (PID $local_pid no longer running)"
-        rm -f "$LOCK_FILE"
-    fi
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    die "Another ha-replicate instance is already running. If this is stale, remove $LOCK_FILE"
 fi
-echo $$ > "$LOCK_FILE"
-trap 'rm -f "$LOCK_FILE"' EXIT
+echo $$ >&9
+trap 'flock -u 9 2>/dev/null; rm -f "$LOCK_FILE"' EXIT
 
 # Create log directory if it doesn't exist
 if [[ ! -d "$LOG_DIR" ]]; then

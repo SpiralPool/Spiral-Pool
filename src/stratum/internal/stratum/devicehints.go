@@ -374,15 +374,24 @@ func classifyAvalonByHashrate(hashrateGHs float64) MinerClass {
 	}
 }
 
-// Global registry instance (can be replaced in tests)
-var globalDeviceHints = NewDeviceHintsRegistry(24 * time.Hour)
+// Global registry instance (can be replaced in tests).
+// Protected by globalDeviceHintsMu to prevent data races between
+// production goroutines calling Get and test setup calling Set.
+var (
+	globalDeviceHints   = NewDeviceHintsRegistry(24 * time.Hour)
+	globalDeviceHintsMu sync.RWMutex
+)
 
 // GetGlobalDeviceHints returns the global device hints registry.
 func GetGlobalDeviceHints() *DeviceHintsRegistry {
+	globalDeviceHintsMu.RLock()
+	defer globalDeviceHintsMu.RUnlock()
 	return globalDeviceHints
 }
 
 // SetGlobalDeviceHints replaces the global registry (for testing).
 func SetGlobalDeviceHints(registry *DeviceHintsRegistry) {
+	globalDeviceHintsMu.Lock()
+	defer globalDeviceHintsMu.Unlock()
 	globalDeviceHints = registry
 }

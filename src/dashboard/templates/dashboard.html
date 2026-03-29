@@ -3343,7 +3343,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.0.0</span>
+            <span>Spiral Pool Dashboard v2.0.1</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -4317,11 +4317,11 @@
                     }
                     if (count > 0 && result.packages) {
                         const shown = result.packages.slice(0, 5);
-                        html += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);">${shown.join(', ')}${count > 5 ? ` +${count - 5} more` : ''}</div>`;
+                        html += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);">${shown.map(p => escapeHtml(p)).join(', ')}${count > 5 ? ` +${count - 5} more` : ''}</div>`;
                     }
                     el.innerHTML = html;
                 } else {
-                    el.innerHTML = `<div style="color:var(--text-muted);">${result.error || 'Unable to check'}</div>`;
+                    el.innerHTML = `<div style="color:var(--text-muted);">${escapeHtml(result.error || 'Unable to check')}</div>`;
                 }
             } catch (e) {
                 el.innerHTML = '<div style="color:var(--text-muted);">Update check unavailable</div>';
@@ -4401,14 +4401,14 @@
                 if (result.success) {
                     if (result.update_available) {
                         let html = `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-orange, #fb923c);">Update available</span></div>`;
-                        if (result.current_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Current</span><span style="color:var(--text-primary)">${result.current_version}</span></div>`;
-                        if (result.latest_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Latest</span><span style="color:var(--neon-green, #4ade80)">${result.latest_version}</span></div>`;
+                        if (result.current_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Current</span><span style="color:var(--text-primary)">${escapeHtml(result.current_version)}</span></div>`;
+                        if (result.latest_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Latest</span><span style="color:var(--neon-green, #4ade80)">${escapeHtml(result.latest_version)}</span></div>`;
                         el.innerHTML = html;
                     } else {
                         el.innerHTML = `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-green, #4ade80);">Up to date</span></div>`;
                     }
                 } else {
-                    el.innerHTML = `<div style="color:var(--text-muted);">${result.error || 'Check failed'}</div>`;
+                    el.innerHTML = `<div style="color:var(--text-muted);">${escapeHtml(result.error || 'Check failed')}</div>`;
                 }
             } catch (e) {
                 if (el) el.innerHTML = '<div style="color:var(--text-muted);">Version check unavailable</div>';
@@ -4430,8 +4430,8 @@
                     el.innerHTML = '<div style="color:var(--neon-green, #4ade80);">Upgrade complete! Services are restarting. Page will reload shortly.</div>';
                     setTimeout(() => location.reload(), 10000);
                 } else {
-                    el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">${result.error || 'Upgrade failed'}</div>`;
-                    if (result.output) el.innerHTML += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;">${result.output}</div>`;
+                    el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">${escapeHtml(result.error || 'Upgrade failed')}</div>`;
+                    if (result.output) el.innerHTML += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;">${escapeHtml(result.output)}</div>`;
                 }
             } catch (e) {
                 if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Upgrade failed: ${e.message}</div>`;
@@ -8237,7 +8237,7 @@
                 name: name,
                 id: id,
                 author: 'Custom',
-                version: '2.0.0',
+                version: '2.0.1',
                 description: 'User-created custom theme',
                 category: 'Custom',
                 colors: colors,

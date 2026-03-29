@@ -197,36 +197,36 @@ docker compose --profile dgb down        # Stop all services
 
 **Ports:** Miners connect to the `STRATUM_PORT` configured in `.env` (e.g., `3333` for DigiByte). The dashboard is at `http://localhost:1618`. Grafana is at `http://localhost:3000`.
 
-### Windows / WSL2 (Experimental)
+### Windows (Experimental)
 
-Requires Docker Desktop with WSL2 backend. Not for production.
+Two Windows installation paths are available. Both are experimental and intended for development, testing, and pool evaluation. For production mining, use Linux native installation.
 
-**Setup:**
+| Path | Installer | Features | Best For |
+|------|-----------|----------|----------|
+| **Docker Desktop** | `install-windows.ps1` | Single coin, V1+TLS, automated setup | Quick evaluation |
+| **WSL2 Native** | `install.sh` inside WSL2 | All coins, multi-coin, merge mining, V2 | Full feature testing |
+
+**Docker Desktop (quick start):**
 
 ```powershell
-# 1. Install Docker Desktop from https://www.docker.com/products/docker-desktop/
-# 2. Enable WSL2 backend in Docker Desktop settings
-# 3. Open a WSL2 terminal (Ubuntu recommended)
+# Open PowerShell as Administrator
+.\install-windows.ps1
 ```
 
+**WSL2 Native (full features):**
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
 ```bash
-# Inside WSL2 terminal:
-cd docker
-cp .env.example .env
-nano .env                                 # Configure ALL required variables (see table above)
-./generate-secrets.sh                     # Auto-generate passwords
-docker compose --profile dgb up -d       # Start (replace dgb with your coin)
+# Inside WSL2 Ubuntu terminal:
+git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
+cd Spiral-Pool && sudo ./install.sh
 ```
 
-**Architecture limitations:**
-- Windows can kill WSL2 during shutdown/sleep, corrupting LevelDB chain data — install the [graceful shutdown hook](DOCKER_GUIDE.md#graceful-shutdown-hook) to prevent this
-- WSL2 adds I/O overhead; blockchain sync takes 2-4x longer than native Linux
-- Windows Home: WSL2 only (no Hyper-V option)
-- Docker Desktop uses bridge networking; host mode not available
-- No automated upgrade path
-- V1 Stratum only — single-coin and multi-coin modes supported (same as Linux Docker)
+For the full Windows installation guide, decision tree, port forwarding setup, shutdown hook, and troubleshooting, see **[WINDOWS_GUIDE.md](WINDOWS_GUIDE.md)**.
 
-**Use Windows/WSL2 for:** Development, testing, pool evaluation.
+**Use Windows for:** Development, testing, pool evaluation.
 **Use Linux native for:** All production mining operations.
 
 ### How install.sh Works
@@ -766,4 +766,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.0.0*
+*Spiral Pool — Phi Hash Reactor 2.0.1*

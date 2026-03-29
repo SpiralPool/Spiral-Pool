@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Hash Reactor V2.0.0 </em>
+  <em>Phi Hash Reactor V2.0.1 </em>
 </p>
 
 <p align="center">
@@ -58,21 +58,21 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 
 | Feature | Details |
 |---------|---------|
-| **Spiral Router** | Classifies miners at connection time via 47 verified user-agent patterns across 15 SHA-256d and 8 Scrypt difficulty profiles |
-| **Lock-free vardiff** | Per-session atomic state, asymmetric limits (4&times; up / 0.75&times; down), 50% variance floor |
-| **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
-| **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
-| **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
-| **Non-custodial solo payout** | Block reward embedded in coinbase tx &rarr; miner's wallet. No pool wallet, no custody |
 | **High availability** | VIP failover, Patroni replication, blockchain rsync, advisory lock payment fencing |
-| **Spiral Sentinel** | Autonomous monitoring: device discovery, BraiinsOS/Vnish auto-scan, stratum URL mismatch &amp; wallet mismatch detection, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, and generic webhooks (Zapier, Home Assistant, PagerDuty, etc.) |
-| **SimpleSwap Alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link. Operator-initiated only &mdash; no automatic swaps. See [TERMS.md 5D](TERMS.md). |
-| **Spiral Dash** | Overview and Management tabs. Interactive hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block finder history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups &amp; tags. Avalon time-based power schedules. Service control, log viewer, system updates, and system info panel. 23 built-in themes (port 1618) |
-| **Pruned node support** | Optional per-coin blockchain pruning (5 GB cap). Saves 95%+ disk &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB. All pool operations work on pruned nodes. Enable at install time or via `spiralctl coin prune <TICKER>` |
-| **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
+| **Lock-free vardiff** | Per-session atomic state, asymmetric limits (4&times; up / 0.75&times; down), 50% variance floor |
+| **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
+| **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
+| **Non-custodial solo payout** | Block reward embedded in coinbase tx &rarr; miner's wallet. No pool wallet, no custody |
 | **Prometheus metrics** | Per-session observability with worker-level labels |
+| **Pruned node support** | Optional per-coin blockchain pruning (5 GB cap). Saves 95%+ disk &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB. Enable at install time or via `spiralctl coin prune <TICKER>` |
 | **Runtime tuning** | Live operator control via `spiralctl` CLI |
-| **3,500+ tests** | Unit, integration, chaos, and fuzz tests including 10 numbered chaos suites |
+| **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
+| **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link. Operator-initiated only &mdash; no automatic swaps. See [TERMS.md 5D](TERMS.md) |
+| **Spiral Dash** | Interactive hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block finder history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups &amp; tags. Avalon time-based power schedules. Service control, log viewer, system updates. 23 built-in themes (port 1618) |
+| **Spiral Router** | Classifies miners at connection time via 47 verified user-agent patterns across 15 SHA-256d and 8 Scrypt difficulty profiles |
+| **Spiral Sentinel** | Device discovery, BraiinsOS/Vnish auto-scan, stratum URL &amp; wallet mismatch detection, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, and generic webhooks |
+| **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
+| **Test suite** | 3,500+ unit, integration, chaos, and fuzz tests including 10 numbered chaos suites |
 
 ---
 
@@ -169,8 +169,8 @@ QBX (standalone — no merge mining)
 | Platform | Status | Notes |
 |----------|--------|-------|
 | **Ubuntu 24.04.x LTS** | **Primary** | Native install. Docker available. **x86_64 only.** |
-| **Windows 11 &mdash; Docker Desktop** | **Experimental** | Via Docker Desktop + WSL2. See [Docker Guide](docs/setup/DOCKER_GUIDE.md). |
-| **Windows 11 &mdash; WSL2 Native** | **Experimental** | Run `install.sh` inside WSL2. Requires [port forwarding](scripts/windows/start-wsl2-proxy.bat) for miners. Install the [WSL2 shutdown hook](scripts/windows/wsl2-shutdown-hook.ps1) to prevent blockchain corruption on Windows restart/sleep. |
+| **Windows 11 &mdash; Docker Desktop** | **Experimental** | Automated single-coin setup via `install-windows.ps1`. See [Windows Guide](docs/setup/WINDOWS_GUIDE.md). |
+| **Windows 11 &mdash; WSL2 Native** | **Experimental** | Full feature set via `install.sh` inside WSL2. Requires [port forwarding](scripts/windows/start-wsl2-proxy.bat) and [shutdown hook](scripts/windows/wsl2-shutdown-hook.ps1). See [Windows Guide](docs/setup/WINDOWS_GUIDE.md). |
 | **ARM / Raspberry Pi** | **Not Tested** | All binaries target x86_64. ARM may not work. See [WARNINGS.md](WARNINGS.md). |
 
 ---
@@ -245,6 +245,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.0.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
+| [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
 | [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) | Spiral Router, vardiff engine, share pipeline, database schema, HA |
 | [SECURITY_MODEL.md](docs/architecture/SECURITY_MODEL.md) | FSM enforcement, JSON hardening, rate limiting, TLS, payment fencing |
 | [REFERENCE.md](docs/reference/REFERENCE.md) | Ports, CLI commands, API endpoints, miner classes, config fields |
@@ -308,4 +309,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Phi Hash Reactor 2.0.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.0.1 &mdash; Convergent difficulty. Minimal oscillation.*

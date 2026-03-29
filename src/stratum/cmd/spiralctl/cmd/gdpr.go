@@ -440,7 +440,7 @@ func purgePrometheusMetrics(wallet, ip string) {
 
 	for _, id := range identifiers {
 		// Prometheus delete series API: POST /api/v1/admin/tsdb/delete_series
-		reqURL := fmt.Sprintf("%s/api/v1/admin/tsdb/delete_series?match[]={__name__=~\".+\",instance=~\".*%s.*\"}", prometheusURL, url.QueryEscape(id))
+		reqURL := fmt.Sprintf("%s/api/v1/admin/tsdb/delete_series?match[]={__name__=~\".+\",instance=~\".*%s.*\"}", prometheusURL, url.QueryEscape(regexp.QuoteMeta(id)))
 		req, err := http.NewRequest(http.MethodPost, reqURL, nil)
 		if err != nil {
 			continue

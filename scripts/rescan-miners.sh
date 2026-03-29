@@ -174,7 +174,13 @@ clear_database() {
     echo -e "${YELLOW}Clearing miner database...${NC}"
 
     if [[ -f "$MINER_DB" ]]; then
-        rm -f "$MINER_DB"
+        if ! rm -f "$MINER_DB" 2>/dev/null; then
+            sudo rm -f "$MINER_DB"
+        fi
+        if [[ -f "$MINER_DB" ]]; then
+            echo -e "  ${RED}Failed to remove database (permission denied)${NC}"
+            return 1
+        fi
         echo -e "  ${GREEN}✓${NC} Removed: $MINER_DB"
     else
         echo -e "  ${DIM}Database not found (already clean)${NC}"
@@ -846,8 +852,13 @@ scan_network() {
         id_jobs=$((id_jobs + 1))
 
         if [[ $id_jobs -ge $max_id_jobs ]]; then
-            wait -n 2>/dev/null || wait
-            id_jobs=$((id_jobs - 1))
+            if wait -n 2>/dev/null; then
+                id_jobs=$((id_jobs - 1))
+            else
+                # bash < 4.3: wait -n unavailable, wait for all jobs
+                wait
+                id_jobs=0
+            fi
         fi
     done < "$active_file"
 

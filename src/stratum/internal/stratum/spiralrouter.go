@@ -818,6 +818,15 @@ func (r *SpiralRouter) GetInitialDifficulty(userAgent string) float64 {
 	return profile.InitialDiff
 }
 
+// GetAllProfiles returns a copy of all active (scaled) profiles.
+func (r *SpiralRouter) GetAllProfiles() map[MinerClass]MinerProfile {
+	out := make(map[MinerClass]MinerProfile, len(r.profiles))
+	for k, v := range r.profiles {
+		out[k] = v
+	}
+	return out
+}
+
 // SetProfile allows customizing a miner class profile.
 func (r *SpiralRouter) SetProfile(class MinerClass, profile MinerProfile) {
 	r.profiles[class] = profile

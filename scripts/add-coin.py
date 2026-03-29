@@ -621,6 +621,9 @@ def get_next_available_ports(manifest_path: Path) -> Dict[str, int]:
     base = 18335
     while base in used_stratum_ports or (base + 1) in used_stratum_ports:
         base += 1000
+        if base > 65535:
+            raise RuntimeError("No available stratum port range (all ports > 65535)")
+
 
     return {
         "stratum_v1": base,
@@ -1248,7 +1251,8 @@ def auto_onboard_coin(symbol: str, github_url: str, algorithm_hint: Optional[str
 
     if params.rpc_port == 0:
         # Generate a default RPC port based on symbol hash
-        params.rpc_port = 8000 + (hash(symbol) % 1000)
+        import hashlib
+        params.rpc_port = 8000 + (int(hashlib.md5(symbol.encode()).hexdigest(), 16) % 1000)
         warnings.append(f"RPC port auto-generated ({params.rpc_port}) - verify against official docs")
         print(f"      RPC port: {params.rpc_port} (auto-generated)")
 
@@ -1901,7 +1905,7 @@ def generate_native_install_script(params: CoinParams, release_url: Optional[str
 set -euo pipefail
 
 # ─── Environment defaults ────────────────────────────────────────────────────
-POOL_USER="${{POOL_USER:-spiralpool}}"
+POOL_USER="${{POOL_USER:-spiraluser}}"
 INSTALL_DIR="${{INSTALL_DIR:-/spiralpool}}"
 DATA_DIR="${{DATA_DIR:-$INSTALL_DIR/{coinlower}}}"
 CONFIG_FILE="$DATA_DIR/{coinlower}.conf"

@@ -168,7 +168,7 @@ func TestCoinbaseParams_Fields(t *testing.T) {
 		PoolAddress:       "dgb1qtest...",
 		BlockReward:       7200000000, // 72 DGB
 		WitnessCommitment: make([]byte, 32),
-		CoinbaseMessage:   "SpiralPool/v2.0.0/",
+		CoinbaseMessage:   "SpiralPool/v2.0.1/",
 	}
 
 	if params.Height != 123456 {
@@ -186,8 +186,8 @@ func TestCoinbaseParams_Fields(t *testing.T) {
 	if len(params.WitnessCommitment) != 32 {
 		t.Errorf("WitnessCommitment len = %d, want 32", len(params.WitnessCommitment))
 	}
-	if params.CoinbaseMessage != "SpiralPool/v2.0.0/" {
-		t.Errorf("CoinbaseMessage = %q, want 'SpiralPool/v2.0.0/'", params.CoinbaseMessage)
+	if params.CoinbaseMessage != "SpiralPool/v2.0.1/" {
+		t.Errorf("CoinbaseMessage = %q, want 'SpiralPool/v2.0.1/'", params.CoinbaseMessage)
 	}
 }
 

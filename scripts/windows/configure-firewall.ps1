@@ -114,7 +114,7 @@ function Write-Log {
 }
 
 function Get-ManifestPath {
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
+    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.ScriptName }
     $manifestPath = Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) "config\coins.manifest.yaml"
 
     if (-not (Test-Path $manifestPath)) {
@@ -342,8 +342,8 @@ Write-Log "Selected coins: $($selectedCoins.Symbol -join ', ')" "OK"
 Write-Host ""
 
 # Parse firewall profiles
-$networkProfiles = $FirewallProfiles -split "," | ForEach-Object {
-    $_.Trim().Substring(0,1).ToUpper() + $_.Trim().Substring(1).ToLower()
+$networkProfiles = $FirewallProfiles -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" } | ForEach-Object {
+    $_.Substring(0,1).ToUpper() + $_.Substring(1).ToLower()
 }
 $profileString = $networkProfiles -join ","
 

@@ -504,11 +504,12 @@ func (m *Migrator) runMigrations(ctx context.Context, pool *pgxpool.Pool) error 
 		},
 	}
 
-	// Get applied migrations
+	// Get applied migrations.
+	// Close rows immediately after reading — defer would hold the connection
+	// for the entire migration loop, risking pool exhaustion / deadlock.
 	applied := make(map[int]bool)
 	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations")
 	if err == nil {
-		defer rows.Close()
 		for rows.Next() {
 			var version int
 			if err := rows.Scan(&version); err == nil {
@@ -519,6 +520,7 @@ func (m *Migrator) runMigrations(ctx context.Context, pool *pgxpool.Pool) error 
 		if err := rows.Err(); err != nil {
 			m.logger.Warnw("Error reading migration versions", "error", err)
 		}
+		rows.Close()
 	}
 
 	// Apply pending migrations.

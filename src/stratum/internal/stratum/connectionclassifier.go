@@ -100,7 +100,7 @@ type ConnectionClassification struct {
 //	username.001         username.0001   (zero-padded pure numeric suffix)
 var proxyWorkerPattern = regexp.MustCompile(
 	`\.(worker|rig|node|machine|slot|proxy)[-_]?\d+$` + // explicit device keyword
-		`|\.0{2,}\d*$`, // zero-padded numeric suffix like .001, .0001
+		`|\.0{2,}\d+$`, // zero-padded numeric suffix like .001, .0001 (requires trailing digit)
 )
 
 // Thresholds for Level 2 timing analysis.

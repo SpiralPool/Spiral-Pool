@@ -51,7 +51,10 @@ if ($Run) {
 
     # Check if WSL2 is actually running
     try {
+        $origEncoding2 = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
         $state = & wsl -l --running 2>&1
+        [Console]::OutputEncoding = $origEncoding2
         if ($state -notmatch $distro) {
             Add-Content -Path $logFile -Value "$ts  WSL2 distro '$distro' not running. Skipping."
             exit 0
@@ -184,8 +187,8 @@ $action = New-ScheduledTaskAction `
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME  # placeholder, replaced by XML
 
 $principal = New-ScheduledTaskPrincipal `
-    -UserId "SYSTEM" `
-    -LogonType ServiceAccount `
+    -UserId $env:USERNAME `
+    -LogonType S4U `
     -RunLevel Highest
 
 $settings = New-ScheduledTaskSettingsSet `

@@ -929,15 +929,32 @@ func applySecurityHardening(cfg *ExternalAccessConfig) error {
 
 // SEC-1 FIX: revertSecurityHardening now restores the main stratum config
 func revertSecurityHardening(cfg *ExternalAccessConfig) error {
-	// Restore original values in external config
-	cfg.Security.MaxConnectionsPerIP = cfg.Security.OriginalMaxConnPerIP
-	cfg.Security.SharesPerSecond = cfg.Security.OriginalSharesPerSec
-	cfg.Security.BanThreshold = cfg.Security.OriginalBanThreshold
-	cfg.Security.BanDuration = cfg.Security.OriginalBanDuration
+	// Restore original values — guard against zero values from configs that predate
+	// the "store originals" logic.  Zero rate-limit values would disable all protection.
+	maxConn := cfg.Security.OriginalMaxConnPerIP
+	sharesSec := cfg.Security.OriginalSharesPerSec
+	banThresh := cfg.Security.OriginalBanThreshold
+	banDur := cfg.Security.OriginalBanDuration
+	if maxConn == 0 {
+		maxConn = 100
+	}
+	if sharesSec == 0 {
+		sharesSec = 100
+	}
+	if banThresh == 0 {
+		banThresh = 10
+	}
+	if banDur == "" {
+		banDur = "30m"
+	}
+
+	cfg.Security.MaxConnectionsPerIP = maxConn
+	cfg.Security.SharesPerSecond = sharesSec
+	cfg.Security.BanThreshold = banThresh
+	cfg.Security.BanDuration = banDur
 
 	// SEC-1 FIX: Write original values back to main stratum config
-	if err := updateStratumRateLimitConfig(cfg.Security.OriginalMaxConnPerIP,
-		cfg.Security.OriginalSharesPerSec, cfg.Security.OriginalBanThreshold, cfg.Security.OriginalBanDuration); err != nil {
+	if err := updateStratumRateLimitConfig(maxConn, sharesSec, banThresh, banDur); err != nil {
 		return fmt.Errorf("failed to revert stratum config: %w", err)
 	}
 

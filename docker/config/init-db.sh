@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 # Spiral Pool Database Initialization
 # This script runs automatically when the PostgreSQL container starts for the first time.
-# V2.0.0-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
+# V2.0.1-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
 #
 # NOTE: The Go pool application creates pool-specific tables via migrations
 # (e.g., shares_btc_regtest, blocks_btc_regtest). This file provides base
@@ -19,7 +19,10 @@ set -e
 
 GRANT_USER="${GRANT_USER:-${POSTGRES_USER}}"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+# SECURITY: Heredoc marker is quoted ('EOSQL') to prevent shell expansion inside the SQL.
+# GRANT_USER is passed via psql's -v mechanism and referenced as :"grant_user" (identifier-quoted)
+# to prevent SQL injection if the username contains special characters.
+psql -v ON_ERROR_STOP=1 -v grant_user="$GRANT_USER" --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'EOSQL'
     -- Create extensions
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -141,11 +144,11 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     CREATE INDEX IF NOT EXISTS idx_aux_blocks_miner ON aux_blocks(miner, created DESC);
 
     -- Grant permissions (uses GRANT_USER, which defaults to POSTGRES_USER)
-    -- Identifier quoted to prevent SQL injection if username contains special chars
-    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${GRANT_USER}";
-    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${GRANT_USER}";
+    -- :"grant_user" is psql variable interpolation with identifier quoting (prevents SQL injection)
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO :"grant_user";
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"grant_user";
 
     -- Also grant default privileges so future tables are accessible
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${GRANT_USER}";
-    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${GRANT_USER}";
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO :"grant_user";
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"grant_user";
 EOSQL

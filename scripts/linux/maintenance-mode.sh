@@ -81,47 +81,35 @@ validate_json_file() {
 # File Locking Functions (prevents race conditions)
 # =============================================================================
 
-# SECURITY: Use file locking to prevent race conditions
+# SECURITY: Use flock for atomic locking (prevents TOCTOU race in noclobber approach)
+LOCK_FD=200
 acquire_lock() {
     local timeout="${1:-10}"
-    local waited=0
 
     mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
 
-    while [[ $waited -lt $timeout ]]; do
-        # Try to create lock file atomically
-        if (set -o noclobber; echo "$$" > "$LOCK_FILE") 2>/dev/null; then
-            # Successfully acquired lock
-            trap 'release_lock' EXIT
-            return 0
-        fi
+    # Open lock file on fd 200 (creates if needed)
+    if ! exec 200>"$LOCK_FILE" 2>/dev/null; then
+        log "ERROR" "Cannot create lock file: $LOCK_FILE (permission denied — run: sudo chown -R spiraluser:spiraluser $(dirname "$LOCK_FILE"))"
+        echo -e "${RED}Cannot create lock file: permission denied on $(dirname "$LOCK_FILE")${NC}"
+        return 1
+    fi
 
-        # If the lock file still doesn't exist after a failed write, the failure
-        # is due to permissions (not lock contention) — fail immediately
-        if [[ ! -f "$LOCK_FILE" ]]; then
-            log "ERROR" "Cannot create lock file: $LOCK_FILE (permission denied — run: sudo chown -R spiraluser:spiraluser $(dirname "$LOCK_FILE"))"
-            echo -e "${RED}Cannot create lock file: permission denied on $(dirname "$LOCK_FILE")${NC}"
-            return 1
-        fi
+    # Try to acquire exclusive lock with timeout
+    if ! flock -w "$timeout" -x $LOCK_FD 2>/dev/null; then
+        log "ERROR" "Could not acquire lock after ${timeout} seconds"
+        return 1
+    fi
 
-        # Check if lock holder is still running
-        local lock_pid
-        lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-        if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-            # Lock holder is dead, remove stale lock
-            rm -f "$LOCK_FILE"
-            continue
-        fi
+    # Write PID for diagnostics (not used for locking — flock handles that)
+    echo "$$" >&$LOCK_FD
 
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    log "ERROR" "Could not acquire lock after ${timeout} seconds"
-    return 1
+    trap 'release_lock' EXIT
+    return 0
 }
 
 release_lock() {
+    flock -u $LOCK_FD 2>/dev/null || true
     rm -f "$LOCK_FILE" 2>/dev/null || true
 }
 
@@ -529,14 +517,6 @@ show_status() {
     fi
 
     local end_time=$(grep -oP '"end_time":\s*\K[0-9]+' "${MAINTENANCE_FILE}" 2>/dev/null || echo "0")
-    if [[ $now -ge $end_time ]]; then
-        echo -e "Status:      ${GREEN}INACTIVE${NC}"
-        echo -e "Alerts:      ${GREEN}Active${NC}"
-        echo ""
-        rm -f "${MAINTENANCE_FILE}" 2>/dev/null
-        return 0
-    fi
-
     local start_time=$(grep -oP '"start_time":\s*\K[0-9]+' "${MAINTENANCE_FILE}" 2>/dev/null || echo "0")
     local reason=$(grep -oP '"reason":\s*"\K[^"]+' "${MAINTENANCE_FILE}" 2>/dev/null || echo "Unknown")
     local started_by=$(grep -oP '"started_by":\s*"\K[^"]+' "${MAINTENANCE_FILE}" 2>/dev/null || echo "Unknown")
@@ -544,7 +524,10 @@ show_status() {
     if [[ $now -ge $end_time ]]; then
         # Maintenance period has expired
         echo -e "Status:      ${YELLOW}EXPIRED${NC} (auto-clearing...)"
-        rm -f "${MAINTENANCE_FILE}"
+        if acquire_lock 2; then
+            rm -f "${MAINTENANCE_FILE}"
+            release_lock
+        fi
         echo -e "Alerts:      ${GREEN}Active${NC}"
         echo ""
         log "INFO" "Maintenance mode expired and auto-cleared"
@@ -591,8 +574,11 @@ is_maintenance_active() {
         if [[ $now -lt $end_time ]]; then
             return 0  # Active
         else
-            # Expired, clean up
-            rm -f "${MAINTENANCE_FILE}"
+            # Expired, clean up — acquire lock to avoid racing with extend
+            if acquire_lock 2; then
+                rm -f "${MAINTENANCE_FILE}"
+                release_lock
+            fi
         fi
     fi
 

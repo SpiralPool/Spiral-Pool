@@ -366,6 +366,14 @@ func joinCluster(token string, priority int) error {
 		return fmt.Errorf("VIP address not configured. Run 'spiralctl vip enable' first or configure the VIP address")
 	}
 
+	// Enforce minimum priority of 100 (same as enableVIP)
+	if priority < 100 {
+		priority = 100
+	}
+	if priority > 999 {
+		priority = 999
+	}
+
 	cfg.VIP.Enabled = true
 	cfg.VIP.ClusterToken = token
 	cfg.VIP.Priority = priority
@@ -599,7 +607,11 @@ func rotateClusterToken() error {
 	fmt.Println("+---------------------------------------------------------------+")
 	fmt.Println()
 
-	fmt.Printf("Current Token: %s...%s\n", oldToken[:12], oldToken[len(oldToken)-4:])
+	if len(oldToken) >= 16 {
+		fmt.Printf("Current Token: %s...%s\n", oldToken[:12], oldToken[len(oldToken)-4:])
+	} else {
+		fmt.Printf("Current Token: %s\n", oldToken)
+	}
 	fmt.Printf("Cluster Nodes: %d\n", nodeCount)
 	fmt.Println()
 

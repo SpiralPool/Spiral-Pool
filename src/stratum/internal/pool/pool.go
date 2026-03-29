@@ -585,7 +585,13 @@ func New(cfg *config.Config, logger *zap.Logger) (*Pool, error) {
 
 			if infoErr == nil {
 				currentHeight := chainInfo.Blocks
-				blockAge := currentHeight - block.Height
+
+				// Guard against uint64 underflow: after a reorg or testnet reset,
+				// block.Height can exceed currentHeight. Treat as recent (age 0).
+				var blockAge uint64
+				if currentHeight >= block.Height {
+					blockAge = currentHeight - block.Height
+				}
 
 				if blockAge > 100 {
 					// Block is too old - chain has moved on, mark as stale
@@ -2286,21 +2292,24 @@ blockLogging:
 			"status", block.Status,
 			"error", err,
 		)
-		// Retry once after short delay — this block is on-chain, losing the DB record means no payment
-		time.Sleep(2 * time.Second)
-		retryCtx, retryCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if retryErr := p.db.InsertBlock(retryCtx, block); retryErr != nil {
-			p.logger.Errorw("CRITICAL: Block DB insert retry FAILED — block on-chain but NOT in payment pipeline. Manual reconciliation required.",
-				"height", block.Height,
-				"hash", block.Hash,
-				"miner", block.Miner,
-				"reward", block.Reward,
-				"error", retryErr,
-			)
-		} else {
-			p.logger.Infow("Block DB insert retry succeeded", "height", block.Height, "hash", block.Hash)
-		}
-		retryCancel()
+		// Retry in background — sleeping on the miner's message-loop goroutine
+		// would freeze the connection and risk a keepalive timeout disconnect.
+		go func(b *database.Block) {
+			time.Sleep(2 * time.Second)
+			retryCtx, retryCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer retryCancel()
+			if retryErr := p.db.InsertBlock(retryCtx, b); retryErr != nil {
+				p.logger.Errorw("CRITICAL: Block DB insert retry FAILED — block on-chain but NOT in payment pipeline. Manual reconciliation required.",
+					"height", b.Height,
+					"hash", b.Hash,
+					"miner", b.Miner,
+					"reward", b.Reward,
+					"error", retryErr,
+				)
+			} else {
+				p.logger.Infow("Block DB insert retry succeeded", "height", b.Height, "hash", b.Hash)
+			}
+		}(block)
 	}
 
 	// Only log reward and celebrate if block was actually accepted by the daemon.

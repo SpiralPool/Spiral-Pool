@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.0.0-PHI_HASH_REACTOR
+#                   V2.0.1-PHI_HASH_REACTOR
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary.
 # Config files, wallets, blockchain data, and pool settings are NEVER modified.
@@ -41,14 +41,14 @@ INSTALL_DIR="/spiralpool"
 POOL_USER="spiraluser"
 ENV_FILE="$INSTALL_DIR/config/coins.env"
 BACKUP_ROOT="$INSTALL_DIR/backups/coin-upgrades"
-WORK_DIR="/tmp/spiral-coin-upgrade-$$"
+WORK_DIR=$(mktemp -d /tmp/spiral-coin-upgrade-XXXXXX)
 MAINTENANCE_SCRIPT="$INSTALL_DIR/scripts/linux/maintenance-mode.sh"
 MAINTENANCE_ENABLED=false
 
 # Multi-disk: read CHAIN_MOUNT_POINT from coins.env if present
 CHAIN_MOUNT_POINT=""
 if [[ -f "$ENV_FILE" ]]; then
-    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$ENV_FILE" 2>/dev/null || echo "")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="?\K[^"]+' "$ENV_FILE" 2>/dev/null || echo "")
 fi
 
 # ── Target versions — keep in sync with install.sh lines 41-46 ────────────────
@@ -263,7 +263,7 @@ get_data_dir() {
 
 enable_maintenance() {
     if [[ -x "$MAINTENANCE_SCRIPT" ]]; then
-        "$MAINTENANCE_SCRIPT" enable "coin-upgrade" 2>/dev/null || true
+        "$MAINTENANCE_SCRIPT" enable 60 "coin-upgrade" 2>/dev/null || true
         MAINTENANCE_ENABLED=true
         log_info "Maintenance mode enabled — Discord alerts suppressed"
     fi
@@ -459,7 +459,9 @@ install_binaries() {
             local c; c=$(find "$extracted" -name "qbitx-cli" -type f | head -1)
             [[ -z "$d" ]] && die "qbitx binary not found in archive"
             sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$d" "$bin_dir/qbitx"
-            [[ -n "$c" ]] && sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$c" "$bin_dir/qbitx-cli" || true
+            if [[ -n "$c" ]]; then
+                sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$c" "$bin_dir/qbitx-cli"
+            fi
             ;;
         BC2)
             # Bitcoin II: capital "II" in binary names
@@ -851,7 +853,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.0.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.0.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

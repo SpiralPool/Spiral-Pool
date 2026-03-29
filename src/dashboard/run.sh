@@ -46,7 +46,7 @@ log_error() {
 find_python() {
     for cmd in python3 python; do
         if command -v "$cmd" &> /dev/null; then
-            version=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+            version=$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
             major=$(echo "$version" | cut -d. -f1)
             minor=$(echo "$version" | cut -d. -f2)
             if [ "$major" -ge 3 ] && [ "$minor" -ge 8 ]; then
@@ -62,7 +62,7 @@ find_python() {
 check_debian_deps() {
     if [ -f /etc/debian_version ]; then
         # Get Python version for version-specific venv package
-        PY_VERSION=$($PYTHON --version 2>&1 | grep -oP '\d+\.\d+')
+        PY_VERSION=$($PYTHON --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
         VENV_PKG="python${PY_VERSION}-venv"
 
         if ! dpkg -l | grep -q "$VENV_PKG"; then
@@ -130,6 +130,9 @@ run_dashboard() {
 
     log_info "Starting Spiral Dash on http://localhost:1618"
     echo ""
+
+    # gunicorn requires CWD to contain dashboard.py for module import
+    cd "$SCRIPT_DIR"
 
     # Run with gunicorn for production
     if [ -f "$VENV_DIR/bin/gunicorn" ]; then

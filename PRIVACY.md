@@ -9,7 +9,7 @@ Spiral Pool is self-hosted software that runs on your own infrastructure. The au
 
 ## Non-Custodial Architecture
 
-Spiral Pool v2.0.0 operates as a **solo mining pool with a non-custodial payout model**. Block rewards are embedded directly in the coinbase transaction paying the miner's own wallet address. The pool operator never takes custody, control, or possession of miner funds. No financial transaction data (transfers, payouts, withdrawals) is generated or stored by the pool software, because no such transactions occur — the blockchain pays the miner directly.
+Spiral Pool v2.0.1 operates as a **solo mining pool with a non-custodial payout model**. Block rewards are embedded directly in the coinbase transaction paying the miner's own wallet address. The pool operator never takes custody, control, or possession of miner funds. No financial transaction data (transfers, payouts, withdrawals) is generated or stored by the pool software, because no such transactions occur — the blockchain pays the miner directly.
 
 ## Data Processed Locally
 
@@ -198,5 +198,5 @@ This software is provided by independent contributors. There is no centralized s
 
 *This Privacy Notice describes data handling by the Spiral Pool software. As a self-hosted application, you control all data processing.*
 
-*Spiral Pool v2.0.0 - Privacy Notice*
+*Spiral Pool v2.0.1 - Privacy Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

@@ -33,7 +33,7 @@ setlocal EnableDelayedExpansion
 REM Find the script directory
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_SCRIPT=%SCRIPT_DIR%add-coin.py"
-set "FIREWALL_SCRIPT=%SCRIPT_DIR%windows\configure-coin-firewall.ps1"
+set "FIREWALL_SCRIPT=%SCRIPT_DIR%configure-coin-firewall.ps1"
 
 REM Parse coin symbol from arguments for firewall configuration
 set "COIN_SYMBOL="
@@ -70,7 +70,7 @@ if %ERRORLEVEL% neq 0 (
 
     REM Check for winget
     where winget >nul 2>nul
-    if %ERRORLEVEL% neq 0 (
+    if !ERRORLEVEL! neq 0 (
         echo   winget is not available. Please install Python manually:
         echo.
         echo   Option 1: Install winget from Microsoft Store, then run this script again
@@ -90,12 +90,12 @@ if %ERRORLEVEL% neq 0 (
     REM 9NRWMJP3717K is the Microsoft Store ID for Python 3.12
     winget install 9NRWMJP3717K --accept-package-agreements --accept-source-agreements
 
-    if %ERRORLEVEL% neq 0 (
+    if !ERRORLEVEL! neq 0 (
         echo.
         echo   winget installation failed. Trying alternative package...
         winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
 
-        if %ERRORLEVEL% neq 0 (
+        if !ERRORLEVEL! neq 0 (
             echo.
             echo   ERROR: Failed to install Python automatically.
             echo.
@@ -134,7 +134,7 @@ if %ERRORLEVEL% neq 0 (
     echo Installing Python 3 via winget...
 
     where winget >nul 2>nul
-    if %ERRORLEVEL% equ 0 (
+    if !ERRORLEVEL! equ 0 (
         winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
         echo.
         echo Please restart your terminal and run this command again.
@@ -154,7 +154,7 @@ if %ERRORLEVEL% neq 0 (
     echo.
     echo Note: PyYAML not installed. Installing for better manifest handling...
     pip install pyyaml >nul 2>nul
-    if %ERRORLEVEL% equ 0 (
+    if !ERRORLEVEL! equ 0 (
         echo PyYAML installed successfully.
     ) else (
         echo Warning: Could not install PyYAML. Some features may be limited.
@@ -166,7 +166,7 @@ REM MAIN SCRIPT EXECUTION
 REM ═══════════════════════════════════════════════════════════════════════════════
 
 REM Create temp file for capturing Python output
-set "TEMP_OUTPUT=%TEMP%\spiralpool-add-coin-%RANDOM%.txt"
+set "TEMP_OUTPUT=%TEMP%\spiralpool-add-coin-%RANDOM%%RANDOM%%RANDOM%.txt"
 
 REM Show help if no arguments
 if "%~1"=="" (
@@ -267,10 +267,10 @@ if %PYTHON_EXIT_CODE% equ 0 (
 
             REM Check if running as admin
             net session >nul 2>&1
-            if %ERRORLEVEL% equ 0 (
+            if !ERRORLEVEL! equ 0 (
                 REM Running as admin - configure firewall directly
                 powershell -ExecutionPolicy Bypass -File "%FIREWALL_SCRIPT%" !FW_ARGS! -Force
-                if %ERRORLEVEL% neq 0 (
+                if !ERRORLEVEL! neq 0 (
                     echo.
                     echo   [!] Firewall configuration failed. You may need to configure manually.
                     echo.
@@ -293,7 +293,7 @@ if %PYTHON_EXIT_CODE% equ 0 (
                     echo.
                     echo   Requesting Administrator privileges...
                     powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -File \"%FIREWALL_SCRIPT%\" !FW_ARGS! -Force' -Verb RunAs -Wait"
-                    if %ERRORLEVEL% equ 0 (
+                    if !ERRORLEVEL! equ 0 (
                         echo   Firewall rules configured successfully.
                     ) else (
                         echo   Firewall configuration was cancelled or failed.

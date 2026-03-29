@@ -107,7 +107,7 @@ function Write-Log {
 function Get-CoinConfigFromManifest {
     param([string]$Symbol)
 
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
+    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.ScriptName }
     $manifestPath = Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) "config\coins.manifest.yaml"
 
     if (-not (Test-Path $manifestPath)) {
@@ -117,9 +117,16 @@ function Get-CoinConfigFromManifest {
     # Simple YAML parsing for mining section
     $content = Get-Content $manifestPath -Raw
 
-    # Find the coin section by looking for the symbol
-    $symbolPattern = "symbol:\s*$Symbol\b"
-    if ($content -notmatch $symbolPattern) {
+    # Split manifest into per-coin blocks and find the target coin
+    $coinBlocks = $content -split "(?=\s+-\s+symbol:)"
+    $coinBlock = $null
+    foreach ($block in $coinBlocks) {
+        if ($block -match "symbol:\s*$Symbol\b") {
+            $coinBlock = $block
+            break
+        }
+    }
+    if (-not $coinBlock) {
         return $null
     }
 
@@ -130,39 +137,46 @@ function Get-CoinConfigFromManifest {
         FirewallProfiles = @("Private", "Domain")  # Default profiles
     }
 
-    # Try to extract stratum_port from mining section (new schema)
-    # Look for stratum_port after the symbol match
-    $portPattern = "stratum_port:\s*(\d+)"
-    if ($content -match $portPattern) {
+    # Extract ports from this coin's block only
+    if ($coinBlock -match "stratum_port:\s*(\d+)") {
         $result.StratumV1 = [int]$Matches[1]
     }
 
-    # Try stratum_v2_port
-    $v2Pattern = "stratum_v2_port:\s*(\d+)"
-    if ($content -match $v2Pattern) {
+    if ($coinBlock -match "stratum_v2_port:\s*(\d+)") {
         $result.StratumV2 = [int]$Matches[1]
     } elseif ($result.StratumV1 -gt 0) {
         $result.StratumV2 = $result.StratumV1 + 1
     }
 
-    # Try stratum_tls_port
-    $tlsPattern = "stratum_tls_port:\s*(\d+)"
-    if ($content -match $tlsPattern) {
+    if ($coinBlock -match "stratum_tls_port:\s*(\d+)") {
         $result.StratumTls = [int]$Matches[1]
     } elseif ($result.StratumV1 -gt 0) {
         $result.StratumTls = $result.StratumV1 + 2
     }
 
-    # Try to extract firewall_profiles from manifest
-    # Look for global default first
-    $globalProfilesPattern = "default_firewall_profiles:\s*\n((?:\s*-\s*\w+\s*\n)+)"
-    if ($content -match $globalProfilesPattern) {
+    # Try to extract firewall_profiles — check coin block first, then global default
+    $profilesFound = $false
+    if ($coinBlock -match "firewall_profiles:\s*\n((?:\s*-\s*\w+\s*\n?)+)") {
         $profilesText = $Matches[1]
         $profilesList = @()
         foreach ($line in $profilesText -split "`n") {
             if ($line -match "^\s*-\s*(\w+)") {
                 $profileName = $Matches[1]
-                # Capitalize first letter for Windows firewall
+                $profileName = $profileName.Substring(0,1).ToUpper() + $profileName.Substring(1).ToLower()
+                $profilesList += $profileName
+            }
+        }
+        if ($profilesList.Count -gt 0) {
+            $result.FirewallProfiles = $profilesList
+            $profilesFound = $true
+        }
+    }
+    if (-not $profilesFound -and $content -match "default_firewall_profiles:\s*\n((?:\s*-\s*\w+\s*\n)+)") {
+        $profilesText = $Matches[1]
+        $profilesList = @()
+        foreach ($line in $profilesText -split "`n") {
+            if ($line -match "^\s*-\s*(\w+)") {
+                $profileName = $Matches[1]
                 $profileName = $profileName.Substring(0,1).ToUpper() + $profileName.Substring(1).ToLower()
                 $profilesList += $profileName
             }
@@ -171,9 +185,6 @@ function Get-CoinConfigFromManifest {
             $result.FirewallProfiles = $profilesList
         }
     }
-
-    # Note: Coin-specific firewall_profiles in manifest are supported but require
-    # more complex YAML parsing. For custom profiles, use -FirewallProfiles parameter.
 
     if ($result.StratumV1 -eq 0) {
         return $null
@@ -218,10 +229,8 @@ if ($StratumV1Port -eq 0 -or [string]::IsNullOrEmpty($FirewallProfiles)) {
 
 # Override profiles from command line if specified
 if (-not [string]::IsNullOrEmpty($FirewallProfiles)) {
-    $networkProfiles = $FirewallProfiles -split ","
-    # Trim whitespace and capitalize properly
-    $networkProfiles = $networkProfiles | ForEach-Object {
-        $_.Trim().Substring(0,1).ToUpper() + $_.Trim().Substring(1).ToLower()
+    $networkProfiles = $FirewallProfiles -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" } | ForEach-Object {
+        $_.Substring(0,1).ToUpper() + $_.Substring(1).ToLower()
     }
 }
 

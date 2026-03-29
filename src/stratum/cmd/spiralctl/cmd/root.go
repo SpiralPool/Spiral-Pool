@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Version information (set by main.go)
 var (
-	Version   = "2.0.0"
+	Version   = "2.0.1"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -258,7 +259,8 @@ func backupFile(path string) error {
 		return fmt.Errorf("failed to read file for backup: %w", err)
 	}
 
-	backupPath := filepath.Join(backupDir, filepath.Base(path)+".backup")
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := filepath.Join(backupDir, filepath.Base(path)+"."+timestamp+".backup")
 	// SECURITY: Backup files may contain sensitive data, use 0600 (G306 fix)
 	if err := os.WriteFile(backupPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write backup: %w", err)
