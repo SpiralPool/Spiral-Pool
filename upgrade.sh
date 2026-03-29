@@ -2123,6 +2123,114 @@ except Exception as e:
     fi
 }
 
+# ============================================================================
+# Cleanup invalid/unsupported options from deployed coin daemon .conf files.
+# These options were shipped in v2.0.0 templates and install.sh but are not
+# valid config-file parameters for any supported daemon.  They cause startup
+# warnings, ignored-option noise in logs, or outright errors depending on
+# the daemon version.
+#
+# Runs on every upgrade (idempotent — sed '/pattern/d' is a no-op when the
+# line doesn't exist).  Only removes exact option lines; comments and all
+# other settings are left untouched.
+# ============================================================================
+cleanup_daemon_configs() {
+    log_info "Checking coin daemon configs for invalid options..."
+
+    # Map: coin_dir:conf_filename
+    local COIN_CONFIGS=(
+        "dgb:digibyte.conf"
+        "btc:bitcoin.conf"
+        "bch:bitcoin.conf"
+        "bc2:bitcoinii.conf"
+        "ltc:litecoin.conf"
+        "doge:dogecoin.conf"
+        "pep:pepecoin.conf"
+        "cat:catcoin.conf"
+        "nmc:namecoin.conf"
+        "sys:syscoin.conf"
+        "xmy:myriadcoin.conf"
+        "fbtc:fractal.conf"
+        "qbx:qbitx.conf"
+    )
+
+    # Options invalid across ALL coin daemons
+    local INVALID_ALL=(
+        "maxoutconnections"
+        "maxdebugfilesize"
+        "forcednsseed"
+        "maxorphantx"
+        "nblocks"
+        "blockstallingtimeout"
+        "checkpoints"
+        "maxblocksinprogress"
+        "blockreconstructionextratxn"
+    )
+
+    # deprecatedrpc with empty value (bare "deprecatedrpc=" is invalid)
+    local INVALID_DEPRECATEDRPC="^deprecatedrpc=[[:space:]]*$"
+
+    # debug=zmq is unsupported by DOGE/PEP/CAT daemons
+    local ZMQ_DEBUG_COINS="doge pep cat"
+
+    local TOTAL_REMOVED=0
+
+    for entry in "${COIN_CONFIGS[@]}"; do
+        local coin_dir="${entry%%:*}"
+        local conf_name="${entry##*:}"
+        local conf_path
+        conf_path="$(resolve_coin_dir "$coin_dir")/${conf_name}"
+
+        [[ -f "$conf_path" ]] || continue
+
+        local removed=0
+
+        # Remove universally invalid options
+        for opt in "${INVALID_ALL[@]}"; do
+            if grep -q "^${opt}=" "$conf_path" 2>/dev/null; then
+                sed -i "/^${opt}=/d" "$conf_path"
+                removed=$((removed + 1))
+                log_info "  - ${conf_name} (${coin_dir}): removed ${opt}"
+            fi
+        done
+
+        # Remove bare deprecatedrpc= (empty value)
+        if grep -qE "$INVALID_DEPRECATEDRPC" "$conf_path" 2>/dev/null; then
+            sed -i -E "/${INVALID_DEPRECATEDRPC}/d" "$conf_path"
+            removed=$((removed + 1))
+            log_info "  - ${conf_name} (${coin_dir}): removed bare deprecatedrpc="
+        fi
+
+        # Remove debug=zmq from DOGE/PEP/CAT only
+        if [[ " $ZMQ_DEBUG_COINS " == *" $coin_dir "* ]]; then
+            if grep -q "^debug=zmq" "$conf_path" 2>/dev/null; then
+                sed -i '/^debug=zmq/d' "$conf_path"
+                removed=$((removed + 1))
+                log_info "  - ${conf_name} (${coin_dir}): removed debug=zmq"
+            fi
+        fi
+
+        # Remove duplicate dnsseed=1 lines (keep first occurrence only)
+        local dns_count
+        dns_count=$(grep -c "^dnsseed=1" "$conf_path" 2>/dev/null || echo "0")
+        if [[ "$dns_count" -gt 1 ]]; then
+            # Keep the first dnsseed=1, remove all subsequent ones
+            awk '!seen && /^dnsseed=1/ { seen=1; print; next } /^dnsseed=1/ { next } { print }' \
+                "$conf_path" > "${conf_path}.tmp" && mv "${conf_path}.tmp" "$conf_path"
+            removed=$((removed + 1))
+            log_info "  - ${conf_name} (${coin_dir}): removed duplicate dnsseed=1 lines"
+        fi
+
+        TOTAL_REMOVED=$((TOTAL_REMOVED + removed))
+    done
+
+    if [[ $TOTAL_REMOVED -gt 0 ]]; then
+        log_success "Removed $TOTAL_REMOVED invalid option(s) from daemon configs"
+    else
+        log_info "  - All daemon configs clean"
+    fi
+}
+
 # Fix database ownership to ensure migrations work
 # This is needed when tables were created by postgres user but app runs as spiralstratum
 # Also grants schema creation privileges for Go binary table creation
@@ -4630,6 +4738,10 @@ SSHDEOF
     # These prevent hard failures: 401 Sentinel errors, missing metrics/API sections.
     # Each migration is idempotent (checks before modifying) and safe to re-run.
     migrate_v2_config
+
+    # Remove invalid daemon config options shipped in v2.0.0 (maxoutconnections,
+    # maxdebugfilesize, forcednsseed, etc.) — idempotent, always safe to re-run.
+    cleanup_daemon_configs
 
     # Fix database ownership when stratum is being updated (ensures migrations can run)
     # This is needed when tables were created by postgres but app runs as spiralstratum
