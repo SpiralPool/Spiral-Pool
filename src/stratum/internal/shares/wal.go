@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -435,7 +436,9 @@ func (w *WAL) cleanupArchives() {
 
 	// Keep at most 3 archives
 	if len(matches) > 3 {
-		// Sort by name (timestamp) and remove oldest
+		// filepath.Glob does not guarantee sort order — sort lexicographically
+		// so archive_<unix_nano>.wal timestamps are in ascending order
+		sort.Strings(matches)
 		for i := 0; i < len(matches)-3; i++ {
 			if err := os.Remove(matches[i]); err != nil {
 				w.logger.Warnw("Failed to remove old WAL archive", "path", matches[i], "error", err)

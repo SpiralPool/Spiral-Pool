@@ -19,6 +19,8 @@
 # ║     ./pool-mode.sh --multi DGB,BTC    # Switch to multi with DGB+BTC       ║
 # ║     ./pool-mode.sh --multi DGB,BC2    # Switch to multi with DGB+BC2       ║
 # ║     ./pool-mode.sh --add BC2          # Add BC2 to current config          ║
+# ║     ./pool-mode.sh --add DGB --yes --wallet D...  # Non-interactive add   ║
+# ║     ./pool-mode.sh --remove BTC --yes              # Non-interactive rm    ║
 # ║     ./pool-mode.sh --status           # Show current configuration         ║
 # ║     ./pool-mode.sh --verify           # Verify & heal services/firewall    ║
 # ║                                                                            ║
@@ -46,6 +48,13 @@ HA_CLUSTER_FILE="$SPIRALPOOL_DIR/config/ha_cluster.conf"
 # Standard user account for all Spiral Pool operations
 # This is hardcoded - no customization allowed
 POOL_USER="spiraluser"
+
+# Non-interactive mode flags (set via --yes / --wallet / --install-node)
+# Used by dashboard and automation to skip interactive prompts.
+NON_INTERACTIVE=false
+NON_INTERACTIVE_WALLET=""
+NON_INTERACTIVE_INSTALL_NODE=true   # default: install node when adding
+NON_INTERACTIVE_DELETE_DATA=false   # default: preserve data when removing
 
 # Detect system architecture for coin binary downloads
 # dpkg returns "amd64" or "arm64"; fallback to amd64 if dpkg unavailable
@@ -1207,15 +1216,17 @@ announce_to_cluster() {
             " 2>/dev/null
 
             # Add our public key to the remote server
-            echo "$local_pubkey" | sudo -u "$HA_SSH_USER" ssh -o ConnectTimeout=5 -o BatchMode=yes "${HA_SSH_USER}@${server}" "
+            # SECURITY: pipe pubkey via stdin and use 'cat' to avoid shell interpolation
+            echo "$local_pubkey" | sudo -u "$HA_SSH_USER" ssh -o ConnectTimeout=5 -o BatchMode=yes "${HA_SSH_USER}@${server}" '
                 mkdir -p ~/.ssh
                 chmod 700 ~/.ssh
                 touch ~/.ssh/authorized_keys
                 chmod 600 ~/.ssh/authorized_keys
-                if ! grep -qF '$local_pubkey' ~/.ssh/authorized_keys 2>/dev/null; then
-                    echo '$local_pubkey' >> ~/.ssh/authorized_keys
+                key=$(cat)
+                if ! grep -qF "$key" ~/.ssh/authorized_keys 2>/dev/null; then
+                    printf "%s\n" "$key" >> ~/.ssh/authorized_keys
                 fi
-            " 2>/dev/null
+            ' 2>/dev/null
 
             echo -e "${GREEN}✓${NC}"
         else
@@ -1374,8 +1385,14 @@ check_cluster_health() {
             echo "  • $node"
         done
         echo ""
-        read -p "Attempt to heal degraded nodes? (y/N): " do_heal
-        if [[ "$do_heal" =~ ^[Yy]$ ]]; then
+        local do_heal_yn="n"
+        if [ "$NON_INTERACTIVE" = true ]; then
+            echo "    [non-interactive] Auto-healing degraded nodes"
+            do_heal_yn="y"
+        else
+            read -p "Attempt to heal degraded nodes? (y/N): " do_heal_yn
+        fi
+        if [[ "$do_heal_yn" =~ ^[Yy]$ ]]; then
             for node in "${degraded_nodes[@]}"; do
                 echo ""
                 echo -e "${CYAN}Healing $node...${NC}"
@@ -1406,8 +1423,14 @@ check_cluster_health() {
         done
         echo ""
         echo -e "${YELLOW}These nodes may be permanently down or have network issues.${NC}"
-        read -p "Remove failed nodes from cluster config? (y/N): " do_remove
-        if [[ "$do_remove" =~ ^[Yy]$ ]]; then
+        local do_remove_yn="n"
+        if [ "$NON_INTERACTIVE" = true ]; then
+            echo "    [non-interactive] Auto-removing failed nodes from config"
+            do_remove_yn="y"
+        else
+            read -p "Remove failed nodes from cluster config? (y/N): " do_remove_yn
+        fi
+        if [[ "$do_remove_yn" =~ ^[Yy]$ ]]; then
             for node in "${failed_nodes[@]}"; do
                 remove_peer_from_cluster_config "$node"
                 echo -e "${GREEN}✓ Removed $node from local cluster config${NC}"
@@ -1870,8 +1893,8 @@ warn_ha_cluster_sync() {
     echo -e "     ${BLUE}sudo systemctl restart spiralstratum${NC}"
     echo ""
 
-    # Offer to sync now if servers are known
-    if [ ${#HA_BACKUP_SERVERS[@]} -gt 0 ]; then
+    # Offer to sync now if servers are known (skip in non-interactive mode)
+    if [ "$NON_INTERACTIVE" != true ] && [ ${#HA_BACKUP_SERVERS[@]} -gt 0 ]; then
         echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
         read -p "Would you like to attempt automatic sync to HA peers now? (y/N): " do_sync
         if [[ "$do_sync" =~ ^[Yy]$ ]]; then
@@ -2059,10 +2082,14 @@ sync_ha_cluster() {
                     DGB-SCRYPT) service="digibyted" ;;  # Shares node with DGB
                 esac
 
+                # Skip if service name is empty (e.g., unknown coin)
+                if [ -z "$service" ]; then
+                    continue
+                fi
                 local result=$(sudo -u "$HA_SSH_USER" ssh -o ConnectTimeout=5 "${HA_SSH_USER}@${server}" "
-                    if systemctl is-active --quiet $service 2>/dev/null; then
-                        sudo systemctl stop $service 2>/dev/null
-                        sudo systemctl disable $service 2>/dev/null
+                    if systemctl is-active --quiet '$service' 2>/dev/null; then
+                        sudo systemctl stop '$service' 2>/dev/null
+                        sudo systemctl disable '$service' 2>/dev/null
                         echo 'stopped'
                     fi
                 " 2>/dev/null)
@@ -2312,6 +2339,37 @@ get_wallet_address() {
     local coin=$1
     local address=""
 
+    # Non-interactive mode: return pre-supplied wallet address with validation
+    if [ "$NON_INTERACTIVE" = true ]; then
+        if [ -n "$NON_INTERACTIVE_WALLET" ]; then
+            # Validate address format matches the target coin
+            local valid=true
+            case $coin in
+                DGB|DGB-SCRYPT) [[ ! "$NON_INTERACTIVE_WALLET" =~ ^[DS] ]] && valid=false ;;
+                BTC)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(1|3|bc1) ]] && valid=false ;;
+                BCH)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(bitcoincash:|q|p|1|3) ]] && valid=false ;;
+                BC2)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(1|3|bc1) ]] && valid=false ;;
+                LTC)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(L|M|3|ltc1) ]] && valid=false ;;
+                DOGE)           [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(D|9|A) ]] && valid=false ;;
+                PEP)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^P ]] && valid=false ;;
+                CAT)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^9 ]] && valid=false ;;
+                NMC)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(N|M|nc1) ]] && valid=false ;;
+                SYS)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(S|sys1|tsys1) ]] && valid=false ;;
+                XMY)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(M|my1) ]] && valid=false ;;
+                FBTC)           [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(1|3|bc1) ]] && valid=false ;;
+                QBX)            [[ ! "$NON_INTERACTIVE_WALLET" =~ ^(M|P|pq) ]] && valid=false ;;
+            esac
+            if [ "$valid" = false ]; then
+                echo -e "${RED}Error: Wallet address '${NON_INTERACTIVE_WALLET}' does not match expected format for $coin${NC}" >&2
+                return 1
+            fi
+            echo "$NON_INTERACTIVE_WALLET"
+            return 0
+        fi
+        echo -e "${RED}Error: --wallet <address> is required in non-interactive mode${NC}" >&2
+        return 1
+    fi
+
     case $coin in
         DGB)
             echo -e "${CYAN}Enter your DigiByte wallet address:${NC}" >&2
@@ -2510,15 +2568,23 @@ get_wallet_address() {
             ;;
         QBX)
             echo -e "${CYAN}Enter your Q-BitX (QBX) wallet address:${NC}" >&2
-            echo "(Addresses starting with pq, 1, 3, or bc1q are valid)" >&2
+            echo "(Addresses starting with M (P2PKH), P (P2SH), or pq (post-quantum) are valid)" >&2
             read -p "QBX Address: " address
-            if [[ ! "$address" =~ ^(pq|1|3|bc1q) ]]; then
+            if [[ ! "$address" =~ ^(M|P|pq) ]]; then
                 echo -e "${YELLOW}Warning: Address doesn't look like a valid Q-BitX address${NC}" >&2
                 read -p "Continue anyway? (y/N): " confirm
                 [[ ! "$confirm" =~ ^[Yy]$ ]] && return 1
             fi
             ;;
     esac
+
+    # SECURITY: Sanitize address — strip any characters that could cause shell/YAML injection.
+    # Valid cryptocurrency addresses contain only: alphanumeric, colon (CashAddr), and nothing else.
+    address=$(echo "$address" | tr -cd 'a-zA-Z0-9:')
+    if [ -z "$address" ]; then
+        echo -e "${RED}Error: Wallet address is empty after sanitization${NC}" >&2
+        return 1
+    fi
 
     echo "$address"
 }
@@ -3311,14 +3377,14 @@ EOF
     nodes:
       - id: primary
         host: 127.0.0.1
-        port: 8345
+        port: 8344
         user: $rpc_user
         password: "$rpc_pass"
         priority: 0
         weight: 1
         zmq:
           enabled: true
-          endpoint: "tcp://127.0.0.1:28345"
+          endpoint: "tcp://127.0.0.1:28344"
 
     payments:
       enabled: false
@@ -3387,7 +3453,7 @@ install_node_if_needed() {
             fi
 
             tar -xzf "$KNOTS_FILENAME"
-            EXTRACTED_DIR=$(ls -d bitcoin-*/ 2>/dev/null | head -1 | tr -d '/')
+            EXTRACTED_DIR="bitcoin-${BITCOIN_KNOTS_VERSION}"
 
             cp "${EXTRACTED_DIR}/bin/bitcoind" /usr/local/bin/
             cp "${EXTRACTED_DIR}/bin/bitcoin-cli" /usr/local/bin/
@@ -3570,8 +3636,10 @@ install_node_if_needed() {
             fi
 
             tar -xzf "$XMY_FILENAME"
-            # Myriad tarball uses inconsistent directory naming — auto-detect
-            local XMY_EXTRACTED=$(ls -d myriadcoin-*/ 2>/dev/null | head -1 | tr -d '/')
+            # Myriad tarball uses inconsistent directory naming (0.18.1.0 extracts to myriadcoin-0.18.1/)
+            # Derive from tarball contents instead of globbing /tmp
+            local XMY_EXTRACTED
+            XMY_EXTRACTED=$(tar -tzf "$XMY_FILENAME" | head -1 | cut -d'/' -f1)
             cp "${XMY_EXTRACTED}/bin/myriadcoind" /usr/local/bin/
             cp "${XMY_EXTRACTED}/bin/myriadcoin-cli" /usr/local/bin/
             echo -e "${GREEN}✓ Myriad Core ${XMY_VERSION} installed${NC}"
@@ -4710,9 +4778,14 @@ verify_services() {
                 echo -e "  ${YELLOW}⚠ $coin: Should be running but is $is_running${NC}"
                 issues_found=$((issues_found + 1))
 
-                read -p "    Start $coin node? (y/N): " fix_start
-                if [[ "$fix_start" =~ ^[Yy]$ ]]; then
+                if [ "$NON_INTERACTIVE" = true ]; then
+                    echo "    [non-interactive] Auto-starting $coin node"
                     start_node "$coin"
+                else
+                    read -p "    Start $coin node? (y/N): " fix_start
+                    if [[ "$fix_start" =~ ^[Yy]$ ]]; then
+                        start_node "$coin"
+                    fi
                 fi
             else
                 echo -e "  ${GREEN}✓ $coin: Running (correct)${NC}"
@@ -4723,19 +4796,31 @@ verify_services() {
                 echo -e "  ${YELLOW}⚠ $coin: Running but not in config${NC}"
                 issues_found=$((issues_found + 1))
 
-                read -p "    Stop $coin node? (y/N): " fix_stop
-                if [[ "$fix_stop" =~ ^[Yy]$ ]]; then
+                if [ "$NON_INTERACTIVE" = true ]; then
+                    echo "    [non-interactive] Auto-stopping $coin node"
                     stop_node "$coin"
+                else
+                    read -p "    Stop $coin node? (y/N): " fix_stop
+                    if [[ "$fix_stop" =~ ^[Yy]$ ]]; then
+                        stop_node "$coin"
+                    fi
                 fi
             elif [ "$service_exists" = "yes" ]; then
                 echo -e "  ${YELLOW}⚠ $coin: Service file exists but coin not in config${NC}"
                 issues_found=$((issues_found + 1))
 
-                read -p "    Remove $coin service file? (y/N): " fix_remove
-                if [[ "$fix_remove" =~ ^[Yy]$ ]]; then
+                if [ "$NON_INTERACTIVE" = true ]; then
+                    echo "    [non-interactive] Auto-removing orphaned $coin service file"
                     rm -f "$service_file"
                     systemctl daemon-reload
                     echo -e "  ${GREEN}✓ Removed orphaned service file${NC}"
+                else
+                    read -p "    Remove $coin service file? (y/N): " fix_remove
+                    if [[ "$fix_remove" =~ ^[Yy]$ ]]; then
+                        rm -f "$service_file"
+                        systemctl daemon-reload
+                        echo -e "  ${GREEN}✓ Removed orphaned service file${NC}"
+                    fi
                 fi
             else
                 echo -e "  ${BLUE}○ $coin: Not configured (correct)${NC}"
@@ -4810,8 +4895,17 @@ verify_firewall() {
         echo -e "${GREEN}All firewall rules are correct.${NC}"
     else
         echo -e "${YELLOW}Found $issues_found firewall issue(s).${NC}"
-        read -p "Auto-fix firewall rules? (y/N): " fix_fw
-        if [[ "$fix_fw" =~ ^[Yy]$ ]]; then
+        local do_fix=false
+        if [ "$NON_INTERACTIVE" = true ]; then
+            echo "    [non-interactive] Auto-fixing firewall rules"
+            do_fix=true
+        else
+            read -p "Auto-fix firewall rules? (y/N): " fix_fw
+            if [[ "$fix_fw" =~ ^[Yy]$ ]]; then
+                do_fix=true
+            fi
+        fi
+        if [ "$do_fix" = true ]; then
             # Close all coin ports first
             for coin in DGB BTC BCH BC2 LTC DOGE DGB-SCRYPT PEP CAT NMC SYS XMY FBTC QBX; do
                 local ports="${COIN_PORTS[$coin]}"
@@ -4887,9 +4981,11 @@ generate_config() {
         echo -e "${GREEN}✓ Preserved existing database credentials${NC}"
     fi
 
-    # Start config file
-    cat > "$CONFIG_FILE" << EOF
-# Spiral Pool v2.0.1 Configuration
+    # Start config file — write to temp file first, then atomic move
+    local config_tmp="${CONFIG_FILE}.tmp.$$"
+    trap 'rm -f "$config_tmp"' EXIT
+    cat > "$config_tmp" << EOF
+# Spiral Pool v2.1.0 Configuration
 # Generated by pool-mode.sh on $(date)
 # Mode: $([ ${#coins[@]} -eq 1 ] && echo "Solo" || echo "Multi-Coin")
 # Coins: ${coins[*]}
@@ -4946,7 +5042,7 @@ EOF
         fi
 
         # Generate and append coin config
-        generate_coin_config "$coin" "$address" "$rpc_user" "$rpc_pass" >> "$CONFIG_FILE"
+        generate_coin_config "$coin" "$address" "$rpc_user" "$rpc_pass" >> "$config_tmp"
 
         # Setup node if needed
         if ! check_node_installed "$coin"; then
@@ -4957,7 +5053,7 @@ EOF
     done
 
     # Add database config (V2 format)
-    cat >> "$CONFIG_FILE" << EOF
+    cat >> "$config_tmp" << EOF
 
 database:
   host: 127.0.0.1
@@ -4971,7 +5067,10 @@ database:
     interval: 5s
 EOF
 
+    # Atomic move: temp file → config file (prevents partial/truncated configs on error)
+    mv -f "$config_tmp" "$CONFIG_FILE"
     chown "$POOL_USER:$POOL_USER" "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
     echo -e "${GREEN}✓ Configuration generated${NC}"
 }
 
@@ -5092,6 +5191,11 @@ show_change_summary() {
         echo ""
     fi
 
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo -e "  ${CYAN}(auto-confirmed: non-interactive mode)${NC}"
+        return
+    fi
+
     read -p "Proceed with these changes? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo "Cancelled."
@@ -5128,11 +5232,19 @@ switch_to_solo() {
     if [ -f "$CONFIG_FILE" ]; then
         local backup_file="$CONFIG_FILE"
         if extract_coin_config "$coin" "$backup_file" && [ -n "$COIN_ADDR" ]; then
-            echo -e "${BLUE}Found existing wallet address for $coin${NC}"
-            read -p "Use existing address ($COIN_ADDR)? (Y/n): " use_existing
-            if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
-                WALLET_ADDRESSES[$coin]="$COIN_ADDR"
-                need_address=false
+            if [ "$NON_INTERACTIVE" = true ]; then
+                # Non-interactive: reuse existing address if no --wallet supplied
+                if [ -z "$NON_INTERACTIVE_WALLET" ]; then
+                    WALLET_ADDRESSES[$coin]="$COIN_ADDR"
+                    need_address=false
+                fi
+            else
+                echo -e "${BLUE}Found existing wallet address for $coin${NC}"
+                read -p "Use existing address ($COIN_ADDR)? (Y/n): " use_existing
+                if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
+                    WALLET_ADDRESSES[$coin]="$COIN_ADDR"
+                    need_address=false
+                fi
             fi
         fi
     fi
@@ -5195,6 +5307,23 @@ switch_to_multi() {
     # Show change summary and confirm
     show_change_summary "${coins[@]}"
 
+    # SAFETY: In non-interactive mode with a single --wallet, reject if multiple coins
+    # use different address formats — a single address cannot be valid for all networks
+    if [ "$NON_INTERACTIVE" = true ] && [ -n "$NON_INTERACTIVE_WALLET" ] && [ ${#coins[@]} -gt 1 ]; then
+        local wallet_fail_coins=()
+        for coin in "${coins[@]}"; do
+            if ! get_wallet_address "$coin" > /dev/null 2>&1; then
+                wallet_fail_coins+=("$coin")
+            fi
+        done
+        if [ ${#wallet_fail_coins[@]} -gt 0 ]; then
+            echo -e "${RED}Error: --wallet address is not valid for: ${wallet_fail_coins[*]}${NC}" >&2
+            echo -e "${RED}Multi-coin mode requires per-coin wallet addresses.${NC}" >&2
+            echo -e "${RED}Each coin has its own address format — a single address cannot work for all networks.${NC}" >&2
+            exit 1
+        fi
+    fi
+
     echo ""
 
     declare -A WALLET_ADDRESSES
@@ -5205,11 +5334,19 @@ switch_to_multi() {
 
         if [ -f "$CONFIG_FILE" ]; then
             if extract_coin_config "$coin" "$CONFIG_FILE" && [ -n "$COIN_ADDR" ]; then
-                echo -e "${BLUE}Found existing wallet address for $coin${NC}"
-                read -p "Use existing address ($COIN_ADDR)? (Y/n): " use_existing
-                if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
-                    WALLET_ADDRESSES[$coin]="$COIN_ADDR"
-                    need_address=false
+                if [ "$NON_INTERACTIVE" = true ]; then
+                    # Non-interactive: reuse existing address if no --wallet supplied
+                    if [ -z "$NON_INTERACTIVE_WALLET" ]; then
+                        WALLET_ADDRESSES[$coin]="$COIN_ADDR"
+                        need_address=false
+                    fi
+                else
+                    echo -e "${BLUE}Found existing wallet address for $coin${NC}"
+                    read -p "Use existing address ($COIN_ADDR)? (Y/n): " use_existing
+                    if [[ ! "$use_existing" =~ ^[Nn]$ ]]; then
+                        WALLET_ADDRESSES[$coin]="$COIN_ADDR"
+                        need_address=false
+                    fi
                 fi
             fi
         fi
@@ -5302,27 +5439,29 @@ add_coin() {
 
     # Check if node is installed
     if ! check_node_installed "$coin"; then
-        echo ""
-        echo -e "${YELLOW}$coin node is not installed. Would you like to install it?${NC}"
-        read -p "Install $coin node? (Y/n): " install_node
-        if [[ ! "$install_node" =~ ^[Nn]$ ]]; then
-            install_node_if_needed "$coin"
+        if [ "$NON_INTERACTIVE" = true ]; then
+            if [ "$NON_INTERACTIVE_INSTALL_NODE" = true ]; then
+                echo -e "${CYAN}Installing $coin node (non-interactive mode)...${NC}"
+                install_node_if_needed "$coin"
+            else
+                echo -e "${YELLOW}Skipping node install (non-interactive mode)${NC}"
+            fi
+        else
+            echo ""
+            echo -e "${YELLOW}$coin node is not installed. Would you like to install it?${NC}"
+            read -p "Install $coin node? (Y/n): " install_node
+            if [[ ! "$install_node" =~ ^[Nn]$ ]]; then
+                install_node_if_needed "$coin"
+            fi
         fi
     fi
 
-    # Set up and start the node service
+    # Start the node service (setup_node already called by generate_config with matching RPC credentials)
     if check_node_installed "$coin"; then
         echo ""
-        echo -e "${CYAN}Setting up $coin node service...${NC}"
-
-        # Generate RPC credentials if not already set
-        local rpc_user="${RPC_USER:-spiralpool}"
-        local rpc_pass="${RPC_PASS:-$(openssl rand -hex 32)}"
-
-        setup_node "$coin" "$rpc_user" "$rpc_pass"
         start_node "$coin"
 
-        echo -e "${GREEN}✓ $coin node service created and started${NC}"
+        echo -e "${GREEN}✓ $coin node service started${NC}"
         echo -e "  ${CYAN}Service: Restart=always, RestartSec=30${NC}"
         echo -e "  ${CYAN}The service will automatically restart on failure${NC}"
     fi
@@ -5463,19 +5602,19 @@ remove_coin() {
             ;;
     esac
 
-    # Double-check service is stopped and disabled
-    if systemctl is-active --quiet "$service" 2>/dev/null; then
+    # Double-check service is stopped and disabled (skip if no service, e.g., DGB-SCRYPT)
+    if [ -n "$service" ] && systemctl is-active --quiet "$service" 2>/dev/null; then
         echo -e "${YELLOW}Warning: Service still running, force stopping...${NC}"
         systemctl stop "$service" 2>/dev/null || true
         systemctl kill "$service" 2>/dev/null || true
     fi
 
-    if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+    if [ -n "$service" ] && systemctl is-enabled --quiet "$service" 2>/dev/null; then
         systemctl disable "$service" 2>/dev/null || true
     fi
 
     # Remove service file if still exists
-    if [ -f "$service_file" ]; then
+    if [ -n "$service_file" ] && [ -f "$service_file" ]; then
         rm -f "$service_file"
         systemctl daemon-reload
     fi
@@ -5484,21 +5623,31 @@ remove_coin() {
 
     # Ask about data cleanup
     if [ -d "$data_dir" ]; then
-        echo ""
-        echo -e "${YELLOW}$coin data directory exists at: $data_dir${NC}"
-        echo -e "${YELLOW}This may contain blockchain data and wallet files.${NC}"
-        read -p "Remove $coin data directory? (y/N): " remove_data
-        if [[ "$remove_data" =~ ^[Yy]$ ]]; then
-            echo -e "${RED}WARNING: This will permanently delete all $coin data including wallets!${NC}"
-            read -p "Type 'DELETE' to confirm: " confirm_delete
-            if [ "$confirm_delete" = "DELETE" ]; then
+        if [ "$NON_INTERACTIVE" = true ]; then
+            if [ "$NON_INTERACTIVE_DELETE_DATA" = true ]; then
+                echo -e "${RED}Removing $coin data directory (non-interactive mode)...${NC}"
                 rm -rf "$data_dir"
                 echo -e "${GREEN}✓ $coin data directory removed${NC}"
             else
-                echo -e "${YELLOW}Data directory preserved${NC}"
+                echo -e "${CYAN}Data directory preserved at: $data_dir (non-interactive mode)${NC}"
             fi
         else
-            echo -e "${CYAN}Data directory preserved at: $data_dir${NC}"
+            echo ""
+            echo -e "${YELLOW}$coin data directory exists at: $data_dir${NC}"
+            echo -e "${YELLOW}This may contain blockchain data and wallet files.${NC}"
+            read -p "Remove $coin data directory? (y/N): " remove_data
+            if [[ "$remove_data" =~ ^[Yy]$ ]]; then
+                echo -e "${RED}WARNING: This will permanently delete all $coin data including wallets!${NC}"
+                read -p "Type 'DELETE' to confirm: " confirm_delete
+                if [ "$confirm_delete" = "DELETE" ]; then
+                    rm -rf "$data_dir"
+                    echo -e "${GREEN}✓ $coin data directory removed${NC}"
+                else
+                    echo -e "${YELLOW}Data directory preserved${NC}"
+                fi
+            else
+                echo -e "${CYAN}Data directory preserved at: $data_dir${NC}"
+            fi
         fi
     fi
 
@@ -5864,13 +6013,53 @@ interactive_menu() {
 check_root
 check_installation
 
+# Pre-parse global flags (--yes, --wallet, --delete-data, --no-install-node)
+# Usage: _parse_global_flags <skip_count> "$@"
+#   skip_count: number of positional args to skip before parsing flags
+#               e.g., 2 for "--add DGB --yes", 1 for "--verify --yes"
+_parse_global_flags() {
+    local skip="$1"
+    shift  # remove skip_count itself
+    local i=0
+    while [ $i -lt "$skip" ] && [ $# -gt 0 ]; do
+        shift
+        i=$((i + 1))
+    done
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --yes|-y)
+                NON_INTERACTIVE=true
+                ;;
+            --wallet)
+                if [ $# -lt 2 ]; then
+                    echo -e "${RED}Error: --wallet requires an address argument${NC}"
+                    exit 1
+                fi
+                shift
+                NON_INTERACTIVE_WALLET="$1"
+                ;;
+            --delete-data)
+                NON_INTERACTIVE_DELETE_DATA=true
+                ;;
+            --no-install-node)
+                NON_INTERACTIVE_INSTALL_NODE=false
+                ;;
+            --*)
+                echo -e "${YELLOW}Warning: unknown flag '$1' ignored${NC}" >&2
+                ;;
+        esac
+        shift
+    done
+}
+
 # Parse command line arguments
 case "${1:-}" in
     --solo)
         if [ -z "$2" ]; then
-            echo -e "${RED}Error: --solo requires a coin symbol (DGB, BTC, BCH, or BC2)${NC}"
+            echo -e "${RED}Error: --solo requires a coin symbol${NC}"
             exit 1
         fi
+        _parse_global_flags 2 "$@"
         switch_to_solo "${2^^}"
         ;;
     --multi)
@@ -5878,20 +6067,23 @@ case "${1:-}" in
             echo -e "${RED}Error: --multi requires comma-separated coin symbols (e.g., DGB,BTC)${NC}"
             exit 1
         fi
+        _parse_global_flags 2 "$@"
         switch_to_multi "${2^^}"
         ;;
     --add)
         if [ -z "$2" ]; then
-            echo -e "${RED}Error: --add requires a coin symbol (DGB, BTC, BCH, or BC2)${NC}"
+            echo -e "${RED}Error: --add requires a coin symbol${NC}"
             exit 1
         fi
+        _parse_global_flags 2 "$@"
         add_coin "${2^^}"
         ;;
     --remove)
         if [ -z "$2" ]; then
-            echo -e "${RED}Error: --remove requires a coin symbol (DGB, BTC, BCH, or BC2)${NC}"
+            echo -e "${RED}Error: --remove requires a coin symbol${NC}"
             exit 1
         fi
+        _parse_global_flags 2 "$@"
         remove_coin "${2^^}"
         ;;
     --status)
@@ -5899,6 +6091,7 @@ case "${1:-}" in
         print_status
         ;;
     --verify)
+        _parse_global_flags 1 "$@"
         print_banner
         verify_services
         verify_firewall
@@ -6037,6 +6230,12 @@ case "${1:-}" in
         echo "  --status            Show current configuration"
         echo "  --verify            Verify services and firewall match config (self-heal)"
         echo ""
+        echo "Non-interactive flags (for --add / --remove):"
+        echo "  --yes, -y           Skip all confirmation prompts"
+        echo "  --wallet ADDR       Provide wallet address (required with --yes for --add)"
+        echo "  --no-install-node   Skip node installation (--add only)"
+        echo "  --delete-data       Delete coin data directory (--remove only)"
+        echo ""
         echo "HA Cluster Options:"
         echo "  --ha-status         Show HA cluster status (queries VIP manager API)"
         echo ""
@@ -6062,7 +6261,9 @@ case "${1:-}" in
         echo "  $0 --multi DGB,LTC          Mixed algorithm (SHA-256d + Scrypt)"
         echo "  $0 --multi DGB,BTC,BCH,BC2,LTC,DOGE  Enable all six coins"
         echo "  $0 --add LTC                Add LTC to current config"
+        echo "  $0 --add DGB --yes --wallet DxxxxAddr   Non-interactive add"
         echo "  $0 --remove BTC             Remove BTC from current config"
+        echo "  $0 --remove BTC --yes       Non-interactive remove (keep data)"
         echo "  $0 --verify                 Check services/firewall, fix if needed"
         echo ""
         echo "HA Cluster Examples:"

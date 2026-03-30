@@ -474,10 +474,12 @@ func removeTorSettings(content string) string {
 			continue
 		}
 
-		// Remove individual Tor settings
+		// Remove individual Tor settings (including stale networking overrides)
 		if strings.HasPrefix(trimmed, "proxy=127.0.0.1:9050") ||
 			strings.HasPrefix(trimmed, "onion=127.0.0.1:9050") ||
 			strings.HasPrefix(trimmed, "onlynet=onion") ||
+			strings.HasPrefix(trimmed, "onlynet=ipv4") ||
+			trimmed == "listen=0" ||
 			strings.HasPrefix(trimmed, "discover=0") {
 			continue
 		}

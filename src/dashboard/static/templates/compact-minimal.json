@@ -2,7 +2,7 @@
   "name": "Compact Minimal",
   "id": "compact-minimal",
   "author": "Spiral Pool",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Minimal compact view perfect for small screens, side monitors, or quick status checks",
   "preview": "compact-preview.png",
   "layout": {

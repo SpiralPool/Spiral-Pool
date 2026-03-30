@@ -67,9 +67,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/bitcoinii.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/bitcoinii/.bitcoinii/bitcoinii.conf ] && [ -s /home/bitcoinii/.bitcoinii/bitcoinii.conf ]; then\n\
+    echo "Using existing bitcoinii.conf (skipping template generation)"\n\
+elif [ -f /config/bitcoinii.conf.template ]; then\n\
     envsubst < /config/bitcoinii.conf.template > /home/bitcoinii/.bitcoinii/bitcoinii.conf\n\
+    chmod 600 /home/bitcoinii/.bitcoinii/bitcoinii.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

@@ -497,5 +497,5 @@ By deploying Spiral Pool, you acknowledge that:
 
 ---
 
-*Spiral Pool v2.0.1 - Specific Hazard Warnings*
+*Spiral Pool v2.1.0 - Specific Hazard Warnings*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

@@ -1284,6 +1284,27 @@ func (s *Server) GetCurrentJob() *protocol.Job {
 	return s.currentJob.Load()
 }
 
+// SendJobToSession sends a specific job to a single session.
+// Used by the multi-coin server to push coin-specific jobs to individual miners.
+func (s *Server) SendJobToSession(session *protocol.Session, job *protocol.Job) {
+	if session == nil || job == nil {
+		return
+	}
+
+	// Store in job history for share validation
+	s.jobMu.Lock()
+	if job.CleanJobs {
+		for id, oldJob := range s.jobs {
+			oldJob.SetState(protocol.JobStateInvalidated, "multi-port coin switch")
+			delete(s.jobs, id)
+		}
+	}
+	s.jobs[job.ID] = job
+	s.jobMu.Unlock()
+
+	s.sendJob(session, job)
+}
+
 // Stats returns server statistics.
 type Stats struct {
 	ActiveConnections   int64

@@ -54,9 +54,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/namecoin.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/namecoin/.namecoin/namecoin.conf ] && [ -s /home/namecoin/.namecoin/namecoin.conf ]; then\n\
+    echo "Using existing namecoin.conf (skipping template generation)"\n\
+elif [ -f /config/namecoin.conf.template ]; then\n\
     envsubst < /config/namecoin.conf.template > /home/namecoin/.namecoin/namecoin.conf\n\
+    chmod 600 /home/namecoin/.namecoin/namecoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

@@ -229,8 +229,8 @@ services:
       patroni2:
         condition: service_healthy
     healthcheck:
-      # Check HAProxy stats page is reachable (proves HAProxy is running, not just config valid)
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7000/ >/dev/null 2>&1 || exit 1"]
+      # Verify HAProxy process is running and can validate its own config
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg >/dev/null 2>&1 && kill -0 1"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -336,6 +336,73 @@
             </div>
         </div>
 
+        <!-- Multi-Coin Smart Port -->
+        <div class="config-section cyber-card" style="border-color: var(--neon-purple);">
+            <h3 class="section-title" style="color: var(--neon-purple);">
+                <span class="title-icon">🔀</span>
+                Multi-Coin Smart Port
+            </h3>
+            <p class="section-desc">
+                Single stratum port (16180) that rotates miners between SHA-256d coins on a 24-hour schedule.
+                Miners connect once — the pool handles all coin switching automatically.
+            </p>
+
+            <div id="multiport-status" style="margin: 1rem 0;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                    <label class="toggle-switch" style="position: relative; display: inline-block; width: 48px; height: 26px;">
+                        <input type="checkbox" id="multiport-enabled" onchange="toggleMultiPort(this.checked)"
+                               style="opacity: 0; width: 0; height: 0;">
+                        <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+                                     background: rgba(255,255,255,0.1); border-radius: 13px; transition: 0.3s;"
+                              class="toggle-slider"></span>
+                    </label>
+                    <span id="multiport-status-text" style="font-weight: 600;">Loading...</span>
+                </div>
+
+                <div id="multiport-config" style="display: none;">
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                        Assign hours per day to each SHA-256d coin. <strong>Hours must sum to exactly 24.</strong>
+                        Use the install/remove buttons to manage coin nodes.
+                    </p>
+
+                    <div id="multiport-coins" style="display: grid; gap: 0.5rem; margin-bottom: 1rem;">
+                        <!-- Coin rows populated by JS -->
+                    </div>
+
+                    <div id="multiport-total" style="font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 0.75rem;">
+                        Total: <span id="multiport-total-value">0</span>/24 hours
+                    </div>
+
+                    <div id="multiport-schedule" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3);
+                                                         border-radius: var(--border-radius); padding: 0.75rem; margin-bottom: 1rem;
+                                                         font-family: var(--font-mono); font-size: 0.85rem;">
+                        <!-- Schedule preview populated by JS -->
+                    </div>
+
+                    <div id="multiport-live" style="display: none; background: rgba(34, 197, 94, 0.08);
+                                                     border: 1px solid rgba(34, 197, 94, 0.3); border-radius: var(--border-radius);
+                                                     padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                        <!-- Live stats populated by JS -->
+                    </div>
+
+                    <div id="multiport-sync" style="display: none; background: rgba(0, 212, 255, 0.06);
+                                                      border: 1px solid rgba(0, 212, 255, 0.3); border-radius: var(--border-radius);
+                                                      padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--neon-cyan); font-weight: 600;">Blockchain Sync Status</span>
+                            <span id="multiport-sync-refresh" style="color: var(--text-muted); font-size: 0.75rem;">Auto-refreshing...</span>
+                        </div>
+                        <div id="multiport-sync-coins"></div>
+                    </div>
+
+                    <button type="button" class="cyber-btn" onclick="saveMultiPort()"
+                            style="background: var(--neon-purple); color: #000; font-weight: 600;">
+                        Save & Restart Stratum
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- BitAxe Devices -->
         <div class="config-section cyber-card">
             <h3 class="section-title">
@@ -2062,10 +2129,484 @@
             }
         }
 
+        // ── Multi-Coin Smart Port UI ──────────────────────────────────
+
+        let multiportData = null; // cached GET /api/multiport response
+
+        async function loadMultiPort() {
+            const statusText = document.getElementById('multiport-status-text');
+            const toggle = document.getElementById('multiport-enabled');
+            const configDiv = document.getElementById('multiport-config');
+
+            try {
+                const resp = await fetch('/api/multiport');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                multiportData = await resp.json();
+
+                toggle.checked = multiportData.enabled;
+                statusText.textContent = multiportData.enabled ? 'Enabled' : 'Disabled';
+                statusText.style.color = multiportData.enabled ? 'var(--neon-green)' : 'var(--text-muted)';
+                configDiv.style.display = multiportData.enabled ? 'block' : 'none';
+
+                renderMultiPortCoins();
+                updateMultiPortTotal();
+
+                if (multiportData.enabled && multiportData.live) {
+                    renderMultiPortLive(multiportData.live);
+                }
+            } catch (e) {
+                statusText.textContent = 'Error loading';
+                statusText.style.color = 'var(--neon-red, #ff4444)';
+                console.error('Failed to load multiport config:', e);
+            }
+        }
+
+        function toggleMultiPort(checked) {
+            const configDiv = document.getElementById('multiport-config');
+            const statusText = document.getElementById('multiport-status-text');
+            configDiv.style.display = checked ? 'block' : 'none';
+            statusText.textContent = checked ? 'Enabled' : 'Disabled';
+            statusText.style.color = checked ? 'var(--neon-green)' : 'var(--text-muted)';
+
+            if (checked && !document.getElementById('multiport-coins').hasChildNodes()) {
+                renderMultiPortCoins();
+                updateMultiPortTotal();
+            }
+        }
+
+        function renderMultiPortCoins() {
+            const container = document.getElementById('multiport-coins');
+            container.innerHTML = '';
+
+            const available = (multiportData && multiportData.available_coins) || [];
+            const currentCoins = (multiportData && multiportData.coins) || {};
+
+            // SHA-256d coins from COIN_INFO (client-side reference for icons/names)
+            const sha256dCoins = Object.entries(COIN_INFO)
+                .filter(([sym, info]) => info.algo === 'sha256d' && !info.mergeOnly)
+                .map(([sym]) => sym);
+
+            // Merge server-available list with client COIN_INFO
+            const coinSet = new Set();
+            available.forEach(c => coinSet.add(c.symbol));
+            sha256dCoins.forEach(s => coinSet.add(s));
+
+            // Remove merge-only coins
+            ['NMC', 'SYS', 'XMY', 'FBTC'].forEach(s => coinSet.delete(s));
+
+            const coins = Array.from(coinSet).sort();
+
+            // Count installed coins (for remove guard)
+            const installedCount = available.filter(c => c.enabled).length;
+
+            coins.forEach(sym => {
+                const info = COIN_INFO[sym] || { name: sym, icon: '?' };
+                const serverCoin = available.find(c => c.symbol === sym);
+                const installed = serverCoin ? serverCoin.enabled : false;
+                // Convert stored weight (percentage) to hours for display
+                const currentWeight = currentCoins[sym] ? (currentCoins[sym].weight || 0) : 0;
+                const currentHours = currentWeight > 0 ? (currentWeight / 100 * 24) : 0;
+
+                const row = document.createElement('div');
+                row.dataset.coin = sym;
+                row.dataset.installed = installed ? 'true' : 'false';
+                row.style.cssText = 'display: grid; grid-template-columns: 140px 1fr auto auto; gap: 0.75rem; align-items: center; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.03); border-radius: 6px;';
+
+                // Coin label
+                const label = document.createElement('div');
+                label.style.cssText = 'font-family: var(--font-mono); font-weight: 600;';
+                label.innerHTML = `${info.icon} ${sym}`;
+
+                // Name + status
+                const nameDiv = document.createElement('div');
+                nameDiv.style.cssText = 'font-size: 0.85rem;';
+                if (installed) {
+                    nameDiv.innerHTML = `<span style="color: var(--text-secondary);">${info.name}</span> <span style="color: var(--neon-green); font-size: 0.75rem;">installed</span>`;
+                } else {
+                    nameDiv.innerHTML = `<span style="color: var(--text-muted);">${info.name}</span>`;
+                }
+
+                // Hours input (only for installed coins)
+                const inputWrap = document.createElement('div');
+                inputWrap.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
+                if (installed) {
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = '0';
+                    input.max = '24';
+                    input.step = '0.5';
+                    input.value = currentHours > 0 ? currentHours : '';
+                    input.dataset.coin = sym;
+                    input.className = 'cyber-input multiport-hours-input';
+                    input.style.cssText = 'width: 70px; text-align: center; padding: 0.4rem;';
+                    input.placeholder = '0';
+                    input.addEventListener('input', updateMultiPortTotal);
+                    inputWrap.appendChild(input);
+                    const suffix = document.createElement('span');
+                    suffix.style.cssText = 'color: var(--text-muted); font-size: 0.8rem;';
+                    suffix.textContent = 'hrs';
+                    inputWrap.appendChild(suffix);
+                } else {
+                    inputWrap.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">—</span>';
+                }
+
+                // Install / Remove button
+                const actionBtn = document.createElement('button');
+                actionBtn.className = 'cyber-btn';
+                actionBtn.style.cssText = 'padding: 0.3rem 0.6rem; font-size: 0.75rem; min-width: 70px;';
+                if (installed) {
+                    actionBtn.textContent = 'Remove';
+                    actionBtn.style.background = 'rgba(255,68,68,0.15)';
+                    actionBtn.style.color = '#ff4444';
+                    actionBtn.style.border = '1px solid rgba(255,68,68,0.3)';
+                    if (installedCount <= 1) {
+                        actionBtn.disabled = true;
+                        actionBtn.title = 'Cannot remove the last installed coin';
+                        actionBtn.style.opacity = '0.4';
+                    } else {
+                        actionBtn.onclick = () => removeCoinNode(sym);
+                    }
+                } else {
+                    actionBtn.textContent = 'Install';
+                    actionBtn.style.background = 'rgba(0,212,255,0.15)';
+                    actionBtn.style.color = 'var(--neon-cyan)';
+                    actionBtn.style.border = '1px solid rgba(0,212,255,0.3)';
+                    actionBtn.onclick = () => installCoinNode(sym);
+                }
+
+                row.appendChild(label);
+                row.appendChild(nameDiv);
+                row.appendChild(inputWrap);
+                row.appendChild(actionBtn);
+                container.appendChild(row);
+            });
+        }
+
+        async function installCoinNode(sym) {
+            const wallet = prompt(`Enter your ${sym} wallet address to receive mining payouts:`);
+            if (!wallet || !wallet.trim()) {
+                showGlobalStatus('error', 'Wallet address is required to install a coin node.');
+                return;
+            }
+            if (!confirm(`Install ${sym} node with wallet ${wallet.trim()}?\nThis will download the blockchain and may take a while.`)) return;
+            showGlobalStatus('success', `Installing ${sym} node...`);
+            try {
+                const resp = await fetch(`/api/nodes/${sym}/install`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: wallet.trim() })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showGlobalStatus('success', data.message);
+                    // Reload multiport state and start sync watch
+                    await loadMultiPort();
+                    startMultiPortSyncWatch([sym]);
+                } else {
+                    showGlobalStatus('error', data.error || 'Install failed');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Install error: ${e.message}`);
+            }
+        }
+
+        async function removeCoinNode(sym) {
+            if (!confirm(`Remove ${sym} node? This will stop the service and remove the coin from the pool.`)) return;
+            try {
+                const resp = await fetch(`/api/nodes/${sym}/remove`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showGlobalStatus('success', data.message);
+                    await loadMultiPort();
+                } else {
+                    showGlobalStatus('error', data.error || 'Remove failed');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Remove error: ${e.message}`);
+            }
+        }
+
+        function updateMultiPortTotal() {
+            const inputs = document.querySelectorAll('.multiport-hours-input');
+            let totalHours = 0;
+            const hours = {};
+
+            inputs.forEach(inp => {
+                const v = parseFloat(inp.value) || 0;
+                totalHours += v;
+                if (v > 0) hours[inp.dataset.coin] = v;
+            });
+
+            // Round to avoid floating point display issues
+            totalHours = Math.round(totalHours * 10) / 10;
+
+            const totalEl = document.getElementById('multiport-total-value');
+            totalEl.textContent = totalHours;
+            totalEl.style.color = totalHours === 24 ? 'var(--neon-green)' : (totalHours > 24 ? 'var(--neon-red, #ff4444)' : 'var(--neon-yellow)');
+
+            renderMultiPortSchedule(hours, totalHours);
+        }
+
+        function renderMultiPortSchedule(hours, totalHours) {
+            const container = document.getElementById('multiport-schedule');
+            const tz = (multiportData && multiportData.timezone) || 'UTC';
+            if (totalHours === 0 || Object.keys(hours).length === 0) {
+                container.innerHTML = `<span style="color: var(--text-muted);">Assign hours to see the 24h ${tz} schedule</span>`;
+                return;
+            }
+
+            let html = `<div style="margin-bottom: 0.5rem; color: var(--neon-purple); font-weight: 600;">24h ${tz} Schedule</div>`;
+
+            // Visual bar
+            html += '<div style="display: flex; height: 24px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem;">';
+            const colors = { DGB: '#0066cc', BTC: '#f7931a', BCH: '#0ac18e', BC2: '#4a90d9', QBX: '#9b59b6' };
+            const defaultColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
+            let ci = 0;
+            for (const [sym, h] of Object.entries(hours)) {
+                const pct = (h / totalHours * 100).toFixed(1);
+                const color = colors[sym] || defaultColors[ci++ % defaultColors.length];
+                html += `<div style="width: ${pct}%; background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" title="${sym}: ${h}h">${sym}</div>`;
+            }
+            html += '</div>';
+
+            // Table
+            html += '<table style="width: 100%; border-collapse: collapse;">';
+            html += `<tr style="color: var(--text-muted); font-size: 0.75rem;"><td>Coin</td><td>Hours/Day</td><td>Percentage</td><td>${tz} Window</td></tr>`;
+            let cursor = 0;
+            for (const [sym, h] of Object.entries(hours)) {
+                const pct = (h / totalHours * 100);
+                const startH = cursor;
+                const endH = cursor + h;
+                cursor += h;
+                html += `<tr><td style="color: var(--text-primary); font-weight: 600;">${sym}</td><td>${h}h</td><td>${pct.toFixed(1)}%</td><td>${formatScheduleTime(startH)} – ${formatScheduleTime(endH)}</td></tr>`;
+            }
+            html += '</table>';
+
+            if (totalHours !== 24) {
+                html += `<div style="color: var(--neon-yellow); margin-top: 0.5rem;">Total is ${totalHours}h — must be exactly 24h</div>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function formatScheduleTime(hours) {
+            let totalMin = Math.round(hours * 60);
+            const h = Math.floor(totalMin / 60) % 24;
+            const m = totalMin % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        }
+
+        function renderMultiPortLive(live) {
+            const container = document.getElementById('multiport-live');
+            if (!live) { container.style.display = 'none'; return; }
+            container.style.display = 'block';
+
+            let html = '<div style="margin-bottom: 0.5rem; color: var(--neon-green); font-weight: 600;">Live Stats</div>';
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem;">';
+
+            html += `<div><span style="color: var(--text-muted);">Sessions:</span> <strong>${live.active_sessions ?? '—'}</strong></div>`;
+            html += `<div><span style="color: var(--text-muted);">Switches:</span> <strong>${live.total_switches ?? '—'}</strong></div>`;
+
+            if (live.coin_distribution) {
+                for (const [sym, count] of Object.entries(live.coin_distribution)) {
+                    html += `<div><span style="color: var(--text-muted);">${sym}:</span> <strong>${count} miners</strong></div>`;
+                }
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function saveMultiPort() {
+            const toggle = document.getElementById('multiport-enabled');
+            const enabled = toggle.checked;
+            const inputs = document.querySelectorAll('.multiport-hours-input');
+
+            // Collect hours and convert to percentage weights (sum=100)
+            const hourEntries = {};
+            let totalHours = 0;
+            let preferCoin = '';
+            let maxHours = 0;
+
+            inputs.forEach(inp => {
+                const h = parseFloat(inp.value) || 0;
+                if (h > 0) {
+                    hourEntries[inp.dataset.coin] = h;
+                    totalHours += h;
+                    if (h > maxHours) { maxHours = h; preferCoin = inp.dataset.coin; }
+                }
+            });
+
+            totalHours = Math.round(totalHours * 10) / 10;
+
+            if (enabled) {
+                if (Object.keys(hourEntries).length < 2) {
+                    showGlobalStatus('error', 'At least 2 coins with hours > 0 required');
+                    return;
+                }
+                if (totalHours !== 24) {
+                    showGlobalStatus('error', `Hours must sum to 24, currently ${totalHours}`);
+                    return;
+                }
+            }
+
+            // Convert hours to integer percentage weights that sum to exactly 100
+            const coins = {};
+            let weightSum = 0;
+            const entries = Object.entries(hourEntries);
+            entries.forEach(([sym, h], i) => {
+                if (i === entries.length - 1) {
+                    // Last coin gets remainder to ensure exact 100
+                    coins[sym] = { weight: 100 - weightSum };
+                } else {
+                    const w = Math.round(h / totalHours * 100);
+                    coins[sym] = { weight: w };
+                    weightSum += w;
+                }
+            });
+
+            // Sanity check: no negative weights and total = 100
+            const total = Object.values(coins).reduce((s, c) => s + c.weight, 0);
+            const hasNegative = Object.values(coins).some(c => c.weight <= 0);
+            if (enabled && (total !== 100 || hasNegative)) {
+                showGlobalStatus('error', `Internal error: weights sum to ${total}, expected 100 with all positive`);
+                return;
+            }
+
+            const body = { enabled, coins, prefer_coin: preferCoin };
+
+            try {
+                const resp = await fetch('/api/multiport', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showGlobalStatus('success', result.message);
+                    // Show sync status for selected coins and reload state
+                    startMultiPortSyncWatch(Object.keys(coins));
+                    setTimeout(loadMultiPort, 2000);
+                } else {
+                    showGlobalStatus('error', result.error || 'Failed to save');
+                }
+            } catch (e) {
+                showGlobalStatus('error', `Error: ${e.message}`);
+            }
+        }
+
+        // ── Blockchain Sync Watch ─────────────────────────────────────
+
+        let syncWatchTimer = null;
+        let syncWatchCoins = [];
+        let syncWatchActive = false;
+
+        function startMultiPortSyncWatch(coins) {
+            syncWatchCoins = coins;
+            syncWatchActive = true;
+            const panel = document.getElementById('multiport-sync');
+            panel.style.display = 'block';
+            // Clear any pending timer
+            if (syncWatchTimer) { clearTimeout(syncWatchTimer); syncWatchTimer = null; }
+            pollMultiPortSync();
+        }
+
+        function stopMultiPortSyncWatch() {
+            syncWatchActive = false;
+            if (syncWatchTimer) { clearTimeout(syncWatchTimer); syncWatchTimer = null; }
+        }
+
+        function scheduleSyncPoll() {
+            if (syncWatchActive) {
+                syncWatchTimer = setTimeout(pollMultiPortSync, 5000);
+            }
+        }
+
+        async function pollMultiPortSync() {
+            const container = document.getElementById('multiport-sync-coins');
+            const refreshLabel = document.getElementById('multiport-sync-refresh');
+            let allSynced = true;
+            let html = '';
+
+            for (const sym of syncWatchCoins) {
+                try {
+                    const resp = await fetch(`/api/nodes/${sym}/sync`);
+                    const data = await resp.json();
+
+                    if (data.success && data.sync) {
+                        const s = data.sync;
+                        const pct = Math.min(s.progress_percent, 100);
+                        const synced = s.is_synced;
+                        if (!synced) allSynced = false;
+
+                        const info = COIN_INFO[sym] || { icon: '?', name: sym };
+                        const barColor = synced ? 'var(--neon-green)' : 'var(--neon-cyan)';
+                        const statusText = synced
+                            ? 'Synced'
+                            : `${pct.toFixed(2)}% — ${s.blocks_remaining.toLocaleString()} blocks remaining`;
+
+                        html += `<div style="margin-bottom: 0.75rem;">`;
+                        html += `<div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">`;
+                        html += `<span style="font-weight: 600;">${info.icon} ${sym}</span>`;
+                        html += `<span style="color: ${synced ? 'var(--neon-green)' : 'var(--text-secondary)'};">${statusText}</span>`;
+                        html += `</div>`;
+                        html += `<div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">`;
+                        html += `<div style="height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 3px; transition: width 0.5s ease;"></div>`;
+                        html += `</div>`;
+                        html += `<div style="display: flex; justify-content: space-between; margin-top: 0.2rem; font-size: 0.75rem; color: var(--text-muted);">`;
+                        html += `<span>${s.blocks.toLocaleString()} / ${s.headers.toLocaleString()} blocks</span>`;
+                        html += `<span>${s.size_on_disk_gb} GB${s.pruned ? ' (pruned)' : ''}</span>`;
+                        html += `</div>`;
+                        html += `</div>`;
+                    } else {
+                        html += `<div style="margin-bottom: 0.75rem;">`;
+                        html += `<span style="font-weight: 600;">${sym}</span> `;
+                        html += `<span style="color: var(--neon-yellow);">${data.error || 'Node not reachable — may still be starting'}</span>`;
+                        html += `</div>`;
+                        allSynced = false;
+                    }
+                } catch (e) {
+                    html += `<div style="margin-bottom: 0.75rem;">`;
+                    html += `<span style="font-weight: 600;">${sym}</span> `;
+                    html += `<span style="color: var(--text-muted);">Waiting for node...</span>`;
+                    html += `</div>`;
+                    allSynced = false;
+                }
+            }
+
+            container.innerHTML = html;
+            const now = new Date().toLocaleTimeString();
+            refreshLabel.textContent = allSynced ? `All synced — ${now}` : `Updating every 5s — ${now}`;
+
+            if (allSynced) {
+                stopMultiPortSyncWatch();
+                refreshLabel.textContent = `All nodes synced — ${now}`;
+            } else {
+                // Schedule next poll after this one completes (prevents overlap)
+                scheduleSyncPoll();
+            }
+        }
+
+        // On page load, if multiport is already enabled, show sync status
+        function maybeShowSyncOnLoad() {
+            if (multiportData && multiportData.enabled && multiportData.coins) {
+                const coins = Object.keys(multiportData.coins).filter(sym => {
+                    const w = multiportData.coins[sym];
+                    return (typeof w === 'object' ? w.weight : w) > 0;
+                });
+                if (coins.length > 0) {
+                    startMultiPortSyncWatch(coins);
+                }
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadConfig();
             loadSubnet();
+            loadMultiPort().then(maybeShowSyncOnLoad);
         });
     </script>
 
@@ -2510,6 +3051,31 @@
             .pool-mode-selector {
                 flex-direction: column;
             }
+        }
+
+        /* Toggle switch for multiport */
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--neon-purple) !important;
+        }
+        .toggle-slider::before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(22px);
+        }
+
+        /* Multiport schedule table */
+        #multiport-schedule table td {
+            padding: 0.25rem 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
     </style>
 </body>

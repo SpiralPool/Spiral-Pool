@@ -1872,17 +1872,20 @@ API_EOF
                 log_info "  - Recovering: admin_api_key from checkpoint"
             fi
         fi
-        # Sanitize
+        # Sanitize (strip chars that break sed s/// or YAML strings)
         new_key="${new_key//[$'\n\r']/}"
         new_key="${new_key//\"/}"
         new_key="${new_key//\$/}"
         new_key="${new_key//\`/}"
-        # Inject under global: (v2 location)
+        new_key="${new_key//\\/}"
+        new_key="${new_key///}"
+        new_key="${new_key//&/}"
+        # Inject under global: (v2 location) — use heredoc to avoid sed delimiter issues
         if grep -q "^global:" "$CONFIG_FILE" 2>/dev/null; then
             sed -i "/^global:/a\\  admin_api_key: \"${new_key}\"" "$CONFIG_FILE" 2>/dev/null || true
         else
-            # No global section — prepend it
-            sed -i "1s/^/global:\n  admin_api_key: \"${new_key}\"\n/" "$CONFIG_FILE" 2>/dev/null || true
+            # No global section — prepend it safely (avoid sed s/// with untrusted input)
+            { echo "global:"; echo "  admin_api_key: \"${new_key}\""; echo ""; cat "$CONFIG_FILE"; } > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE" 2>/dev/null || true
         fi
         unset new_key
         FIXES_APPLIED=$((FIXES_APPLIED + 1))
@@ -2072,10 +2075,13 @@ API_EOF
         new_key="${new_key//\"/}"
         new_key="${new_key//\$/}"
         new_key="${new_key//\`/}"
+        new_key="${new_key//\\/}"
+        new_key="${new_key///}"
+        new_key="${new_key//&/}"
         if grep -q "^global:" "$CONFIG_FILE" 2>/dev/null; then
             sed -i "/^global:/a\\  admin_api_key: \"${new_key}\"" "$CONFIG_FILE" 2>/dev/null || true
         else
-            sed -i "1s/^/global:\n  admin_api_key: \"${new_key}\"\n/" "$CONFIG_FILE" 2>/dev/null || true
+            { echo "global:"; echo "  admin_api_key: \"${new_key}\""; echo ""; cat "$CONFIG_FILE"; } > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE" 2>/dev/null || true
         fi
         unset new_key
         MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + 1))
@@ -2155,10 +2161,12 @@ cleanup_daemon_configs() {
     )
 
     # Options invalid across ALL coin daemons
+    # NOTE: forcednsseed was INCORRECTLY listed here in v2.0.1 — it IS a valid
+    # Bitcoin Core option (verified against all 13 daemon binaries via -help).
+    # Removing it caused fresh installs to get 0 peers when DNS seeds are flaky.
     local INVALID_ALL=(
         "maxoutconnections"
         "maxdebugfilesize"
-        "forcednsseed"
         "maxorphantx"
         "nblocks"
         "blockstallingtimeout"
@@ -2221,6 +2229,12 @@ cleanup_daemon_configs() {
             log_info "  - ${conf_name} (${coin_dir}): removed duplicate dnsseed=1 lines"
         fi
 
+        # Restore ownership and permissions after sed/awk modifications
+        if [[ $removed -gt 0 ]] && [[ -n "$POOL_USER" ]]; then
+            chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
+            chmod 0600 "$conf_path" 2>/dev/null
+        fi
+
         TOTAL_REMOVED=$((TOTAL_REMOVED + removed))
     done
 
@@ -2231,6 +2245,99 @@ cleanup_daemon_configs() {
     fi
 }
 
+# ============================================================================
+# Ensure forcednsseed=1 and hardcoded addnode= fallback peers exist in all
+# deployed coin daemon configs.  v2.0.1 incorrectly classified forcednsseed as
+# invalid and stripped it on upgrade — this caused fresh installs to get 0 peers
+# when DNS seeds were flaky or dead.
+#
+# Idempotent: checks before appending, never duplicates.
+# All IPs verified via DNS seed resolution and live daemon getpeerinfo 2026-03-30.
+# All daemon binaries verified to support both flags via -help output.
+# ============================================================================
+ensure_daemon_peer_config() {
+    log_info "Ensuring forcednsseed and fallback peers in daemon configs..."
+
+    # Associative array: coin_key -> "conf_path|addnode entries (space-separated)"
+    # Port numbers are the PUBLIC network ports (what other nodes run), not our remapped ports
+    declare -A COIN_PEERS
+    COIN_PEERS=(
+        ["dgb"]="digibyte.conf|addnode=64.182.71.16:12024 addnode=80.120.148.66:12024 addnode=185.242.227.238:12024 addnode=173.212.197.63:12024 addnode=185.150.190.101:12024 addnode=83.85.77.100:12024"
+        ["btc"]="bitcoin.conf|addnode=45.55.132.91:8333 addnode=71.196.197.14:8333 addnode=72.83.184.215:8333 addnode=65.93.70.99:8333 addnode=67.60.239.105:8333 addnode=71.86.88.157:8333 addnode=173.249.47.215:8333 addnode=203.11.72.77:8333 addnode=216.107.135.60:8333 addnode=72.230.224.175:8333 addnode=77.247.151.58:8333 addnode=78.145.65.241:8333"
+        ["bch"]="bitcoin.conf|addnode=195.3.223.29:8433 addnode=199.217.115.27:8433 addnode=3.142.98.179:8433 addnode=35.163.48.30:8433 addnode=35.198.46.157:8433 addnode=51.91.196.151:8433 addnode=174.140.196.19:8433 addnode=193.164.205.249:8433 addnode=194.14.246.11:8433 addnode=8.219.86.245:8433 addnode=15.204.95.99:8433 addnode=18.139.1.192:8433 addnode=51.159.104.35:8433 addnode=57.129.18.162:8433 addnode=65.109.90.134:8433"
+        ["bc2"]="bitcoinii.conf|addnode=173.249.0.253:8338 addnode=193.164.205.250:8338 addnode=89.38.128.175:8338 addnode=98.22.238.18:8338 addnode=144.76.79.60:8338 addnode=75.130.145.1:8338 addnode=45.32.205.199:8338"
+        ["ltc"]="litecoin.conf|addnode=95.211.152.112:9333 addnode=95.217.32.30:9333 addnode=108.234.193.105:9333 addnode=77.235.26.96:9333 addnode=91.228.147.153:9333 addnode=108.171.202.18:9333"
+        ["doge"]="dogecoin.conf|addnode=148.251.122.88:22556 addnode=149.202.10.56:22556 addnode=167.235.95.225:22556 addnode=91.184.178.3:22556 addnode=97.103.138.106:22556 addnode=138.201.132.34:22556"
+        ["pep"]="pepecoin.conf|addnode=144.76.222.140:33874 addnode=154.39.75.82:33874 addnode=173.212.253.15:33874 addnode=3.212.41.153:33874 addnode=3.216.226.159:33874 addnode=18.158.24.136:33874"
+        ["cat"]="catcoin.conf|addnode=91.206.16.214:9933 addnode=93.127.199.243:9933 addnode=103.229.81.113:9933 addnode=165.22.66.115:9933 addnode=195.114.193.178:9933 addnode=199.192.19.91:9933 addnode=86.105.51.204:9933 addnode=91.121.217.71:9933 addnode=135.125.225.85:9933 addnode=140.99.164.14:9933 addnode=159.100.6.121:9933"
+        ["nmc"]="namecoin.conf|addnode=13.246.63.174:8334 addnode=15.204.102.127:8334 addnode=18.167.52.159:8334 addnode=8.214.158.13:8334 addnode=8.218.231.1:8334 addnode=185.87.45.95:8334 addnode=212.51.144.42:8334 addnode=212.95.39.169:8334 addnode=23.106.36.28:8334 addnode=23.108.191.143:8334 addnode=23.108.191.178:8334"
+        ["sys"]="syscoin.conf|addnode=158.220.107.184:8369 addnode=158.220.114.225:8369 addnode=165.232.103.216:8369 addnode=31.56.38.151:8369 addnode=31.56.38.197:8369 addnode=31.58.170.95:8369 addnode=143.20.33.149:8369 addnode=151.244.85.219:8369 addnode=176.9.210.20:8369 addnode=151.244.85.47:8369 addnode=159.65.195.168:8369 addnode=173.234.17.201:8369"
+        ["xmy"]="myriadcoin.conf|addnode=54.37.139.32:10888 addnode=91.206.16.214:10888 addnode=199.241.187.130:10888 addnode=89.189.0.226:10888 addnode=85.15.179.171:10888 addnode=62.210.123.48:10888"
+        ["fbtc"]="fractal.conf|addnode=5.9.118.219:8333 addnode=173.212.223.9:8333 addnode=49.51.68.155:8333 addnode=150.136.38.223:8333 addnode=3.124.82.188:8333"
+        ["qbx"]="qbitx.conf|addnode=89.110.93.248:8334 addnode=83.217.213.118:8334"
+    )
+
+    local TOTAL_ADDED=0
+
+    for coin_key in "${!COIN_PEERS[@]}"; do
+        local entry="${COIN_PEERS[$coin_key]}"
+        local conf_name="${entry%%|*}"
+        local peers_str="${entry##*|}"
+
+        local conf_path
+        conf_path="$(resolve_coin_dir "$coin_key")/${conf_name}"
+
+        [[ -f "$conf_path" ]] || continue
+
+        local added=0
+
+        # Ensure forcednsseed=1
+        if ! grep -q "^forcednsseed=1" "$conf_path" 2>/dev/null; then
+            echo "" >> "$conf_path"
+            echo "# Force DNS seed queries on every startup (added by upgrade v2.1)" >> "$conf_path"
+            echo "forcednsseed=1" >> "$conf_path"
+            added=$((added + 1))
+            log_info "  - ${conf_name} (${coin_key}): added forcednsseed=1"
+        fi
+
+        # Ensure fixedseeds=1 for FBTC (all DNS seeds dead)
+        if [[ "$coin_key" == "fbtc" ]] && ! grep -q "^fixedseeds=1" "$conf_path" 2>/dev/null; then
+            echo "fixedseeds=1" >> "$conf_path"
+            added=$((added + 1))
+            log_info "  - ${conf_name} (${coin_key}): added fixedseeds=1"
+        fi
+
+        # Ensure seednode for QBX (missing from original configs)
+        if [[ "$coin_key" == "qbx" ]] && ! grep -q "^seednode=seed.qbitx.org" "$conf_path" 2>/dev/null; then
+            echo "seednode=seed.qbitx.org" >> "$conf_path"
+            added=$((added + 1))
+            log_info "  - ${conf_name} (${coin_key}): added seednode=seed.qbitx.org"
+        fi
+
+        # Ensure addnode= entries (skip duplicates)
+        for peer in $peers_str; do
+            if ! grep -qF "$peer" "$conf_path" 2>/dev/null; then
+                echo "$peer" >> "$conf_path"
+                added=$((added + 1))
+            fi
+        done
+
+        # Restore ownership after modifications
+        if [[ $added -gt 0 ]] && [[ -n "$POOL_USER" ]]; then
+            chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
+            chmod 0640 "$conf_path" 2>/dev/null
+            log_info "  - ${conf_name} (${coin_key}): added $added peer entry/entries"
+        fi
+
+        TOTAL_ADDED=$((TOTAL_ADDED + added))
+    done
+
+    if [[ $TOTAL_ADDED -gt 0 ]]; then
+        log_success "Added $TOTAL_ADDED peer config entry/entries across daemon configs"
+    else
+        log_info "  - All daemon peer configs up to date"
+    fi
+}
 # Fix database ownership to ensure migrations work
 # This is needed when tables were created by postgres user but app runs as spiralstratum
 # Also grants schema creation privileges for Go binary table creation
@@ -3396,7 +3503,7 @@ update_utility_scripts() {
     if [[ -f "$SCRIPTS_SRC/linux/pool-mode.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/pool-mode.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/pool-mode.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/pool-mode.sh"
+        chown root:root "$SCRIPTS_DST/pool-mode.sh"
         ((++updated))
     fi
 
@@ -3653,25 +3760,25 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.0.1 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.1.0 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
 echo -e "    Memory: ${GREEN}${MEM_USED} / ${MEM_TOTAL}${NC}    Disk: ${GREEN}${DISK_USED}${NC}"
 echo ""
-echo -e "${CYAN}━━━ COMMANDS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}━━━ STATUS & MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spiralctl watch${NC}            Live monitor"
 echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl logs${NC}             Stratum logs"
-echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl test${NC}             Connectivity"
-echo -e "    ${YELLOW}spiralctl scan${NC}           Find miners    ${YELLOW}spiralctl restart${NC}          Restart all"
-echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl config${NC}           Configuration"
-echo -e "    ${YELLOW}spiralctl wallet${NC}         Addresses      ${YELLOW}spiralctl security${NC}         Security"
+echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl scan${NC}             Find miners"
+echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl mining multiport${NC} Smart port ${DIM}⚠ experimental${NC}"
+echo -e "    ${YELLOW}spiralctl coin enable${NC}    Add coin       ${YELLOW}spiralctl coin disable${NC}     Remove coin"
+echo -e "    ${YELLOW}spiralctl coin-upgrade${NC}   Upgrade nodes  ${YELLOW}spiralctl restart${NC}          Restart services"
+echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "    ${YELLOW}spiralctl config${NC}         Configuration  ${YELLOW}spiralctl security${NC}         Security audit"
 echo -e "    ${YELLOW}spiralctl data backup${NC}    Backup         ${YELLOW}spiralctl data restore${NC}     Restore"
-echo -e "    ${YELLOW}spiralctl maintenance${NC}    Maintenance    ${YELLOW}spiralctl ha${NC}               HA cluster"
-echo -e "    ${YELLOW}spiralctl chain export${NC}  Push chain     ${YELLOW}spiralctl chain restore${NC}    Pull chain"
-echo -e "    ${YELLOW}spiralctl add-coin${NC}       Add new coin   ${YELLOW}spiralctl remove-coin${NC}      Remove a coin"
-echo -e "    ${YELLOW}spiralctl stats blocks${NC}   Block history  ${CYAN}coin-upgrade.sh${NC}             Upgrade daemons"
-echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference & man page"
+echo -e "    ${YELLOW}spiralctl test${NC}           Connectivity   ${YELLOW}spiralctl ha${NC}               HA cluster"
+echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
@@ -4366,7 +4473,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.0.1 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.1.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -4740,8 +4847,13 @@ SSHDEOF
     migrate_v2_config
 
     # Remove invalid daemon config options shipped in v2.0.0 (maxoutconnections,
-    # maxdebugfilesize, forcednsseed, etc.) — idempotent, always safe to re-run.
+    # maxdebugfilesize, etc.) — idempotent, always safe to re-run.
     cleanup_daemon_configs
+
+    # Ensure forcednsseed=1 and addnode= fallback peers exist in all deployed
+    # daemon configs. v2.0.1 incorrectly removed forcednsseed; this restores it
+    # and adds hardcoded peer IPs so fresh installs always find the network.
+    ensure_daemon_peer_config
 
     # Fix database ownership when stratum is being updated (ensures migrations can run)
     # This is needed when tables were created by postgres but app runs as spiralstratum
@@ -4769,7 +4881,7 @@ SSHDEOF
     log_info "Stripping CRLF from deployed scripts..."
     find "$INSTALL_DIR/scripts" "$INSTALL_DIR/bin" /usr/local/bin \
         -maxdepth 2 \( -name "*.sh" -o -name "*.py" \) \
-        -exec sed -i 's/\r//' {} \; 2>/dev/null || true
+        -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
     log_success "CRLF strip complete"
 
     # Cleanup temp directory (null after to prevent double-cleanup in cleanup_on_exit)

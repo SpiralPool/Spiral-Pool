@@ -750,4 +750,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.0.1*
+*Spiral Pool — Phi Hash Reactor 2.1.0*

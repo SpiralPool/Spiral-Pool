@@ -57,9 +57,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/catcoin.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/catcoin/.catcoin/catcoin.conf ] && [ -s /home/catcoin/.catcoin/catcoin.conf ]; then\n\
+    echo "Using existing catcoin.conf (skipping template generation)"\n\
+elif [ -f /config/catcoin.conf.template ]; then\n\
     envsubst < /config/catcoin.conf.template > /home/catcoin/.catcoin/catcoin.conf\n\
+    chmod 600 /home/catcoin/.catcoin/catcoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

@@ -15,7 +15,7 @@ import (
 
 // Version information (set by main.go)
 var (
-	Version   = "2.0.1"
+	Version   = "2.1.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -345,7 +345,35 @@ func saveConfig(cfg *Config) error {
 		printWarning(fmt.Sprintf("Failed to backup config: %v", err))
 	}
 
-	data, err := yaml.Marshal(cfg)
+	// Round-trip safe: read existing file into a generic map to preserve unknown
+	// sections (stratum, logging, rateLimiting, api, metrics, mergeMining, etc.)
+	// that are not modeled by the Config struct. Only overwrite fields we manage.
+	existing, err := os.ReadFile(DefaultConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config file for round-trip: %w", err)
+	}
+
+	var fullCfg map[string]interface{}
+	if err := yaml.Unmarshal(existing, &fullCfg); err != nil {
+		return fmt.Errorf("failed to parse config file for round-trip: %w", err)
+	}
+	if fullCfg == nil {
+		fullCfg = make(map[string]interface{})
+	}
+
+	// Merge only the sections that Config struct manages
+	fullCfg["version"] = cfg.Version
+	// Marshal each sub-struct through yaml round-trip to get map form
+	mergeStructField(fullCfg, "global", cfg.Global)
+	mergeStructField(fullCfg, "database", cfg.Database)
+	mergeStructField(fullCfg, "vip", cfg.VIP)
+	mergeStructField(fullCfg, "ha", cfg.HA)
+	mergeStructField(fullCfg, "pool", cfg.Pool)
+	if cfg.Coins != nil {
+		fullCfg["coins"] = cfg.Coins
+	}
+
+	data, err := yaml.Marshal(fullCfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -356,4 +384,18 @@ func saveConfig(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// mergeStructField marshals a struct into a map and sets it on the parent map.
+// This preserves unknown sub-keys within the section if the struct uses yaml tags.
+func mergeStructField(parent map[string]interface{}, key string, value interface{}) {
+	raw, err := yaml.Marshal(value)
+	if err != nil {
+		return
+	}
+	var m interface{}
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		return
+	}
+	parent[key] = m
 }

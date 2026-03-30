@@ -32,12 +32,42 @@ func truncateAddress(addr string, maxLen int) string {
 
 // ConfigV2 represents the V2 pool configuration with multi-coin and multi-node support.
 type ConfigV2 struct {
-	Version  int              `yaml:"version"`  // Config version (2)
-	Global   GlobalConfig     `yaml:"global"`   // Global settings
-	Database DatabaseConfig   `yaml:"database"` // Shared database
-	Coins    []CoinPoolConfig `yaml:"coins"`    // Per-coin pool configurations
-	VIP      VIPConfig        `yaml:"vip,omitempty"`      // VIP (Virtual IP) for miner failover
-	HA       HAConfig         `yaml:"ha,omitempty"`       // High Availability coordination
+	Version   int              `yaml:"version"`  // Config version (2)
+	Global    GlobalConfig     `yaml:"global"`   // Global settings
+	Database  DatabaseConfig   `yaml:"database"` // Shared database
+	Coins     []CoinPoolConfig `yaml:"coins"`    // Per-coin pool configurations
+	MultiPort MultiPortConfig  `yaml:"multi_port,omitempty"` // Multi-coin smart port (v2.1)
+	VIP       VIPConfig        `yaml:"vip,omitempty"`        // VIP (Virtual IP) for miner failover
+	HA        HAConfig         `yaml:"ha,omitempty"`         // High Availability coordination
+}
+
+// MultiPortConfig configures the multi-coin smart port.
+// When enabled, miners connect to a single port and the pool distributes
+// mining time across SHA-256d coins on a 24-hour UTC schedule based on
+// configured weights. For example, DGB:80 + BTC:20 = 19.2h DGB + 4.8h BTC.
+type MultiPortConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	Port          int           `yaml:"port"`                    // Multi-port stratum port (default: 16180)
+	TLSPort       int           `yaml:"tls_port,omitempty"`      // Optional TLS port
+	Coins         map[string]CoinRouteConfig `yaml:"coins"`     // Coin symbol → routing config (weight)
+	CheckInterval time.Duration `yaml:"check_interval,omitempty"` // How often to check schedule (default 30s)
+	PreferCoin    string        `yaml:"prefer_coin,omitempty"`   // Default coin / tie-breaker
+	MinTimeOnCoin time.Duration `yaml:"min_time_on_coin,omitempty"` // Minimum time before switch (default 60s)
+	Timezone      string        `yaml:"timezone,omitempty"`      // IANA timezone for schedule (default: use display_timezone from sentinel config, fallback UTC)
+}
+
+// CoinRouteConfig holds per-coin routing parameters.
+type CoinRouteConfig struct {
+	Weight int `yaml:"weight"` // Percentage of daily mining time (0-100, must sum to 100)
+}
+
+// CoinSymbols returns the list of coin symbols configured for multi-port.
+func (m *MultiPortConfig) CoinSymbols() []string {
+	symbols := make([]string, 0, len(m.Coins))
+	for sym := range m.Coins {
+		symbols = append(symbols, sym)
+	}
+	return symbols
 }
 
 // GlobalConfig contains settings that apply across all coins.

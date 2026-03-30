@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -120,6 +122,22 @@ type DaemonConfig struct {
 	Password string `yaml:"password"`
 }
 
+// MultiPortConfig represents the multi_port section in config.yaml
+type MultiPortConfig struct {
+	Enabled       bool                       `yaml:"enabled"`
+	Port          int                        `yaml:"port"`
+	Coins         map[string]CoinRouteConfig `yaml:"coins"`
+	CheckInterval string                     `yaml:"check_interval,omitempty"`
+	PreferCoin    string                     `yaml:"prefer_coin,omitempty"`
+	MinTimeOnCoin string                     `yaml:"min_time_on_coin,omitempty"`
+	Timezone      string                     `yaml:"timezone,omitempty"`
+}
+
+// CoinRouteConfig holds per-coin routing weight
+type CoinRouteConfig struct {
+	Weight int `yaml:"weight"`
+}
+
 // ExtendedConfig extends Config with merge mining support
 type ExtendedConfig struct {
 	Version     int                    `yaml:"version"`
@@ -130,6 +148,7 @@ type ExtendedConfig struct {
 	Coins       map[string]interface{} `yaml:"coins,omitempty"`
 	Pool        PoolConfig             `yaml:"pool"`
 	MergeMining *MergeMiningConfig     `yaml:"mergeMining,omitempty"`
+	MultiPort   *MultiPortConfig       `yaml:"multi_port,omitempty"`
 }
 
 // runMining handles the mining subcommand
@@ -199,6 +218,32 @@ func runMining(args []string) error {
 		default:
 			return fmt.Errorf("unknown merge action: %s. Use 'enable' or 'disable'", args[1])
 		}
+	case "multiport":
+		if len(args) < 2 {
+			return multiportStatus()
+		}
+		switch args[1] {
+		case "status":
+			return multiportStatus()
+		case "enable":
+			// Interactive wizard or direct spec
+			// spiralctl mining multiport enable              → interactive wizard
+			// spiralctl mining multiport enable dgb:80,btc:20 → direct
+			if len(args) >= 3 && !strings.HasPrefix(args[2], "-") {
+				return multiportEnable(args[2], autoYes)
+			}
+			return multiportWizard(autoYes)
+		case "disable":
+			return multiportDisable(autoYes)
+		case "weights":
+			// spiralctl mining multiport weights dgb:80,btc:20
+			if len(args) < 3 || strings.HasPrefix(args[2], "-") {
+				return fmt.Errorf("coin weights required. Usage: spiralctl mining multiport weights <coin:weight,...>")
+			}
+			return multiportWeights(args[2], autoYes)
+		default:
+			return fmt.Errorf("unknown multiport action: %s. Use 'status', 'enable', 'disable', or 'weights'", args[1])
+		}
 	default:
 		printMiningUsage()
 		return fmt.Errorf("unknown action: %s", action)
@@ -216,6 +261,13 @@ func printMiningUsage() {
 	fmt.Printf("  %smulti <coins>%s    Switch to multi-coin mode (comma-separated)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge enable%s     Enable merge mining (AuxPoW)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge disable%s    Disable merge mining\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport%s        Show multi-coin smart port status\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport enable%s Interactive wizard to set up smart port\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport enable <spec>%s\n", ColorCyan, ColorReset)
+	fmt.Println("                     Enable with coin:weight pairs (must sum to 100)")
+	fmt.Printf("  %smultiport disable%s Disable smart port\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport weights <spec>%s\n", ColorCyan, ColorReset)
+	fmt.Println("                     Update coin weight allocation (must sum to 100)")
 	fmt.Println()
 	fmt.Printf("%sOptions:%s\n", ColorBold, ColorReset)
 	fmt.Println("  --yes, -y        Skip confirmation prompts (for automation)")
@@ -239,10 +291,14 @@ func printMiningUsage() {
 	fmt.Println("  spiralctl mining merge enable nmc,sys,fbtc  # Enable multiple aux chains (SHA-256d)")
 	fmt.Println("  spiralctl mining merge enable doge,pep      # Enable multiple aux chains (Scrypt)")
 	fmt.Println("  spiralctl mining solo ltc --yes")
+	fmt.Println("  spiralctl mining multiport enable dgb:80,bch:15,btc:5")
+	fmt.Println("  spiralctl mining multiport weights dgb:50,btc:50")
+	fmt.Println("  spiralctl mining multiport disable")
 	fmt.Println()
 	fmt.Printf("%sNotes:%s\n", ColorBold, ColorReset)
 	fmt.Println("  • Multi-coin mode requires all coins to use the same algorithm")
 	fmt.Println("  • Merge mining requires parent chain to be synced first")
+	fmt.Println("  • Multi-coin smart port uses weighted 24h UTC scheduling (port 16180)")
 	fmt.Println("  • Switching modes will restart the stratum service")
 	fmt.Println()
 }
@@ -359,6 +415,37 @@ func miningStatus() error {
 
 	if !mmFound {
 		fmt.Printf("%-20s %sDisabled%s\n", "Status:", ColorRed, ColorReset)
+	}
+
+	fmt.Println()
+
+	// Show multi-port status
+	fmt.Printf("%s--- Multi-Coin Smart Port ---%s\n", ColorBold, ColorReset)
+	if cfg.MultiPort != nil && cfg.MultiPort.Enabled {
+		fmt.Printf("%-20s %sEnabled%s (port %d)\n", "Status:", ColorGreen, ColorReset, cfg.MultiPort.Port)
+		if len(cfg.MultiPort.Coins) > 0 {
+			// Calculate total weight for percentage display
+			totalWeight := 0
+			for _, rc := range cfg.MultiPort.Coins {
+				totalWeight += rc.Weight
+			}
+			fmt.Printf("%-20s\n", "Schedule:")
+			cumulativeFrac := 0.0
+			for coin, rc := range cfg.MultiPort.Coins {
+				frac := float64(rc.Weight) / float64(totalWeight)
+				startH := cumulativeFrac * 24
+				cumulativeFrac += frac
+				endH := cumulativeFrac * 24
+				pct := float64(rc.Weight) * 100.0 / float64(totalWeight)
+				fmt.Printf("  • %-6s  %5.0f%%   %05.1fh – %05.1fh UTC\n", strings.ToUpper(coin), pct, startH, endH)
+			}
+		}
+		if cfg.MultiPort.PreferCoin != "" {
+			fmt.Printf("%-20s %s\n", "Default Coin:", strings.ToUpper(cfg.MultiPort.PreferCoin))
+		}
+	} else {
+		fmt.Printf("%-20s %sDisabled%s\n", "Status:", ColorRed, ColorReset)
+		fmt.Printf("  %sEnable with: spiralctl mining multiport enable dgb:80,bch:15,btc:5%s\n", ColorYellow, ColorReset)
 	}
 
 	fmt.Println()
@@ -1188,13 +1275,46 @@ func loadExtendedConfig() (*ExtendedConfig, error) {
 	return &cfg, nil
 }
 
-// saveExtendedConfig saves config with merge mining support
+// saveExtendedConfig saves config with merge mining support.
+// Uses round-trip-safe approach to preserve unknown config sections
+// (stratum, logging, rateLimiting, api, metrics, etc.) not modeled by ExtendedConfig.
 func saveExtendedConfig(cfg *ExtendedConfig) error {
 	if err := backupFile(DefaultConfigFile); err != nil {
 		printWarning(fmt.Sprintf("Failed to backup config: %v", err))
 	}
 
-	data, err := yaml.Marshal(cfg)
+	// Read existing file to preserve unknown sections
+	existing, err := os.ReadFile(DefaultConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config file for round-trip: %w", err)
+	}
+
+	var fullCfg map[string]interface{}
+	if err := yaml.Unmarshal(existing, &fullCfg); err != nil {
+		return fmt.Errorf("failed to parse config file for round-trip: %w", err)
+	}
+	if fullCfg == nil {
+		fullCfg = make(map[string]interface{})
+	}
+
+	// Merge only the sections ExtendedConfig manages
+	fullCfg["version"] = cfg.Version
+	mergeStructField(fullCfg, "global", cfg.Global)
+	mergeStructField(fullCfg, "database", cfg.Database)
+	mergeStructField(fullCfg, "vip", cfg.VIP)
+	mergeStructField(fullCfg, "ha", cfg.HA)
+	mergeStructField(fullCfg, "pool", cfg.Pool)
+	if cfg.Coins != nil {
+		fullCfg["coins"] = cfg.Coins
+	}
+	if cfg.MergeMining != nil {
+		mergeStructField(fullCfg, "mergeMining", cfg.MergeMining)
+	}
+	if cfg.MultiPort != nil {
+		mergeStructField(fullCfg, "multi_port", cfg.MultiPort)
+	}
+
+	data, err := yaml.Marshal(fullCfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -1464,4 +1584,784 @@ func confirmActionMining(prompt string) bool {
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
 	return response == "y" || response == "yes"
+}
+
+// ── Multi-coin smart port commands ──────────────────────────────────────────
+
+// parseCoinWeights parses "dgb:80,bch:15,btc:5" into a map
+// parseCoinWeights parses a coin weight spec string.
+// Supports two formats:
+//   - Percentage: "dgb:80,btc:20" (must sum to 100)
+//   - Hours:      "dgb:19.2h,btc:4.8h" (must sum to 24)
+//
+// If any value ends in 'h', all values are treated as hours and converted to weights.
+func parseCoinWeights(spec string) (map[string]int, error) {
+	pairs := strings.Split(spec, ",")
+	type entry struct {
+		coin string
+		raw  string
+	}
+	var entries []entry
+	hoursMode := false
+
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid spec %q — expected coin:value (e.g. dgb:80 or dgb:19.2h)", pair)
+		}
+		coin := strings.TrimSpace(strings.ToLower(parts[0]))
+		if _, ok := coinRegistry[coin]; !ok {
+			return nil, fmt.Errorf("unknown coin: %s", coin)
+		}
+		meta := coinRegistry[coin]
+		if meta.algorithm != "sha256d" {
+			return nil, fmt.Errorf("%s is %s — only SHA-256d coins can participate in the smart port", strings.ToUpper(coin), meta.algorithm)
+		}
+		val := strings.TrimSpace(parts[1])
+		if strings.HasSuffix(val, "h") || strings.HasSuffix(val, "H") {
+			hoursMode = true
+		}
+		entries = append(entries, entry{coin: coin, raw: val})
+	}
+
+	if len(entries) < 2 {
+		return nil, fmt.Errorf("at least 2 SHA-256d coins required for multi-port (got %d)", len(entries))
+	}
+
+	if hoursMode {
+		// Parse as hours, convert to weights
+		coinHours := make(map[string]float64)
+		var totalH float64
+		var coinOrder []string
+		for _, e := range entries {
+			val := strings.TrimSuffix(strings.TrimSuffix(e.raw, "h"), "H")
+			var h float64
+			if _, err := fmt.Sscanf(val, "%f", &h); err != nil || h < 0 {
+				return nil, fmt.Errorf("invalid hours for %s: %s", strings.ToUpper(e.coin), e.raw)
+			}
+			coinHours[strings.ToUpper(e.coin)] = h
+			coinOrder = append(coinOrder, strings.ToUpper(e.coin))
+			totalH += h
+		}
+		totalH = math.Round(totalH*10) / 10
+		if totalH != 24 {
+			return nil, fmt.Errorf("hours must sum to 24, got %.1f", totalH)
+		}
+		// Convert to integer weights summing to 100
+		weights := make(map[string]int)
+		weightSum := 0
+		for i, sym := range coinOrder {
+			if i == len(coinOrder)-1 {
+				weights[sym] = 100 - weightSum
+			} else {
+				w := int(math.Round(coinHours[sym] / 24.0 * 100))
+				weights[sym] = w
+				weightSum += w
+			}
+		}
+		return weights, nil
+	}
+
+	// Parse as percentage weights
+	weights := make(map[string]int)
+	for _, e := range entries {
+		var w int
+		if _, err := fmt.Sscanf(e.raw, "%d", &w); err != nil || w < 0 {
+			return nil, fmt.Errorf("invalid weight for %s: %s (must be a non-negative integer)", strings.ToUpper(e.coin), e.raw)
+		}
+		weights[strings.ToUpper(e.coin)] = w
+	}
+	total := 0
+	for _, w := range weights {
+		total += w
+	}
+	if total != 100 {
+		return nil, fmt.Errorf("weights must sum to 100, got %d", total)
+	}
+	return weights, nil
+}
+
+// multiportStatus shows current multi-port configuration
+func multiportStatus() error {
+	printBanner()
+	fmt.Printf("%s=== MULTI-COIN SMART PORT STATUS ===%s\n\n", ColorBold, ColorReset)
+
+	cfg, err := loadExtendedConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if cfg.MultiPort == nil || !cfg.MultiPort.Enabled {
+		fmt.Printf("%-20s %sDisabled%s\n", "Status:", ColorRed, ColorReset)
+		fmt.Println()
+		fmt.Println("Enable with:")
+		fmt.Printf("  spiralctl mining multiport enable dgb:80,bch:15,btc:5\n")
+		return nil
+	}
+
+	fmt.Printf("%-20s %sEnabled%s\n", "Status:", ColorGreen, ColorReset)
+	fmt.Printf("%-20s %d\n", "Port:", cfg.MultiPort.Port)
+	if cfg.MultiPort.PreferCoin != "" {
+		fmt.Printf("%-20s %s\n", "Default Coin:", strings.ToUpper(cfg.MultiPort.PreferCoin))
+	}
+	if cfg.MultiPort.CheckInterval != "" {
+		fmt.Printf("%-20s %s\n", "Check Interval:", cfg.MultiPort.CheckInterval)
+	}
+	if cfg.MultiPort.MinTimeOnCoin != "" {
+		fmt.Printf("%-20s %s\n", "Min Time On Coin:", cfg.MultiPort.MinTimeOnCoin)
+	}
+
+	fmt.Println()
+	if len(cfg.MultiPort.Coins) > 0 {
+		totalWeight := 0
+		for _, rc := range cfg.MultiPort.Coins {
+			totalWeight += rc.Weight
+		}
+		// Sort coins for deterministic display
+		sortedCoins := make([]string, 0, len(cfg.MultiPort.Coins))
+		for c := range cfg.MultiPort.Coins {
+			sortedCoins = append(sortedCoins, c)
+		}
+		sort.Strings(sortedCoins)
+
+		tz := cfg.MultiPort.Timezone
+		if tz == "" {
+			tz = readSentinelTimezone()
+		}
+		fmt.Printf("%-20s %s\n", "Timezone:", tz)
+		fmt.Printf("%s24-Hour %s Schedule:%s\n", ColorBold, tz, ColorReset)
+		cumulativeFrac := 0.0
+		for _, coin := range sortedCoins {
+			rc := cfg.MultiPort.Coins[coin]
+			frac := float64(rc.Weight) / float64(totalWeight)
+			startH := cumulativeFrac * 24
+			cumulativeFrac += frac
+			endH := cumulativeFrac * 24
+			pct := float64(rc.Weight) * 100.0 / float64(totalWeight)
+			fmt.Printf("  %-6s  %5.0f%%   %05.1fh – %05.1fh %s\n", strings.ToUpper(coin), pct, startH, endH, tz)
+		}
+	}
+
+	// Try to get live stats from API
+	fmt.Println()
+	apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/multiport", cfg.Global.APIPort)
+	resp, err := httpGetJSON(apiURL)
+	if err == nil && resp != nil {
+		fmt.Printf("%sLive Stats:%s\n", ColorBold, ColorReset)
+		if sessions, ok := resp["active_sessions"].(float64); ok {
+			fmt.Printf("  Active Sessions:  %.0f\n", sessions)
+		}
+		if switches, ok := resp["total_switches"].(float64); ok {
+			fmt.Printf("  Total Switches:   %.0f\n", switches)
+		}
+		if dist, ok := resp["coin_distribution"].(map[string]interface{}); ok {
+			fmt.Printf("  Distribution:     ")
+			first := true
+			for coin, count := range dist {
+				if !first {
+					fmt.Printf(", ")
+				}
+				fmt.Printf("%s=%.0f", coin, count)
+				first = false
+			}
+			fmt.Println()
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// multiportWizard runs an interactive wizard to set up the multi-coin smart port.
+// It discovers installed SHA-256d coins, lets the user toggle which ones participate,
+// offers to install missing coins, and collects weights that must sum to 100.
+func multiportWizard(autoYes bool) error {
+	printBanner()
+	fmt.Printf("%s=== MULTI-COIN SMART PORT WIZARD ===%s\n\n", ColorBold, ColorReset)
+	tz := readSentinelTimezone()
+	fmt.Println("This wizard will set up the multi-coin smart port on port 16180.")
+	fmt.Println("Miners connect once and the pool rotates them between SHA-256d coins")
+	fmt.Printf("on a 24-hour %s schedule based on the hours you assign.\n", tz)
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+
+	// 1. Discover available SHA-256d coins
+	sha256dCoins := []string{"btc", "bch", "dgb", "bc2", "qbx"}
+	type coinState struct {
+		symbol    string
+		name      string
+		installed bool
+		selected  bool
+	}
+
+	var coins []coinState
+	for _, sym := range sha256dCoins {
+		meta := coinRegistry[sym]
+		installed := isCoinInstalled(sym)
+		coins = append(coins, coinState{
+			symbol:    sym,
+			name:      meta.name,
+			installed: installed,
+			selected:  installed, // pre-select installed coins
+		})
+	}
+
+	// Count installed
+	installedCount := 0
+	for _, c := range coins {
+		if c.installed {
+			installedCount++
+		}
+	}
+
+	// 2. Show coin selection
+	fmt.Printf("%sAvailable SHA-256d Coins:%s\n\n", ColorBold, ColorReset)
+	for i, c := range coins {
+		status := fmt.Sprintf("%sInstalled%s", ColorGreen, ColorReset)
+		if !c.installed {
+			status = fmt.Sprintf("%sNot installed%s", ColorYellow, ColorReset)
+		}
+		sel := "[ ]"
+		if c.selected {
+			sel = fmt.Sprintf("%s[✓]%s", ColorGreen, ColorReset)
+		}
+		fmt.Printf("  %s %d) %-20s %s\n", sel, i+1, fmt.Sprintf("%s (%s)", c.name, strings.ToUpper(c.symbol)), status)
+	}
+	fmt.Println()
+	fmt.Println("Toggle coins with their number, 'd' when done.")
+	fmt.Println()
+
+	for {
+		fmt.Printf("Toggle (1-%d), 'd'=done: ", len(coins))
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		if input == "d" || input == "D" {
+			// Count selected
+			selectedCount := 0
+			for _, c := range coins {
+				if c.selected {
+					selectedCount++
+				}
+			}
+			if selectedCount < 2 {
+				fmt.Printf("  %sSelect at least 2 coins.%s\n", ColorRed, ColorReset)
+				continue
+			}
+			break
+		}
+
+		var idx int
+		if _, err := fmt.Sscanf(input, "%d", &idx); err != nil || idx < 1 || idx > len(coins) {
+			fmt.Printf("  %sInvalid choice.%s\n", ColorRed, ColorReset)
+			continue
+		}
+		idx-- // 0-based
+		coins[idx].selected = !coins[idx].selected
+
+		// Re-display
+		fmt.Printf("\033[%dA\033[J", len(coins)+3) // clear previous display
+		for i, c := range coins {
+			status := fmt.Sprintf("%sInstalled%s", ColorGreen, ColorReset)
+			if !c.installed {
+				status = fmt.Sprintf("%sNot installed%s", ColorYellow, ColorReset)
+			}
+			sel := "[ ]"
+			if c.selected {
+				sel = fmt.Sprintf("%s[✓]%s", ColorGreen, ColorReset)
+			}
+			fmt.Printf("  %s %d) %-20s %s\n", sel, i+1, fmt.Sprintf("%s (%s)", c.name, strings.ToUpper(c.symbol)), status)
+		}
+		fmt.Println()
+		fmt.Println("Toggle coins with their number, 'd' when done.")
+		fmt.Println()
+	}
+
+	// 3. Check for uninstalled selected coins — offer to install
+	var selected []coinState
+	for _, c := range coins {
+		if c.selected {
+			selected = append(selected, c)
+		}
+	}
+
+	for i, c := range selected {
+		if c.installed {
+			continue
+		}
+		fmt.Println()
+		fmt.Printf("  %s%s (%s) is not installed.%s\n", ColorYellow, c.name, strings.ToUpper(c.symbol), ColorReset)
+		fmt.Printf("  Install it now? [y/N]: ")
+		resp, _ := reader.ReadString('\n')
+		resp = strings.TrimSpace(strings.ToLower(resp))
+
+		if resp == "y" || resp == "yes" {
+			printInfo(fmt.Sprintf("Installing %s node...", c.name))
+			if err := installCoinNode(c.symbol); err != nil {
+				printWarning(fmt.Sprintf("Failed to install %s: %v", c.name, err))
+				fmt.Printf("  Remove %s from the smart port? [Y/n]: ", strings.ToUpper(c.symbol))
+				resp2, _ := reader.ReadString('\n')
+				resp2 = strings.TrimSpace(strings.ToLower(resp2))
+				if resp2 != "n" && resp2 != "no" {
+					selected[i].selected = false
+				}
+			} else {
+				printSuccess(fmt.Sprintf("%s node installation started", c.name))
+				selected[i].installed = true
+			}
+		} else {
+			fmt.Printf("  Remove %s from the smart port? [Y/n]: ", strings.ToUpper(c.symbol))
+			resp2, _ := reader.ReadString('\n')
+			resp2 = strings.TrimSpace(strings.ToLower(resp2))
+			if resp2 != "n" && resp2 != "no" {
+				selected[i].selected = false
+			}
+		}
+	}
+
+	// Rebuild selected list after possible removals
+	var finalCoins []string
+	for _, c := range selected {
+		if c.selected {
+			finalCoins = append(finalCoins, c.symbol)
+		}
+	}
+	if len(finalCoins) < 2 {
+		return fmt.Errorf("need at least 2 coins — only %d remaining after setup", len(finalCoins))
+	}
+
+	// 4. Collect hours — must sum to 24
+	fmt.Println()
+	fmt.Printf("%sAssign hours per day (must sum to 24):%s\n\n", ColorBold, ColorReset)
+
+	coinHours := make(map[string]float64)
+	remainingHours := 24.0
+	for i, sym := range finalCoins {
+		isLast := i == len(finalCoins)-1
+		meta := coinRegistry[sym]
+
+		if isLast {
+			// Last coin gets the remainder
+			fmt.Printf("  %s (%s): %s%.1fh%s (remaining)\n", meta.name, strings.ToUpper(sym), ColorCyan, remainingHours, ColorReset)
+			coinHours[strings.ToUpper(sym)] = remainingHours
+			break
+		}
+
+		defaultH := remainingHours / float64(len(finalCoins)-i)
+		fmt.Printf("  %s (%s) — %.1fh remaining [default: %.1f]: ", meta.name, strings.ToUpper(sym), remainingHours, defaultH)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		h := defaultH
+		if input != "" {
+			var parsed float64
+			if _, err := fmt.Sscanf(input, "%f", &parsed); err != nil || parsed < 0 {
+				fmt.Printf("  %sInvalid, using %.1f%s\n", ColorYellow, defaultH, ColorReset)
+			} else {
+				h = parsed
+			}
+		}
+		if h > remainingHours {
+			fmt.Printf("  %sCapped to %.1fh (remaining)%s\n", ColorYellow, remainingHours, ColorReset)
+			h = remainingHours
+		}
+
+		coinHours[strings.ToUpper(sym)] = h
+		remainingHours -= h
+	}
+
+	// Convert hours to integer percentage weights (sum=100)
+	weights := make(map[string]int)
+	weightSum := 0
+	coinList := make([]string, 0, len(coinHours))
+	for sym := range coinHours {
+		coinList = append(coinList, sym)
+	}
+	// Sort for deterministic ordering
+	sort.Strings(coinList)
+	for i, sym := range coinList {
+		if i == len(coinList)-1 {
+			weights[sym] = 100 - weightSum
+		} else {
+			w := int(math.Round(coinHours[sym] / 24.0 * 100))
+			weights[sym] = w
+			weightSum += w
+		}
+	}
+
+	// Verify sum=100
+	total := 0
+	for _, w := range weights {
+		total += w
+	}
+	if total != 100 {
+		return fmt.Errorf("internal error: weights sum to %d, not 100", total)
+	}
+
+	// 5. Show schedule and confirm
+	fmt.Println()
+	printSchedule(weights)
+
+	if !autoYes && !confirmActionMining("Enable multi-coin smart port with this schedule?") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	// 6. Apply — reuse the same config writing logic as multiportEnable
+	return applyMultiPortConfig(weights)
+}
+
+// printSchedule displays the 24h UTC time allocation for a set of weights
+func printSchedule(weights map[string]int) {
+	tz := readSentinelTimezone()
+	fmt.Printf("Port: %s16180%s\n", ColorCyan, ColorReset)
+	fmt.Printf("Schedule (24h %s cycle):\n", tz)
+
+	// Sort coins for deterministic output
+	coins := make([]string, 0, len(weights))
+	for c := range weights {
+		coins = append(coins, c)
+	}
+	sort.Strings(coins)
+
+	cumulativeFrac := 0.0
+	for _, coin := range coins {
+		w := weights[coin]
+		frac := float64(w) / 100.0
+		startH := cumulativeFrac * 24
+		cumulativeFrac += frac
+		endH := cumulativeFrac * 24
+		fmt.Printf("  %-6s  %3d%%   %05.1fh – %05.1fh %s\n", coin, w, startH, endH, tz)
+	}
+	fmt.Println()
+}
+
+// applyMultiPortConfig writes the multi_port section to config.yaml, updates coins.env, and restarts stratum
+func applyMultiPortConfig(weights map[string]int) error {
+	data, err := os.ReadFile(DefaultConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	mpNode := buildMultiPortNode(weights)
+
+	root := doc.Content[0]
+	found := false
+	for i := 0; i < len(root.Content)-1; i += 2 {
+		if root.Content[i].Value == "multi_port" {
+			root.Content[i+1] = mpNode
+			found = true
+			break
+		}
+	}
+	if !found {
+		root.Content = append(root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "multi_port"},
+			mpNode,
+		)
+	}
+
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
+	_ = enc.Close()
+
+	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	updateCoinsEnvMultiPort(weights)
+
+	printSuccess("Multi-coin smart port enabled on port 16180")
+	printInfo("Restarting stratum service...")
+
+	if err := restartService("spiralstratum"); err != nil {
+		printWarning(fmt.Sprintf("Failed to restart stratum: %v", err))
+		printInfo("Restart manually: sudo systemctl restart spiralstratum")
+	} else {
+		printSuccess("Stratum service restarted")
+	}
+
+	return nil
+}
+
+// multiportEnable enables the multi-port with specified coin weights (non-interactive)
+func multiportEnable(spec string, autoYes bool) error {
+	printBanner()
+	fmt.Printf("%s=== ENABLE MULTI-COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
+
+	weights, err := parseCoinWeights(spec)
+	if err != nil {
+		return err
+	}
+
+	printSchedule(weights)
+
+	if !autoYes && !confirmActionMining("Enable multi-coin smart port? This will restart the stratum service") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	return applyMultiPortConfig(weights)
+}
+
+// multiportDisable disables the multi-port
+func multiportDisable(autoYes bool) error {
+	printBanner()
+	fmt.Printf("%s=== DISABLE MULTI-COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
+
+	if !autoYes && !confirmActionMining("Disable multi-coin smart port?") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	data, err := os.ReadFile(DefaultConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Find multi_port and set enabled=false
+	root := doc.Content[0]
+	for i := 0; i < len(root.Content)-1; i += 2 {
+		if root.Content[i].Value == "multi_port" {
+			mp := root.Content[i+1]
+			for j := 0; j < len(mp.Content)-1; j += 2 {
+				if mp.Content[j].Value == "enabled" {
+					mp.Content[j+1].Value = "false"
+					mp.Content[j+1].Tag = "!!bool"
+					break
+				}
+			}
+			break
+		}
+	}
+
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
+	_ = enc.Close()
+
+	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Update coins.env
+	updateCoinsEnvLine("MULTIPORT_ENABLED", "false")
+
+	printSuccess("Multi-coin smart port disabled")
+	printInfo("Restarting stratum service...")
+
+	if err := restartService("spiralstratum"); err != nil {
+		printWarning(fmt.Sprintf("Failed to restart stratum: %v", err))
+	} else {
+		printSuccess("Stratum service restarted")
+	}
+
+	return nil
+}
+
+// multiportWeights updates the coin weight allocation (non-interactive)
+func multiportWeights(spec string, autoYes bool) error {
+	printBanner()
+	fmt.Printf("%s=== UPDATE SMART PORT WEIGHTS ===%s\n\n", ColorBold, ColorReset)
+
+	weights, err := parseCoinWeights(spec)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("New ")
+	printSchedule(weights)
+
+	if !autoYes && !confirmActionMining("Update weights? This will restart the stratum service") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	return applyMultiPortConfig(weights)
+}
+
+// buildMultiPortNode creates the YAML node for multi_port config
+func buildMultiPortNode(weights map[string]int) *yaml.Node {
+	mp := &yaml.Node{Kind: yaml.MappingNode}
+
+	// enabled: true
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "enabled"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "true", Tag: "!!bool"},
+	)
+	// port: 16180
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "port"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "16180", Tag: "!!int"},
+	)
+	// coins
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "coins"},
+		buildCoinsNode(weights),
+	)
+	// check_interval: 30s
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "check_interval"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "30s"},
+	)
+	// prefer_coin: highest-weight coin (deterministic)
+	preferCoin := ""
+	maxW := 0
+	for coin, w := range weights {
+		uc := strings.ToUpper(coin)
+		if w > maxW || (w == maxW && (preferCoin == "" || uc < preferCoin)) {
+			maxW = w
+			preferCoin = uc
+		}
+	}
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "prefer_coin"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: preferCoin},
+	)
+	// min_time_on_coin: 60s
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "min_time_on_coin"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "60s"},
+	)
+	// timezone: from sentinel config (user's display_timezone)
+	tz := readSentinelTimezone()
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "timezone"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: tz},
+	)
+
+	return mp
+}
+
+// readSentinelTimezone reads the display_timezone from sentinel config.
+// Falls back to "UTC" if unreadable.
+func readSentinelTimezone() string {
+	paths := []string{
+		"/spiralpool/config/sentinel/config.json",
+		os.ExpandEnv("$HOME/.spiralsentinel/config.json"),
+	}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var cfg map[string]interface{}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+		if tz, ok := cfg["display_timezone"].(string); ok && tz != "" {
+			return tz
+		}
+	}
+	return "UTC"
+}
+
+// buildCoinsNode creates the YAML mapping for coins with weights
+func buildCoinsNode(weights map[string]int) *yaml.Node {
+	// Sort for deterministic YAML output
+	sorted := make([]string, 0, len(weights))
+	for c := range weights {
+		sorted = append(sorted, c)
+	}
+	sort.Strings(sorted)
+
+	coins := &yaml.Node{Kind: yaml.MappingNode}
+	for _, coin := range sorted {
+		w := weights[coin]
+		coinNode := &yaml.Node{Kind: yaml.MappingNode}
+		coinNode.Content = append(coinNode.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "weight"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: fmt.Sprintf("%d", w), Tag: "!!int"},
+		)
+		coins.Content = append(coins.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: strings.ToUpper(coin)},
+			coinNode,
+		)
+	}
+	return coins
+}
+
+// updateCoinsEnvMultiPort updates coins.env with multi-port settings
+func updateCoinsEnvMultiPort(weights map[string]int) {
+	// Sort for deterministic output (coins and weights must align positionally)
+	sorted := make([]string, 0, len(weights))
+	for c := range weights {
+		sorted = append(sorted, c)
+	}
+	sort.Strings(sorted)
+
+	var coinStrs, weightStrs []string
+	preferCoin := ""
+	maxW := 0
+	for _, coin := range sorted {
+		w := weights[coin]
+		coinStrs = append(coinStrs, strings.ToUpper(coin))
+		weightStrs = append(weightStrs, fmt.Sprintf("%d", w))
+		uc := strings.ToUpper(coin)
+		if w > maxW || (w == maxW && (preferCoin == "" || uc < preferCoin)) {
+			maxW = w
+			preferCoin = uc
+		}
+	}
+
+	updateCoinsEnvLine("MULTIPORT_ENABLED", "true")
+	updateCoinsEnvLine("MULTIPORT_COINS", strings.Join(coinStrs, ","))
+	updateCoinsEnvLine("MULTIPORT_WEIGHTS", strings.Join(weightStrs, ","))
+	updateCoinsEnvLine("MULTIPORT_PREFER_COIN", preferCoin)
+}
+
+// updateCoinsEnvLine updates or appends a key=value in coins.env
+func updateCoinsEnvLine(key, value string) {
+	coinsEnv := "/spiralpool/config/coins.env"
+	data, err := os.ReadFile(coinsEnv)
+	if err != nil {
+		return // coins.env may not exist in all setups
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+"=") {
+			lines[i] = key + "=" + value
+			found = true
+			break
+		}
+	}
+	if !found {
+		lines = append(lines, key+"="+value)
+	}
+
+	_ = os.WriteFile(coinsEnv, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// httpGetJSON fetches JSON from a URL and returns the decoded map
+func httpGetJSON(url string) (map[string]interface{}, error) {
+	cmd := exec.Command("curl", "-sf", "--max-time", "3", url)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

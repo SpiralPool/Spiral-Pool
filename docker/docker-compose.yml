@@ -813,6 +813,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-spiralstratum}
       - DB_HOST=postgres
+      - DB_PORT=${DB_PORT:-5432}
       # Branding
       - COINBASE_TEXT=${COINBASE_TEXT:-Mined by Spiral Pool}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}

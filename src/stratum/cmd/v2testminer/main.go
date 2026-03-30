@@ -59,7 +59,7 @@ func main() {
 	}
 
 	userIdentity := *wallet + "." + *worker
-	addr := fmt.Sprintf("%s:%d", *host, *port)
+	addr := net.JoinHostPort(*host, fmt.Sprintf("%d", *port))
 
 	logf := func(format string, args ...interface{}) {
 		if *verbose {

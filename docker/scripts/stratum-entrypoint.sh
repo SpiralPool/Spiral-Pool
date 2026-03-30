@@ -1033,18 +1033,23 @@ fi
 
 if [ "$POOL_MODE" = "single" ]; then
     # ─── Single-coin V1: envsubst on template ─────────────────────────────────
-    echo "Generating single-coin configuration from template..."
+    if [ -f "$CONFIG_OUTPUT" ] && [ -s "$CONFIG_OUTPUT" ]; then
+        echo "Custom config.yaml detected at $CONFIG_OUTPUT"
+        echo "Skipping auto-generation and using user-provided configuration."
+    else
+        echo "Generating single-coin configuration from template..."
 
-    if [ ! -f "$CONFIG_TEMPLATE" ]; then
-        echo "ERROR: Config template not found at $CONFIG_TEMPLATE"
-        exit 1
+        if [ ! -f "$CONFIG_TEMPLATE" ]; then
+            echo "ERROR: Config template not found at $CONFIG_TEMPLATE"
+            exit 1
+        fi
+
+        # R-12 FIX: Atomic write (tempfile + mv).
+        # Commands split so set -e catches envsubst failure (left side of && is exempt).
+        envsubst < "$CONFIG_TEMPLATE" > "${CONFIG_OUTPUT}.tmp"
+        mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
+        chmod 600 "${CONFIG_OUTPUT}"
     fi
-
-    # R-12 FIX: Atomic write (tempfile + mv).
-    # Commands split so set -e catches envsubst failure (left side of && is exempt).
-    envsubst < "$CONFIG_TEMPLATE" > "${CONFIG_OUTPUT}.tmp"
-    mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
-    chmod 600 "${CONFIG_OUTPUT}"
 
     echo "Configuration generated:"
     echo "  Coin:        $POOL_COIN"
@@ -1060,8 +1065,13 @@ if [ "$POOL_MODE" = "single" ]; then
 
 else
     # ─── Multi-coin V2: programmatic YAML generation ──────────────────────────
-    echo "Generating multi-coin V2 configuration..."
-    generate_v2_config
+    if [ -f "$CONFIG_OUTPUT" ] && [ -s "$CONFIG_OUTPUT" ]; then
+        echo "Custom config.yaml detected at $CONFIG_OUTPUT"
+        echo "Skipping auto-generation and using user-provided configuration."
+    else
+        echo "Generating multi-coin V2 configuration..."
+        generate_v2_config
+    fi
 fi
 
 # Write metrics token file for Prometheus bearer_token_file (shared volume).

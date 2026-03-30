@@ -48,7 +48,7 @@ RUN ARCH=$(dpkg --print-architecture) \
     && if [ "$ARCH" = "amd64" ]; then PEP_ARCH="x86_64-linux-gnu"; \
        elif [ "$ARCH" = "arm64" ]; then PEP_ARCH="aarch64-linux-gnu"; \
        else echo "Unsupported architecture: $ARCH" && exit 1; fi \
-    && wget -q --max-redirect=5 "https://github.com/pep-official/pepecoin/releases/download/v${PEPECOIN_VERSION}/pepecoin-${PEPECOIN_VERSION}-${PEP_ARCH}.tar.gz" \
+    && wget -q --max-redirect=5 "https://github.com/pepecoinppc/pepecoin/releases/download/v${PEPECOIN_VERSION}/pepecoin-${PEPECOIN_VERSION}-${PEP_ARCH}.tar.gz" \
     && tar -xzf "pepecoin-${PEPECOIN_VERSION}-${PEP_ARCH}.tar.gz" \
     && cp "pepecoin-${PEPECOIN_VERSION}/bin/"* /usr/local/bin/ \
     && rm -rf /tmp/*
@@ -57,9 +57,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/pepecoin.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/pepecoin/.pepecoin/pepecoin.conf ] && [ -s /home/pepecoin/.pepecoin/pepecoin.conf ]; then\n\
+    echo "Using existing pepecoin.conf (skipping template generation)"\n\
+elif [ -f /config/pepecoin.conf.template ]; then\n\
     envsubst < /config/pepecoin.conf.template > /home/pepecoin/.pepecoin/pepecoin.conf\n\
+    chmod 600 /home/pepecoin/.pepecoin/pepecoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

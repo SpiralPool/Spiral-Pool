@@ -55,7 +55,7 @@ EXPOSE 5432
 USER postgres
 
 # Health check via Patroni REST API
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -sf http://localhost:8008/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/patroni-entrypoint.sh"]

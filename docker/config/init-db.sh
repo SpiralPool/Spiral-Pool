@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 # Spiral Pool Database Initialization
 # This script runs automatically when the PostgreSQL container starts for the first time.
-# V2.0.1-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
+# V2.1.0-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
 #
 # NOTE: The Go pool application creates pool-specific tables via migrations
 # (e.g., shares_btc_regtest, blocks_btc_regtest). This file provides base

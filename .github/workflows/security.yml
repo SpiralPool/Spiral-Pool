@@ -39,6 +39,10 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - name: Run go vet (static analysis)
+        run: |
+          go vet ./...
+
       - name: Build stratum binary
         run: |
           go build -v ./...

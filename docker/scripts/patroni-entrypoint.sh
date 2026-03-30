@@ -27,10 +27,15 @@ export DB_USER="${DB_USER:-spiralstratum}"
 export DB_NAME="${DB_NAME:-spiralstratum}"
 
 # Generate Patroni configuration from template with environment variables
-# SECURITY: Set umask before writing to prevent passwords being briefly world-readable
-umask 077
-envsubst < /etc/patroni/patroni.yml.template > /etc/patroni/patroni.yml
-umask 022
+# Skip if user-provided config already exists
+if [ -f /etc/patroni/patroni.yml ] && [ -s /etc/patroni/patroni.yml ]; then
+    echo "Using existing patroni.yml (skipping template generation)"
+else
+    # SECURITY: Set umask before writing to prevent passwords being briefly world-readable
+    umask 077
+    envsubst < /etc/patroni/patroni.yml.template > /etc/patroni/patroni.yml
+    umask 022
+fi
 
 # Ensure data directory exists and has correct permissions
 mkdir -p /var/lib/postgresql/data

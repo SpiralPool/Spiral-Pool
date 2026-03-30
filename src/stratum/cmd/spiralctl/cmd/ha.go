@@ -4,10 +4,12 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 func runHA(args []string) error {
@@ -258,7 +260,10 @@ func forceFailover() error {
 func testDBConnection(host string, port int, user, password, dbName string) bool {
 	// SECURITY: Use environment variable for password to prevent command injection
 	// and exposure in process listings. psql respects PGPASSWORD env var.
-	cmd := exec.Command("psql",
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "psql",
 		"-h", host,
 		"-p", fmt.Sprintf("%d", port),
 		"-U", user,
@@ -270,6 +275,5 @@ func testDBConnection(host string, port int, user, password, dbName string) bool
 	// Pass password via environment variable (not visible in process listing)
 	cmd.Env = append(cmd.Environ(), "PGPASSWORD="+password)
 
-	// Set a timeout context for the connection test
 	return cmd.Run() == nil
 }

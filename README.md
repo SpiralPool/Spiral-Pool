@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Hash Reactor V2.0.1 </em>
+  <em>Phi Hash Reactor V2.1.0 </em>
 </p>
 
 <p align="center">
@@ -72,6 +72,7 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | **Spiral Router** | Classifies miners at connection time via 47 verified user-agent patterns across 15 SHA-256d and 8 Scrypt difficulty profiles |
 | **Spiral Sentinel** | Device discovery, BraiinsOS/Vnish auto-scan, stratum URL &amp; wallet mismatch detection, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, and generic webhooks |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
+| **Multi-coin smart port** | **⚠️ Experimental** &mdash; Single stratum port (16180) that mines multiple SHA-256d coins on a 24-hour weighted schedule. Automatic rotation, per-session tracking, failover. See [MULTI_COIN_PORT.md](docs/reference/MULTI_COIN_PORT.md) |
 | **Test suite** | 3,500+ unit, integration, chaos, and fuzz tests including 10 numbered chaos suites |
 
 ---
@@ -289,6 +290,12 @@ Spiral Pool is **free, open-source software** &mdash; fully yours to run, modify
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history, including all features and bug fixes.
+
+---
+
 ## Legal
 
 **THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.** This is software, not a service. Use at your own risk. You are solely responsible for legal compliance, security, and all consequences of operation. See the documents below for the complete legal framework.
@@ -309,4 +316,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Phi Hash Reactor 2.0.1 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.1.0 &mdash; Convergent difficulty. Minimal oscillation.*

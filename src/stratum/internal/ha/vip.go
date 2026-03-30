@@ -942,7 +942,7 @@ const SpiralClusterUserAgentPrefix = "SpiralPool-HA-"
 // SpiralPoolVersion is the current version of Spiral Pool (semver format).
 // This is a var (not const) so it can be overridden via -ldflags at build time:
 //   -X github.com/spiralpool/stratum/internal/ha.SpiralPoolVersion=X.Y.Z
-var SpiralPoolVersion = "2.0.1"
+var SpiralPoolVersion = "2.1.0"
 
 // SpiralClusterUserAgent is the current version's user-agent string.
 // This is used when sending messages; validation checks for the prefix only.

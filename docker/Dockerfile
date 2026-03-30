@@ -17,7 +17,7 @@ FROM ubuntu:24.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool - Multi-Coin Solo Mining Pool"
-LABEL version="2.0.1"
+LABEL version="2.1.0"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive

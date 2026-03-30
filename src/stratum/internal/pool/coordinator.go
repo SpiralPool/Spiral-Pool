@@ -13,6 +13,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/spiralpool/stratum/internal/coin"
 	"github.com/spiralpool/stratum/internal/config"
 	"github.com/spiralpool/stratum/internal/database"
+	"github.com/spiralpool/stratum/internal/scheduler"
 	"github.com/spiralpool/stratum/internal/ha"
 	"github.com/spiralpool/stratum/internal/metrics"
 	"github.com/spiralpool/stratum/internal/payments"
@@ -97,6 +99,11 @@ type Coordinator struct {
 	// so a single coin's daemon failure doesn't block all maturity tracking.
 	paymentProcessors  map[string]*payments.Processor // keyed by pool ID
 	paymentProcessorMu sync.RWMutex                   // AUDIT FIX (H-2): protects paymentProcessors map
+
+	// Multi-coin smart port (v2.1)
+	diffMonitor *scheduler.Monitor
+	coinSelector *scheduler.Selector
+	multiServer *scheduler.MultiServer
 
 	// Coin pools indexed by pool ID
 	pools   map[string]*CoinPool
@@ -883,6 +890,13 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	// Print summary (will update as more pools come online)
 	c.printStartupSummary()
 
+	// Start Multi-coin smart port (multi-port) if configured
+	if c.cfg.MultiPort.Enabled {
+		if err := c.startMultiPort(ctx); err != nil {
+			c.logger.Errorw("Failed to start multi-port server", "error", err)
+		}
+	}
+
 	// Start coordinator health monitoring
 	c.wg.Add(1)
 	go c.healthLoop(ctx)
@@ -1050,9 +1064,15 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 				// By this point the VIP election has completed, so IsMaster() is valid.
 				// Without this, late pools start with haRole=RoleUnknown, bypassing the
 				// block submission gate until the next role change event.
-				if c.vipManager != nil && !c.vipManager.IsMaster() {
-					for _, s := range succeeded {
-						s.pool.OnHARoleChange(ha.RoleUnknown, ha.RoleBackup)
+				if c.vipManager != nil {
+					if c.vipManager.IsMaster() {
+						for _, s := range succeeded {
+							s.pool.OnHARoleChange(ha.RoleUnknown, ha.RoleMaster)
+						}
+					} else {
+						for _, s := range succeeded {
+							s.pool.OnHARoleChange(ha.RoleUnknown, ha.RoleBackup)
+						}
 					}
 				}
 
@@ -1195,6 +1215,19 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 						}
 					}
 
+					// Register late-started pool with multi-port infrastructure (if running).
+					// Without this, multi-port miners are never routed to recovered coins.
+					if c.multiServer != nil {
+						c.multiServer.RegisterCoinPool(s.pool)
+					}
+					if c.diffMonitor != nil {
+						coinImpl, _ := coin.Create(s.pool.Symbol())
+						if coinImpl != nil {
+							blockTime := float64(coinImpl.BlockTime())
+							c.diffMonitor.RegisterCoin(s.pool, blockTime)
+						}
+					}
+
 					c.logger.Infow("Coin pool now online!",
 						"coin", s.cfg.Symbol,
 						"poolId", s.poolID,
@@ -1249,6 +1282,19 @@ func (c *Coordinator) shutdown() error {
 		c.logger.Infow("Payment processor stopped", "poolId", poolID)
 	}
 	c.paymentProcessorMu.RUnlock()
+
+	// Stop multi-coin server and difficulty monitor
+	if c.multiServer != nil {
+		if err := c.multiServer.Stop(); err != nil {
+			c.logger.Errorw("Error stopping multi-coin server", "error", err)
+		} else {
+			c.logger.Info("Multi-coin server stopped")
+		}
+	}
+	if c.diffMonitor != nil {
+		c.diffMonitor.Stop()
+		c.logger.Info("Difficulty monitor stopped")
+	}
 
 	// Stop all pools
 	c.stopAllPools()
@@ -1656,4 +1702,257 @@ func (c *Coordinator) demoteToBackup() {
 	c.paymentProcessorMu.RUnlock()
 
 	c.logger.Info("BACKUP demotion complete - payments paused")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCHEDULING PORT (v2.1)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// startMultiPort initializes and starts the Multi-coin smart port.
+// It creates the DifficultyMonitor, CoinSelector, and MultiServer, wiring
+// them to the running CoinPools that match the configured allowed coins.
+func (c *Coordinator) startMultiPort(ctx context.Context) error {
+	mpCfg := c.cfg.MultiPort
+	coinSymbols := mpCfg.CoinSymbols()
+
+	c.logger.Infow("Starting multi-coin smart port",
+		"port", mpCfg.Port,
+		"coins", mpCfg.Coins,
+	)
+
+	// Validate: at least 2 coins needed for routing to make sense
+	if len(coinSymbols) < 2 {
+		return fmt.Errorf("multi_port requires at least 2 coins, got %d", len(coinSymbols))
+	}
+
+	// Validate: all configured coins must be enabled and SHA-256d
+	c.poolsMu.RLock()
+	for _, sym := range coinSymbols {
+		found := false
+		for _, pool := range c.pools {
+			if strings.EqualFold(pool.Symbol(), sym) {
+				found = true
+				// Verify algorithm is SHA-256d (multi-port only works for same-algo coins)
+				coinImpl, err := coin.Create(pool.Symbol())
+				if err == nil && coinImpl.Algorithm() != "sha256d" {
+					c.poolsMu.RUnlock()
+					return fmt.Errorf("multi_port coin %s uses algorithm %s, only sha256d is supported",
+						sym, coinImpl.Algorithm())
+				}
+				break
+			}
+		}
+		if !found {
+			c.poolsMu.RUnlock()
+			return fmt.Errorf("multi_port coin %s is not configured or not running", sym)
+		}
+	}
+	c.poolsMu.RUnlock()
+
+	// Validate: weights must sum to exactly 100
+	totalWeight := 0
+	for _, coinCfg := range mpCfg.Coins {
+		if coinCfg.Weight < 0 {
+			return fmt.Errorf("multi_port coin weights cannot be negative")
+		}
+		totalWeight += coinCfg.Weight
+	}
+	if totalWeight != 100 {
+		return fmt.Errorf("multi_port coin weights must sum to 100, got %d", totalWeight)
+	}
+
+	// 1. Create DifficultyMonitor (monitors coin availability for failover)
+	c.diffMonitor = scheduler.NewMonitor(scheduler.MonitorConfig{
+		PollInterval: mpCfg.CheckInterval,
+		Logger:       c.logger.Desugar(),
+	})
+
+	// Register each multi-port coin with the monitor
+	c.poolsMu.RLock()
+	for _, sym := range coinSymbols {
+		for _, pool := range c.pools {
+			if strings.EqualFold(pool.Symbol(), sym) {
+				coinImpl, _ := coin.Create(pool.Symbol())
+				blockTime := float64(coinImpl.BlockTime())
+				c.diffMonitor.RegisterCoin(pool, blockTime)
+				break
+			}
+		}
+	}
+	c.poolsMu.RUnlock()
+
+	c.diffMonitor.Start(ctx)
+
+	// 2. Build coin weights from config (sorted for deterministic schedule)
+	sort.Strings(coinSymbols)
+	var coinWeights []scheduler.CoinWeight
+	for _, sym := range coinSymbols {
+		routeCfg := mpCfg.Coins[sym]
+		coinWeights = append(coinWeights, scheduler.CoinWeight{
+			Symbol: sym,
+			Weight: routeCfg.Weight,
+		})
+	}
+
+	// 3. Create CoinSelector
+	// Load the user's timezone so the 24h schedule aligns with their local day.
+	scheduleLoc := time.UTC
+	if mpCfg.Timezone != "" {
+		loc, err := time.LoadLocation(mpCfg.Timezone)
+		if err != nil {
+			c.logger.Warnf("invalid multi_port timezone %q, falling back to UTC: %v", mpCfg.Timezone, err)
+		} else {
+			scheduleLoc = loc
+		}
+	}
+	c.coinSelector = scheduler.NewSelector(scheduler.SelectorConfig{
+		Monitor:       c.diffMonitor,
+		AllowedCoins:  coinSymbols,
+		CoinWeights:   coinWeights,
+		PreferCoin:    mpCfg.PreferCoin,
+		MinTimeOnCoin: mpCfg.MinTimeOnCoin,
+		Location:      scheduleLoc,
+		Logger:        c.logger.Desugar(),
+	})
+
+	// 4. Build a stratum config for the multi port (inherit from first coin's settings)
+	var stratumCfg *config.StratumConfig
+	for _, coinCfg := range c.cfg.Coins {
+		if coinCfg.Enabled {
+			stratumCfg = &config.StratumConfig{
+				Listen:         fmt.Sprintf("0.0.0.0:%d", mpCfg.Port),
+				Difficulty:     coinCfg.Stratum.Difficulty,
+				Banning:        coinCfg.Stratum.Banning,
+				Connection:     coinCfg.Stratum.Connection,
+				VersionRolling: coinCfg.Stratum.VersionRolling,
+				JobRebroadcast: coinCfg.Stratum.JobRebroadcast,
+				TLS: config.TLSConfig{
+					Enabled:    coinCfg.Stratum.PortTLS > 0,
+					CertFile:   coinCfg.Stratum.TLS.CertFile,
+					KeyFile:    coinCfg.Stratum.TLS.KeyFile,
+					MinVersion: coinCfg.Stratum.TLS.MinVersion,
+				},
+			}
+			break
+		}
+	}
+	if stratumCfg == nil {
+		return fmt.Errorf("no enabled coin found to inherit stratum config from")
+	}
+
+	// 5. Create and start MultiServer
+	c.multiServer = scheduler.NewMultiServer(scheduler.MultiServerConfig{
+		Port:          mpCfg.Port,
+		TLSPort:       mpCfg.TLSPort,
+		CheckInterval: mpCfg.CheckInterval,
+		AllowedCoins:  coinSymbols,
+		CoinWeights:   coinWeights,
+		PreferCoin:    mpCfg.PreferCoin,
+		MinTimeOnCoin: mpCfg.MinTimeOnCoin,
+		Stratum:       stratumCfg,
+		Logger:        c.logger.Desugar(),
+	}, c.diffMonitor, c.coinSelector)
+
+	// Register coin pools with the multi server
+	c.poolsMu.RLock()
+	for _, sym := range coinSymbols {
+		for _, pool := range c.pools {
+			if strings.EqualFold(pool.Symbol(), sym) {
+				c.multiServer.RegisterCoinPool(pool)
+				break
+			}
+		}
+	}
+	c.poolsMu.RUnlock()
+
+	if err := c.multiServer.Start(ctx); err != nil {
+		c.diffMonitor.Stop()
+		return fmt.Errorf("failed to start multi-port server: %w", err)
+	}
+
+	// Wire multi-port stats to API server
+	if c.apiServer != nil {
+		c.apiServer.SetMultiPortProvider(&multiPortAdapter{coord: c})
+	}
+
+	c.logger.Infow("Multi-coin smart port started",
+		"port", mpCfg.Port,
+		"coins", coinSymbols,
+	)
+	return nil
+}
+
+// GetMultiServer returns the multi-coin server (nil if not enabled).
+func (c *Coordinator) GetMultiServer() *scheduler.MultiServer {
+	return c.multiServer
+}
+
+// GetDifficultyMonitor returns the difficulty monitor (nil if not enabled).
+func (c *Coordinator) GetDifficultyMonitor() *scheduler.Monitor {
+	return c.diffMonitor
+}
+
+// multiPortAdapter implements api.MultiPortStatsProvider for the coordinator.
+type multiPortAdapter struct {
+	coord *Coordinator
+}
+
+func (a *multiPortAdapter) GetMultiPortStats() *api.MultiPortStats {
+	ms := a.coord.multiServer
+	if ms == nil {
+		return nil
+	}
+	stats := ms.Stats()
+	apiStats := &api.MultiPortStats{
+		Enabled:          true,
+		Port:             stats.Port,
+		ActiveSessions:   stats.ActiveSessions,
+		TotalSwitches:    stats.TotalSwitches,
+		CoinDistribution: stats.CoinDistribution,
+		AllowedCoins:     stats.AllowedCoins,
+	}
+	if len(stats.CoinWeights) > 0 {
+		apiStats.CoinWeights = stats.CoinWeights
+	}
+	return apiStats
+}
+
+func (a *multiPortAdapter) GetMultiPortSwitchHistory(limit int) []api.MultiPortSwitchEvent {
+	ms := a.coord.multiServer
+	if ms == nil {
+		return nil
+	}
+	events := ms.GetSwitchHistory(limit)
+	result := make([]api.MultiPortSwitchEvent, len(events))
+	for i, e := range events {
+		result[i] = api.MultiPortSwitchEvent{
+			SessionID:  e.SessionID,
+			WorkerName: e.WorkerName,
+			MinerClass: e.MinerClass,
+			FromCoin:   e.FromCoin,
+			ToCoin:     e.ToCoin,
+			Reason:     e.Reason,
+			Timestamp:  e.Timestamp,
+		}
+	}
+	return result
+}
+
+func (a *multiPortAdapter) GetMultiPortDifficultyStates() map[string]api.MultiPortDiffState {
+	mon := a.coord.diffMonitor
+	if mon == nil {
+		return nil
+	}
+	states := mon.GetAllStates()
+	result := make(map[string]api.MultiPortDiffState, len(states))
+	for sym, s := range states {
+		result[sym] = api.MultiPortDiffState{
+			Symbol:      s.Symbol,
+			NetworkDiff: s.NetworkDiff,
+			BlockTime:   s.BlockTime,
+			Available:   s.Available,
+			LastUpdated: s.LastUpdated,
+		}
+	}
+	return result
 }

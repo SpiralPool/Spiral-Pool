@@ -319,7 +319,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize job manager: %w", err)
 	}
-	sharePipeline := shares.NewPipeline(&cfg.Database, db, logger)
+	sharePipeline := shares.NewPipeline(&cfg.Database, db, logger, cfg.Pool.ID)
 
 	// CRITICAL: Create coin implementation for algorithm-specific share validation
 	// Without this, Scrypt coins (LTC, DOGE, etc.) would be validated with SHA256d,
@@ -1328,7 +1328,9 @@ func (p *Pool) handleShare(share *protocol.Share) *protocol.ShareResult {
 		}
 
 		// Submit to pipeline for DB persistence (after block handling)
-		p.sharePipeline.Submit(share)
+		if p.sharePipeline != nil {
+			p.sharePipeline.Submit(share)
+		}
 
 		// Track accepted share count on the session (used by connections API for dashboard)
 		if session, ok := p.stratumServer.GetSession(share.SessionID); ok {

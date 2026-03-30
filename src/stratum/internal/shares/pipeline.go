@@ -153,8 +153,8 @@ type ShareWriter interface {
 }
 
 // NewPipeline creates a new share processing pipeline.
-func NewPipeline(cfg *config.DatabaseConfig, writer ShareWriter, logger *zap.Logger) *Pipeline {
-	return &Pipeline{
+func NewPipeline(cfg *config.DatabaseConfig, writer ShareWriter, logger *zap.Logger, poolID ...string) *Pipeline {
+	p := &Pipeline{
 		cfg:            cfg,
 		logger:         logger.Sugar(),
 		buffer:         ringbuffer.New[*protocol.Share](1 << 20), // 1M capacity
@@ -164,6 +164,12 @@ func NewPipeline(cfg *config.DatabaseConfig, writer ShareWriter, logger *zap.Log
 		writer:         writer,
 		circuitBreaker: database.NewCircuitBreaker(database.DefaultCircuitBreakerConfig()),
 	}
+	// Enable WAL for crash recovery when a pool ID is provided
+	if len(poolID) > 0 && poolID[0] != "" {
+		p.walPath = DefaultWALPath
+		p.poolID = poolID[0]
+	}
+	return p
 }
 
 // Start begins the share processing pipeline.
@@ -428,9 +434,17 @@ func (p *Pipeline) sendBatch(shares []*protocol.Share) {
 		if p.metrics != nil {
 			p.metrics.RecordBatchDrop(len(shares))
 		}
-		p.logger.Warnw("Batch channel full, dropping shares",
+		hasWAL := p.wal != nil
+		p.logger.Warnw("Batch channel full, dropping shares from memory",
 			"count", len(shares),
+			"walEnabled", hasWAL,
+			"recoverable", hasWAL,
 		)
+		if !hasWAL {
+			p.logger.Errorw("CRITICAL: Shares permanently lost — WAL is disabled, no crash recovery possible",
+				"count", len(shares),
+			)
+		}
 	}
 }
 

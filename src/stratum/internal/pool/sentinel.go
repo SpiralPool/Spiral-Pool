@@ -78,6 +78,10 @@ type Sentinel struct {
 	// State tracking for expanded alerts
 	prevDropped        map[string]uint64 // coin -> previous share batch dropped count
 	paymentPending     map[string]int    // poolID -> previous pending blocks
+
+	// State tracking for multi-port (Multi-coin smart port) alerts
+	prevMultiPortDiff     map[string]float64 // coin -> previous network difficulty
+	prevMultiPortSwitches uint64             // previous total switch count
 	paymentStallCount  map[string]int    // poolID -> consecutive stall checks
 	prevOrphaned       map[string]int    // poolID -> previous orphaned blocks count
 	prevDBFailovers    uint64            // previous DB failover count
@@ -115,7 +119,8 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:      make(map[string]int),
 		haRoleHistory:     make([]time.Time, 0, 16),
-		cooldowns:       make(map[string]time.Time),
+		cooldowns:           make(map[string]time.Time),
+		prevMultiPortDiff:   make(map[string]float64),
 	}
 }
 
@@ -221,6 +226,10 @@ func (s *Sentinel) check(ctx context.Context) {
 	s.checkOrphanRate(ctx)
 	s.checkGoroutineCount()
 	s.checkBlockMaturityStall()
+
+	// Multi-port (Multi-coin smart port) checks
+	s.checkMultiPortDifficultySpike(ctx)
+	s.checkMultiPortCoinSwitch(ctx)
 
 	duration := time.Since(start)
 	if s.metrics != nil {
@@ -950,6 +959,9 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 		return
 	}
 
+	s.coordinator.paymentProcessorMu.RLock()
+	defer s.coordinator.paymentProcessorMu.RUnlock()
+
 	for poolID, proc := range s.coordinator.paymentProcessors {
 		stats, err := proc.Stats(ctx)
 		if err != nil {
@@ -1051,7 +1063,9 @@ func (s *Sentinel) trackHARoleChange(currentRole string) {
 		trimIdx++
 	}
 	if trimIdx > 0 {
-		s.haRoleHistory = s.haRoleHistory[trimIdx:]
+		trimmed := make([]time.Time, len(s.haRoleHistory)-trimIdx)
+		copy(trimmed, s.haRoleHistory[trimIdx:])
+		s.haRoleHistory = trimmed
 	}
 }
 
@@ -1088,6 +1102,9 @@ func (s *Sentinel) checkOrphanRate(ctx context.Context) {
 	if s.cfg.OrphanRateThreshold <= 0 {
 		return
 	}
+
+	s.coordinator.paymentProcessorMu.RLock()
+	defer s.coordinator.paymentProcessorMu.RUnlock()
 
 	for poolID, proc := range s.coordinator.paymentProcessors {
 		stats, err := proc.Stats(ctx)
@@ -1309,4 +1326,84 @@ func readMetricValue(m interface{ Write(*dto.Metric) error }) float64 {
 		return g.GetValue()
 	}
 	return 0
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DIFFICULTY OVERFLOW ROUTER ALERTS (v2.1)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// checkMultiPortDifficultySpike fires an alert when a multi-port coin's network
+// difficulty spikes significantly, indicating miners may be rerouted.
+func (s *Sentinel) checkMultiPortDifficultySpike(ctx context.Context) {
+	monitor := s.coordinator.diffMonitor
+	if monitor == nil {
+		return // Multi-port not enabled
+	}
+
+	states := monitor.GetAllStates()
+	for symbol, state := range states {
+		if !state.Available {
+			continue
+		}
+
+		s.mu.Lock()
+		prev, hasPrev := s.prevMultiPortDiff[symbol]
+		s.prevMultiPortDiff[symbol] = state.NetworkDiff
+		s.mu.Unlock()
+
+		if !hasPrev || prev <= 0 {
+			continue
+		}
+
+		changePct := ((state.NetworkDiff - prev) / prev) * 100
+		if changePct > 15 { // >15% spike
+			s.fireAlert(ctx,
+				"multi_port_difficulty_spike",
+				severityWarning,
+				symbol, "",
+				fmt.Sprintf("Network difficulty spike: %s +%.1f%% — routing small miners to easier coins",
+					symbol, changePct),
+				map[string]interface{}{
+					"old_diff":    prev,
+					"new_diff":    state.NetworkDiff,
+					"change_pct":  changePct,
+				},
+			)
+		}
+	}
+}
+
+// checkMultiPortCoinSwitch fires an alert when miners are bulk-switched between coins.
+func (s *Sentinel) checkMultiPortCoinSwitch(ctx context.Context) {
+	ms := s.coordinator.multiServer
+	if ms == nil {
+		return // Multi-port not enabled
+	}
+
+	stats := ms.Stats()
+	switches := stats.TotalSwitches
+
+	s.mu.Lock()
+	prevSwitches := s.prevMultiPortSwitches
+	s.prevMultiPortSwitches = switches
+	s.mu.Unlock()
+
+	if prevSwitches == 0 {
+		return // First check, no baseline
+	}
+
+	newSwitches := switches - prevSwitches
+	if newSwitches >= 5 { // 5+ switches in one check interval
+		s.fireAlert(ctx,
+			"multi_port_coin_switch",
+			severityInfo,
+			"", "",
+			fmt.Sprintf("Coin switch event: %d miners moved between coins (total active: %d)",
+				newSwitches, stats.ActiveSessions),
+			map[string]interface{}{
+				"switches_this_interval": newSwitches,
+				"coin_distribution":      stats.CoinDistribution,
+			},
+		)
+	}
 }

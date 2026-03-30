@@ -7,6 +7,152 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.1.0]  -  2026-03-30  -  Phi Hash Reactor
+
+> *Multi-coin smart port online. All ports nominal.*
+
+### Added
+
+- **Multi-coin smart port (Experimental)** -- Single stratum port (16180) mines multiple SHA-256d coins on a 24-hour weighted time schedule with automatic rotation, per-session tracking, and daemon failover. ⚠️ This feature has not been thoroughly tested in production -- use at your own risk. See [MULTI_COIN_PORT.md](docs/reference/MULTI_COIN_PORT.md)
+- **Non-interactive pool-mode.sh** -- `--yes`, `--wallet`, `--delete-data`, `--no-install-node` flags enable fully automated coin add/remove from the dashboard UI
+- **Timezone-aware scheduling** -- Multi-coin schedule uses the operator's configured timezone instead of UTC
+
+### Fixed
+
+**Block Recording & Display**
+- **Block finder attribution lost** -- `postgres_v2.go` `InsertBlockForPool` hardcoded `"stratum"` as the source column instead of using `block.Source`, permanently discarding the actual worker name that found the block. All future blocks now record the real worker suffix
+- **Dashboard block finder showing "stratum"** -- field priority was `source > worker > miner`; changed to `worker > miner > source` so the actual worker name displays correctly
+- **Werkzeug `RuntimeError` crash** -- production mode SocketIO was missing `allow_unsafe_werkzeug=True`, causing crashes on startup
+
+**Multi-Coin Smart Port (Scheduling)**
+- **Late-started pools excluded from multi-port** -- when a coin pool failed initial startup and recovered via retry loop, it was never registered with the MultiServer or DifficultyMonitor. Multi-port miners were silently never routed to the recovered coin even though it was fully operational on its dedicated port
+- **Miners assigned to down preferCoin** -- `handleConnect` checked map membership for `preferCoin` but not `IsRunning()`, so a miner connecting when preferCoin's pool was registered but stopped would sit idle until the next evaluation cycle. Now falls through to the first running coin
+- **Non-deterministic coin schedule** -- Go map iteration order made the time-slot schedule unpredictable across restarts. Coin weights are now sorted deterministically
+- **Selector failover to unmonitored coins** -- the fallback path could select coins that were registered but had no availability tracking from the DifficultyMonitor
+- **DST-unsafe day fraction calculation** -- hardcoded 86400s caused 23h/25h DST-transition days to mis-align the coin schedule. Now computes actual day length from timezone-aware start-of-day and start-of-next-day
+- **Monitor double-close panic** -- if `Monitor.Stop()` ran before `MultiServer.difficultyEventLoop` deferred `Unsubscribe`, the subscriber channel was closed twice, panicking. `Unsubscribe` is now a no-op if the channel was already removed by `Stop()`
+- **Zero difficulty not marking coin unavailable** -- when an RPC returned zero/negative difficulty (syncing daemon), the coin was not marked unavailable, so the selector could route miners to a non-functional coin
+- **Selector switchHistory memory leak** -- `s[1:]` reslice retained the old backing array indefinitely. Now copies to a new slice to release the old backing array
+- **HandleMultiPortShare submitting rejected shares as blocks** -- block submission ran on all shares regardless of acceptance status, wasting RPC calls on stale/low-diff shares and polluting metrics. Now only processes blocks from accepted shares, consistent with regular share handler
+
+**Health Monitor & Services**
+- **BCH restart loop (BCHN RPC whitelist)** -- health monitor's RPC error whitelist only matched `error code: -28` but Bitcoin Cash Node returns different negative JSON-RPC codes during startup. Changed to regex `error code: -[0-9]+` and added `Activating best chain` to the whitelist
+- **`restart_service()` silent failures** -- `systemctl start` exit code was not checked; systemd `start-limit-hit` rate limiting was not detected. Added exit code checking, pre-start rate limit detection with `reset-failed`, and post-failure diagnostics
+- **qbitxd missing from daemon loops** -- Q-BitX was not included in 5 daemon detection/monitoring loops in `install.sh`, causing it to be skipped for health monitoring, status display, journal collection, and self-test
+- **Bitcoin II missing PIDFile** -- `bitcoiniid.service` template lacked `-pid=` flag in ExecStart and `PIDFile=` directive, preventing systemd from properly tracking the daemon process
+- **BTC/XMY/BC2 `/tmp` glob vulnerability** -- `ls -d bitcoin-*/` in `/tmp` could match attacker-created directories. BTC now derives directory from known version; XMY and BC2 use `tar -tzf` to extract the actual directory name from the tarball
+- **Daemon configs owned by root after upgrade** -- `cleanup_daemon_configs()` in `upgrade.sh` used `awk`/`sed` rewrite patterns that created new files owned by root. Daemon processes running as `spiraluser` could fail to read their configs. Added ownership/permission restoration
+- **`admin_api_key` migration corrupts config on `/` or `\` in key** -- `fix_config_issues()` and `migrate_v2_config()` in `upgrade.sh` used `sed s///` with the API key as replacement text. Keys containing `/`, `\`, or `&` broke the sed delimiter or triggered backreference expansion, silently corrupting `config.yaml`. Added sanitization and replaced the `sed 1s` prepend with a safe heredoc+cat approach
+- **qbitxd missing from sudoers** -- `spiraluser` could not start/stop qbitxd via `sudo systemctl` because the sudoers entries were never created. Added start/stop entries
+- **qbitxd missing from uninstall** -- `cleanup_and_exit` did not disable, stop, or remove the qbitxd service file in the disable block, service file removal block, or final cleanup block. A failed install left qbitxd running and its service file orphaned
+- **UFW rule missing for multi-coin smart port** -- port 16180 (multi-coin stratum) was never opened in UFW during install. External miners could not connect. Added conditional `ufw allow 16180/tcp` when `MULTIPORT_ENABLED=true`
+- **`restart_service()` flapping not detected** -- successful restart reset `restart_counts` to 0, so a service that crash-looped (starts OK, dies 30s later) never reached `MAX_RESTART_ATTEMPTS`. Count now increments on every restart; the hourly reset clears it for genuinely recovered services
+- **Stratum TLS port not opened in UFW (single-coin mode)** -- single-coin setup opened V1 and V2 stratum ports but never the TLS port. TLS miners were silently blocked by the firewall
+- **Connlimit rules missing for 5 coins** -- iptables connection-limit rules (max 200/IP) only covered 9 of 14 coins. DGB-Scrypt, PEP, CAT, FBTC, QBX, and the multi-coin port had zero connection-exhaustion protection
+- **`reset-failed` sudoers wildcard** -- `systemctl reset-failed *` allowed the pool user to reset failure state on ANY system service, masking crash-loop abuse. Restricted to explicit pool service names
+- **`journalctl` sudoers wildcard** -- `journalctl *` allowed the pool user to read logs from ANY service (sshd, kernel, etc.). Restricted to `-u <service>` for pool-related services only
+- **`pool-mode.sh` owned by spiraluser — privilege escalation** -- script was `chown spiraluser` but executed as root via sudoers `systemd-run`. spiraluser could replace its contents with arbitrary root commands. Changed to `chown root:root` in both `install.sh` and `upgrade.sh`
+- **`coins.env` world-readable with RPC passwords** -- created with default 644 permissions exposing all coin RPC credentials to any local user. Added `chmod 600`
+- **HA sudoers file has no `visudo -c` validation** -- unlike the dashboard sudoers, the HA sudoers file was never syntax-checked. A malformed sudoers include can break ALL sudo on the system. Added validation with auto-removal on failure
+
+**Docker**
+- **Config overwritten on container restart** -- all 13 coin Dockerfiles and the Patroni entrypoint ran `envsubst` unconditionally, overwriting user-provided or manually-edited config files on every restart. Now checks if config exists and is non-empty before generating from template
+- **Stratum entrypoint overwriting config.yaml** -- multi-coin mode in `stratum-entrypoint.sh` did not check for existing config before auto-generating
+- **Single-coin entrypoint overwriting config.yaml** -- same config overwrite issue in single-coin mode path of `stratum-entrypoint.sh`
+- **Fractal Bitcoin wrong datadir** -- Docker entrypoint was missing explicit `-datadir=/home/fractal/.fractal`; the daemon (a Bitcoin Core fork) defaulted to `~/.bitcoin`, causing data/config path mismatch with the Docker volume mount
+- **Missing HA env vars in .env.example** -- `REPLICATION_PASSWORD`, `REWIND_PASSWORD`, and `PATRONI_REST_PASSWORD` were required by `docker-compose.ha.yml` but not documented in the example config
+- **Coin config files world-readable in Docker** -- all 13 coin Dockerfile entrypoints created config files (containing RPC passwords) with default 644 permissions. Added `chmod 600` after `envsubst` in every coin entrypoint
+- **Dockerfile.pepecoin wrong GitHub organization** -- download URL used `pep-official` which doesn't exist; the correct org is `pepecoinppc`. Docker builds for Pepecoin always failed
+- **Dockerfile.qbitx wrong download URL and binary name** -- used v0.1.0 filename pattern (`qbitx-linux-x86.zip`) and binary name (`qbitxd`) but ARG specified v0.2.0 which uses different naming. Docker builds for Q-BitX always failed
+- **QBX install hardcoded v0.2.0 filename** -- four references in `install_qbx()` hardcoded `qbitx-linux-x86_64-v0.2.0.zip` instead of using `$QBX_VERSION` variable. Changing the version constant would break download/extract/cleanup
+- **Patroni healthcheck `start_period` too short** -- 30s start period in `Dockerfile.patroni` was insufficient for fresh cluster bootstrap (initdb + WAL setup can take 60-120s), causing containers to be marked unhealthy prematurely. Increased to 120s
+- **HAProxy healthcheck uses missing `wget`** -- `haproxy:2.9-alpine` does not include `wget`, so the health check always failed. Replaced with `haproxy -c` config validation + PID check
+- **`DB_PORT` not passed to stratum container** -- `docker-compose.yml` environment block omitted `DB_PORT`, so user-configured non-standard database ports in `.env` were silently ignored by the stratum container
+
+**Sentinel**
+- **`_atomic_json_save` forward reference** -- function was defined at line 5390 but first called at line 527; worked due to Python late binding but fragile. Moved definition before first use
+- **`port_config` type error** -- V2 API returning integer ports instead of dicts caused `isinstance(port_config, dict)` to fail. Added `isinstance(port_config, int)` check first
+- **`pool_api_url` hostname validation** -- Docker service names (e.g., "stratum") and `.local`/`.internal`/`.lan`/`.home` suffixes were rejected by the hostname validator. Now allows dotless hostnames and local DNS suffixes
+- **Difficulty threshold off-by-one** -- comparison used `<` instead of `<=`, causing threshold-exact values to be missed
+- **`send_telegram` crash on auto-update** -- called with a raw string instead of an embed dict, causing `AttributeError: 'str' has no attribute 'get'` when the auto-update notification tried to send
+- **`send_notifications` 10s blocking sleep** -- retry on all-channels-failed slept 10 seconds inline, stalling the entire monitoring loop. Removed the sleep; individual send functions already have their own retry/backoff
+- **`send_notifications` redundant `load_config()` calls** -- two separate `load_config()` disk reads in the retry/fallback paths within the same function call. Consolidated to a single read
+- **`_dashboard_url()` crash on malformed hostname** -- `parsed.hostname` returning `None` for malformed URLs caused `TypeError` on string concatenation. Now falls back to `"localhost"`
+- **`flush_alert_batch` infinite retry loop** -- failed batched alerts were re-queued with type `"retry"` on every flush cycle, causing permanent re-queuing when notifications were broken. Added retry counter so each alert is retried at most once
+- **`chronic_issues` memory leak** -- per-miner `chronic_issues` dict was not pruned by `prune_stale_miner_state()`, growing unboundedly as miners were removed. Added to the pruning list
+
+**spiralctl**
+- **`preferCoin` tie-breaker crash** -- empty string comparison `strings.ToUpper(coin) < preferCoin` where `preferCoin=""` always evaluated false. Fixed both locations to handle empty initial state
+- **Resource leak in coordinator shutdown** -- `multiServer.Stop()` and `diffMonitor.Stop()` were not called during graceful shutdown, leaking goroutines and connections
+- **Tor disable leaves stale `listen=0`** -- `removeTorSettings` in `tor.go` removed proxy/onion settings but not `listen=0` and `onlynet=ipv4`, leaving the node unable to accept inbound connections after disabling Tor
+- **`pool stats` response body leak** -- `defer resp.Body.Close()` on a reassigned `resp` variable caused the first two HTTP response bodies to leak. Changed to inline `resp.Body.Close()` after each decode
+- **`saveConfig()` destroys unknown YAML sections** -- `yaml.Marshal(cfg)` on a partial Go struct silently dropped all config sections not modeled by the struct (`stratum`, `logging`, `rateLimiting`, `api`, `metrics`, etc.). Every `spiralctl` write operation destroyed production configuration. Changed to round-trip-safe approach: read existing file into generic map, merge only managed fields, write back
+- **`saveExtendedConfig()` same destructive pattern** -- identical to above but in the mining.go `ExtendedConfig` path. Same fix applied
+- **`testDBConnection` hangs indefinitely** -- `psql` connection test had no timeout; unreachable hosts would block the CLI forever. Added 15-second `context.WithTimeout`
+
+**Coordinator / Pool Core**
+- **Sentinel reads `paymentProcessors` without lock** -- `checkPaymentProcessors()` and `checkOrphanRate()` iterated the coordinator's `paymentProcessors` map without acquiring `paymentProcessorMu.RLock()`. Concurrent map read/write during coin retry panics Go with a fatal runtime crash. Added RLock around both iterations
+- **Multi-port server missing TLS config** -- the `StratumConfig` built for the multi-port server copied only 5 of 9 fields from the first enabled coin, silently dropping TLS cert/key paths. Multi-port miners could not use encrypted stratum even when TLS was configured
+- **Late-started pools on master stuck in `RoleUnknown`** -- when a pool recovered via retry on the HA master node, the code only set `RoleBackup` (when `!IsMaster()`) but had no `else` branch for the master case. The pool's HA role stayed `RoleUnknown` until the next VIP election, potentially blocking block submissions
+- **`HandleMultiPortShare` drops aux block rewards** -- multi-port share handler had no `handleAuxBlocks` call, silently discarding merge-mined aux chain blocks. Miners routed through the Multi-coin smart port could find aux blocks that were never submitted, recorded, or paid. Direct revenue loss
+- **`HandleMultiPortShare` missing Prometheus metrics** -- multi-port shares were invisible to Prometheus. Share acceptance rates, best share difficulty, and total counts were undercounted proportional to multi-port traffic volume. Dashboard, effort calculations, and Sentinel hashrate alerts all showed incorrect values
+- **`HandleMultiPortShare` credits silent duplicate shares** -- `SilentDuplicate` shares (accepted to prevent miner retry floods but not meant to be credited) were submitted to the share pipeline and persisted to the database. Multi-port miners received double credit for duplicate shares, inflating their payout share relative to non-multi-port miners
+- **`CoinPool.Stop()` never cancels `roleCancel`** -- the HA role context was not cancelled during shutdown. In-flight block submission goroutines using `roleCtx` continued running until their individual deadlines expired, unnecessarily extending shutdown by up to 60 seconds
+- **`verifyBlockAcceptance` retry timing defeats propagation wait** -- retry intervals (5s/10s/15s) were used as RPC timeouts, not propagation wait times. If the daemon responded instantly with "not found", all 3 attempts fired in ~2s instead of the intended ~30s window, causing blocks near propagation timing to be falsely marked as orphaned
+- **`haRoleHistory` slice backing array never shrinks** -- subslice trim `s.haRoleHistory[trimIdx:]` retained the full backing array. Under sustained HA flapping, memory grew monotonically. Now copies to a fresh slice
+
+**Dashboard / Pool Mode**
+- **QBX stratum config uses P2P port instead of RPC port** -- `generate_coin_config` in `pool-mode.sh` set the QBX node RPC port to 8345 (P2P) instead of 8344 (RPC), and ZMQ endpoint to 28345 instead of 28344. QBX mining was completely non-functional — stratum could not connect to the node or receive block notifications
+- **`install_node` missing wallet validation** -- the coin install API endpoint accepted any string as a wallet address without calling `validate_wallet_address()`. Invalid addresses flowed through to pool config unchecked
+- **RPC credential mismatch in `add_coin`** -- `pool-mode.sh` called `setup_node` (which generates random RPC credentials) after `generate_config` (which also generates credentials), overwriting the password already written to `config.yaml`. Stratum could not authenticate to the daemon. Removed the duplicate `setup_node` call
+- **Config files created world-readable** -- `generate_config` in `pool-mode.sh` created `config.yaml` with default 0644 permissions, exposing RPC and database passwords. Added `chmod 600` after `chown`
+- **DGB-SCRYPT `remove_coin` crashes on empty service name** -- `systemctl stop/disable/reset-failed` were called without checking if the service variable was non-empty, causing errors on partial installations. Added `-n "$service"` guards
+- **Concurrent coin install/remove race condition** -- two simultaneous dashboard API requests (e.g., install DGB + remove BTC) could run `pool-mode.sh` concurrently, corrupting shared config files and systemd state. Added `_node_operation_lock` serialization with HTTP 409 response for concurrent requests
+- **`axeos_api_call` missing SSRF validation** -- the AxeOS/NerdQAxe++ API helper accepted arbitrary IPs without `validate_miner_ip()` check. Callers validated individually but the helper itself was unprotected as defense-in-depth
+- **CGMiner API port not validated** -- user-supplied `port` parameter passed directly to `socket.connect()` without range check, enabling internal port scanning via the miner management interface. Added 1-65535 range validation
+- **Password change silently no-ops with env var** -- when `DASHBOARD_ADMIN_PASSWORD` env var was set, `change_password` verified against it but saved the hash to `auth.json`, which is never checked when the env var is active. User saw "success" but nothing changed. Now returns clear error explaining env var management
+- **Non-atomic config write in `update_multiport`** -- `open()` + `pyyaml.dump()` directly to `config.yaml` could corrupt the file on crash mid-write. Changed to tempfile + fsync + `os.replace()` atomic pattern
+- **`check_pool_upgrade` exception leaks internals** -- generic `except` handler returned `str(e)` to the client, exposing internal paths and library versions. Now logs server-side and returns generic error
+- **`firmware_tracker` unbounded key injection** -- `known_versions` dict accepted arbitrary device_type keys with no size limit. Attacker could POST thousands of entries to grow memory. Added 50-entry cap and key/value length limits
+- **WebSocket auth bypass when `AUTH_ENABLED=false`** -- HTTP routes enforce loopback-only bypass (F-03) but the SocketIO `connect` handler allowed all IPs when auth was disabled, exposing real-time pool data to the public internet. Now mirrors the loopback-only check
+- **`add_discovered_devices` returns secrets** -- endpoint returned the full config dict including `pool_admin_api_key`, `metrics_auth_token`, and device passwords. Now strips secrets before returning, matching the `/api/config` GET endpoint
+- **`cgminer_command_v2` socket leak** -- socket was not closed in `finally` block; exceptions between `socket()` and `close()` leaked file descriptors. Added `finally` cleanup matching the pattern in `cgminer_command()`
+- **`verifyBlockAcceptance` compile error** -- V2 CoinPool referenced undefined `retryIntervals` instead of `retryWaits`, preventing block acceptance verification from executing. Valid blocks with ambiguous daemon responses were falsely orphaned (money loss)
+- **`HandleMultiPortShare` inverted block priority** -- pipeline DB write happened before block submission, violating the "block first" rule. Added milliseconds of latency to block submissions in multi-port mode, increasing orphan risk (money loss)
+- **Export endpoints use wrong coin price** -- `export_blocks()` and `export_earnings()` used the primary coin's price for ALL coins. A BTC block valued at DGB price would show $0.03 instead of $187,500. Added per-coin CoinGecko price lookup
+- **Scrypt network hashrate formula** -- `_compute_network_hashrate()` fallback always used `2^32` (SHA-256d). Scrypt coins require `2^16`, causing 65,536x overestimation when RPC `getnetworkhashps` is unavailable
+- **`fetch_block_reward()` pool mismatch** -- Method 1 blindly took `pools[0]` from API regardless of which pool is primary. In multi-coin mode, the wrong coin's block reward was displayed. Now matches by pool ID
+- **QBX wallet validation accepts Bitcoin addresses** -- pool-mode.sh accepted `1...`, `3...`, `bc1q...` (Bitcoin formats) for QBX. QBX uses `M` (P2PKH), `P` (P2SH), and `pq` (post-quantum) prefixes. Bitcoin addresses on QBX network = permanently lost funds
+- **Non-interactive `--wallet` skips all validation** -- `get_wallet_address()` returned the address with zero format checks in non-interactive mode. Invalid or wrong-network addresses passed through silently. Added per-coin prefix validation
+- **Multi-coin `--wallet` applies same address to all coins** -- `switch_to_multi()` with a single `--wallet` flag set the same address for all coins. Coins with incompatible address formats (e.g., DGB + BTC) would lose all block rewards for mismatched coins. Added early cross-coin validation
+- **WAL `cleanupArchives()` unsorted deletion** -- `filepath.Glob` does not guarantee sort order. Without sorting, the newest archives could be deleted instead of the oldest, destroying the most recent committed share data needed for crash recovery
+- **V1 Pipeline missing WAL** -- `NewPipeline()` (used by V1 Pool) never set `walPath` or `poolID`, silently disabling WAL crash recovery. On crash, up to 1M in-flight shares were permanently lost. Now passes pool ID to enable WAL
+- **`sendBatch()` silent share loss** -- when `batchChan` is full, shares were dropped with only a warning log. Added explicit CRITICAL-level logging when WAL is disabled (no recovery possible) vs informational when WAL will recover
+- **System health missing coin daemon services** -- `/api/system/health` looked for `coins_config` key (from detect_mode API) in the `get_enabled_coins()` dict (which uses `enabled` key). Coin daemon service status was never included in health checks
+- **`per_miner_hashrate` unbounded dict growth** -- historical hashrate dict never pruned keys for removed miners. Over weeks of miner churn, each stale entry retains a 10,080-entry deque. Now prunes stale miners on each recording cycle
+- **HA `announce_to_cluster` SSH pubkey injection** -- `$local_pubkey` interpolated unquoted into remote SSH command string. Used single-quoted remote command with stdin pipe to prevent shell metacharacter expansion
+- **HA `sync_ha_cluster` empty service variable** -- when `$service` was empty (unknown coin), `systemctl is-active --quiet` with no args returned exit-code 0, causing unrelated services to be stopped. Added empty-service guard
+- **Non-atomic config write in `generate_config`** -- `cat >` truncated the config file before the coin loop completed. Script abort mid-loop left a partial/empty config that crashed the stratum. Now writes to temp file and atomic-moves on success
+- **Wallet address shell/YAML injection via `--wallet`** -- addresses were interpolated into shell-expanded heredocs (`<< EOF`). A crafted address like `$(cmd)` would execute. Added character-class sanitization stripping all non-alphanumeric/colon characters
+
+**Peer Discovery & Network Bootstrap**
+- **`forcednsseed=1` stripped on every upgrade** -- `cleanup_daemon_configs()` in `upgrade.sh` listed `forcednsseed` in the "invalid options" array and deleted it from all 13 coin configs on every upgrade run. Fresh installs on nodes with flaky DNS seeds (6/8 DGB seeds dead, all 3 FBTC seeds dead) got 0 peers and could not sync. Root cause of .22 HA node having 0 peers after v2.1 install. Removed from invalid list; added `ensure_daemon_peer_config()` to restore it on upgrade
+- **Zero hardcoded fallback peers across all coins** -- all 13 coin configs relied entirely on DNS seeds for peer discovery. When DNS seeds are unreachable (firewalled, dead, slow), nodes get 0 peers indefinitely. Added `addnode=` entries with verified live peer IPs to all coins across native install, Docker, and upgrade paths (204 total addnode entries)
+- **QBX missing all seed configuration** -- Q-BitX config had zero `seednode=` entries. The only DNS seed (`seed.qbitx.org`, found via `strings` on the binary) was never added to the config. Fresh QBX installs relied entirely on compiled-in fixed seeds
+- **FBTC DNS seeds all dead** -- all 3 Fractal Bitcoin DNS seeds (`dnsseed-mainnet.fractalbitcoin.io`, `dnsseed-mainnet.unisat.io`, `dnsseed.fractalbitcoin.io`) return no records. Added `fixedseeds=1` explicitly and 5 `addnode=` peers obtained from a live FBTC daemon's `getpeerinfo`
+- **FBTC missing third DNS seed** -- `dnsseed.fractalbitcoin.io` was compiled into the binary (found via `strings`) but not in the config's seednode list. Added as third seednode entry
+
+**Multi-Coin Scheduler**
+- **`switchJob := *job` copies sync.RWMutex** -- `multiserver.go` line 369 copied a `protocol.Job` struct by value during coin switches. `Job` embeds `sync.RWMutex` at field `stateMu`; copying a mutex is undefined behavior that can cause deadlocks or data races. Detected by `go vet`. Fixed to use `job.Clone()` which properly initializes a fresh mutex
+
+### Changed
+
+- **Package rename `internal/difficulty` -> `internal/scheduler`** -- the "difficulty switching" concept was removed; the package contains scheduling, monitoring, and routing logic. All imports updated
+- **Version bump** -- all version strings, documentation, templates, MOTD, and config files updated to 2.1.0
+- **MOTD consolidated** -- reduced from 22 commands to 14, organized into Status/Monitoring, Mining/Coins, and Management sections. Added `mining multiport` (experimental) command. Updated in both `install.sh` and `upgrade.sh`
+
+---
+
 ## [2.0.1]  -  2026-03-29  -  Phi Hash Reactor
 
 ### Fixed

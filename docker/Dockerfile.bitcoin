@@ -44,9 +44,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu gettext-ba
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/bitcoin.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/bitcoin/.bitcoin/bitcoin.conf ] && [ -s /home/bitcoin/.bitcoin/bitcoin.conf ]; then\n\
+    echo "Using existing bitcoin.conf (skipping template generation)"\n\
+elif [ -f /config/bitcoin.conf.template ]; then\n\
     envsubst < /config/bitcoin.conf.template > /home/bitcoin/.bitcoin/bitcoin.conf\n\
+    chmod 600 /home/bitcoin/.bitcoin/bitcoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

@@ -44,6 +44,9 @@ type ServerV2 struct {
 	// Sentinel alert provider (wired from Coordinator)
 	sentinelProvider SentinelAlertProvider
 
+	// Multi-port (Multi-coin smart port) stats provider
+	multiPortProvider MultiPortStatsProvider
+
 	// Cached responses
 	cacheMu     sync.RWMutex
 	poolsCache  []byte
@@ -54,6 +57,45 @@ type ServerV2 struct {
 // Implemented by the Coordinator to avoid circular imports.
 type SentinelAlertProvider interface {
 	GetSentinelAlerts(since time.Time) []SentinelAlert
+}
+
+// MultiPortStatsProvider provides stats for the multi-coin smart port.
+// Implemented by the Coordinator to avoid circular imports.
+type MultiPortStatsProvider interface {
+	GetMultiPortStats() *MultiPortStats
+	GetMultiPortSwitchHistory(limit int) []MultiPortSwitchEvent
+	GetMultiPortDifficultyStates() map[string]MultiPortDiffState
+}
+
+// MultiPortStats represents the multi-port server status for the API.
+type MultiPortStats struct {
+	Enabled          bool                     `json:"enabled"`
+	Port             int                      `json:"port"`
+	ActiveSessions   int64                    `json:"active_sessions"`
+	TotalSwitches    uint64                   `json:"total_switches"`
+	CoinDistribution map[string]int           `json:"coin_distribution"`
+	AllowedCoins     []string                 `json:"allowed_coins"`
+	CoinWeights      map[string]int           `json:"coin_weights,omitempty"` // symbol → weight %
+}
+
+// MultiPortSwitchEvent represents a coin switch event for the API.
+type MultiPortSwitchEvent struct {
+	SessionID  uint64    `json:"session_id"`
+	WorkerName string    `json:"worker_name"`
+	MinerClass string    `json:"miner_class"`
+	FromCoin   string    `json:"from_coin"`
+	ToCoin     string    `json:"to_coin"`
+	Reason     string    `json:"reason"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
+// MultiPortDiffState represents a coin's difficulty state for the API.
+type MultiPortDiffState struct {
+	Symbol      string    `json:"symbol"`
+	NetworkDiff float64   `json:"network_diff"`
+	BlockTime   float64   `json:"block_time"`
+	Available   bool      `json:"available"`
+	LastUpdated time.Time `json:"last_updated"`
 }
 
 // SentinelAlert mirrors pool.SentinelAlert for JSON serialization at the API layer.
@@ -150,6 +192,11 @@ func (s *ServerV2) Start(ctx context.Context) error {
 
 	// Coin registry endpoint (public - for Sentinel/Dashboard validation)
 	mux.HandleFunc("/api/coins", s.handleCoinsV2)
+
+	// Multi-port (Multi-coin smart port) endpoints (public)
+	mux.HandleFunc("/api/multiport", s.handleMultiPort)
+	mux.HandleFunc("/api/multiport/switches", s.handleMultiPortSwitches)
+	mux.HandleFunc("/api/multiport/difficulty", s.handleMultiPortDifficulty)
 
 	// Apply middleware
 	handler := s.rateLimitMiddleware(mux)
@@ -257,7 +304,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "2.0.1-PHI_HASH_REACTOR-V2",
+		Version:  "2.1.0-PHI_HASH_REACTOR-V2",
 		Pools:    pools,
 	}
 
@@ -1013,6 +1060,66 @@ func (s *ServerV2) handleCoinsV2(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, response)
+}
+
+// SetMultiPortProvider wires the multi-port stats provider.
+func (s *ServerV2) SetMultiPortProvider(p MultiPortStatsProvider) {
+	s.multiPortProvider = p
+}
+
+// handleMultiPort returns the multi-port server status.
+func (s *ServerV2) handleMultiPort(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.multiPortProvider == nil {
+		s.writeJSON(w, map[string]interface{}{"enabled": false})
+		return
+	}
+
+	stats := s.multiPortProvider.GetMultiPortStats()
+	if stats == nil {
+		s.writeJSON(w, map[string]interface{}{"enabled": false})
+		return
+	}
+	s.writeJSON(w, stats)
+}
+
+// handleMultiPortSwitches returns recent coin switch events.
+func (s *ServerV2) handleMultiPortSwitches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.multiPortProvider == nil {
+		s.writeJSON(w, []struct{}{})
+		return
+	}
+
+	events := s.multiPortProvider.GetMultiPortSwitchHistory(50)
+	if events == nil {
+		events = []MultiPortSwitchEvent{}
+	}
+	s.writeJSON(w, events)
+}
+
+// handleMultiPortDifficulty returns current difficulty states for all multi-port coins.
+func (s *ServerV2) handleMultiPortDifficulty(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.multiPortProvider == nil {
+		s.writeJSON(w, map[string]interface{}{})
+		return
+	}
+
+	states := s.multiPortProvider.GetMultiPortDifficultyStates()
+	s.writeJSON(w, states)
 }
 
 // securityHeadersMiddleware adds security headers to all responses.

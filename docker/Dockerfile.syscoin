@@ -54,9 +54,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/syscoin.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/syscoin/.syscoin/syscoin.conf ] && [ -s /home/syscoin/.syscoin/syscoin.conf ]; then\n\
+    echo "Using existing syscoin.conf (skipping template generation)"\n\
+elif [ -f /config/syscoin.conf.template ]; then\n\
     envsubst < /config/syscoin.conf.template > /home/syscoin/.syscoin/syscoin.conf\n\
+    chmod 600 /home/syscoin/.syscoin/syscoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

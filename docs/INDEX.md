@@ -50,6 +50,7 @@ Quick-lookup tables, CLI commands, hardware support, and external access.
 | [SENTINEL.md](reference/SENTINEL.md) | Spiral Sentinel: monitoring, alerts, achievements, CoinGecko integration, 26 miner types |
 | [DASHBOARD.md](reference/DASHBOARD.md) | Spiral Dash: web dashboard, ~125 API routes, miner management, 19 themes |
 | [EXTERNAL_ACCESS.md](reference/EXTERNAL_ACCESS.md) | External access: port forwarding, Cloudflare tunnels, hashrate marketplace integration |
+| [MULTI_COIN_PORT.md](reference/MULTI_COIN_PORT.md) | Multi-coin smart port: weighted time allocation, difficulty routing, miner setup, API |
 
 ## Development
 
@@ -78,4 +79,4 @@ Legal documents are in the repository root:
 
 ---
 
-*Spiral Pool -- Phi Hash Reactor 2.0.1*
+*Spiral Pool -- Phi Hash Reactor 2.1.0*

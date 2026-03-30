@@ -21,8 +21,9 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 # Note: Bitcoin II binaries use capital "II" - bitcoinIId not bitcoiniid
-ExecStart={{INSTALL_DIR}}/bc2/bin/bitcoinIId -daemon -conf={{INSTALL_DIR}}/bc2/bitcoinii.conf -datadir={{INSTALL_DIR}}/bc2
+ExecStart={{INSTALL_DIR}}/bc2/bin/bitcoinIId -daemon -conf={{INSTALL_DIR}}/bc2/bitcoinii.conf -datadir={{INSTALL_DIR}}/bc2 -pid={{INSTALL_DIR}}/bc2/bitcoiniid.pid
 ExecStop={{INSTALL_DIR}}/bc2/bin/bitcoinII-cli -conf={{INSTALL_DIR}}/bc2/bitcoinii.conf -datadir={{INSTALL_DIR}}/bc2 stop
+PIDFile={{INSTALL_DIR}}/bc2/bitcoiniid.pid
 Restart=always
 RestartSec=30
 TimeoutStartSec=infinity

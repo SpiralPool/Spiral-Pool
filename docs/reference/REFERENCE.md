@@ -25,6 +25,12 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Fractal Bitcoin | FBTC | 18335 | 18336 | 18337 |
 | Q-BitX | QBX | 20335 | 20336 | 20337 |
 
+## Multi-Coin Smart Port
+
+| Feature | Port | Notes |
+|---------|------|-------|
+| Multi-Coin Stratum | 16180 | Weighted 24h UTC schedule across SHA-256d coins. See [MULTI_COIN_PORT.md](MULTI_COIN_PORT.md) |
+
 ## Service Ports
 
 | Port | Service |
@@ -445,4 +451,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.0.1*
+*Spiral Pool — Phi Hash Reactor 2.1.0*

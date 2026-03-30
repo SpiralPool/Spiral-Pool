@@ -18,7 +18,7 @@ See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 - **Dashboard statistics chart grid** — 2×2 charts for pool hashrate, network hashrate, difficulty, workers
 - **`_safe_num()` across all miner fetch functions** — prevents dashboard crash from firmware returning string-encoded numbers
 - **Spiral Router cleanup** — 47 verified patterns (down from ~280 dead-code patterns), all confirmed against firmware source
-- **Version string consistency** — all strings now semver `2.0.1`
+- **Version string consistency** — all strings now semver `2.1.0`
 
 ## What was new in v1.1.0
 
@@ -341,13 +341,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.0.1`. If Sentinel is running:
+The version line should show `2.1.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Sentinel v2.0.1-PHI_HASH_REACTOR` followed by `PHI HASH REACTOR EDITION` in the startup log.
+Look for `Spiral Sentinel v2.1.0-PHI_HASH_REACTOR` followed by `PHI HASH REACTOR EDITION` in the startup log.
 
 ---
 
@@ -427,4 +427,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.0.1 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Phi Hash Reactor 2.1.0 — Built on what came before. Growing toward phi.*

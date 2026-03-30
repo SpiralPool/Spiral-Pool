@@ -779,7 +779,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "2.0.1-PHI_HASH_REACTOR"}
+{"alive": true, "uptime_s": 3600, "version": "2.1.0-PHI_HASH_REACTOR"}
 ```
 
 ### `GET /cooldowns`
@@ -797,4 +797,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Phi Hash Reactor 2.0.1*
+*Spiral Sentinel &mdash; Phi Hash Reactor 2.1.0*

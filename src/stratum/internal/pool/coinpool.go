@@ -810,7 +810,9 @@ func (cp *CoinPool) handleShare(share *protocol.Share) *protocol.ShareResult {
 		}
 
 		// Submit to pipeline for DB persistence (after block handling)
-		cp.sharePipeline.Submit(share)
+		if cp.sharePipeline != nil {
+			cp.sharePipeline.Submit(share)
+		}
 
 		// Track accepted share count on the session (used by connections API for dashboard)
 		if session, ok := cp.stratumServer.GetSession(share.SessionID); ok {
@@ -2004,7 +2006,14 @@ func (cp *CoinPool) Stop() error {
 
 	cp.logger.Info("Shutting down coin pool...")
 
-	// Cancel context
+	// Cancel HA role context first (unblocks in-flight block submissions)
+	cp.roleMu.Lock()
+	if cp.roleCancel != nil {
+		cp.roleCancel()
+	}
+	cp.roleMu.Unlock()
+
+	// Cancel main lifecycle context
 	if cp.cancel != nil {
 		cp.cancel()
 	}
@@ -2679,6 +2688,89 @@ func (cp *CoinPool) IsWALRecoveryRunning() bool {
 // GetSharePipeline returns the share pipeline for metrics wiring.
 func (cp *CoinPool) GetSharePipeline() *shares.Pipeline {
 	return cp.sharePipeline
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MULTI-PORT (DIFFICULTY OVERFLOW ROUTER) SUPPORT
+// ══════════════════════════════════════════════════════════════════════════════
+// These methods support the multi-coin "smart port" where miners connect to a
+// single port and the pool routes them to the optimal coin based on network
+// difficulty. Shares arrive from the MultiServer and need to be validated and
+// recorded by the correct CoinPool.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// HandleMultiPortShare validates and records a share from the multi-port server.
+// Unlike handleShare(), this does NOT require vardiff session state since the
+// session is managed by the MultiServer, not this CoinPool's stratum server.
+// The share's difficulty is already set by the multi-port server.
+func (cp *CoinPool) HandleMultiPortShare(share *protocol.Share) *protocol.ShareResult {
+	if cp.shareValidator == nil {
+		return &protocol.ShareResult{
+			Accepted:     false,
+			RejectReason: "coin-pool-not-ready",
+		}
+	}
+
+	// Validate share using coin-specific algorithm
+	result := cp.shareValidator.ValidateWithCoin(share)
+
+	if !result.Accepted && !result.SilentDuplicate {
+		cp.logger.Warnw("Multi-port share rejected",
+			"sessionId", share.SessionID,
+			"jobId", share.JobID,
+			"reason", result.RejectReason,
+			"shareDiff", share.Difficulty,
+			"actualDiff", result.ActualDifficulty,
+			"coin", cp.coinSymbol,
+		)
+	}
+
+	// Record Prometheus metrics for multi-port shares (matches handleShare pattern)
+	if cp.metricsServer != nil {
+		if result.SilentDuplicate {
+			cp.metricsServer.RecordShare(false, result.RejectReason)
+		} else {
+			cp.metricsServer.RecordShare(result.Accepted, result.RejectReason)
+			if result.Accepted && result.ActualDifficulty > 0 {
+				cp.metricsServer.UpdateBestShareDiff(result.ActualDifficulty)
+			}
+		}
+	}
+
+	// Silent duplicates: told miner "accepted" to prevent retry floods, but don't credit
+	if result.SilentDuplicate {
+		return result
+	}
+
+	// Write accepted share to pipeline and check for block (only on accepted shares)
+	// CRITICAL: Check for block FIRST, before ANY I/O operations
+	// Block submission is the most time-sensitive operation - every millisecond counts!
+	if result.Accepted {
+		if result.IsBlock {
+			cp.handleBlock(share, result)
+		}
+		if cp.sharePipeline != nil {
+			cp.sharePipeline.Submit(share)
+		}
+	}
+
+	// Aux blocks must be processed even when the parent share is rejected.
+	// A share may not meet parent chain difficulty but still meet an aux chain's
+	// (typically lower) difficulty — this is the core benefit of merge mining.
+	if len(result.AuxResults) > 0 {
+		cp.handleAuxBlocks(share, result.AuxResults)
+	}
+
+	return result
+}
+
+// GetCurrentJob returns the current job from this coin pool's job manager.
+// Used by the multi-port server to get job templates for miners routed to this coin.
+func (cp *CoinPool) GetCurrentJob() *protocol.Job {
+	if cp.jobManager == nil {
+		return nil
+	}
+	return cp.jobManager.GetCurrentJob()
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3733,11 +3825,13 @@ func (cp *CoinPool) cleanupStaleSessions(staleThreshold time.Duration) {
 // Now also uses GetBlock-by-hash (Method 2) to detect blocks at different heights
 // or during reorg timing. The retry strategy compensates for propagation delay.
 func (cp *CoinPool) verifyBlockAcceptance(blockHash string, blockHeight uint64) bool {
-	// Retry intervals: 5s, 10s, 15s (total 30s verification window)
-	retryIntervals := []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second}
+	// Wait before each attempt to allow block propagation: 5s, 10s, 15s (total ~30s window)
+	retryWaits := []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second}
+	const rpcTimeout = 5 * time.Second
 
-	for attempt, interval := range retryIntervals {
-		ctx, cancel := context.WithTimeout(context.Background(), interval)
+	for attempt, wait := range retryWaits {
+		time.Sleep(wait)
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 
 		// Method 1: Get the block hash at the expected height
 		chainHash, err := cp.nodeManager.GetBlockHash(ctx, blockHeight)
@@ -3787,16 +3881,14 @@ func (cp *CoinPool) verifyBlockAcceptance(blockHash string, blockHeight uint64) 
 		cancel()
 
 		// Log progress for debugging
-		if attempt < len(retryIntervals)-1 {
+		if attempt < len(retryWaits)-1 {
 			cp.logger.Warnw("Post-timeout verification: Block not found yet, will retry",
 				"coin", cp.coinSymbol,
 				"height", blockHeight,
 				"hash", blockHash,
 				"attempt", attempt+1,
-				"nextRetryIn", retryIntervals[attempt+1],
+				"nextRetryIn", retryWaits[attempt+1],
 			)
-			// Brief sleep before next attempt to let daemon process
-			time.Sleep(1 * time.Second)
 		}
 	}
 
@@ -3804,7 +3896,7 @@ func (cp *CoinPool) verifyBlockAcceptance(blockHash string, blockHeight uint64) 
 		"coin", cp.coinSymbol,
 		"height", blockHeight,
 		"hash", blockHash,
-		"totalAttempts", len(retryIntervals),
+		"totalAttempts", len(retryWaits),
 	)
 	return false
 }

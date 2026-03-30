@@ -188,7 +188,6 @@ func fetchPoolStats(apiPort, dashboardPort int) (*PoolStatsResult, error) {
 	dashURL := fmt.Sprintf("%s/api/miners", dashBase)
 	resp, err := client.Get(dashURL)
 	if err == nil {
-		defer resp.Body.Close()
 		var miners MinersAPIResponse
 		// Use limited reader to prevent memory exhaustion from malicious response
 		if json.NewDecoder(limitedReader(resp.Body)).Decode(&miners) == nil {
@@ -214,13 +213,13 @@ func fetchPoolStats(apiPort, dashboardPort int) (*PoolStatsResult, error) {
 				result.LastBlockTime = v
 			}
 		}
+		resp.Body.Close()
 	}
 
 	// Try to get ETB stats
 	etbURL := fmt.Sprintf("%s/api/etb", dashBase)
 	resp, err = client.Get(etbURL)
 	if err == nil {
-		defer resp.Body.Close()
 		var etb ETBResponse
 		if json.NewDecoder(limitedReader(resp.Body)).Decode(&etb) == nil && etb.Success {
 			result.ETBFormatted = etb.ETB.EstimatedFormatted
@@ -228,13 +227,13 @@ func fetchPoolStats(apiPort, dashboardPort int) (*PoolStatsResult, error) {
 			result.Probability7d = etb.Probability.Day7
 			result.Probability30d = etb.Probability.Day30
 		}
+		resp.Body.Close()
 	}
 
 	// Try stratum API for additional stats
 	poolURL := fmt.Sprintf("http://127.0.0.1:%d/api/pools", apiPort)
 	resp, err = client.Get(poolURL)
 	if err == nil {
-		defer resp.Body.Close()
 		var pools []map[string]interface{}
 		if json.NewDecoder(limitedReader(resp.Body)).Decode(&pools) == nil && len(pools) > 0 {
 			pool := pools[0]
@@ -250,6 +249,7 @@ func fetchPoolStats(apiPort, dashboardPort int) (*PoolStatsResult, error) {
 				result.BlocksFound = int(blocks)
 			}
 		}
+		resp.Body.Close()
 	}
 
 	return result, nil

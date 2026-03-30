@@ -51,20 +51,24 @@ RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" != "amd64" ]; then \
         echo "ERROR: Q-BitX only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
     fi && \
-    wget -q --max-redirect=5 "https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86.zip" \
-    && unzip -q "qbitx-linux-x86.zip" \
-    && cp qbitxd /usr/local/bin/qbitxd \
+    wget -q --max-redirect=5 "https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86_64-v${QBX_VERSION}.zip" \
+    && unzip -q "qbitx-linux-x86_64-v${QBX_VERSION}.zip" \
+    && cp qbitx /usr/local/bin/qbitx \
+    && ln -sf /usr/local/bin/qbitx /usr/local/bin/qbitxd \
     && cp qbitx-cli /usr/local/bin/qbitx-cli \
-    && chmod +x /usr/local/bin/qbitxd /usr/local/bin/qbitx-cli \
+    && chmod +x /usr/local/bin/qbitx /usr/local/bin/qbitx-cli \
     && rm -rf /tmp/*
 
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Process config template (replace env vars)\n\
-if [ -f /config/qbitx.conf.template ]; then\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/qbitx/.qbitx/qbitx.conf ] && [ -s /home/qbitx/.qbitx/qbitx.conf ]; then\n\
+    echo "Using existing qbitx.conf (skipping template generation)"\n\
+elif [ -f /config/qbitx.conf.template ]; then\n\
     envsubst < /config/qbitx.conf.template > /home/qbitx/.qbitx/qbitx.conf\n\
+    chmod 600 /home/qbitx/.qbitx/qbitx.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

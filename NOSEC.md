@@ -279,5 +279,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v2.0.1 - Security Architecture Decisions*
+*Spiral Pool v2.1.0 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*
