@@ -732,7 +732,7 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 	// Fetch aux blocks if merge mining is enabled
 	var auxBlocks []auxpow.AuxBlockData
 	var auxMerkleRoot []byte
-	var auxMerkleBranch [][]byte
+	var auxMerkleBranch map[int][][]byte
 	var auxTreeSize uint32
 
 	if m.auxManager != nil {
@@ -845,6 +845,15 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 				targetBytes = ab.Target.FillBytes(make([]byte, 32))
 			}
 
+			// Convert per-chain merkle branch to hex strings
+			var merkleBranchHex []string
+			if chainBranch, ok := auxMerkleBranch[ab.ChainIndex]; ok && len(chainBranch) > 0 {
+				merkleBranchHex = make([]string, len(chainBranch))
+				for j, hash := range chainBranch {
+					merkleBranchHex[j] = hex.EncodeToString(hash)
+				}
+			}
+
 			job.AuxBlocks[i] = protocol.AuxBlockData{
 				Symbol:        ab.Symbol,
 				ChainID:       ab.ChainID,
@@ -855,13 +864,18 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 				ChainIndex:    ab.ChainIndex,
 				Difficulty:    ab.Difficulty,
 				Bits:          ab.Bits,
+				MerkleBranch:  merkleBranchHex,
 			}
 		}
 
-		// Store aux merkle branch as hex strings (for AuxPoW proof construction)
-		job.AuxMerkleBranch = make([]string, len(auxMerkleBranch))
-		for i, branch := range auxMerkleBranch {
-			job.AuxMerkleBranch[i] = hex.EncodeToString(branch)
+		// Store aux merkle branch for backwards compat (first chain's branch)
+		if len(auxBlocks) > 0 {
+			if firstBranch, ok := auxMerkleBranch[auxBlocks[0].ChainIndex]; ok {
+				job.AuxMerkleBranch = make([]string, len(firstBranch))
+				for i, branch := range firstBranch {
+					job.AuxMerkleBranch[i] = hex.EncodeToString(branch)
+				}
+			}
 		}
 
 		m.logger.Debugw("Generated merge mining job",

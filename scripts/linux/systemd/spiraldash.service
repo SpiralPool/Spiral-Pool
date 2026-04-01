@@ -10,7 +10,7 @@
 [Unit]
 Description=Spiral Pool Dashboard
 Documentation=https://github.com/SpiralPool/Spiral-Pool
-After=network-online.target spiralstratum.service
+After=network-online.target
 # R-11 FIX: Increased from 300s to 600s (match sentinel).
 # Dashboard depends on stratum, which can take 5+ minutes after cold boot.
 # 300s was too aggressive — dashboard hit restart limit before stratum was ready.

@@ -1,4 +1,4 @@
-# Spiral Pool v2.1.0 Configuration
+# Spiral Pool v2.2.0 Configuration
 # Multi-coin support with node failover
 # Supports SHA256d coins: BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC, QBX
 # Supports Scrypt coins: LTC, DOGE, DGB-SCRYPT, PEP, CAT
@@ -829,6 +829,42 @@ coins:
     payments:
       enabled: false
       scheme: SOLO
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MULTI COIN SMART PORT
+# Single stratum port that rotates miners between SHA-256d coins on a
+# 24-hour weighted schedule. Miners connect once — the pool handles switching.
+# Configure via: Dashboard Settings > Multi Coin Smart Port
+# See docs: docs/reference/MULTI_COIN_PORT.md
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# multi_port:
+#   enabled: true
+#   port: 16180                  # Dedicated stratum port (default: 16180)
+#   coins:
+#     QBX:
+#       weight: 96               # 96% of daily mining time (~23 hours)
+#       start_hour: 0            # Optional: start at midnight (0-23.99)
+#     BC2:
+#       weight: 4                # 4% of daily mining time (~1 hour)
+#       start_hour: 23           # Optional: start at 11 PM
+#   check_interval: 30s          # How often to check schedule boundaries
+#   prefer_coin: QBX             # Default coin / tie-breaker
+#   min_time_on_coin: 60s        # Minimum time before switch (prevents flip-flopping)
+#   timezone: America/New_York   # IANA timezone for 24h schedule
+#
+#   # Wallet Resolution:
+#   # By default, shares are credited to each coin's pool payout address
+#   # (the "address" field in each coin's config above). No extra setup needed.
+#   #
+#   # For public pools where individual miners need per-coin wallets:
+#   # wallet_map:
+#   #   WorkerName1:
+#   #     QBX: "Mqbx1abc..."
+#   #     BC2: "1bc2xyz..."
+#   #   WorkerName2:
+#   #     QBX: "Mqbx1def..."
+#   #     BC2: "1bc2uvw..."
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EXTERNAL ACCESS CONFIGURATION

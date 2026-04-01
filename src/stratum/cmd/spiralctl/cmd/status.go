@@ -71,12 +71,18 @@ func printPoolStatus(cfg *Config) {
 	}
 
 	// Count enabled coins
-	if len(cfg.Coins) > 0 {
-		enabledCoins := []string{}
-		for coin := range cfg.Coins {
-			enabledCoins = append(enabledCoins, strings.ToUpper(coin))
+	if coinList, ok := cfg.Coins.([]interface{}); ok && len(coinList) > 0 {
+		var enabledCoins []string
+		for _, entry := range coinList {
+			if m, ok := entry.(map[string]interface{}); ok {
+				if s, ok := m["symbol"].(string); ok {
+					enabledCoins = append(enabledCoins, strings.ToUpper(s))
+				}
+			}
 		}
-		fmt.Printf("  Coins:         %s\n", strings.Join(enabledCoins, ", "))
+		if len(enabledCoins) > 0 {
+			fmt.Printf("  Coins:         %s\n", strings.Join(enabledCoins, ", "))
+		}
 	}
 
 	fmt.Println()

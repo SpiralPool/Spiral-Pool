@@ -36,12 +36,12 @@ type ConfigV2 struct {
 	Global    GlobalConfig     `yaml:"global"`   // Global settings
 	Database  DatabaseConfig   `yaml:"database"` // Shared database
 	Coins     []CoinPoolConfig `yaml:"coins"`    // Per-coin pool configurations
-	MultiPort MultiPortConfig  `yaml:"multi_port,omitempty"` // Multi-coin smart port (v2.1)
+	MultiPort MultiPortConfig  `yaml:"multi_port,omitempty"` // Multi coin smart port (v2.1)
 	VIP       VIPConfig        `yaml:"vip,omitempty"`        // VIP (Virtual IP) for miner failover
 	HA        HAConfig         `yaml:"ha,omitempty"`         // High Availability coordination
 }
 
-// MultiPortConfig configures the multi-coin smart port.
+// MultiPortConfig configures the multi coin smart port.
 // When enabled, miners connect to a single port and the pool distributes
 // mining time across SHA-256d coins on a 24-hour UTC schedule based on
 // configured weights. For example, DGB:80 + BTC:20 = 19.2h DGB + 4.8h BTC.
@@ -54,11 +54,17 @@ type MultiPortConfig struct {
 	PreferCoin    string        `yaml:"prefer_coin,omitempty"`   // Default coin / tie-breaker
 	MinTimeOnCoin time.Duration `yaml:"min_time_on_coin,omitempty"` // Minimum time before switch (default 60s)
 	Timezone      string        `yaml:"timezone,omitempty"`      // IANA timezone for schedule (default: use display_timezone from sentinel config, fallback UTC)
+	// WalletMap maps worker names to per-coin payout addresses.
+	// Required when multi-port coins use different address formats.
+	// Key: worker name (case-insensitive), Value: coin symbol → wallet address.
+	// Example: {"Heat2Sats": {"QBX": "qbx1...", "BC2": "bc2..."}}
+	WalletMap map[string]map[string]string `yaml:"wallet_map,omitempty"`
 }
 
 // CoinRouteConfig holds per-coin routing parameters.
 type CoinRouteConfig struct {
-	Weight int `yaml:"weight"` // Percentage of daily mining time (0-100, must sum to 100)
+	Weight    int      `yaml:"weight"`               // Percentage of daily mining time (0-100, must sum to 100)
+	StartHour *float64 `yaml:"start_hour,omitempty"` // Optional custom start hour (0-23.99) in configured timezone
 }
 
 // CoinSymbols returns the list of coin symbols configured for multi-port.
@@ -667,6 +673,56 @@ func (c *ConfigV2) Validate() error {
 		}
 		if coin.Stratum.Banning.InvalidSharesThreshold < 0 {
 			return fmt.Errorf("coins[%d] (%s): stratum.banning.invalid_shares_threshold cannot be negative", i, coin.Symbol)
+		}
+	}
+
+	// Validate multi_port configuration if enabled
+	if c.MultiPort.Enabled {
+		if c.MultiPort.Port <= 0 || c.MultiPort.Port > 65535 {
+			return fmt.Errorf("multi_port.port must be between 1 and 65535, got %d", c.MultiPort.Port)
+		}
+		// Check port conflicts with per-coin stratum ports
+		if conflictCoin, ok := usedPorts[c.MultiPort.Port]; ok {
+			return fmt.Errorf("multi_port.port %d conflicts with %s stratum port", c.MultiPort.Port, conflictCoin)
+		}
+		if len(c.MultiPort.Coins) < 2 {
+			return fmt.Errorf("multi_port requires at least 2 coins, got %d", len(c.MultiPort.Coins))
+		}
+		// Check for duplicate symbols (case-insensitive) and validate weights
+		seenSymbols := make(map[string]string) // upper → original
+		totalWeight := 0
+		coinSymbols := make(map[string]bool)
+		for _, coin := range c.Coins {
+			coinSymbols[strings.ToUpper(coin.Symbol)] = true
+		}
+		for sym, routeCfg := range c.MultiPort.Coins {
+			upper := strings.ToUpper(sym)
+			if orig, exists := seenSymbols[upper]; exists {
+				return fmt.Errorf("multi_port.coins has duplicate symbol %q (conflicts with %q, case-insensitive)", sym, orig)
+			}
+			seenSymbols[upper] = sym
+			if !coinSymbols[upper] {
+				return fmt.Errorf("multi_port.coins references %q which is not in the coins list", sym)
+			}
+			if routeCfg.Weight < 0 || routeCfg.Weight > 100 {
+				return fmt.Errorf("multi_port.coins[%s].weight must be 0-100, got %d", sym, routeCfg.Weight)
+			}
+			totalWeight += routeCfg.Weight
+		}
+		if totalWeight != 100 {
+			return fmt.Errorf("multi_port coin weights must sum to 100, got %d", totalWeight)
+		}
+		// Validate wallet_map: each referenced coin must be in multi_port.coins
+		for worker, wallets := range c.MultiPort.WalletMap {
+			for coin, addr := range wallets {
+				upper := strings.ToUpper(coin)
+				if _, exists := seenSymbols[upper]; !exists {
+					return fmt.Errorf("multi_port.wallet_map[%s] references coin %q not in multi_port.coins", worker, coin)
+				}
+				if addr == "" {
+					return fmt.Errorf("multi_port.wallet_map[%s][%s] has empty address", worker, coin)
+				}
+			}
 		}
 	}
 

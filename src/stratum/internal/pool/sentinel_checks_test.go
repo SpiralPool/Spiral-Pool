@@ -41,7 +41,8 @@ func testSentinel(cfg *config.SentinelConfig) *Sentinel {
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:    make(map[string]int),
 		haRoleHistory:   make([]time.Time, 0, 16),
-		cooldowns:       make(map[string]time.Time),
+		cooldowns:        make(map[string]time.Time),
+		walRecoveryStart: make(map[string]time.Time),
 	}
 }
 

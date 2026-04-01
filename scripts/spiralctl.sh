@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.1.0}"
+VERSION="${VERSION:-2.2.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -6156,7 +6156,7 @@ show_help() {
     echo "    mining [status|solo|multi|merge|multiport] [options]"
     echo "                        Mining mode management"
     echo "    mining multiport [status|enable|disable|weights]"
-    echo "                        Multi-coin smart port (24h UTC schedule, port 16180)"
+    echo "                        Multi coin smart port (24h UTC schedule, port 16180)"
     echo "    pool stats          Pool hashrate and worker statistics"
     echo "    stats [blocks [N]]  Quick pool stats; 'stats blocks' shows last N blocks"
     echo "    miners [list]       Show connected miners with hashrate and shares"

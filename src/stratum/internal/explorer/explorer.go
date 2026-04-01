@@ -57,9 +57,9 @@ var validBlockHash = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 // validTxHash matches valid transaction hashes (64 hex chars)
 var validTxHash = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
-// validAddress matches common cryptocurrency address patterns
-// Note: This is a basic check; specific coins have more complex validation
-var validAddress = regexp.MustCompile(`^[a-zA-Z0-9]{25,62}$`)
+// validAddress matches common cryptocurrency address patterns.
+// Allows colon for BCH CashAddr (e.g., "bitcoincash:qp...") and standard base58/bech32.
+var validAddress = regexp.MustCompile(`^[a-zA-Z0-9:]{25,65}$`)
 
 // Explorer represents a block explorer configuration.
 type Explorer struct {

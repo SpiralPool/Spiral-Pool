@@ -12,9 +12,9 @@ Security controls implemented in Spiral Pool as documented below. Values shown a
 
 | Control | Value | Source |
 |---------|-------|--------|
-| TLS minimum version | TLS 1.2 | `internal/stratum/server.go:244` |
+| TLS minimum version | TLS 1.2 | `internal/stratum/server.go:245` |
 | TLS listener | Separate port per coin (V1+2 offset) | Per-coin config |
-| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go:578` |
+| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go:603` |
 | V2 message size limit | 1,048,576 bytes (1 MB) | `internal/stratum/v2/types.go:28` |
 | Ban persistence | Saved to `/spiralpool/data/bans.json` | `internal/config/config.go:1412` |
 | Keepalive monitoring | Idle connection detection | Configurable timeout |
@@ -35,14 +35,14 @@ The connection state machine uses two atomic boolean flags (`subscribed`, `autho
 
 A miner cannot submit shares before subscribing and authorizing. Out-of-order `mining.authorize` and `mining.submit` are rejected. Protocol negotiation methods (`mining.configure`, `mining.suggest_difficulty`, `mining.extranonce.subscribe`, `mining.ping`) are accepted in any state.
 
-Source: `pkg/protocol/protocol.go:109-178` (connection FSM: `authorized`/`subscribed` atomic flags and enforcement methods). Job lifecycle FSM at `pkg/protocol/protocol.go:494-505` (Created, Issued, Active, Invalidated, Solved) is a separate concern.
+Source: `pkg/protocol/protocol.go:109-184` (connection FSM: `authorized`/`subscribed` atomic flags and enforcement methods). Job lifecycle FSM at `pkg/protocol/protocol.go:485-505` (Created, Issued, Active, Invalidated, Solved) is a separate concern.
 
 ## Pre-Authentication Limits
 
 | Control | Value | Source |
 |---------|-------|--------|
 | Max messages before auth | 20 | `internal/config/config.go:1408` |
-| Auth timeout | 10 seconds | `internal/config/config.go:1402` (default), `internal/stratum/server.go:490` (30s fallback, overridden by config) |
+| Auth timeout | 10 seconds | `internal/config/config.go:1402` (default) |
 
 These prevent subscribe-spam attacks and connection slot exhaustion. Connections that exceed either limit are dropped.
 
@@ -126,4 +126,4 @@ Prometheus metrics endpoint (`/metrics` on port 9100) is protected by `SPIRAL_ME
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0*
+*Spiral Pool — Phi Hash Reactor 2.2.0*

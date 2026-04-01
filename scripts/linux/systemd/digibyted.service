@@ -20,7 +20,7 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 ExecStart={{DGB_DIR}}/bin/digibyted -daemon -conf={{INSTALL_DIR}}/dgb/digibyte.conf -datadir={{INSTALL_DIR}}/dgb
-ExecStop={{DGB_DIR}}/bin/digibyte-cli -conf={{INSTALL_DIR}}/dgb/digibyte.conf stop
+ExecStop={{DGB_DIR}}/bin/digibyte-cli -conf={{INSTALL_DIR}}/dgb/digibyte.conf -datadir={{INSTALL_DIR}}/dgb stop
 PIDFile={{INSTALL_DIR}}/dgb/digibyted.pid
 Restart=always
 RestartSec=30

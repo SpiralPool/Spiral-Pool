@@ -55,7 +55,7 @@ jobs:
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: ${COVERAGE}%"
-          # Fail if coverage drops below 50%
+          # Fail if coverage drops below 25%
           if [ "$(echo "$COVERAGE < 25" | bc -l)" -eq 1 ]; then
             echo "::error::Coverage ${COVERAGE}% is below minimum threshold of 25%"
             exit 1

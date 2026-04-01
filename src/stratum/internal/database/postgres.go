@@ -740,10 +740,11 @@ func (db *PostgresDB) GetConfirmedBlocks(ctx context.Context) ([]*Block, error) 
 
 // BlockStats contains aggregated block statistics by status.
 type BlockStats struct {
-	Pending   int
-	Confirmed int
-	Orphaned  int
-	Paid      int
+	Submitting int
+	Pending    int
+	Confirmed  int
+	Orphaned   int
+	Paid       int
 }
 
 // GetBlockStats returns block counts grouped by status.
@@ -770,6 +771,8 @@ func (db *PostgresDB) GetBlockStats(ctx context.Context) (*BlockStats, error) {
 			return nil, err
 		}
 		switch status {
+		case "submitting":
+			stats.Submitting = count
 		case "pending":
 			stats.Pending = count
 		case "confirmed":

@@ -10,7 +10,7 @@
 
 Spiral Sentinel is a Python-based monitoring system that watches your mining fleet, blockchain nodes, pool infrastructure, and market conditions. It sends real-time alerts via Discord, Telegram, XMPP/Jabber, ntfy, and email (SMTP) with cyberpunk or professional theming.
 
-**Source:** `src/sentinel/SpiralSentinel.py` (~19,500 lines)
+**Source:** `src/sentinel/SpiralSentinel.py` (~20,700 lines)
 **Service:** `spiralsentinel`
 **State directory:** `~spiraluser/.spiralsentinel/`
 
@@ -779,7 +779,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "2.1.0-PHI_HASH_REACTOR"}
+{"alive": true, "uptime_s": 3600, "version": "2.2.0-PHI_HASH_REACTOR"}
 ```
 
 ### `GET /cooldowns`
@@ -797,4 +797,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Phi Hash Reactor 2.1.0*
+*Spiral Sentinel &mdash; Phi Hash Reactor 2.2.0*

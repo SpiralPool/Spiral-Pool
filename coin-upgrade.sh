@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.1.0-PHI_HASH_REACTOR
+#                   V2.2.0-PHI_HASH_REACTOR
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary.
 # Config files, wallets, blockchain data, and pool settings are NEVER modified.
@@ -815,8 +815,9 @@ interactive_mode() {
     echo -e "  ${WHITE}Available upgrades:${NC}\n"
     for i in "${!upgradeable[@]}"; do
         local c="${upgradeable[$i]}"
+        local _installed; _installed=$(get_installed_version "$c")
         printf "    ${CYAN}%s${NC}.  ${WHITE}%-6s${NC}  %s  →  %s   " \
-            "$((i+1))" "$c" "${COIN_TARGET[$c]}" ""
+            "$((i+1))" "$c" "$_installed" "${COIN_TARGET[$c]}"
         echo -e "$(risk_label "${COIN_RISK[$c]}")"
     done
     echo -e "    ${CYAN}a${NC}.  All of the above"
@@ -853,7 +854,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.1.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.2.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"
@@ -902,7 +903,7 @@ main() {
                 ;;
             *) die "Unknown argument: $1. Use --help for usage." ;;
         esac
-        shift
+        [[ $# -gt 0 ]] && shift
     done
 
     # --list: machine-readable output only — skip banner, root check, and ENV check

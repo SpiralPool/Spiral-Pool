@@ -77,9 +77,9 @@ Cloud providers charge for outbound (egress) network traffic. Blockchain sync pu
 |------|----------------|------------------|-----------------|
 | Bitcoin (BTC) | ~600 GB | ~600 GB | ~$54 |
 | Bitcoin Cash (BCH) | ~250 GB | ~250 GB | ~$23 |
-| Litecoin (LTC) | ~120 GB | ~120 GB | ~$11 |
-| Dogecoin (DOGE) | ~90 GB | ~90 GB | ~$8 |
-| DigiByte (DGB) | ~45 GB | ~45 GB | ~$4 |
+| Litecoin (LTC) | ~150 GB | ~150 GB | ~$14 |
+| Dogecoin (DOGE) | ~80 GB | ~80 GB | ~$7 |
+| DigiByte (DGB) | ~60 GB | ~60 GB | ~$5 |
 | QBitX (QBX) | ~5 GB | ~5 GB | <$1 |
 
 > Blockchain sizes grow over time. The figures above are approximate as of Q1 2026.
@@ -388,9 +388,9 @@ The pool API (port 4000) is rate-limited but open to the public. It serves read-
 The API has two access tiers:
 
 - **Public endpoints** (`/api/pools`, `/api/pools/{id}/miners/{address}`, etc.) — no auth required
-- **Admin endpoints** — require the admin API key from `/spiralpool/config/sentinel/config.json`
+- **Admin endpoints** — require the admin API key from `/spiralpool/config/config.yaml`
 
-Do not expose your admin API key. It is stored in the sentinel config and used only by the dashboard and sentinel internally.
+Do not expose your admin API key. It is stored in the pool config (`config.yaml`) and used only by the dashboard and sentinel internally.
 
 ### Restricting the API to specific IPs
 
@@ -750,4 +750,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0*
+*Spiral Pool — Phi Hash Reactor 2.2.0*

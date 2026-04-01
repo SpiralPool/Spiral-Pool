@@ -125,6 +125,11 @@ type CoinPool struct {
 	// Server start time (for accurate hashrate calculation)
 	startTime time.Time
 
+	// Multi-port job listener: called when job manager produces a new job,
+	// allowing the multi-port server to relay block templates to its miners.
+	// Set via SetMultiPortJobListener; read inside the job callback closure.
+	multiPortJobListener atomic.Value // stores func(*protocol.Job) or nil
+
 	// V2 Stratum (optional, enabled when PortV2 > 0)
 	v2Server         *stratumv2.Server
 	v2JobAdapter     *stratumv2.JobManagerAdapter
@@ -525,9 +530,16 @@ func NewCoinPool(cfg *CoinPoolConfig) (*CoinPool, error) {
 
 // setupCallbacks wires up event handlers between components.
 func (cp *CoinPool) setupCallbacks() {
-	// Job manager broadcasts to stratum server
+	// Job manager broadcasts to stratum server AND multi-port listener (if set).
+	// The multi-port listener is registered later via SetMultiPortJobListener,
+	// so we load it dynamically from the atomic.Value on each callback invocation.
 	cp.jobManager.SetJobCallback(func(job *protocol.Job) {
 		cp.stratumServer.BroadcastJob(job)
+
+		// Relay to multi-port server if registered
+		if listener, ok := cp.multiPortJobListener.Load().(func(*protocol.Job)); ok && listener != nil {
+			listener(job)
+		}
 	})
 
 	// Stratum server sends shares to pool for processing
@@ -2458,6 +2470,11 @@ func (cp *CoinPool) PoolID() string {
 	return cp.poolID
 }
 
+// PayoutAddress returns the pool's configured payout address for this coin.
+func (cp *CoinPool) PayoutAddress() string {
+	return cp.cfg.Address
+}
+
 // IsRunning returns whether the coin pool is running.
 func (cp *CoinPool) IsRunning() bool {
 	cp.runMu.Lock()
@@ -2771,6 +2788,13 @@ func (cp *CoinPool) GetCurrentJob() *protocol.Job {
 		return nil
 	}
 	return cp.jobManager.GetCurrentJob()
+}
+
+// SetMultiPortJobListener registers a callback that fires whenever the job
+// manager produces a new job. The multi-port server calls this to receive
+// block template updates for miners assigned to this coin.
+func (cp *CoinPool) SetMultiPortJobListener(callback func(*protocol.Job)) {
+	cp.multiPortJobListener.Store(callback)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3217,15 +3241,20 @@ func (cp *CoinPool) recoverWALAfterPromotion() {
 		"coin", cp.coinSymbol,
 	)
 
+	// Snapshot roleCtx under lock — it can be reassigned by OnHARoleChange concurrently
+	cp.roleMu.Lock()
+	baseCtx := cp.roleCtx
+	cp.roleMu.Unlock()
+
 	// Phase 1: Recover unsubmitted blocks from WAL
 	walDir := filepath.Dir(cp.blockWAL.FilePath())
-	recoveryCtx, recoveryCancel := context.WithTimeout(cp.roleCtx, 60*time.Second)
+	recoveryCtx, recoveryCancel := context.WithTimeout(baseCtx, 60*time.Second)
 	cp.recoverWALBlocks(recoveryCtx, walDir)
 	recoveryCancel()
 
 	// Phase 2: Reconcile blocks stuck in "submitting" state in DB
 	if cp.db != nil {
-		reconcileCtx, reconcileCancel := context.WithTimeout(cp.roleCtx, 30*time.Second)
+		reconcileCtx, reconcileCancel := context.WithTimeout(baseCtx, 30*time.Second)
 		if err := cp.reconcileSubmittingBlocks(reconcileCtx); err != nil {
 			cp.logger.Warnw("Post-promotion block reconciliation had errors",
 				"coin", cp.coinSymbol,
@@ -3322,7 +3351,10 @@ func (cp *CoinPool) waitForSync(ctx context.Context) error {
 			// On regtest, skip IBD check entirely — regtest is a private test network
 			// with no peers, so there's no risk of mining on stale blocks. This allows
 			// the pool to start on a fresh chain (height 0) where IBD is always true.
-			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && bcInfo.VerificationProgress >= syncThreshold) {
+			// Some daemons (e.g. QBX) report near-zero verificationprogress even
+			// when fully synced.  Fall back to blocks>=headers when IBD is false.
+			blocksSynced := bcInfo.Headers > 0 && bcInfo.Blocks >= bcInfo.Headers
+			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && (bcInfo.VerificationProgress >= syncThreshold || blocksSynced)) {
 				cp.logger.Infow("SYNC GATE PASSED: Daemon is fully synced",
 					"coin", cp.coinSymbol,
 					"blocks", bcInfo.Blocks,
@@ -3801,9 +3833,11 @@ func (cp *CoinPool) cleanupStaleSessions(staleThreshold time.Duration) {
 		// Check if session is stale (no shares for staleThreshold duration)
 		lastShareTime := time.Unix(0, state.LastShareNano())
 		if now.Sub(lastShareTime) > staleThreshold {
-			cp.sessionStates.Delete(sessionID)
-			atomic.AddInt64(&cp.sessionStateCount, -1)
-			staleCount++
+			// Use LoadAndDelete to prevent double-decrement race with disconnect handler
+			if _, existed := cp.sessionStates.LoadAndDelete(sessionID); existed {
+				atomic.AddInt64(&cp.sessionStateCount, -1)
+				staleCount++
+			}
 		}
 
 		return true

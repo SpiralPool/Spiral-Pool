@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -15,7 +16,7 @@ import (
 
 // Version information (set by main.go)
 var (
-	Version   = "2.1.0"
+	Version   = "2.2.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -271,13 +272,30 @@ func backupFile(path string) error {
 
 // Config represents the main pool configuration
 type Config struct {
-	Version  int                    `yaml:"version"`
-	Global   GlobalConfig           `yaml:"global"`
-	Database DatabaseConfig         `yaml:"database"`
-	VIP      VIPConfig              `yaml:"vip"`
-	HA       HAConfig               `yaml:"ha"`
-	Coins    map[string]interface{} `yaml:"coins"`
-	Pool     PoolConfig             `yaml:"pool"`
+	Version  int            `yaml:"version"`
+	Global   GlobalConfig   `yaml:"global"`
+	Database DatabaseConfig `yaml:"database"`
+	VIP      VIPConfig      `yaml:"vip"`
+	HA       HAConfig       `yaml:"ha"`
+	Coins    interface{}    `yaml:"coins,omitempty"` // []interface{} (V2 list) or nil
+	Pool     PoolConfig     `yaml:"pool"`
+}
+
+// hasCoin checks if a coin symbol exists in the coins list (case-insensitive).
+func (c *Config) hasCoin(symbol string) bool {
+	list, ok := c.Coins.([]interface{})
+	if !ok {
+		return false
+	}
+	sym := strings.ToLower(symbol)
+	for _, entry := range list {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok && strings.ToLower(s) == sym {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type GlobalConfig struct {
@@ -378,11 +396,47 @@ func saveConfig(cfg *Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// SECURITY: Config file contains credentials, use 0600 (G306 fix)
-	if err := os.WriteFile(DefaultConfigFile, data, 0600); err != nil {
+	// SECURITY: Atomic write (temp + fsync + rename) prevents corruption on crash.
+	// Config contains credentials — mode 0600.
+	if err := atomicWriteFile(DefaultConfigFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
+	return nil
+}
+
+// atomicWriteFile writes data to a file atomically using temp file + fsync + rename.
+// Prevents config corruption if the process crashes or is killed mid-write.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".config_*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := f.Name()
+
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("fsync temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename temp file: %w", err)
+	}
 	return nil
 }
 

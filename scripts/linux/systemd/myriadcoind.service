@@ -20,7 +20,7 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 ExecStart={{XMY_DIR}}/bin/myriadcoind -daemon -conf={{INSTALL_DIR}}/xmy/myriadcoin.conf -datadir={{INSTALL_DIR}}/xmy
-ExecStop={{XMY_DIR}}/bin/myriadcoin-cli -conf={{INSTALL_DIR}}/xmy/myriadcoin.conf stop
+ExecStop={{XMY_DIR}}/bin/myriadcoin-cli -conf={{INSTALL_DIR}}/xmy/myriadcoin.conf -datadir={{INSTALL_DIR}}/xmy stop
 PIDFile={{INSTALL_DIR}}/xmy/myriadcoind.pid
 Restart=always
 RestartSec=30

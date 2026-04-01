@@ -533,28 +533,36 @@ func (sc *StatsCollector) collectAndStore(ctx context.Context) error {
 			elapsedSecs = now.Sub(connectedAt).Seconds()
 		}
 
-		// Calculate hashrate from difficulty using actual elapsed time
-		// hashrate = sum(difficulty) * 2^32 / actual_elapsed_seconds
-		// For each window, use min(elapsed, window) to avoid inflated rates for new sessions
+		// Calculate hashrate from difficulty using actual elapsed time.
+		// When session is longer than the window, scale difficulty proportionally
+		// to estimate the share of work done within that window. Without this,
+		// all windows use cumulative difficulty, making short windows (1m, 5m)
+		// report grossly inflated hashrates for long-running sessions.
 		for _, window := range AllWindows() {
 			windowSecs := float64(int(window) * 60)
-			// Use the smaller of elapsed time or window size
-			// This prevents inflated hashrates when session is shorter than window
+			effectiveDiff := stats.TotalDifficulty
 			effectiveSecs := windowSecs
-			if elapsedSecs > 0 && elapsedSecs < windowSecs {
-				effectiveSecs = elapsedSecs
+
+			if elapsedSecs > 0 {
+				if elapsedSecs < windowSecs {
+					// Session shorter than window: use actual elapsed time
+					effectiveSecs = elapsedSecs
+				} else {
+					// Session longer than window: estimate difficulty within window
+					// by assuming uniform share rate over the session
+					effectiveDiff = stats.TotalDifficulty * (windowSecs / elapsedSecs)
+				}
 			}
-			// If no elapsed time (shouldn't happen), fall back to window size
 			if effectiveSecs <= 0 {
 				effectiveSecs = windowSecs
 			}
-			hashrate := coin.CalculateHashrateForAlgorithm(stats.TotalDifficulty, effectiveSecs, sc.algorithm)
+			hashrate := coin.CalculateHashrateForAlgorithm(effectiveDiff, effectiveSecs, sc.algorithm)
 			stats.Hashrates[window.String()] = hashrate
 		}
 
 		// Store session duration for debugging/display
 		if elapsedSecs > 0 {
-			stats.SessionDuration = time.Duration(elapsedSecs) * time.Second
+			stats.SessionDuration = time.Duration(elapsedSecs * float64(time.Second))
 		}
 
 		stats.CurrentHashrate = stats.Hashrates[Window1m.String()]

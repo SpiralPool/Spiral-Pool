@@ -316,9 +316,10 @@ func (m *Manager) Stats() ManagerStats {
 	}
 
 	if len(m.failoverHistory) > 0 {
-		// BUG FIX: Take address of slice element directly, not a local copy.
-		// The local copy would become invalid after function returns.
-		stats.LastFailover = &m.failoverHistory[len(m.failoverHistory)-1]
+		// Copy the element so the returned pointer doesn't alias the live slice,
+		// which can be re-sliced by performFailover() after the lock is released.
+		lastEvent := m.failoverHistory[len(m.failoverHistory)-1]
+		stats.LastFailover = &lastEvent
 	}
 
 	return stats

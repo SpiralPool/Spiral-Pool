@@ -524,10 +524,68 @@ func TestCheckWALRecoveryStuck_AlertWhenRunning(t *testing.T) {
 	pool := newSentinelTestCoinPool("DGB", "dgb_main")
 	pool.walRecoveryRunning.Store(true)
 
+	// Pre-populate WAL recovery start so the duration check fires immediately
+	s.walRecoveryStart["dgb_main"] = time.Now().Add(-10 * time.Minute)
+
 	s.checkWALRecoveryStuck(pool, "DGB")
 
 	if !alertFired(s, "wal_recovery_stuck", "DGB", "dgb_main") {
-		t.Error("Expected wal_recovery_stuck alert when WAL recovery is running")
+		t.Error("Expected wal_recovery_stuck alert when WAL recovery is running >5min")
+	}
+}
+
+func TestCheckWALRecoveryStuck_NoAlertBeforeThreshold(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestSentinelConfig()
+	cfg.AlertCooldown = 1 * time.Millisecond
+	s := testSentinel(cfg)
+
+	pool := newSentinelTestCoinPool("DGB", "dgb_main")
+	pool.walRecoveryRunning.Store(true)
+
+	// First call should just record the start time, not fire alert
+	s.checkWALRecoveryStuck(pool, "DGB")
+
+	if alertFired(s, "wal_recovery_stuck", "DGB", "dgb_main") {
+		t.Error("Expected NO alert on first observation (recovery just started)")
+	}
+
+	// Verify start time was recorded
+	s.mu.Lock()
+	_, tracked := s.walRecoveryStart["dgb_main"]
+	s.mu.Unlock()
+	if !tracked {
+		t.Error("Expected walRecoveryStart to be recorded after first observation")
+	}
+}
+
+func TestCheckWALRecoveryStuck_ClearsTrackingWhenRecoveryStopped(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestSentinelConfig()
+	cfg.AlertCooldown = 1 * time.Millisecond
+	s := testSentinel(cfg)
+
+	pool := newSentinelTestCoinPool("DGB", "dgb_main")
+
+	// Pre-populate as if recovery was running
+	s.walRecoveryStart["dgb_main"] = time.Now().Add(-10 * time.Minute)
+
+	// Recovery stopped
+	pool.walRecoveryRunning.Store(false)
+	s.checkWALRecoveryStuck(pool, "DGB")
+
+	// Should have cleared the tracking entry
+	s.mu.Lock()
+	_, tracked := s.walRecoveryStart["dgb_main"]
+	s.mu.Unlock()
+	if tracked {
+		t.Error("Expected walRecoveryStart to be cleared when recovery is no longer running")
+	}
+
+	if alertFired(s, "wal_recovery_stuck", "DGB", "dgb_main") {
+		t.Error("Expected NO alert when recovery is not running")
 	}
 }
 
@@ -1528,6 +1586,9 @@ func TestSentinelChecks_NilMetricsSafe(t *testing.T) {
 	}
 	pool.walRecoveryRunning.Store(true)
 
+	// Pre-populate WAL recovery start so the duration check fires immediately
+	s.walRecoveryStart["dgb_main"] = time.Now().Add(-10 * time.Minute)
+
 	// All these should work without panic even with nil metrics
 	s.checkAllNodesDown(pool, "dgb_main", "DGB")
 	s.checkWALRecoveryStuck(pool, "DGB")
@@ -1557,7 +1618,10 @@ func TestSentinelChecks_CooldownPreventsRepeat(t *testing.T) {
 	pool := newSentinelTestCoinPool("DGB", "dgb_main")
 	pool.walRecoveryRunning.Store(true)
 
-	// First call fires the alert
+	// Pre-populate WAL recovery start so the duration check fires immediately
+	s.walRecoveryStart["dgb_main"] = time.Now().Add(-10 * time.Minute)
+
+	// First call fires the alert (recovery has been running >5min)
 	s.checkWALRecoveryStuck(pool, "DGB")
 	if !alertFired(s, "wal_recovery_stuck", "DGB", "dgb_main") {
 		t.Fatal("Expected first call to fire alert")
@@ -1597,6 +1661,10 @@ func TestSentinelChecks_IndependentAlertsByPool(t *testing.T) {
 
 	pool2 := newSentinelTestCoinPool("DGB", "dgb_pool2")
 	pool2.walRecoveryRunning.Store(true)
+
+	// Pre-populate WAL recovery start so the duration check fires immediately
+	s.walRecoveryStart["dgb_pool1"] = time.Now().Add(-10 * time.Minute)
+	s.walRecoveryStart["dgb_pool2"] = time.Now().Add(-10 * time.Minute)
 
 	s.checkWALRecoveryStuck(pool1, "DGB")
 	s.checkWALRecoveryStuck(pool2, "DGB")

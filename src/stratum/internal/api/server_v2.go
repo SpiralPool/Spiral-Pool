@@ -44,7 +44,7 @@ type ServerV2 struct {
 	// Sentinel alert provider (wired from Coordinator)
 	sentinelProvider SentinelAlertProvider
 
-	// Multi-port (Multi-coin smart port) stats provider
+	// Multi-port (Multi coin smart port) stats provider
 	multiPortProvider MultiPortStatsProvider
 
 	// Cached responses
@@ -59,7 +59,7 @@ type SentinelAlertProvider interface {
 	GetSentinelAlerts(since time.Time) []SentinelAlert
 }
 
-// MultiPortStatsProvider provides stats for the multi-coin smart port.
+// MultiPortStatsProvider provides stats for the multi coin smart port.
 // Implemented by the Coordinator to avoid circular imports.
 type MultiPortStatsProvider interface {
 	GetMultiPortStats() *MultiPortStats
@@ -193,7 +193,7 @@ func (s *ServerV2) Start(ctx context.Context) error {
 	// Coin registry endpoint (public - for Sentinel/Dashboard validation)
 	mux.HandleFunc("/api/coins", s.handleCoinsV2)
 
-	// Multi-port (Multi-coin smart port) endpoints (public)
+	// Multi-port (Multi coin smart port) endpoints (public)
 	mux.HandleFunc("/api/multiport", s.handleMultiPort)
 	mux.HandleFunc("/api/multiport/switches", s.handleMultiPortSwitches)
 	mux.HandleFunc("/api/multiport/difficulty", s.handleMultiPortDifficulty)
@@ -304,7 +304,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "2.1.0-PHI_HASH_REACTOR-V2",
+		Version:  "2.2.0-PHI_HASH_REACTOR-V2",
 		Pools:    pools,
 	}
 

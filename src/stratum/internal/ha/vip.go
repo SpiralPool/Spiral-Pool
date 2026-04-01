@@ -942,7 +942,7 @@ const SpiralClusterUserAgentPrefix = "SpiralPool-HA-"
 // SpiralPoolVersion is the current version of Spiral Pool (semver format).
 // This is a var (not const) so it can be overridden via -ldflags at build time:
 //   -X github.com/spiralpool/stratum/internal/ha.SpiralPoolVersion=X.Y.Z
-var SpiralPoolVersion = "2.1.0"
+var SpiralPoolVersion = "2.2.0"
 
 // SpiralClusterUserAgent is the current version's user-agent string.
 // This is used when sending messages; validation checks for the prefix only.
@@ -1274,7 +1274,7 @@ func (r *rateLimiter) allow() bool {
 	// Refill tokens based on elapsed time
 	now := time.Now()
 	elapsed := now.Sub(r.lastRefill)
-	tokensToAdd := int(elapsed.Seconds()) * r.refillRate
+	tokensToAdd := int(elapsed.Seconds() * float64(r.refillRate))
 	if tokensToAdd > 0 {
 		r.tokens = min(r.maxTokens, r.tokens+tokensToAdd)
 		r.lastRefill = now
@@ -2603,6 +2603,14 @@ func (vm *VIPManager) becomeMasterLocked() {
 	// If VIP acquisition fails, revert to BACKUP and trigger election.
 	// This prevents phantom-master state where the cluster thinks we're master
 	// but miners can't reach us on the VIP.
+	// Capture role transition by value before launching the async VIP acquisition.
+	newRole := vm.role
+
+	// Fire callbacks from within the acquireVIP goroutine to guarantee ordering:
+	// On success: fire forward callbacks (BACKUP→MASTER) THEN broadcast.
+	// On failure: fire reverse callbacks (MASTER→BACKUP) to demote.
+	// This prevents the race where reverse callbacks arrive before forward callbacks
+	// when acquireVIP fails quickly, which would leave the coordinator stuck in MASTER.
 	vm.wg.Add(1)
 	go func() {
 		defer vm.wg.Done()
@@ -2618,15 +2626,10 @@ func (vm *VIPManager) becomeMasterLocked() {
 			vm.masterID = ""
 			vm.state = StateElection
 			vm.mu.Unlock()
-			// FIX Issue 24: Fire reverse callbacks so coordinator demotes to BACKUP.
-			// becomeMasterLocked() already fired onRoleChange(BACKUP→MASTER) and
-			// onDatabaseFailover(true) before this goroutine ran. Without reverse
-			// callbacks, the coordinator stays in MASTER mode (payment processors
-			// enabled, CoinPools in MASTER haRole) despite VIP never being acquired.
+			// Fire reverse callbacks sequentially so coordinator demotes to BACKUP.
+			// These run INSTEAD of forward callbacks (not after), preventing out-of-order delivery.
 			if vm.onRoleChange != nil {
-				vm.wg.Add(1)
-				go func() {
-					defer vm.wg.Done()
+				func() {
 					defer func() {
 						if r := recover(); r != nil {
 							vm.logger.Errorw("PANIC recovered in onRoleChange callback", "panic", r)
@@ -2636,9 +2639,7 @@ func (vm *VIPManager) becomeMasterLocked() {
 				}()
 			}
 			if vm.onDatabaseFailover != nil {
-				vm.wg.Add(1)
-				go func() {
-					defer vm.wg.Done()
+				func() {
 					defer func() {
 						if r := recover(); r != nil {
 							vm.logger.Errorw("PANIC recovered in onDatabaseFailover callback", "panic", r)
@@ -2656,7 +2657,32 @@ func (vm *VIPManager) becomeMasterLocked() {
 			return
 		}
 
-		// VIP acquired successfully — now broadcast to cluster
+		// VIP acquired successfully — fire forward callbacks THEN broadcast.
+		// Sequential execution guarantees callbacks complete before broadcast
+		// announces this node as master to the cluster.
+		if vm.onRoleChange != nil && oldRole != newRole {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						vm.logger.Errorw("PANIC recovered in onRoleChange callback", "panic", r)
+					}
+				}()
+				vm.onRoleChange(oldRole, newRole)
+			}()
+		}
+		if vm.onDatabaseFailover != nil && oldRole != newRole {
+			isMaster := newRole == RoleMaster
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						vm.logger.Errorw("PANIC recovered in onDatabaseFailover callback", "panic", r)
+					}
+				}()
+				vm.onDatabaseFailover(isMaster)
+			}()
+		}
+
+		// Now broadcast to cluster — callbacks have completed
 		vm.broadcastMessage(ClusterMessage{
 			Type:           MsgTypeVIPAcquired,
 			NodeID:         vm.config.NodeID,
@@ -2673,41 +2699,6 @@ func (vm *VIPManager) becomeMasterLocked() {
 			PoolAddresses:  vm.localPoolAddresses,
 		})
 	}()
-
-	// BUG FIX: Capture newRole by value, not by reference to vm.role.
-	// The acquireVIP goroutine (launched above) may reverse vm.role to BACKUP
-	// if VIP acquisition fails. If onRoleChange reads vm.role after the reversal,
-	// it fires (BACKUP, BACKUP) instead of (BACKUP, MASTER). Capturing by value
-	// ensures the callback receives the intended transition.
-	newRole := vm.role
-	if vm.onRoleChange != nil && oldRole != newRole {
-		vm.wg.Add(1)
-		go func() {
-			defer vm.wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					vm.logger.Errorw("PANIC recovered in onRoleChange callback", "panic", r)
-				}
-			}()
-			vm.onRoleChange(oldRole, newRole)
-		}()
-	}
-
-	// Trigger database failover when becoming master
-	// This ensures database HA is synchronized with VIP ownership
-	if vm.onDatabaseFailover != nil && oldRole != newRole {
-		isMaster := newRole == RoleMaster
-		vm.wg.Add(1)
-		go func() {
-			defer vm.wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					vm.logger.Errorw("PANIC recovered in onDatabaseFailover callback", "panic", r)
-				}
-			}()
-			vm.onDatabaseFailover(isMaster)
-		}()
-	}
 }
 
 // macvlanInterfaceName returns the name of the macvlan interface for the VIP.
@@ -4224,6 +4215,27 @@ func (vm *VIPManager) runElection() {
 			vm.role = RoleBackup
 			vm.state = StateRunning
 			weWin = false
+		}
+		// Re-check node priorities — vm.nodes may have changed during the HTTP unlock
+		// window (new higher-priority node joined, or existing node became synced).
+		if weWin {
+			for id, node := range vm.nodes {
+				if id == vm.config.NodeID {
+					continue
+				}
+				if node.IsHealthy && vm.isNodeFullySynced(node) &&
+					(node.Priority < vm.config.Priority ||
+						(node.Priority == vm.config.Priority && id < vm.config.NodeID)) {
+					vm.logger.Infow("Election aborted: higher-priority node appeared during remote check",
+						"higherPriorityNode", id,
+						"theirPriority", node.Priority,
+						"ourPriority", vm.config.Priority)
+					vm.role = RoleBackup
+					vm.state = StateRunning
+					weWin = false
+					break
+				}
+			}
 		}
 	}
 

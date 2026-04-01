@@ -642,19 +642,6 @@ func (v *ValidatorV2) checkAuxTargets(
 		coinbaseMerkleBranch[i] = branch
 	}
 
-	// Convert aux merkle branches from hex strings to [][]byte
-	auxMerkleBranch := make([][]byte, len(job.AuxMerkleBranch))
-	for i, branchHex := range job.AuxMerkleBranch {
-		branch, err := hex.DecodeString(branchHex)
-		if err != nil {
-			if auditDebugEnabled {
-				fmt.Printf("AUDIT_AUX_ERROR jobID=%s error=aux_merkle_branch_decode index=%d detail=%v\n", share.JobID, i, err)
-			}
-			return nil
-		}
-		auxMerkleBranch[i] = branch
-	}
-
 	if auditDebugEnabled {
 		fmt.Printf("MERGE_MINING_JOB jobID=%s isMerge=%v auxChains=%d jobAuxMerkleRoot=%s\n",
 			share.JobID, job.IsMergeJob, len(job.AuxBlocks), job.AuxMerkleRoot)
@@ -723,6 +710,20 @@ func (v *ValidatorV2) checkAuxTargets(
 			Height:        auxBlock.Height,
 			CoinbaseValue: auxBlock.CoinbaseValue,
 			ChainIndex:    auxBlock.ChainIndex,
+		}
+
+		// Decode per-chain merkle branch from hex strings
+		auxMerkleBranch := make([][]byte, len(auxBlock.MerkleBranch))
+		for bi, branchHex := range auxBlock.MerkleBranch {
+			bHash, bErr := hex.DecodeString(branchHex)
+			if bErr != nil {
+				if auditDebugEnabled {
+					fmt.Printf("AUDIT_AUX_ERROR jobID=%s symbol=%s error=aux_merkle_branch_decode index=%d detail=%v\n",
+						share.JobID, auxBlock.Symbol, bi, bErr)
+				}
+				continue
+			}
+			auxMerkleBranch[bi] = bHash
 		}
 
 		// Build the AuxPoW proof

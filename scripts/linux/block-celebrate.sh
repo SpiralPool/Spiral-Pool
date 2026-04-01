@@ -566,7 +566,7 @@ Trigger LED celebration on CGMiner-compatible miners when a block is found.
 
 Options:
   --test              Run a quick 30-second test celebration
-  --duration SECONDS  Celebration duration (default: 3600 = 1 hour)
+  --duration SECONDS  Celebration duration (default: 7200 = 2 hours)
   --miners "IP ..."   Space-separated list of miner IPs (auto-discovers if not set)
   --scan              Force rescan for miners (ignore cache)
   --list              List discovered miners and exit
@@ -574,13 +574,13 @@ Options:
   -h, --help          Show this help message
 
 Examples:
-  $(basename "$0")                          # Auto-discover miners, 1 hour celebration
+  $(basename "$0")                          # Auto-discover miners, 2 hour celebration
   $(basename "$0") --test                   # Quick 30 second test
   $(basename "$0") --miners "192.168.1.14"  # Specific miner
   $(basename "$0") --duration 600           # 10 minute celebration
 
 Environment Variables:
-  CELEBRATION_DURATION   Default duration in seconds (default: 3600)
+  CELEBRATION_DURATION   Default duration in seconds (default: 7200)
 
 EOF
 }

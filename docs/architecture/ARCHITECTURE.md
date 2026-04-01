@@ -161,7 +161,7 @@ Miner Connects
            | miss
            v
 +----------------------------------+
-|  Tier 2: User-Agent Matching     |  <-- 47 verified regex patterns for
+|  Tier 2: User-Agent Matching     |  <-- 48 verified regex patterns for
 |  (primary classification)        |      mining hardware & firmware
 |                                  |
 |  Match against pattern database  |
@@ -638,7 +638,7 @@ Auxiliary pools created by merge mining get their own set of per-pool tables. Th
 auxPoolID = {parentPoolID}_{auxSymbol}
 ```
 
-Source: `internal/pool/coordinator.go:222`
+Source: `internal/pool/coordinator.go:229`
 
 Each aux pool gets the same table set as a parent pool: `blocks_{auxPoolID}`, `shares_{auxPoolID}`, `worker_hashrate_history_{auxPoolID}`.
 
@@ -1088,4 +1088,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0*
+*Spiral Pool — Phi Hash Reactor 2.2.0*

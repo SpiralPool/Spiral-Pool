@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v2.0
+    Spiral Pool - Windows Installer v2.1
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 2.1.0
+    Version: 2.2.0
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script$Script:Version = "2.1.0"
+$Script:Version = "2.2.0"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.1.0" -ForegroundColor DarkGray
+    Write-Host "                           v2.2.0" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -194,7 +194,7 @@ function Show-LegalAcceptance {
 
     $response = Read-Host "  Your response"
 
-    if ($response -ne "I AGREE" -and $response -ne "i agree" -and $response -ne "I agree") {
+    if ($response.Trim() -ine "I AGREE") {
         Write-Host ""
         Write-Log "Terms not accepted. Installation cancelled." "ERROR"
         exit 1
@@ -315,12 +315,12 @@ function Test-HyperVEnabled {
 
 function Test-WSL2Installed {
     try {
-        $wslOutput = wsl --status 2>&1
+        $null = wsl --status 2>&1
         if ($LASTEXITCODE -eq 0) {
             return $true
         }
         # Also check if wsl command exists and has distributions
-        $wslList = wsl -l -v 2>&1
+        $null = wsl -l -v 2>&1
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
@@ -495,16 +495,20 @@ function Test-RAMRequirements {
 
         if ($totalRAMGB -lt $minRAMGB) {
             Write-Log "Insufficient RAM: $totalRAMGB GB available, $minRAMGB GB required" "ERROR"
-            Write-Host ""
-            Write-Host "  Your system has insufficient RAM for this configuration:" -ForegroundColor Red
-            Write-Host "    - Available: $totalRAMGB GB" -ForegroundColor Yellow
-            Write-Host "    - Required:  $minRAMGB GB minimum" -ForegroundColor Yellow
-            Write-Host ""
-            $continue = Read-Host "  Continue anyway? (y/N)"
-            if ($continue -ne "y" -and $continue -ne "Y") {
-                return $false
+            if ($Unattended) {
+                Write-Log "Continuing despite insufficient RAM (unattended mode)" "WARN"
+            } else {
+                Write-Host ""
+                Write-Host "  Your system has insufficient RAM for this configuration:" -ForegroundColor Red
+                Write-Host "    - Available: $totalRAMGB GB" -ForegroundColor Yellow
+                Write-Host "    - Required:  $minRAMGB GB minimum" -ForegroundColor Yellow
+                Write-Host ""
+                $continue = Read-Host "  Continue anyway? (y/N)"
+                if ($continue -ne "y" -and $continue -ne "Y") {
+                    return $false
+                }
+                Write-Log "User chose to continue despite insufficient RAM" "WARN"
             }
-            Write-Log "User chose to continue despite insufficient RAM" "WARN"
         } elseif ($totalRAMGB -lt $recommendedRAMGB) {
             Write-Log "RAM is below recommended amount ($totalRAMGB GB < $recommendedRAMGB GB)" "WARN"
         } else {
@@ -548,7 +552,8 @@ function Test-PortAvailability {
 
     foreach ($portInfo in $portsToCheck) {
         try {
-            $connection = Get-NetTCPConnection -LocalPort $portInfo.Port -ErrorAction SilentlyContinue
+            $connection = Get-NetTCPConnection -LocalPort $portInfo.Port -ErrorAction SilentlyContinue |
+                Select-Object -First 1
             if ($connection) {
                 $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
                 $processName = if ($process) { $process.ProcessName } else { "Unknown" }
@@ -573,6 +578,10 @@ function Test-PortAvailability {
         Write-Host "  The following ports are already in use:" -ForegroundColor Yellow
         foreach ($conflict in $conflicts) {
             Write-Host "    - Port $($conflict.Port) ($($conflict.Name)): used by $($conflict.Process)" -ForegroundColor Red
+        }
+        if ($Unattended) {
+            Write-Log "Port conflicts detected - aborting (unattended mode)" "ERROR"
+            return $false
         }
         Write-Host ""
         Write-Host "  Options:" -ForegroundColor Cyan
@@ -691,7 +700,7 @@ function Install-WSL2 {
     try {
         # Method 1: Try the new wsl --install command (Windows 11)
         Write-Log "Attempting wsl --install..." "INFO"
-        $wslInstall = wsl --install --no-distribution 2>&1
+        $null = wsl --install --no-distribution 2>&1
 
         if ($LASTEXITCODE -eq 0) {
             Write-Log "WSL2 installation initiated via wsl --install" "OK"
@@ -745,7 +754,7 @@ function Enable-HyperV {
     Write-Log "Enabling Hyper-V..." "STEP"
 
     try {
-        $result = Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart -ErrorAction Stop
+        $null = Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart -ErrorAction Stop
         Write-Log "Hyper-V enabled successfully" "OK"
         return $true
     } catch {
@@ -829,8 +838,7 @@ function Install-DockerDesktop {
         Write-Log "Downloading Docker Desktop (~500MB, please wait)..." "INFO"
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-        $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile($dockerUrl, $installerPath)
+        Invoke-WebRequest -Uri $dockerUrl -OutFile $installerPath -UseBasicParsing
 
         if (-not (Test-Path $installerPath)) {
             throw "Download failed - installer not found"
@@ -931,7 +939,8 @@ function Start-DockerDesktop {
 # WSL2 NETWORKING (Port Forwarding)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-function Configure-WSL2Networking {
+function Set-WSL2Networking {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$SelectedCoin = "DGB"
     )
@@ -991,19 +1000,6 @@ function Configure-WSL2Networking {
         if (-not [string]::IsNullOrEmpty($wslIP) -and $wslIP -notmatch "error") {
             Write-Log "WSL2 VM IP detected: $wslIP" "INFO"
 
-            # Configure port forwarding as backup (coin-specific + utility ports)
-            $ports = @(
-                $coinInfo.StratumPort,   # Stratum V1
-                $coinInfo.V2Port,        # Stratum V2
-                $coinInfo.TlsPort,       # Stratum TLS
-                $coinInfo.RpcPort,       # Daemon RPC (localhost only)
-                $coinInfo.P2pPort,       # Daemon P2P
-                4000,                    # REST API (LAN-accessible)
-                1618,                    # Dashboard (LAN-accessible)
-                9100,                    # Prometheus metrics (LAN-accessible)
-                5433                     # PostgreSQL (localhost only, mapped to 5433 in docker-compose)
-            )
-
             # Public ports (stratum, P2P, dashboard, API, metrics) — LAN-accessible
             $publicPorts = @(
                 $coinInfo.StratumPort,
@@ -1029,30 +1025,31 @@ function Configure-WSL2Networking {
                 netsh interface portproxy add v4tov4 listenport=$port listenaddress=127.0.0.1 connectport=$port connectaddress=$wslIP 2>&1 | Out-Null
             }
 
-            Write-Log "Configured netsh portproxy fallback for $SelectedCoin ports: $($ports -join ', ')" "OK"
+            Write-Log "Configured netsh portproxy fallback for $SelectedCoin - public: $($publicPorts -join ', '), local: $($localPorts -join ', ')" "OK"
 
             # Create update script for WSL IP changes (runs at boot)
             $publicPortsStr = ($publicPorts | ForEach-Object { $_.ToString() }) -join ", "
             $localPortsStr = ($localPorts | ForEach-Object { $_.ToString() }) -join ", "
-            $updateScript = @"
-# Spiral Pool WSL2 Port Forwarding Update (Fallback for $SelectedCoin)
-# Docker Desktop usually handles this, but this ensures compatibility
-`$wslIP = (wsl hostname -I 2>&1).ToString().Trim().Split(' ')[0]
-if ([string]::IsNullOrEmpty(`$wslIP) -or `$wslIP -match "error") { exit }
-
-# Public ports — miners connect from LAN
-`$publicPorts = @($publicPortsStr)
-foreach (`$port in `$publicPorts) {
-    netsh interface portproxy delete v4tov4 listenport=`$port listenaddress=0.0.0.0 2>&1 | Out-Null
-    netsh interface portproxy add v4tov4 listenport=`$port listenaddress=0.0.0.0 connectport=`$port connectaddress=`$wslIP 2>&1 | Out-Null
-}
-# Internal ports — localhost only (RPC, DB)
-`$localPorts = @($localPortsStr)
-foreach (`$port in `$localPorts) {
-    netsh interface portproxy delete v4tov4 listenport=`$port listenaddress=127.0.0.1 2>&1 | Out-Null
-    netsh interface portproxy add v4tov4 listenport=`$port listenaddress=127.0.0.1 connectport=`$port connectaddress=`$wslIP 2>&1 | Out-Null
-}
-"@
+            $updateLines = @(
+                '# Spiral Pool WSL2 Port Forwarding Update (Fallback)'
+                '# Docker Desktop usually handles this, but this ensures compatibility'
+                '$wslIP = (wsl hostname -I 2>&1).ToString().Trim().Split('' '')[0]'
+                'if ([string]::IsNullOrEmpty($wslIP) -or $wslIP -match "error") { exit }'
+                ''
+                '# Public ports - miners connect from LAN'
+                "`$publicPorts = @($publicPortsStr)"
+                'foreach ($port in $publicPorts) {'
+                '    netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>&1 | Out-Null'
+                '    netsh interface portproxy add v4tov4 listenport=$port listenaddress=0.0.0.0 connectport=$port connectaddress=$wslIP 2>&1 | Out-Null'
+                '}'
+                '# Internal ports - localhost only (RPC, DB)'
+                "`$localPorts = @($localPortsStr)"
+                'foreach ($port in $localPorts) {'
+                '    netsh interface portproxy delete v4tov4 listenport=$port listenaddress=127.0.0.1 2>&1 | Out-Null'
+                '    netsh interface portproxy add v4tov4 listenport=$port listenaddress=127.0.0.1 connectport=$port connectaddress=$wslIP 2>&1 | Out-Null'
+                '}'
+            )
+            $updateScript = $updateLines -join "`r`n"
 
             $scriptDir = "$Script:InstallDir\scripts"
             New-Item -ItemType Directory -Path $scriptDir -Force -ErrorAction SilentlyContinue | Out-Null
@@ -1151,7 +1148,7 @@ function Get-CoinPortsFromManifest {
     return $coins
 }
 
-function Configure-Firewall {
+function Set-Firewall {
     <#
     .SYNOPSIS
         Configure Windows Firewall rules based on enabled coins from manifest.
@@ -1161,6 +1158,7 @@ function Configure-Firewall {
         firewall rules for all necessary ports: stratum (V1, V2, TLS),
         common ports (API, Dashboard, Metrics), and optionally RPC/ZMQ.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [hashtable]$Config = @{},
         [string[]]$EnabledCoins = @()
@@ -1176,12 +1174,8 @@ function Configure-Firewall {
         # Find manifest path
         $manifestPath = Join-Path $Script:InstallDir "config\coins.manifest.yaml"
         if (-not (Test-Path $manifestPath)) {
-            # Try current script directory
-            $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
-            $manifestPath = Join-Path $scriptDir "config\coins.manifest.yaml"
-        }
-        if (-not (Test-Path $manifestPath)) {
-            $manifestPath = ".\config\coins.manifest.yaml"
+            # Try script's own directory
+            $manifestPath = Join-Path $PSScriptRoot "config\coins.manifest.yaml"
         }
 
         # Parse manifest for coin ports
@@ -1240,10 +1234,10 @@ function Configure-Firewall {
                 Write-Log "Added firewall rules for $sym (Stratum: $($coin.StratumV1), $($coin.StratumV2), $($coin.StratumTls))" "INFO"
             }
         } else {
-            # Fallback to Config-based ports (legacy behavior)
+            # Fallback to Config-based ports (when manifest is missing)
             $stratumPort = if ($Config.StratumPort) { [int]$Config.StratumPort } else { 3333 }
-            $stratumV2Port = if ($Config.StratumV2Port) { [int]$Config.StratumV2Port } else { 3334 }
-            $stratumTlsPort = if ($Config.StratumTlsPort) { [int]$Config.StratumTlsPort } else { 3335 }
+            $stratumV2Port = $stratumPort + 1
+            $stratumTlsPort = if ($Config.StratumTlsPort) { [int]$Config.StratumTlsPort } else { $stratumPort + 2 }
 
             $rules += @{ Name = "Stratum V1"; Port = $stratumPort; Desc = "Mining connections (Stratum V1)" }
             $rules += @{ Name = "Stratum V2"; Port = $stratumV2Port; Desc = "Mining connections (Stratum V2 binary)" }
@@ -1407,21 +1401,32 @@ function Get-PoolConfiguration {
         Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
         Write-Host ""
         Write-Host "  Detected IP: $serverIP" -ForegroundColor Cyan
-        $confirmIp = Read-Host "  Use this IP? (Y/n) or enter different IP"
-        if (-not [string]::IsNullOrEmpty($confirmIp) -and $confirmIp -ne "Y" -and $confirmIp -ne "y") {
+        $confirmIp = Read-Host "  Use this IP? (Y/n) or enter a different IP"
+        if ($confirmIp -ieq "n") {
+            $serverIP = Read-Host "  Enter server IP address"
+        } elseif (-not [string]::IsNullOrEmpty($confirmIp) -and $confirmIp -ine "y") {
             $serverIP = $confirmIp
         }
     }
 
-    # Generate secure random passwords using CSPRNG
+    # Generate secure random passwords using CSPRNG with rejection sampling
     $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    $maxUnbiased = 248  # largest multiple of 62 that fits in a byte (62*4=248)
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $dbBytes = New-Object byte[] 32
-    $rpcBytes = New-Object byte[] 32
-    $rng.GetBytes($dbBytes)
-    $rng.GetBytes($rpcBytes)
-    $dbPassword = -join ($dbBytes | ForEach-Object { $chars[$_ % $chars.Length] })
-    $rpcPassword = -join ($rpcBytes | ForEach-Object { $chars[$_ % $chars.Length] })
+    try {
+        $dbPassword = ""
+        $rpcPassword = ""
+        $buf = New-Object byte[] 1
+        while ($dbPassword.Length -lt 32 -or $rpcPassword.Length -lt 32) {
+            $rng.GetBytes($buf)
+            if ($buf[0] -lt $maxUnbiased) {
+                if ($dbPassword.Length -lt 32) { $dbPassword += $chars[$buf[0] % $chars.Length] }
+                elseif ($rpcPassword.Length -lt 32) { $rpcPassword += $chars[$buf[0] % $chars.Length] }
+            }
+        }
+    } finally {
+        $rng.Dispose()
+    }
 
     return @{
         PoolAddress = $Address
@@ -1460,15 +1465,25 @@ function New-EnvironmentFile {
     $algoShort = if ($coinInfo.Algo -eq "SHA256d") { "sha256d" } else { "scrypt" }
     $poolId = "$($coinInfo.Profile)_${algoShort}_1"
     $grafChars = (65..90) + (97..122) + (48..57)
+    $grafMaxUnbiased = 248  # largest multiple of 62 that fits in a byte
     $grafRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $grafBytes = New-Object byte[] 24
-    $grafRng.GetBytes($grafBytes)
-    $grafanaPassword = -join ($grafBytes | ForEach-Object { [char]$grafChars[$_ % $grafChars.Count] })
+    try {
+        $grafanaPassword = ""
+        $grafBuf = New-Object byte[] 1
+        while ($grafanaPassword.Length -lt 24) {
+            $grafRng.GetBytes($grafBuf)
+            if ($grafBuf[0] -lt $grafMaxUnbiased) {
+                $grafanaPassword += [char]$grafChars[$grafBuf[0] % $grafChars.Count]
+            }
+        }
+    } finally {
+        $grafRng.Dispose()
+    }
     # Derive env key: DGB-SCRYPT → DGB (shares digibyte container), BC2 → BC2, etc.
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.1.0 Docker Configuration
+# Spiral Pool v2.2.0 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 
@@ -1562,7 +1577,7 @@ EXPECTED_FLEET_THS=22
     try {
         $acl = Get-Acl $envPath
         $acl.SetAccessRuleProtection($true, $false)
-        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) } | Out-Null
+        @($acl.Access) | ForEach-Object { $acl.RemoveAccessRule($_) } | Out-Null
         $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
         $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
             $currentUser, "FullControl", "None", "None", "Allow"
@@ -1646,28 +1661,28 @@ function Initialize-DockerEnvironment {
 
 function Start-SpiralPool {
     param(
-        [string]$Profile = "dgb"
+        [string]$ComposeProfile = "dgb"
     )
 
-    Write-Log "Starting Spiral Pool (profile: $Profile)..." "STEP"
+    Write-Log "Starting Spiral Pool (profile: $ComposeProfile)..." "STEP"
 
     try {
         Push-Location "$Script:InstallDir\docker"
 
         # Use Windows-specific docker-compose with bridge networking
         $composeFile = "docker-compose.yml"
-        Write-Log "Using Windows docker-compose: $composeFile --profile $Profile" "INFO"
+        Write-Log "Using Windows docker-compose: $composeFile --profile $ComposeProfile" "INFO"
 
         # Pull images
         Write-Log "Pulling Docker images (this may take several minutes)..." "INFO"
-        $pullOutput = docker compose -f $composeFile --profile $Profile pull 2>&1
+        docker compose -f $composeFile --profile $ComposeProfile pull 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Write-Log "Some images may need to build locally" "INFO"
         }
 
         # Build any custom images
         Write-Log "Building containers..." "INFO"
-        docker compose -f $composeFile --profile $Profile build 2>&1 | ForEach-Object {
+        docker compose -f $composeFile --profile $ComposeProfile build 2>&1 | ForEach-Object {
             if ($_ -match "Step|Successfully|Building|DONE") {
                 Write-Host "      $_" -ForegroundColor DarkGray
             }
@@ -1675,13 +1690,13 @@ function Start-SpiralPool {
 
         # Start containers in detached mode
         Write-Log "Starting services..." "INFO"
-        docker compose -f $composeFile --profile $Profile up -d 2>&1 | Out-Null
+        docker compose -f $composeFile --profile $ComposeProfile up -d 2>&1 | Out-Null
 
         # Wait for services to start
         Start-Sleep -Seconds 10
 
         # Check container status
-        $psOutput = docker compose -f $composeFile --profile $Profile ps --format "table {{.Name}}\t{{.Status}}" 2>&1
+        $psOutput = docker compose -f $composeFile --profile $ComposeProfile ps --format "table {{.Name}}\t{{.Status}}" 2>&1
         Write-Log "Container status:" "INFO"
         $psOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
 
@@ -1699,9 +1714,10 @@ function Start-SpiralPool {
 # PERSISTENCE (Auto-start & Health Monitoring)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-function Configure-Persistence {
+function Set-Persistence {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
-        [string]$Profile = "dgb"
+        [string]$ComposeProfile = "dgb"
     )
 
     Write-Log "Configuring auto-start and health monitoring..." "STEP"
@@ -1710,13 +1726,11 @@ function Configure-Persistence {
         # Health check script (uses Windows-specific compose file + profile)
         $installDir = $Script:InstallDir
         $healthScript = @"
-# Spiral Pool Health Check (profile: $Profile)
+# Spiral Pool Health Check (profile: $ComposeProfile)
 `$logFile = "$installDir\logs\health-check.log"
 `$composeFile = "docker-compose.yml"
-`$profile = "$Profile"
-`$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-function Log { param([string]`$Msg) "`$timestamp - `$Msg" | Out-File -Append `$logFile }
+`$composeProfile = "$ComposeProfile"
+function Log { param([string]`$Msg) "`$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - `$Msg" | Out-File -Append `$logFile }
 
 try {
     Set-Location "$installDir\docker"
@@ -1736,13 +1750,15 @@ try {
     }
 
     # Check containers (using Windows compose file + profile)
-    `$unhealthy = docker compose -f `$composeFile --profile `$profile ps --format json 2>&1 |
-        ConvertFrom-Json -ErrorAction SilentlyContinue |
+    # docker compose ps --format json outputs one JSON object per line (NDJSON);
+    # PS 5.1 ConvertFrom-Json cannot handle NDJSON, so parse each line individually
+    `$unhealthy = docker compose -f `$composeFile --profile `$composeProfile ps --format json 2>&1 |
+        ForEach-Object { `$_ | ConvertFrom-Json -ErrorAction SilentlyContinue } |
         Where-Object { `$_.State -ne "running" }
 
     if (`$unhealthy) {
         Log "Restarting unhealthy containers: `$(`$unhealthy.Name -join ', ')"
-        docker compose -f `$composeFile --profile `$profile up -d 2>&1 | Out-Null
+        docker compose -f `$composeFile --profile `$composeProfile up -d 2>&1 | Out-Null
     }
 } catch {
     Log "Error: `$_"
@@ -1754,9 +1770,9 @@ try {
 
         # Startup script (uses Windows-specific compose file + profile)
         $startupScript = @"
-# Spiral Pool Startup (profile: $Profile)
+# Spiral Pool Startup (profile: $ComposeProfile)
 `$composeFile = "docker-compose.yml"
-`$profile = "$Profile"
+`$composeProfile = "$ComposeProfile"
 Start-Sleep -Seconds 45  # Wait for Docker Desktop
 
 `$dockerOK = `$false
@@ -1772,7 +1788,7 @@ if (-not `$dockerOK) {
 }
 
 Set-Location "$installDir\docker"
-docker compose -f `$composeFile --profile `$profile up -d
+docker compose -f `$composeFile --profile `$composeProfile up -d
 "@
 
         $startupPath = "$Script:InstallDir\scripts\startup.ps1"
@@ -1823,7 +1839,7 @@ function Show-Summary {
     )
 
     $coinInfo = $Script:CoinConfig[$Config.Coin]
-    $profile = $coinInfo.Profile
+    $composeProfile = $coinInfo.Profile
 
     Write-Host ""
     Write-Host "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
@@ -1832,7 +1848,7 @@ function Show-Summary {
     Write-Host ""
     Write-Host "  Coin:         $($Config.Coin) ($($coinInfo.Algo))" -ForegroundColor White
     Write-Host "  Pool Address: $($Config.PoolAddress)" -ForegroundColor White
-    Write-Host "  Profile:      $profile" -ForegroundColor White
+    Write-Host "  Profile:      $composeProfile" -ForegroundColor White
     Write-Host ""
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
     Write-Host "    CONNECTION DETAILS" -ForegroundColor White
@@ -1870,11 +1886,11 @@ function Show-Summary {
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Magenta
     Write-Host ""
     Write-Host "  cd $Script:InstallDir\docker" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.yml --profile $profile logs -f   # View logs" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.yml --profile $profile ps        # Status" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.yml --profile $profile restart   # Restart" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.yml --profile $profile down      # Stop" -ForegroundColor DarkGray
-    Write-Host "  docker compose -f docker-compose.yml --profile $profile up -d     # Start" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $composeProfile logs -f   # View logs" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $composeProfile ps        # Status" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $composeProfile restart   # Restart" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $composeProfile down      # Stop" -ForegroundColor DarkGray
+    Write-Host "  docker compose -f docker-compose.yml --profile $composeProfile up -d     # Start" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  ═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
     Write-Host "    LIMITATIONS (Docker deployment)" -ForegroundColor White
@@ -1903,11 +1919,28 @@ function Main {
     Show-LegalAcceptance
 
     # Validate required parameters (in unattended mode)
-    if ($Unattended -and [string]::IsNullOrEmpty($Coin)) {
-        Write-Host "ERROR: -Coin parameter is required in unattended mode" -ForegroundColor Red
-        Write-Host "Specify coin with: -Coin DGB, -Coin BTC, -Coin LTC, etc." -ForegroundColor Yellow
-        Write-Host "Run with -Help for more information" -ForegroundColor Yellow
-        exit 1
+    if ($Unattended) {
+        if (-not $AcceptTerms) {
+            Write-Host "ERROR: -AcceptTerms is required in unattended mode" -ForegroundColor Red
+            Write-Host "Example: -Unattended -AcceptTerms -PoolAddress '...' -Coin DGB" -ForegroundColor Yellow
+            exit 1
+        }
+        if ([string]::IsNullOrEmpty($Coin)) {
+            Write-Host "ERROR: -Coin parameter is required in unattended mode" -ForegroundColor Red
+            Write-Host "Specify coin with: -Coin DGB, -Coin BTC, -Coin LTC, etc." -ForegroundColor Yellow
+            Write-Host "Run with -Help for more information" -ForegroundColor Yellow
+            exit 1
+        }
+        if ($Coin -eq "SYS") {
+            Write-Host "ERROR: SYS is not available in Docker single-coin mode (merge-mining only)" -ForegroundColor Red
+            Write-Host "SYS must be merge-mined with BTC using the native Linux installer." -ForegroundColor Yellow
+            exit 1
+        }
+        if ([string]::IsNullOrEmpty($PoolAddress)) {
+            Write-Host "ERROR: -PoolAddress parameter is required in unattended mode" -ForegroundColor Red
+            Write-Host "Example: -PoolAddress 'DYourAddressHere' -Coin $Coin" -ForegroundColor Yellow
+            exit 1
+        }
     }
 
     # Verify admin privileges
@@ -2141,11 +2174,11 @@ function Main {
     # ───────────────────────────────────────────────────────────────────────────
 
     if ($backend.Backend -eq "WSL2") {
-        Configure-WSL2Networking -SelectedCoin $soloCoin
+        Set-WSL2Networking -SelectedCoin $soloCoin
     }
 
     # Configure firewall for selected coin
-    Configure-Firewall -Config $config -EnabledCoins @($soloCoin)
+    Set-Firewall -Config $config -EnabledCoins @($soloCoin)
 
     # ───────────────────────────────────────────────────────────────────────────
     # STEP 8: Initialize Docker environment
@@ -2160,7 +2193,7 @@ function Main {
     # STEP 9: Start Spiral Pool
     # ───────────────────────────────────────────────────────────────────────────
 
-    $started = Start-SpiralPool -Profile $coinInfo.Profile
+    $started = Start-SpiralPool -ComposeProfile $coinInfo.Profile
     if (-not $started) {
         Write-Log "Failed to start Spiral Pool containers" "ERROR"
         exit 1
@@ -2170,7 +2203,7 @@ function Main {
     # STEP 10: Configure persistence
     # ───────────────────────────────────────────────────────────────────────────
 
-    Configure-Persistence -Profile $coinInfo.Profile
+    Set-Persistence -ComposeProfile $coinInfo.Profile
 
     # ───────────────────────────────────────────────────────────────────────────
     # DONE

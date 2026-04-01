@@ -25,11 +25,11 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Fractal Bitcoin | FBTC | 18335 | 18336 | 18337 |
 | Q-BitX | QBX | 20335 | 20336 | 20337 |
 
-## Multi-Coin Smart Port
+## Multi Coin Smart Port
 
 | Feature | Port | Notes |
 |---------|------|-------|
-| Multi-Coin Stratum | 16180 | Weighted 24h UTC schedule across SHA-256d coins. See [MULTI_COIN_PORT.md](MULTI_COIN_PORT.md) |
+| Multi-Coin Stratum | 16180 | Weighted 24h timezone-aware schedule across SHA-256d coins. See [MULTI_COIN_PORT.md](MULTI_COIN_PORT.md) |
 
 ## Service Ports
 
@@ -167,7 +167,7 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
 
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
-| Unknown | (unrecognized devices) | Varies | 500 | 500 | 50,000 | 1s |
+| Unknown | (unrecognized devices) | Varies | 500 | 100 | 1,000,000 | 1s |
 | Lottery | ESP32, Arduino | 50-500 KH/s | 0.001 | 0.0001 | 100 | 60s |
 | Low | BitAxe Ultra/Supra, NMAxe, Lucky LV06 | 400-600 GH/s | 580 | 580 | 150,000 | 5s |
 | Mid | NerdQAxe++, BitAxe Hex/Gamma, FutureBit Apollo | 1-10 TH/s | 1,165 | 1,165 | 50,000 | 1s |
@@ -401,7 +401,7 @@ sentinel:                      # Spiral Sentinel monitoring (Go-side)
 
 celebration:                   # Block found celebration messages
   enabled: false
-  duration_hours: 4            # Duration of periodic "keep mining!" reminders
+  duration_hours: 4            # Duration of periodic "keep mining!" reminders (code default: 2 when omitted)
 
 failover:                      # Pool-level failover
   enabled: false
@@ -451,4 +451,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0*
+*Spiral Pool — Phi Hash Reactor 2.2.0*

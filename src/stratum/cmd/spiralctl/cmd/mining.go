@@ -140,15 +140,121 @@ type CoinRouteConfig struct {
 
 // ExtendedConfig extends Config with merge mining support
 type ExtendedConfig struct {
-	Version     int                    `yaml:"version"`
-	Global      GlobalConfig           `yaml:"global"`
-	Database    DatabaseConfig         `yaml:"database"`
-	VIP         VIPConfig              `yaml:"vip"`
-	HA          HAConfig               `yaml:"ha"`
-	Coins       map[string]interface{} `yaml:"coins,omitempty"`
-	Pool        PoolConfig             `yaml:"pool"`
-	MergeMining *MergeMiningConfig     `yaml:"mergeMining,omitempty"`
-	MultiPort   *MultiPortConfig       `yaml:"multi_port,omitempty"`
+	Version     int                `yaml:"version"`
+	Global      GlobalConfig       `yaml:"global"`
+	Database    DatabaseConfig     `yaml:"database"`
+	VIP         VIPConfig          `yaml:"vip"`
+	HA          HAConfig           `yaml:"ha"`
+	Coins       interface{}        `yaml:"coins,omitempty"` // []interface{} (V2 list) or nil
+	Pool        PoolConfig         `yaml:"pool"`
+	MergeMining *MergeMiningConfig `yaml:"mergeMining,omitempty"`
+	MultiPort   *MultiPortConfig   `yaml:"multi_port,omitempty"`
+}
+
+// coinsList returns the coins field as a typed slice, or nil if empty/wrong type.
+func (c *ExtendedConfig) coinsList() []interface{} {
+	if c.Coins == nil {
+		return nil
+	}
+	if list, ok := c.Coins.([]interface{}); ok {
+		return list
+	}
+	return nil
+}
+
+// coinsLen returns the number of coins configured.
+func (c *ExtendedConfig) coinsLen() int {
+	return len(c.coinsList())
+}
+
+// coinSymbols returns all coin symbols (lowercased) from the coins list.
+func (c *ExtendedConfig) coinSymbols() []string {
+	var syms []string
+	for _, entry := range c.coinsList() {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok {
+				syms = append(syms, strings.ToLower(s))
+			}
+		}
+	}
+	return syms
+}
+
+// hasCoin checks if a coin symbol exists in the coins list (case-insensitive).
+func (c *ExtendedConfig) hasCoin(symbol string) bool {
+	sym := strings.ToLower(symbol)
+	for _, entry := range c.coinsList() {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok && strings.ToLower(s) == sym {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// removeCoin removes a coin from the coins list by symbol (case-insensitive).
+func (c *ExtendedConfig) removeCoin(symbol string) {
+	sym := strings.ToLower(symbol)
+	var result []interface{}
+	for _, entry := range c.coinsList() {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok && strings.ToLower(s) == sym {
+				continue
+			}
+		}
+		result = append(result, entry)
+	}
+	if len(result) == 0 {
+		c.Coins = nil
+	} else {
+		c.Coins = result
+	}
+}
+
+// setCoinsList builds a V2 coins list from symbols, preserving existing coin
+// entries from the config where possible. Coins not found in the existing
+// config get a minimal entry with just symbol and enabled=true.
+func (c *ExtendedConfig) setCoinsList(symbols []string) {
+	existing := make(map[string]interface{}) // lowercased symbol → full entry
+	for _, entry := range c.coinsList() {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok {
+				existing[strings.ToLower(s)] = entry
+			}
+		}
+	}
+
+	var result []interface{}
+	for _, sym := range symbols {
+		if entry, ok := existing[strings.ToLower(sym)]; ok {
+			// Preserve existing config (address, ports, pool_id, etc.)
+			if m, ok := entry.(map[string]interface{}); ok {
+				m["enabled"] = true
+			}
+			result = append(result, entry)
+		} else {
+			// New coin — minimal entry; install.sh / pool-mode.sh will fill in details
+			result = append(result, map[string]interface{}{
+				"symbol":  strings.ToUpper(sym),
+				"enabled": true,
+			})
+		}
+	}
+	c.Coins = result
+}
+
+// getCoinData returns the map for a coin entry by symbol (case-insensitive), or nil.
+func (c *ExtendedConfig) getCoinData(symbol string) map[string]interface{} {
+	sym := strings.ToLower(symbol)
+	for _, entry := range c.coinsList() {
+		if m, ok := entry.(map[string]interface{}); ok {
+			if s, ok := m["symbol"].(string); ok && strings.ToLower(s) == sym {
+				return m
+			}
+		}
+	}
+	return nil
 }
 
 // runMining handles the mining subcommand
@@ -261,7 +367,7 @@ func printMiningUsage() {
 	fmt.Printf("  %smulti <coins>%s    Switch to multi-coin mode (comma-separated)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge enable%s     Enable merge mining (AuxPoW)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge disable%s    Disable merge mining\n", ColorCyan, ColorReset)
-	fmt.Printf("  %smultiport%s        Show multi-coin smart port status\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport%s        Show multi coin smart port status\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport enable%s Interactive wizard to set up smart port\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport enable <spec>%s\n", ColorCyan, ColorReset)
 	fmt.Println("                     Enable with coin:weight pairs (must sum to 100)")
@@ -298,7 +404,7 @@ func printMiningUsage() {
 	fmt.Printf("%sNotes:%s\n", ColorBold, ColorReset)
 	fmt.Println("  • Multi-coin mode requires all coins to use the same algorithm")
 	fmt.Println("  • Merge mining requires parent chain to be synced first")
-	fmt.Println("  • Multi-coin smart port uses weighted 24h UTC scheduling (port 16180)")
+	fmt.Println("  • Multi coin smart port uses weighted 24h UTC scheduling (port 16180)")
 	fmt.Println("  • Switching modes will restart the stratum service")
 	fmt.Println()
 }
@@ -315,7 +421,7 @@ func miningStatus() error {
 
 	// Determine mode
 	mode := "solo"
-	if cfg.Coins != nil && len(cfg.Coins) > 0 {
+	if cfg.coinsLen() > 0 {
 		mode = "multi-coin"
 	}
 
@@ -343,7 +449,7 @@ func miningStatus() error {
 		}
 	} else {
 		fmt.Printf("%-20s\n", "Enabled Coins:")
-		for coinSymbol := range cfg.Coins {
+		for _, coinSymbol := range cfg.coinSymbols() {
 			coinMeta, ok := coinRegistry[strings.ToLower(coinSymbol)]
 			if ok {
 				synced, progress, _ := isCoinSynced(strings.ToLower(coinSymbol))
@@ -381,8 +487,8 @@ func miningStatus() error {
 	}
 
 	// V2 check: mergeMining inside coin sections (uses raw YAML to detect)
-	if !mmFound && cfg.Coins != nil {
-		for _, coinData := range cfg.Coins {
+	if !mmFound && cfg.coinsLen() > 0 {
+		for _, coinData := range cfg.coinsList() {
 			if coinMap, ok := coinData.(map[string]interface{}); ok {
 				if mm, exists := coinMap["mergeMining"]; exists {
 					if mmMap, ok := mm.(map[string]interface{}); ok {
@@ -420,7 +526,7 @@ func miningStatus() error {
 	fmt.Println()
 
 	// Show multi-port status
-	fmt.Printf("%s--- Multi-Coin Smart Port ---%s\n", ColorBold, ColorReset)
+	fmt.Printf("%s--- Multi Coin Smart Port ---%s\n", ColorBold, ColorReset)
 	if cfg.MultiPort != nil && cfg.MultiPort.Enabled {
 		fmt.Printf("%-20s %sEnabled%s (port %d)\n", "Status:", ColorGreen, ColorReset, cfg.MultiPort.Port)
 		if len(cfg.MultiPort.Coins) > 0 {
@@ -535,6 +641,13 @@ func switchToSolo(coin string, autoYes bool) error {
 	// Update for solo mode
 	cfg.Pool.Coin = coin
 	cfg.Coins = nil // Clear multi-coin config
+
+	// Disable multi_port — solo mode is one coin, smart port needs >=2
+	if cfg.MultiPort != nil && cfg.MultiPort.Enabled {
+		cfg.MultiPort.Enabled = false
+		printInfo("Disabling smart port (not applicable in solo mode)")
+		updateCoinsEnvLine("MULTIPORT_ENABLED", "false")
+	}
 
 	// Handle merge mining when switching coins
 	if cfg.MergeMining != nil && cfg.MergeMining.Enabled {
@@ -721,9 +834,23 @@ func switchToMulti(coins []string, autoYes bool) error {
 
 	// Update for multi-coin mode
 	cfg.Pool.Coin = "" // Clear solo coin
-	cfg.Coins = make(map[string]interface{})
-	for _, coin := range coins {
-		cfg.Coins[coin] = map[string]interface{}{"enabled": true}
+	cfg.setCoinsList(coins)
+
+	// Clean up multi_port: remove any scheduled coins not in the new coin set
+	if cfg.MultiPort != nil && cfg.MultiPort.Enabled {
+		newCoinSet := make(map[string]bool)
+		for _, c := range coins {
+			newCoinSet[strings.ToUpper(c)] = true
+		}
+		var staleCoins []string
+		for sym := range cfg.MultiPort.Coins {
+			if !newCoinSet[strings.ToUpper(sym)] {
+				staleCoins = append(staleCoins, sym)
+			}
+		}
+		if len(staleCoins) > 0 {
+			cleanupMultiPortAfterCoinChange(cfg, staleCoins...)
+		}
 	}
 
 	// Handle merge mining - check if any of the new coins can be a merge parent
@@ -818,10 +945,10 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 	parentCoin := cfg.Pool.Coin
 	if parentCoin == "" {
 		// Check multi-coin config for merge-capable parent
-		for coin := range cfg.Coins {
+		for _, coin := range cfg.coinSymbols() {
 			for _, pair := range mergeMiningPairs {
-				if pair.isValidParent(strings.ToLower(coin)) {
-					parentCoin = strings.ToLower(coin)
+				if pair.isValidParent(coin) {
+					parentCoin = coin
 					break
 				}
 			}
@@ -1096,8 +1223,8 @@ func disableMergeMining(autoYes bool) error {
 	if cfg.MergeMining == nil || !cfg.MergeMining.Enabled {
 		// Also check V2 coins for merge mining
 		mmFound := false
-		if cfg.Coins != nil {
-			for _, coinData := range cfg.Coins {
+		if cfg.coinsLen() > 0 {
+			for _, coinData := range cfg.coinsList() {
 				if coinMap, ok := coinData.(map[string]interface{}); ok {
 					if mm, exists := coinMap["mergeMining"]; exists {
 						if mmMap, ok := mm.(map[string]interface{}); ok {
@@ -1306,6 +1433,8 @@ func saveExtendedConfig(cfg *ExtendedConfig) error {
 	mergeStructField(fullCfg, "pool", cfg.Pool)
 	if cfg.Coins != nil {
 		fullCfg["coins"] = cfg.Coins
+	} else {
+		delete(fullCfg, "coins")
 	}
 	if cfg.MergeMining != nil {
 		mergeStructField(fullCfg, "mergeMining", cfg.MergeMining)
@@ -1319,12 +1448,25 @@ func saveExtendedConfig(cfg *ExtendedConfig) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// SECURITY: Config file contains credentials, use 0600
-	if err := os.WriteFile(DefaultConfigFile, data, 0600); err != nil {
+	// SECURITY: Atomic write (temp + fsync + rename) prevents corruption on crash.
+	// Config contains credentials — mode 0600.
+	if err := atomicWriteFile(DefaultConfigFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
+}
+
+// docRoot returns the root mapping node of a YAML document, or nil if empty/malformed.
+func docRoot(doc *yaml.Node) *yaml.Node {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil
+	}
+	return root
 }
 
 // isV2Config checks whether the YAML document uses V2 format (has a "coins:" key)
@@ -1450,15 +1592,18 @@ func saveMergeMiningConfig(mmCfg *MergeMiningConfig, parentCoin string) error {
 		removeMergeMiningFromNode(coinNode)
 
 		// Also remove any stale root-level mergeMining
-		if doc.Content[0].Kind == yaml.MappingNode {
-			removeMergeMiningFromNode(doc.Content[0])
+		if r := docRoot(&doc); r != nil {
+			removeMergeMiningFromNode(r)
 		}
 
 		// Append mergeMining to the coin node
 		coinNode.Content = append(coinNode.Content, mmKey, mmVal)
 	} else {
 		// V1: place mergeMining at root level
-		root := doc.Content[0]
+		root := docRoot(&doc)
+		if root == nil {
+			return fmt.Errorf("config file has empty or malformed YAML document")
+		}
 
 		// Remove existing root-level mergeMining
 		removeMergeMiningFromNode(root)
@@ -1479,7 +1624,7 @@ func saveMergeMiningConfig(mmCfg *MergeMiningConfig, parentCoin string) error {
 	}
 
 	// SECURITY: Config file contains credentials, use 0600
-	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+	if err := atomicWriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -1502,9 +1647,13 @@ func disableMergeMiningConfig() error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	root := docRoot(&doc)
+	if root == nil {
+		return fmt.Errorf("config file has empty or malformed YAML document")
+	}
+
 	if isV2Config(&doc) {
 		// V2: set enabled=false in each coin's mergeMining section
-		root := doc.Content[0]
 		var coinsNode *yaml.Node
 		for i := 0; i < len(root.Content)-1; i += 2 {
 			if root.Content[i].Value == "coins" {
@@ -1536,7 +1685,6 @@ func disableMergeMiningConfig() error {
 		removeMergeMiningFromNode(root)
 	} else {
 		// V1: set enabled=false at root-level mergeMining
-		root := doc.Content[0]
 		for i := 0; i < len(root.Content)-1; i += 2 {
 			if root.Content[i].Value == "mergeMining" {
 				mmNode := root.Content[i+1]
@@ -1564,7 +1712,7 @@ func disableMergeMiningConfig() error {
 	}
 
 	// SECURITY: Config file contains credentials, use 0600
-	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+	if err := atomicWriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -1586,7 +1734,7 @@ func confirmActionMining(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// ── Multi-coin smart port commands ──────────────────────────────────────────
+// ── Multi coin smart port commands ──────────────────────────────────────────
 
 // parseCoinWeights parses "dgb:80,bch:15,btc:5" into a map
 // parseCoinWeights parses a coin weight spec string.
@@ -1681,10 +1829,107 @@ func parseCoinWeights(spec string) (map[string]int, error) {
 	return weights, nil
 }
 
+// cleanupMultiPortAfterCoinChange removes stale coin references from the
+// multi_port config section. Called after disabling/removing a coin or
+// switching mining modes. If fewer than 2 coins remain, multi_port is
+// disabled entirely.
+func cleanupMultiPortAfterCoinChange(cfg *ExtendedConfig, removedCoins ...string) {
+	if cfg.MultiPort == nil || !cfg.MultiPort.Enabled || cfg.MultiPort.Coins == nil {
+		return
+	}
+
+	changed := false
+	for _, sym := range removedCoins {
+		symUpper := strings.ToUpper(sym)
+		if _, ok := cfg.MultiPort.Coins[symUpper]; ok {
+			delete(cfg.MultiPort.Coins, symUpper)
+			changed = true
+			printWarning(fmt.Sprintf("Removed %s from smart port schedule", symUpper))
+		}
+		// Also check lowercase keys (config normalization inconsistencies)
+		symLower := strings.ToLower(sym)
+		if _, ok := cfg.MultiPort.Coins[symLower]; ok {
+			delete(cfg.MultiPort.Coins, symLower)
+			changed = true
+		}
+	}
+
+	if !changed {
+		return
+	}
+
+	// Count remaining coins in the schedule (including zero-weight)
+	remaining := len(cfg.MultiPort.Coins)
+
+	if remaining < 2 {
+		cfg.MultiPort.Enabled = false
+		printWarning("Smart port disabled (fewer than 2 coins remain)")
+		updateCoinsEnvLine("MULTIPORT_ENABLED", "false")
+	} else {
+		// Redistribute weights proportionally to sum to 100
+		totalWeight := 0
+		for _, rc := range cfg.MultiPort.Coins {
+			totalWeight += rc.Weight
+		}
+		if totalWeight > 0 && totalWeight != 100 {
+			redistributed := 0
+			coinKeys := make([]string, 0, len(cfg.MultiPort.Coins))
+			for k := range cfg.MultiPort.Coins {
+				coinKeys = append(coinKeys, k)
+			}
+			sort.Strings(coinKeys)
+			for i, k := range coinKeys {
+				rc := cfg.MultiPort.Coins[k]
+				if i == len(coinKeys)-1 {
+					rc.Weight = 100 - redistributed
+				} else {
+					rc.Weight = int(math.Round(float64(rc.Weight) / float64(totalWeight) * 100))
+					redistributed += rc.Weight
+				}
+				cfg.MultiPort.Coins[k] = rc
+			}
+			printInfo("Redistributed smart port weights among remaining coins")
+		}
+	}
+
+	// Fix prefer_coin if it was removed
+	if cfg.MultiPort.PreferCoin != "" {
+		pcUpper := strings.ToUpper(cfg.MultiPort.PreferCoin)
+		found := false
+		for k := range cfg.MultiPort.Coins {
+			if strings.EqualFold(k, pcUpper) {
+				found = true
+				break
+			}
+		}
+		if !found && len(cfg.MultiPort.Coins) > 0 {
+			// Pick highest-weight coin
+			bestCoin := ""
+			bestWeight := 0
+			for k, rc := range cfg.MultiPort.Coins {
+				if rc.Weight > bestWeight {
+					bestWeight = rc.Weight
+					bestCoin = k
+				}
+			}
+			cfg.MultiPort.PreferCoin = strings.ToUpper(bestCoin)
+		}
+	}
+
+	// Sync coins.env so install.sh/upgrades don't restore stale schedule
+	if cfg.MultiPort.Enabled {
+		weights := make(map[string]int, len(cfg.MultiPort.Coins))
+		for k, rc := range cfg.MultiPort.Coins {
+			weights[k] = rc.Weight
+		}
+		updateCoinsEnvMultiPort(weights)
+	}
+}
+
 // multiportStatus shows current multi-port configuration
 func multiportStatus() error {
 	printBanner()
-	fmt.Printf("%s=== MULTI-COIN SMART PORT STATUS ===%s\n\n", ColorBold, ColorReset)
+	fmt.Printf("%s=== MULTI COIN SMART PORT STATUS ===%s\n\n", ColorBold, ColorReset)
 
 	cfg, err := loadExtendedConfig()
 	if err != nil {
@@ -1772,14 +2017,14 @@ func multiportStatus() error {
 	return nil
 }
 
-// multiportWizard runs an interactive wizard to set up the multi-coin smart port.
+// multiportWizard runs an interactive wizard to set up the multi coin smart port.
 // It discovers installed SHA-256d coins, lets the user toggle which ones participate,
 // offers to install missing coins, and collects weights that must sum to 100.
 func multiportWizard(autoYes bool) error {
 	printBanner()
-	fmt.Printf("%s=== MULTI-COIN SMART PORT WIZARD ===%s\n\n", ColorBold, ColorReset)
+	fmt.Printf("%s=== MULTI COIN SMART PORT WIZARD ===%s\n\n", ColorBold, ColorReset)
 	tz := readSentinelTimezone()
-	fmt.Println("This wizard will set up the multi-coin smart port on port 16180.")
+	fmt.Println("This wizard will set up the multi coin smart port on port 16180.")
 	fmt.Println("Miners connect once and the pool rotates them between SHA-256d coins")
 	fmt.Printf("on a 24-hour %s schedule based on the hours you assign.\n", tz)
 	fmt.Println()
@@ -2003,7 +2248,7 @@ func multiportWizard(autoYes bool) error {
 	fmt.Println()
 	printSchedule(weights)
 
-	if !autoYes && !confirmActionMining("Enable multi-coin smart port with this schedule?") {
+	if !autoYes && !confirmActionMining("Enable multi coin smart port with this schedule?") {
 		fmt.Println("Cancelled.")
 		return nil
 	}
@@ -2051,7 +2296,10 @@ func applyMultiPortConfig(weights map[string]int) error {
 
 	mpNode := buildMultiPortNode(weights)
 
-	root := doc.Content[0]
+	root := docRoot(&doc)
+	if root == nil {
+		return fmt.Errorf("config file has empty or malformed YAML document")
+	}
 	found := false
 	for i := 0; i < len(root.Content)-1; i += 2 {
 		if root.Content[i].Value == "multi_port" {
@@ -2075,13 +2323,13 @@ func applyMultiPortConfig(weights map[string]int) error {
 	}
 	_ = enc.Close()
 
-	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+	if err := atomicWriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	updateCoinsEnvMultiPort(weights)
 
-	printSuccess("Multi-coin smart port enabled on port 16180")
+	printSuccess("Multi coin smart port enabled on port 16180")
 	printInfo("Restarting stratum service...")
 
 	if err := restartService("spiralstratum"); err != nil {
@@ -2097,7 +2345,7 @@ func applyMultiPortConfig(weights map[string]int) error {
 // multiportEnable enables the multi-port with specified coin weights (non-interactive)
 func multiportEnable(spec string, autoYes bool) error {
 	printBanner()
-	fmt.Printf("%s=== ENABLE MULTI-COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
+	fmt.Printf("%s=== ENABLE MULTI COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
 
 	weights, err := parseCoinWeights(spec)
 	if err != nil {
@@ -2106,7 +2354,7 @@ func multiportEnable(spec string, autoYes bool) error {
 
 	printSchedule(weights)
 
-	if !autoYes && !confirmActionMining("Enable multi-coin smart port? This will restart the stratum service") {
+	if !autoYes && !confirmActionMining("Enable multi coin smart port? This will restart the stratum service") {
 		fmt.Println("Cancelled.")
 		return nil
 	}
@@ -2117,9 +2365,9 @@ func multiportEnable(spec string, autoYes bool) error {
 // multiportDisable disables the multi-port
 func multiportDisable(autoYes bool) error {
 	printBanner()
-	fmt.Printf("%s=== DISABLE MULTI-COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
+	fmt.Printf("%s=== DISABLE MULTI COIN SMART PORT ===%s\n\n", ColorBold, ColorReset)
 
-	if !autoYes && !confirmActionMining("Disable multi-coin smart port?") {
+	if !autoYes && !confirmActionMining("Disable multi coin smart port?") {
 		fmt.Println("Cancelled.")
 		return nil
 	}
@@ -2135,7 +2383,10 @@ func multiportDisable(autoYes bool) error {
 	}
 
 	// Find multi_port and set enabled=false
-	root := doc.Content[0]
+	root := docRoot(&doc)
+	if root == nil {
+		return fmt.Errorf("config file has empty or malformed YAML document")
+	}
 	for i := 0; i < len(root.Content)-1; i += 2 {
 		if root.Content[i].Value == "multi_port" {
 			mp := root.Content[i+1]
@@ -2158,14 +2409,14 @@ func multiportDisable(autoYes bool) error {
 	}
 	_ = enc.Close()
 
-	if err := os.WriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+	if err := atomicWriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	// Update coins.env
 	updateCoinsEnvLine("MULTIPORT_ENABLED", "false")
 
-	printSuccess("Multi-coin smart port disabled")
+	printSuccess("Multi coin smart port disabled")
 	printInfo("Restarting stratum service...")
 
 	if err := restartService("spiralstratum"); err != nil {
@@ -2349,7 +2600,7 @@ func updateCoinsEnvLine(key, value string) {
 		lines = append(lines, key+"="+value)
 	}
 
-	_ = os.WriteFile(coinsEnv, []byte(strings.Join(lines, "\n")), 0644)
+	_ = atomicWriteFile(coinsEnv, []byte(strings.Join(lines, "\n")), 0600)
 }
 
 // httpGetJSON fetches JSON from a URL and returns the decoded map

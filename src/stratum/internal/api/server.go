@@ -411,7 +411,7 @@ func (s *Server) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "2.1.0-PHI_HASH_REACTOR",
+		Version:  "2.2.0-PHI_HASH_REACTOR",
 		Pools: []PoolInfo{
 			{
 				ID: s.poolCfg.ID,
@@ -661,7 +661,7 @@ func (s *Server) handlePoolBlocks(w http.ResponseWriter, r *http.Request, poolID
 	}
 	// Scope DB queries to this specific pool's tables
 	scopedDB := db.WithPoolID(poolID)
-	blocks, err := scopedDB.GetBlocks(ctx)
+	blocks, err := scopedDB.GetBlocksWithOrphans(ctx)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -679,9 +679,9 @@ func (s *Server) handlePoolBlocks(w http.ResponseWriter, r *http.Request, poolID
 			"reward":               b.Reward,
 			"hash":                 b.Hash,
 			"created":              b.Created,
-			"source":               "stratum",
 		}
 		if b.Source != "" {
+			entry["source"] = b.Source
 			entry["worker"] = b.Source
 		}
 		response = append(response, entry)
@@ -738,6 +738,10 @@ func (s *Server) handleMinerStats(w http.ResponseWriter, r *http.Request, poolID
 	stats, err := db.GetMinerStats(ctx, address)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if stats == nil {
+		http.Error(w, "Miner not found", http.StatusNotFound)
 		return
 	}
 

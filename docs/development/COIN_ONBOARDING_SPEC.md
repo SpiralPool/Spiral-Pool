@@ -4,7 +4,7 @@ This document describes how to add support for new SHA-256d or Scrypt coins to S
 
 ---
 
-> **Important:** The onboarding process is mostly automated via `scripts/add-coin.py`, but the output **requires testing before production deployment**. Coin implementations can differ in subtle ways even among SHA256d forks — block header serialization, AuxPoW chain IDs, address encoding, version bits, and RPC behaviour all vary by fork. The generated Go code is a starting template, not a finished implementation.
+> **Important:** The onboarding process is mostly automated via `scripts/add-coin.py` (user-facing CLI wrapper: `scripts/spiralpool-add-coin`), but the output **requires testing before production deployment**. Coin implementations can differ in subtle ways even among SHA256d forks — block header serialization, AuxPoW chain IDs, address encoding, version bits, and RPC behaviour all vary by fork. The generated Go code is a starting template, not a finished implementation.
 >
 > Before deploying any new coin:
 > - Review the generated Go file and manifest entry carefully
@@ -111,63 +111,53 @@ Create `src/stratum/internal/coin/<symbol>.go`:
 package coin
 
 // NEWCOIN implements the Coin interface for New Coin.
-type NEWCOIN struct {
-    baseCoin
-}
+type NEWCOIN struct{}
 
 func init() {
-    Register("NEWCOIN", func() Coin {
-        return &NEWCOIN{
-            baseCoin: baseCoin{
-                symbol:    "NEWCOIN",
-                algorithm: AlgoSHA256d, // or AlgoScrypt
-            },
-        }
-    })
+    Register("NEWCOIN", func() Coin { return &NEWCOIN{} })
+}
+
+func (c *NEWCOIN) Algorithm() string {
+    return "sha256d" // or "scrypt"
 }
 
 // ChainID returns the AuxPoW chain identifier.
 // CONSENSUS-CRITICAL: Must match manifest value.
-func (c *NEWCOIN) ChainID() uint32 {
+func (c *NEWCOIN) ChainID() int32 {
     return 1234  // Must match manifest chain_id
 }
 
-// VersionBit returns the AuxPoW version bit.
+// AuxPowVersionBit returns the AuxPoW version bit.
 // CONSENSUS-CRITICAL: Must match manifest value.
-func (c *NEWCOIN) VersionBit() uint32 {
+func (c *NEWCOIN) AuxPowVersionBit() uint32 {
     return 0x00000100
 }
 
-// GenesisHash returns the genesis block hash.
+// GenesisBlockHash returns the genesis block hash.
 // Used for validation at startup.
-func (c *NEWCOIN) GenesisHash() string {
+func (c *NEWCOIN) GenesisBlockHash() string {
     return "000000..."  // Must match manifest genesis_hash
 }
 ```
 
 ### Standalone Coins (No AuxPoW)
 
-For coins without merge mining support, omit `ChainID()` and `VersionBit()`:
+For coins without merge mining support, omit `ChainID()` and `AuxPowVersionBit()`:
 
 ```go
 package coin
 
-type NEWCOIN struct {
-    baseCoin
-}
+type NEWCOIN struct{}
 
 func init() {
-    Register("NEWCOIN", func() Coin {
-        return &NEWCOIN{
-            baseCoin: baseCoin{
-                symbol:    "NEWCOIN",
-                algorithm: AlgoSHA256d,
-            },
-        }
-    })
+    Register("NEWCOIN", func() Coin { return &NEWCOIN{} })
 }
 
-func (c *NEWCOIN) GenesisHash() string {
+func (c *NEWCOIN) Algorithm() string {
+    return "sha256d"
+}
+
+func (c *NEWCOIN) GenesisBlockHash() string {
     return "000000..."
 }
 ```
@@ -329,4 +319,4 @@ QBX (Q-BitX)
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Phi Hash Reactor 2.2.0 — Built on what came before. Growing toward phi.*

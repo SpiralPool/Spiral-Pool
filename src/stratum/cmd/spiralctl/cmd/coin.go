@@ -117,10 +117,8 @@ func listCoins() error {
 
 		// Check if enabled in config
 		enabledMarker := ""
-		if cfg != nil && cfg.Coins != nil {
-			if _, ok := cfg.Coins[strings.ToLower(coin.symbol)]; ok {
-				enabledMarker = " *"
-			}
+		if cfg != nil && cfg.hasCoin(coin.symbol) {
+			enabledMarker = " *"
 		}
 
 		fmt.Printf("%-8s %-14s %-12s %-12s %s%s\n",
@@ -140,24 +138,27 @@ func disableCoin(symbol string) error {
 
 	symbol = strings.ToLower(symbol)
 
-	cfg, err := loadConfig()
+	cfg, err := loadExtendedConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if cfg.Coins == nil {
+	if cfg.coinsLen() == 0 {
 		printInfo("No coins are currently enabled in multi-coin mode")
 		return nil
 	}
 
-	if _, ok := cfg.Coins[symbol]; !ok {
+	if !cfg.hasCoin(symbol) {
 		printInfo(fmt.Sprintf("%s is not currently enabled", strings.ToUpper(symbol)))
 		return nil
 	}
 
-	delete(cfg.Coins, symbol)
+	cfg.removeCoin(symbol)
 
-	if err := saveConfig(cfg); err != nil {
+	// Clean up multi_port if the disabled coin was in the smart port schedule
+	cleanupMultiPortAfterCoinChange(cfg, symbol)
+
+	if err := saveExtendedConfig(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

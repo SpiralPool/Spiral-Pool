@@ -100,7 +100,7 @@ type Coordinator struct {
 	paymentProcessors  map[string]*payments.Processor // keyed by pool ID
 	paymentProcessorMu sync.RWMutex                   // AUDIT FIX (H-2): protects paymentProcessors map
 
-	// Multi-coin smart port (v2.1)
+	// Multi coin smart port (v2.1)
 	diffMonitor *scheduler.Monitor
 	coinSelector *scheduler.Selector
 	multiServer *scheduler.MultiServer
@@ -777,7 +777,11 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	if poolCount > 0 {
 		c.logger.Infow("Starting coin pools", "count", poolCount)
 
-		startErrors := make(chan error, poolCount)
+		type startFailure struct {
+			poolID string
+			err    error
+		}
+		failedStarts := make(chan startFailure, poolCount)
 		var startWg sync.WaitGroup
 
 		c.poolsMu.RLock()
@@ -787,7 +791,7 @@ func (c *Coordinator) Run(ctx context.Context) error {
 				defer startWg.Done()
 				c.logger.Infow("Starting coin pool", "poolId", id, "coin", p.Symbol())
 				if err := p.Start(ctx); err != nil {
-					startErrors <- fmt.Errorf("failed to start pool %s: %w", id, err)
+					failedStarts <- startFailure{poolID: id, err: err}
 				}
 			}(poolID, pool)
 		}
@@ -795,11 +799,36 @@ func (c *Coordinator) Run(ctx context.Context) error {
 
 		// Wait for all pools to start
 		startWg.Wait()
-		close(startErrors)
+		close(failedStarts)
 
-		// Check for startup errors - move failed pools to retry list
-		for err := range startErrors {
-			c.logger.Warnw("Pool startup error (will continue with remaining pools)", "error", err)
+		// Move failed-start pools to the retry list so retryFailedCoinsLoop
+		// can recover them when the underlying issue (e.g., daemon unavailable,
+		// port conflict) resolves. Without this, a transient startup error
+		// leaves the pool permanently dead until coordinator restart.
+		for sf := range failedStarts {
+			c.logger.Warnw("Pool startup error (will retry during grace period)",
+				"poolId", sf.poolID, "error", sf.err)
+
+			c.poolsMu.Lock()
+			failedPool, exists := c.pools[sf.poolID]
+			if exists {
+				delete(c.pools, sf.poolID)
+				// Best-effort stop to release any resources the pool acquired
+				if stopErr := failedPool.Stop(); stopErr != nil {
+					c.logger.Warnw("Error stopping failed pool", "poolId", sf.poolID, "error", stopErr)
+				}
+				// Find the coin config for this pool and add to retry list
+				for i := range c.cfg.Coins {
+					if c.cfg.Coins[i].PoolID == sf.poolID {
+						cfgCopy := c.cfg.Coins[i]
+						c.failedCoinsMu.Lock()
+						c.failedCoins = append(c.failedCoins, &cfgCopy)
+						c.failedCoinsMu.Unlock()
+						break
+					}
+				}
+			}
+			c.poolsMu.Unlock()
 		}
 	}
 
@@ -890,10 +919,10 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	// Print summary (will update as more pools come online)
 	c.printStartupSummary()
 
-	// Start Multi-coin smart port (multi-port) if configured
+	// Start Multi coin smart port (multi-port) if configured
 	if c.cfg.MultiPort.Enabled {
 		if err := c.startMultiPort(ctx); err != nil {
-			c.logger.Errorw("Failed to start multi-port server", "error", err)
+			return fmt.Errorf("failed to start multi-port server: %w", err)
 		}
 	}
 
@@ -1708,14 +1737,14 @@ func (c *Coordinator) demoteToBackup() {
 // SCHEDULING PORT (v2.1)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// startMultiPort initializes and starts the Multi-coin smart port.
+// startMultiPort initializes and starts the Multi coin smart port.
 // It creates the DifficultyMonitor, CoinSelector, and MultiServer, wiring
 // them to the running CoinPools that match the configured allowed coins.
 func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	mpCfg := c.cfg.MultiPort
 	coinSymbols := mpCfg.CoinSymbols()
 
-	c.logger.Infow("Starting multi-coin smart port",
+	c.logger.Infow("Starting multi coin smart port",
 		"port", mpCfg.Port,
 		"coins", mpCfg.Coins,
 	)
@@ -1849,6 +1878,7 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		CoinWeights:   coinWeights,
 		PreferCoin:    mpCfg.PreferCoin,
 		MinTimeOnCoin: mpCfg.MinTimeOnCoin,
+		WalletMap:     mpCfg.WalletMap,
 		Stratum:       stratumCfg,
 		Logger:        c.logger.Desugar(),
 	}, c.diffMonitor, c.coinSelector)
@@ -1875,7 +1905,7 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		c.apiServer.SetMultiPortProvider(&multiPortAdapter{coord: c})
 	}
 
-	c.logger.Infow("Multi-coin smart port started",
+	c.logger.Infow("Multi coin smart port started",
 		"port", mpCfg.Port,
 		"coins", coinSymbols,
 	)

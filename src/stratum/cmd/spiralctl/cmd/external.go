@@ -1045,7 +1045,7 @@ func updateStratumRateLimitConfig(maxConnPerIP, maxSharesPerSec, banThreshold in
 		return err
 	}
 
-	return os.WriteFile(DefaultConfigFile, output, 0600)
+	return atomicWriteFile(DefaultConfigFile, output, 0600)
 }
 
 // updateRateLimitingInNode recursively finds and updates the rateLimiting section

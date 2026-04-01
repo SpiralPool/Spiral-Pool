@@ -20,7 +20,7 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 ExecStart={{DOGE_DIR}}/bin/dogecoind -daemon -conf={{INSTALL_DIR}}/doge/dogecoin.conf -datadir={{INSTALL_DIR}}/doge
-ExecStop={{DOGE_DIR}}/bin/dogecoin-cli -conf={{INSTALL_DIR}}/doge/dogecoin.conf stop
+ExecStop={{DOGE_DIR}}/bin/dogecoin-cli -conf={{INSTALL_DIR}}/doge/dogecoin.conf -datadir={{INSTALL_DIR}}/doge stop
 PIDFile={{INSTALL_DIR}}/doge/dogecoind.pid
 Restart=always
 RestartSec=30

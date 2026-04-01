@@ -3760,7 +3760,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.1.0 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.2.0 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3771,7 +3771,7 @@ echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spir
 echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl logs${NC}             Stratum logs"
 echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl scan${NC}             Find miners"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl mining multiport${NC} Smart port ${DIM}⚠ experimental${NC}"
+echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl mining multiport${NC} Smart port"
 echo -e "    ${YELLOW}spiralctl coin enable${NC}    Add coin       ${YELLOW}spiralctl coin disable${NC}     Remove coin"
 echo -e "    ${YELLOW}spiralctl coin-upgrade${NC}   Upgrade nodes  ${YELLOW}spiralctl restart${NC}          Restart services"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -4473,7 +4473,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.1.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.2.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

@@ -25,8 +25,8 @@ Getting started, installation, and deployment guides.
 |----------|-------------|
 | [OPERATIONS.md](setup/OPERATIONS.md) | Installation, configuration, monitoring, HA setup, upgrading, troubleshooting |
 | [CLOUD_OPERATIONS.md](setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment: dashboard SSH tunnel, firewall layout, SSH hardening, HTTPS options, provider-specific config |
-| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v2.0.0 (Phi Hash Reactor): compatibility, all coin types, step-by-step |
-| [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 single-coin and multi-coin mode) |
+| [UPGRADE_GUIDE.md](setup/UPGRADE_GUIDE.md) | Upgrading to v2.2.0 (Phi Hash Reactor): compatibility, all coin types, step-by-step |
+| [DOCKER_GUIDE.md](setup/DOCKER_GUIDE.md) | Docker & WSL2 deployment guide (V1 + V2 single-coin and multi-coin mode) |
 | [WINDOWS_GUIDE.md](setup/WINDOWS_GUIDE.md) | Windows installation: Docker Desktop vs WSL2 Native, decision tree, troubleshooting |
 
 ## Architecture
@@ -48,9 +48,9 @@ Quick-lookup tables, CLI commands, hardware support, and external access.
 | [spiralctl-reference.md](reference/spiralctl-reference.md) | Complete spiralctl CLI reference: all commands, options, examples |
 | [MINER_SUPPORT.md](reference/MINER_SUPPORT.md) | Supported mining hardware: device APIs, auto-detection, monitoring capabilities |
 | [SENTINEL.md](reference/SENTINEL.md) | Spiral Sentinel: monitoring, alerts, achievements, CoinGecko integration, 26 miner types |
-| [DASHBOARD.md](reference/DASHBOARD.md) | Spiral Dash: web dashboard, ~125 API routes, miner management, 19 themes |
+| [DASHBOARD.md](reference/DASHBOARD.md) | Spiral Dash: web dashboard, ~125 API routes, miner management, 25 themes |
 | [EXTERNAL_ACCESS.md](reference/EXTERNAL_ACCESS.md) | External access: port forwarding, Cloudflare tunnels, hashrate marketplace integration |
-| [MULTI_COIN_PORT.md](reference/MULTI_COIN_PORT.md) | Multi-coin smart port: weighted time allocation, difficulty routing, miner setup, API |
+| [MULTI_COIN_PORT.md](reference/MULTI_COIN_PORT.md) | Multi coin smart port: weighted time allocation, difficulty routing, miner setup, API |
 
 ## Development
 
@@ -79,4 +79,4 @@ Legal documents are in the repository root:
 
 ---
 
-*Spiral Pool -- Phi Hash Reactor 2.1.0*
+*Spiral Pool -- Phi Hash Reactor 2.2.0*

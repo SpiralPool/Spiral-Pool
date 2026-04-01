@@ -590,10 +590,18 @@ func (rl *RateLimiter) cleanup() {
 	now := time.Now()
 	staleThreshold := 10 * time.Minute
 
-	// Clean up stale IP states
+	// Clean up stale IP states and decay violations over time.
+	// Without decay, occasional burst violations accumulate indefinitely
+	// and eventually ban legitimate long-running miners.
 	for ip, state := range rl.connectionsByIP {
 		if state.connections == 0 && now.Sub(state.lastConnection) > staleThreshold {
 			delete(rl.connectionsByIP, ip)
+			continue
+		}
+		// Decay one violation per cleanup cycle (every 60s) for connected miners,
+		// so occasional bursts don't accumulate toward a permanent ban.
+		if state.violations > 0 && state.connections > 0 {
+			state.violations--
 		}
 	}
 

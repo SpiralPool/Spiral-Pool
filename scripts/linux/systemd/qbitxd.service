@@ -19,8 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
-ExecStart={{QBX_DIR}}/bin/qbitxd -daemon -conf={{INSTALL_DIR}}/qbx/qbitx.conf -datadir={{INSTALL_DIR}}/qbx
-ExecStop={{QBX_DIR}}/bin/qbitx-cli -conf={{INSTALL_DIR}}/qbx/qbitx.conf stop
+ExecStart={{QBX_DIR}}/bin/qbitx -daemon -conf={{INSTALL_DIR}}/qbx/qbitx.conf -datadir={{INSTALL_DIR}}/qbx
+ExecStop={{QBX_DIR}}/bin/qbitx-cli -conf={{INSTALL_DIR}}/qbx/qbitx.conf -datadir={{INSTALL_DIR}}/qbx stop
 PIDFile={{INSTALL_DIR}}/qbx/qbitxd.pid
 Restart=always
 RestartSec=30

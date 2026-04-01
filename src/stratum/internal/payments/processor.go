@@ -407,6 +407,7 @@ func (p *Processor) processCycle(ctx context.Context) {
 	p.logger.Debug("Starting payment processing cycle")
 	p.mu.Lock()
 	p.cycleCount++
+	shouldVerifyDeepReorg := p.cycleCount%DeepReorgCheckInterval == 0
 	p.mu.Unlock()
 
 	// V15 FIX: Track whether this cycle's critical operations succeed.
@@ -421,7 +422,7 @@ func (p *Processor) processCycle(ctx context.Context) {
 
 	// 2. Deep reorg detection - periodically re-verify confirmed blocks
 	// This catches rare but catastrophic deep chain reorganizations
-	if p.cycleCount%DeepReorgCheckInterval == 0 {
+	if shouldVerifyDeepReorg {
 		if err := p.verifyConfirmedBlocks(ctx); err != nil {
 			p.logger.Errorw("Failed to verify confirmed blocks", "error", err)
 			cycleFailed = true // AUDIT FIX (SF-7): Track all step failures
@@ -1005,10 +1006,11 @@ func (p *Processor) executePendingPayments(ctx context.Context) error {
 
 // Stats returns payment processor statistics.
 type Stats struct {
-	PendingBlocks   int       `json:"pendingBlocks"`
-	ConfirmedBlocks int       `json:"confirmedBlocks"`
-	OrphanedBlocks  int       `json:"orphanedBlocks"`
-	PaidBlocks      int       `json:"paidBlocks"`
+	SubmittingBlocks int       `json:"submittingBlocks"`
+	PendingBlocks    int       `json:"pendingBlocks"`
+	ConfirmedBlocks  int       `json:"confirmedBlocks"`
+	OrphanedBlocks   int       `json:"orphanedBlocks"`
+	PaidBlocks       int       `json:"paidBlocks"`
 	BlockMaturity   int       `json:"blockMaturity"`
 	TotalPaid       float64   `json:"totalPaid"`
 	LastPaymentTime time.Time `json:"lastPaymentTime,omitempty"`
@@ -1021,10 +1023,11 @@ func (p *Processor) Stats(ctx context.Context) (*Stats, error) {
 	}
 
 	return &Stats{
-		PendingBlocks:   blockStats.Pending,
-		ConfirmedBlocks: blockStats.Confirmed,
-		OrphanedBlocks:  blockStats.Orphaned,
-		PaidBlocks:      blockStats.Paid,
+		SubmittingBlocks: blockStats.Submitting,
+		PendingBlocks:    blockStats.Pending,
+		ConfirmedBlocks:  blockStats.Confirmed,
+		OrphanedBlocks:   blockStats.Orphaned,
+		PaidBlocks:       blockStats.Paid,
 		BlockMaturity:   p.getBlockMaturity(),
 		TotalPaid:       0, // FUTURE: Sum from payments table
 		LastPaymentTime: time.Time{},
