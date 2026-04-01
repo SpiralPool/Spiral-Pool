@@ -361,7 +361,7 @@ Running 4 SHA-256d coins requires significant resources:
 | Disk (all 4 synced) | ~1 TB | 1.5 TB SSD |
 | CPU | 4 cores | 8 cores |
 
-Breakdown by coin: BTC (~600 GB), BCH (~350 GB), DGB (~45 GB), FBTC (~15 GB). Sizes grow over time.
+Breakdown by coin: BTC (~600 GB), BCH (~250 GB), DGB (~60 GB), FBTC (~10 GB). Sizes grow over time.
 
 ### Customizing This Example
 
@@ -478,12 +478,12 @@ The blockchain daemon must fully sync before mining can begin. Sync times vary:
 
 | Coin | Approximate Sync Time (SSD) | Data Size |
 |------|---------------------------|-----------|
-| DigiByte | 4-8 hours | ~45 GB |
+| DigiByte | 4-8 hours | ~60 GB |
 | Bitcoin | 2-5 days | ~600 GB |
-| Litecoin | 12-24 hours | ~180 GB |
-| Dogecoin | 12-24 hours | ~75 GB |
-| Bitcoin Cash | 1-3 days | ~350 GB |
-| Other coins | 2-12 hours | 1-85 GB |
+| Litecoin | 12-24 hours | ~150 GB |
+| Dogecoin | 12-24 hours | ~80 GB |
+| Bitcoin Cash | 1-3 days | ~250 GB |
+| Other coins | 2-12 hours | 1-25 GB |
 
 Monitor sync progress:
 
@@ -764,7 +764,7 @@ wsl --install -d Ubuntu
 # 2. Open Ubuntu, then clone and run the Spiral Pool installer
 git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool
-./install.sh    # self-elevates; no sudo needed
+sudo ./install.sh
 ```
 
 ### ASIC / External Miner Port Forwarding

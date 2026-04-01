@@ -413,7 +413,12 @@ func expandCIDR(cidr string) ([]string, error) {
 	}
 
 	var ips []string
-	for ip := ipNet.IP.Mask(ipNet.Mask); ipNet.Contains(ip); incrementIP(ip) {
+	// Copy the masked IP so incrementIP doesn't mutate ipNet.IP's backing array,
+	// which would shift the network base and break the Contains() check.
+	startIP := ipNet.IP.Mask(ipNet.Mask)
+	ip := make(net.IP, len(startIP))
+	copy(ip, startIP)
+	for ; ipNet.Contains(ip); incrementIP(ip) {
 		// Skip network and broadcast addresses for /24 and smaller
 		ones, bits := ipNet.Mask.Size()
 		if ones <= 24 {

@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.1.0 - PHI HASH REACTOR EDITION                                 ║
+║  Spiral Sentinel v2.2.0 - PHI HASH REACTOR EDITION                                 ║
 ║  Autonomous SHA-256 Solo Mining Monitor (DGB/BTC/BCH/BC2)                   ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.1.0-PHI_HASH_REACTOR"
+__version__ = "2.2.0-PHI_HASH_REACTOR"
 __codename__ = "PHI_HASH_REACTOR"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -972,7 +972,7 @@ DEFAULT_CONFIG = {
     # DRY STREAK ALERTING — Alert when no block found for an extended period
     # ═══════════════════════════════════════════════════════════════════════════════
     "dry_streak_enabled": True,            # Alert when no block found for too long
-    "dry_streak_multiplier": 3,            # Alert after N × expected interval without a block
+    "dry_streak_multiplier": 5,            # Alert after N × expected interval without a block
     # ═══════════════════════════════════════════════════════════════════════════════
     # NETWORK DIFFICULTY CHANGE ALERTS — Alert on significant difficulty swings
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -1329,6 +1329,24 @@ def validate_config(config):
     return issues
 
 
+def _read_config_key(key, default=""):
+    """Read a single key from the config file WITHOUT validation.
+
+    This is used by notification senders (send_discord, send_ntfy, send_webhook)
+    that need to re-read config for hot-reload support. Using load_config() for
+    this was a performance bug: validate_config() makes a blocking HTTP request
+    to the pool API on every call, which could block the monitoring loop for up
+    to 36 seconds when sending notifications with retries.
+    """
+    try:
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE) as f:
+                user_config = json.load(f)
+            return user_config.get(key, default)
+    except (json.JSONDecodeError, IOError, OSError):
+        pass
+    return default
+
 def load_config():
     # Directory already created at module level (with ProtectHome fallback)
     # Retry mkdir here as safety net in case module-level creation was deferred
@@ -1569,9 +1587,16 @@ def get_enabled_coins():
     if AUTO_DETECTED_COIN is None:
         AUTO_DETECTED_COIN = auto_detect_pool_coin()
         if AUTO_DETECTED_COIN:
-            logger.info(f"Auto-detected pool coin: {AUTO_DETECTED_COIN['symbol']} ({AUTO_DETECTED_COIN['name']})")
+            # auto_detect_pool_coin returns a list for multi-coin, dict for single
+            if isinstance(AUTO_DETECTED_COIN, list):
+                symbols = ", ".join(c.get("symbol", "?") for c in AUTO_DETECTED_COIN)
+                logger.info(f"Auto-detected multi-coin pool: {symbols}")
+            else:
+                logger.info(f"Auto-detected pool coin: {AUTO_DETECTED_COIN['symbol']} ({AUTO_DETECTED_COIN['name']})")
 
     if AUTO_DETECTED_COIN:
+        if isinstance(AUTO_DETECTED_COIN, list):
+            return AUTO_DETECTED_COIN
         return [AUTO_DETECTED_COIN]
 
     # Cannot determine coin - return empty list (caller should handle this)
@@ -2140,8 +2165,20 @@ def check_coin_node_synced(coin):
         with urllib.request.urlopen(req, timeout=5) as resp:
             result = json.loads(resp.read().decode())
             if "result" in result:
-                progress = result["result"].get("verificationprogress", 0)
-                return progress >= 0.9999
+                r = result["result"]
+                ibd = r.get("initialblockdownload", True)
+                if ibd:
+                    return False
+                progress = r.get("verificationprogress", 0)
+                blocks = r.get("blocks", 0)
+                headers = r.get("headers", 0)
+                # Some daemons (e.g. QBX) report near-zero verificationprogress
+                # even when fully synced. Fall back to blocks>=headers.
+                if progress >= 0.9999:
+                    return True
+                if headers > 0 and blocks >= headers:
+                    return True
+                return False
         return False
     except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout, OSError):
         return False
@@ -2477,6 +2514,71 @@ def fetch_device_info(ip, timeout=5):
         return None
 
 
+def _extract_coin_from_pool(pool):
+    """Extract coin config dict from a single pool API entry."""
+    coin_info = pool.get("coin", {})
+    coin_type = coin_info.get("type", "").lower()
+    pool_id = pool.get("id", "")
+    pool_address = pool.get("address", "")
+
+    coin_map = {
+        "digibyte": "DGB", "digibyte-sha256": "DGB", "dgb": "DGB",
+        "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
+        "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
+        "bitcoin": "BTC", "btc": "BTC",
+        "namecoin": "NMC", "nmc": "NMC",
+        "syscoin": "SYS", "sys": "SYS",
+        "myriad": "XMY", "myriadcoin": "XMY", "xmy": "XMY",
+        "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
+        "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
+        "litecoin": "LTC", "ltc": "LTC",
+        "dogecoin": "DOGE", "doge": "DOGE",
+        "digibyte-scrypt": "DGB-SCRYPT", "dgb-scrypt": "DGB-SCRYPT",
+        "pepecoin": "PEP", "pep": "PEP", "meme": "PEP",
+        "catcoin": "CAT", "cat": "CAT",
+    }
+    symbol = coin_map.get(coin_type)
+    if not symbol:
+        return None
+
+    default_ports = {
+        "DGB": {"stratum": 3333, "stratum_v2": 3334, "rpc": 14022, "zmq": 28532},
+        "BTC": {"stratum": 4333, "stratum_v2": 4334, "rpc": 8332, "zmq": 28332},
+        "BCH": {"stratum": 5333, "stratum_v2": 5334, "rpc": 8432, "zmq": 28432},
+        "BC2": {"stratum": 6333, "stratum_v2": 6334, "rpc": 8339, "zmq": 28338},
+        "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336},
+        "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370},
+        "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889},
+        "FBTC": {"stratum": 18335, "stratum_v2": 18336, "rpc": 8340, "zmq": 28340},
+        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": 28344},
+        "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933},
+        "DOGE": {"stratum": 8335, "stratum_v2": 8337, "rpc": 22555, "zmq": 28555},
+        "DGB-SCRYPT": {"stratum": 3336, "stratum_v2": 3337, "rpc": 14022, "zmq": 28532},
+        "PEP": {"stratum": 10335, "stratum_v2": 10336, "rpc": 33873, "zmq": 28873},
+        "CAT": {"stratum": 12335, "stratum_v2": 12336, "rpc": 9932, "zmq": 28932},
+    }
+    defaults = default_ports.get(symbol, {})
+    ports_section = pool.get("ports", {})
+    stratum_port = ports_section.get("stratum") or pool.get("stratumPort") or defaults.get("stratum", 0)
+    stratum_v2_port = ports_section.get("stratumV2") or pool.get("stratumV2Port") or defaults.get("stratum_v2", 0)
+    daemon_section = pool.get("daemon", {})
+    rpc_port = daemon_section.get("port") or daemon_section.get("rpcPort") or defaults.get("rpc", 0)
+    zmq_port = daemon_section.get("zmqPort") or defaults.get("zmq", 0)
+
+    return {
+        "symbol": symbol,
+        "name": get_coin_name(symbol),
+        "enabled": True,
+        "pool_id": pool_id,
+        "wallet_address": pool_address,
+        "stratum_port": stratum_port,
+        "stratum_v2_port": stratum_v2_port,
+        "rpc_port": rpc_port,
+        "zmq_port": zmq_port,
+        "detected": True,
+    }
+
+
 def auto_detect_pool_coin():
     """Auto-detect the active coin from the pool API.
 
@@ -2497,9 +2599,16 @@ def auto_detect_pool_coin():
         if not pools:
             return None
 
-        # Handle multi-coin case
+        # Handle multi-coin case — detect ALL coins, not just one
         if len(pools) > 1:
-            logger.warning(f"auto_detect_pool_coin() found {len(pools)} pools - multi-coin mode detected, cannot auto-detect single coin")
+            logger.info(f"auto_detect_pool_coin() found {len(pools)} pools - multi-coin mode")
+            detected_coins = []
+            for pool in pools:
+                coin = _extract_coin_from_pool(pool)
+                if coin:
+                    detected_coins.append(coin)
+            if detected_coins:
+                return detected_coins  # Return list for multi-coin
             return None
 
         # Extract coin info from first pool (V1 single-coin mode)
@@ -2852,6 +2961,8 @@ def detect_pool_mode():
                 "namecoin": "NMC", "nmc": "NMC",
                 "syscoin": "SYS", "sys": "SYS",
                 "myriad": "XMY", "myriadcoin": "XMY", "xmy": "XMY",
+                # Post-quantum SHA-256d
+                "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
             }
             for pool in pools:
                 coin_info = pool.get("coin", {})
@@ -3369,10 +3480,10 @@ _stratum_down_alerted = False
 
 
 def _get_coin_sync_state(coin_config):
-    """Return (blocks, progress) from getblockchaininfo for a coin, or (None, None) on error."""
+    """Return (blocks, headers, progress) from getblockchaininfo for a coin, or (None, None, None) on error."""
     rpc_port = coin_config.get("rpc_port")
     if not rpc_port:
-        return None, None
+        return None, None, None
     try:
         req = urllib.request.Request(
             f"http://127.0.0.1:{rpc_port}",
@@ -3382,9 +3493,9 @@ def _get_coin_sync_state(coin_config):
         with urllib.request.urlopen(req, timeout=5) as resp:
             result = json.loads(resp.read().decode())
             r = result.get("result", {})
-            return r.get("blocks", 0), r.get("verificationprogress", 0.0)
+            return r.get("blocks", 0), r.get("headers", 0), r.get("verificationprogress", 0.0)
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def create_stuck_sync_embed(coin_symbol, coin_name, blocks, progress_pct, stuck_minutes):
@@ -3427,12 +3538,14 @@ def check_stuck_syncs(state):
     now = time.time()
     for coin in get_enabled_coins():
         symbol = coin.get("symbol", "UNKNOWN").upper()
-        blocks, progress = _get_coin_sync_state(coin)
+        blocks, headers, progress = _get_coin_sync_state(coin)
 
         # Skip coins we can't reach or that are already fully synced
         if blocks is None or progress is None:
             continue
-        if progress >= 0.9999:
+        # Some daemons (e.g. QBX) report near-zero verificationprogress
+        # even when fully synced. Fall back to blocks>=headers.
+        if progress >= 0.9999 or (headers and headers > 0 and blocks >= headers):
             _sync_progress_history.pop(symbol, None)
             continue
 
@@ -3846,7 +3959,7 @@ def _get_newest_backup_time():
 def create_backup_stale_embed(newest_mtime, stale_days):
     """Yellow warning embed for stale (overdue) backup."""
     import datetime as _dt
-    last_str = _dt.datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M") if newest_mtime else "never"
+    last_str = _dt.datetime.fromtimestamp(newest_mtime, tz=get_display_tz()).strftime("%Y-%m-%d %H:%M") if newest_mtime else "never"
     age_hours = (time.time() - newest_mtime) / 3600 if newest_mtime else None
     if age_hours is None:
         age_str = "never backed up"
@@ -5534,7 +5647,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.1.0-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.2.0-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -5553,7 +5666,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.1.0-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.2.0-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -10632,8 +10745,9 @@ def send_discord(embed):
     """Send Discord webhook with automatic retry on network failures."""
     # Read webhook URL fresh from config to pick up runtime changes
     # This allows users to add/change webhook URL without restarting the service
-    current_config = load_config()
-    webhook_url = current_config.get("discord_webhook_url", "")
+    # FIX: Use _read_config_key() instead of load_config() to avoid blocking HTTP
+    # validation on every notification send (load_config -> validate_config -> HTTP)
+    webhook_url = _read_config_key("discord_webhook_url", "")
     logger.debug(f"send_discord called, webhook configured: {bool(webhook_url)}")
 
     if not webhook_url:
@@ -10939,10 +11053,9 @@ def send_ntfy(embed):
     if not NTFY_ENABLED:
         return False
 
-    # Read config fresh to pick up runtime changes
-    current_config = load_config()
-    ntfy_url   = current_config.get("ntfy_url", "").strip()
-    ntfy_token = current_config.get("ntfy_token", "").strip()
+    # Read config fresh to pick up runtime changes (without validation HTTP call)
+    ntfy_url   = _read_config_key("ntfy_url", "").strip()
+    ntfy_token = _read_config_key("ntfy_token", "").strip()
 
     if not ntfy_url:
         return False
@@ -11549,8 +11662,7 @@ def send_webhook(embed):
         webhook_url: Full URL to POST to (must be https:// or http://localhost)
         webhook_headers: Optional dict of custom HTTP headers
     """
-    config = load_config()
-    webhook_url = config.get("webhook_url", "")
+    webhook_url = _read_config_key("webhook_url", "")
     if not webhook_url:
         return False
 
@@ -11578,7 +11690,7 @@ def send_webhook(embed):
         "timestamp": utc_ts(),
     }
 
-    custom_headers = config.get("webhook_headers", {})
+    custom_headers = _read_config_key("webhook_headers", {})
     headers = {
         "Content-Type": "application/json",
         "User-Agent": f"SpiralSentinel/{__version__}",
@@ -11972,7 +12084,7 @@ def _embed(title, desc, color, fields=None, footer=None):
 def create_stratum_down_embed(down_since):
     """Red alert embed for pool API going unreachable."""
     import datetime as _dt
-    ts = _dt.datetime.fromtimestamp(down_since).strftime("%H:%M:%S")
+    ts = _dt.datetime.fromtimestamp(down_since, tz=get_display_tz()).strftime("%H:%M:%S")
     return _embed(
         "🔴 Pool Offline — Stratum Unreachable",
         "The pool API has stopped responding. Mining may be interrupted.",
@@ -12595,7 +12707,7 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
             bv_lines = []
             if newest_mtime:
                 age_secs = time.time() - newest_mtime
-                last_str = _dt.datetime.fromtimestamp(newest_mtime).strftime("%Y-%m-%d %H:%M")
+                last_str = _dt.datetime.fromtimestamp(newest_mtime, tz=get_display_tz()).strftime("%Y-%m-%d %H:%M")
                 if age_secs < 86400:
                     age_str = f"{int(age_secs // 3600)}h ago"
                 else:
@@ -16984,8 +17096,8 @@ class MonitorState:
 
                 # Check if this block belongs to our wallet/workers
                 block_miner = block.get("miner", "")
-                # Prefer 'source' (worker name from stratum), fall back to 'miner' (wallet address)
-                block_worker = block.get("source", "") or block.get("miner", "unknown")
+                # Prefer 'source' (V2 API) or 'worker' (V1 API), fall back to 'miner' (wallet address)
+                block_worker = block.get("source", "") or block.get("worker", "") or block.get("miner", "unknown")
 
                 # Only process blocks from our wallet
                 if wallet and block_miner and not block_miner.startswith(wallet):
@@ -18072,7 +18184,15 @@ def monitor_loop(state):
                     with urllib.request.urlopen(req, timeout=5) as resp:
                         result = json.loads(resp.read().decode())
                         if "result" in result:
-                            progress = result["result"].get("verificationprogress", 0)
+                            r = result["result"]
+                            progress = r.get("verificationprogress", 0)
+                            # Some daemons (e.g. QBX) report near-zero
+                            # verificationprogress when fully synced.
+                            blk = r.get("blocks", 0)
+                            hdr = r.get("headers", 0)
+                            ibd = r.get("initialblockdownload", True)
+                            if not ibd and hdr > 0 and blk >= hdr:
+                                progress = max(progress, 1.0)
                             if progress > max_progress:
                                 max_progress = progress
                                 max_coin = coin.get("symbol", "UNKNOWN")
@@ -18200,6 +18320,11 @@ def monitor_loop(state):
     primary_coin_name = get_coin_name(primary_coin)
     primary_coin_emoji = get_coin_emoji(primary_coin)
     enabled_coins = get_enabled_coins()
+    # FIX: Derive pool_id from detected coin config, not CONFIG default.
+    # In auto-detect mode CONFIG["pool_id"] may still have the old default "dgb_sha256_1"
+    # even when a different coin was detected. Use the coin config's pool_id instead.
+    _pcc = get_primary_coin_config()
+    primary_pool_id = _pcc.get("pool_id") if _pcc else CONFIG.get("pool_id", "")
     coin_list = "/".join([c.get("symbol", "?") for c in enabled_coins]) if len(enabled_coins) > 1 else primary_coin
     logger.info(f"{primary_coin_emoji} Primary coin: {primary_coin_name} ({primary_coin})")
 
@@ -18443,10 +18568,13 @@ def monitor_loop(state):
                 last_coin_check = current_time
                 coin_change = check_for_coin_change()
                 if coin_change:
-                    # Coin changed! Update primary_coin and notify
+                    # Coin changed! Update primary_coin, pool_id, and notify
                     primary_coin = coin_change["new"]
                     primary_coin_name = get_coin_name(primary_coin)
                     primary_coin_emoji = get_coin_emoji(primary_coin)
+                    _pcc = get_primary_coin_config()
+                    if _pcc:
+                        primary_pool_id = _pcc.get("pool_id", primary_pool_id)
                     handle_coin_change(coin_change, state)
 
             # Check for miner configuration changes (hot-reload from dashboard)
@@ -19223,7 +19351,7 @@ def monitor_loop(state):
             # This detects blocks via pool API, which works for ALL miners including:
             # nmaxe, nerdqaxe, avalon, hammer, axeos (which don't reliably report found_blocks)
             # Skip workers already alerted via miner-reported detection to avoid duplicates.
-            pool_new_blocks = state.check_pool_for_new_blocks(net_phs, odds, primary_coin)
+            pool_new_blocks = state.check_pool_for_new_blocks(net_phs, odds, primary_coin, pool_id=primary_pool_id)
             for block in pool_new_blocks:
                 worker = block.get("worker") or block["miner"]
                 block_hash_pool = block.get("hash", "")
@@ -19267,7 +19395,7 @@ def monitor_loop(state):
             # ═══════════════════════════════════════════════════════════════════════════════
             # This queries the pool API and compares block statuses to detect orphans.
             # Orphan alerts bypass quiet hours and batching (IMMEDIATE_ALERT_TYPES).
-            orphans = state.check_for_orphans()
+            orphans = state.check_for_orphans(pool_id=primary_pool_id)
             for orphan in orphans:
                 send_alert("block_orphaned", create_block_orphaned_embed(
                     block_height=orphan["height"],
@@ -19406,8 +19534,13 @@ def monitor_loop(state):
                 if state.network_baseline_phs > 0:
                     drop_pct = ((state.network_baseline_phs - net_phs) / state.network_baseline_phs) * 100
 
-                    # Crash detected if hashrate drops 25%+ from baseline
-                    is_crash = drop_pct >= NET_CRASH_PCT
+                    # Crash detected if:
+                    # 1. Hashrate drops 25%+ from baseline (percentage check), OR
+                    # 2. Hashrate falls below the coin's absolute floor threshold
+                    #    (catches gradual decline where baseline adapts)
+                    crash_thresholds = get_net_crash_thresholds(primary_coin)
+                    floor = crash_thresholds.get("floor", 0)
+                    is_crash = drop_pct >= NET_CRASH_PCT or (floor > 0 and net_phs < floor)
 
                     if is_crash:
                         if state.network_crash_first_detected is None:
@@ -19420,9 +19553,11 @@ def monitor_loop(state):
                     else:
                         # Reset crash detection if conditions no longer met
                         state.network_crash_first_detected = None
-                        # Reset alert flag when hashrate recovers to within 10% of baseline
-                        if drop_pct < (NET_CRASH_PCT * 0.4):  # Recovery threshold: less than 10% drop
-                            state.network_crash_alert_sent = False
+                        # FIX: Reset alert flag whenever we exit crash state (drop < 25%).
+                        # Previously this only reset at < 10% drop, which meant the baseline
+                        # would EMA-adapt downward while the flag stayed True, causing a
+                        # second deeper crash from the new baseline to be silently missed.
+                        state.network_crash_alert_sent = False
                         # Only update baseline when NOT in crash territory
                         # This prevents the baseline from drifting down during sustained crashes
                         state.network_baseline_phs = state.network_baseline_phs * 0.9 + net_phs * 0.1

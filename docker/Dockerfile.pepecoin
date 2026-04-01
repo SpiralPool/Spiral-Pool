@@ -77,8 +77,7 @@ exec gosu pepecoin pepecoind -printtoconsole "$@"\n\
 EXPOSE 33874
 # RPC
 EXPOSE 33873
-# ZMQ
-EXPOSE 28873
+# ZMQ — PepeCoin binary has no ZMQ support (see pepecoin.conf.template); port not exposed
 
 # Data volume
 VOLUME ["/home/pepecoin/.pepecoin"]

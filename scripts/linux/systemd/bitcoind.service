@@ -19,8 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
-ExecStart={{BTC_DIR}}/bin/bitcoind -daemon -conf={{BTC_DATA}}/bitcoin.conf -datadir={{BTC_DATA}}
-ExecStop={{BTC_DIR}}/bin/bitcoin-cli -conf={{BTC_DATA}}/bitcoin.conf stop
+ExecStart={{BTC_DIR}}/bin/bitcoind -daemon -conf={{BTC_DATA}}/bitcoin.conf -datadir={{BTC_DATA}} -pid={{BTC_DATA}}/bitcoind.pid
+ExecStop={{BTC_DIR}}/bin/bitcoin-cli -conf={{BTC_DATA}}/bitcoin.conf -datadir={{BTC_DATA}} stop
 PIDFile={{BTC_DATA}}/bitcoind.pid
 Restart=always
 RestartSec=30

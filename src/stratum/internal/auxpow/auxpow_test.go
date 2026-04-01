@@ -71,11 +71,19 @@ func TestBuildAuxMerkleRoot(t *testing.T) {
 				t.Error("expected nil root")
 			}
 
-			if tt.expectBranches && len(branches) == 0 {
+			// Check if any chain has a non-nil merkle branch (single chain has nil branch values)
+			hasBranches := false
+			for _, b := range branches {
+				if len(b) > 0 {
+					hasBranches = true
+					break
+				}
+			}
+			if tt.expectBranches && !hasBranches {
 				t.Error("expected non-empty branches")
 			}
-			if !tt.expectBranches && len(branches) > 0 {
-				t.Errorf("expected empty branches, got %d", len(branches))
+			if !tt.expectBranches && hasBranches {
+				t.Error("expected no merkle branches for single chain")
 			}
 
 			// For single aux chain, root should equal the block hash
@@ -556,8 +564,9 @@ func TestBuildAuxMerkleRootSHA256d(t *testing.T) {
 	if !bytes.Equal(root, nmcBlock.Hash) {
 		t.Error("single chain root should equal block hash")
 	}
-	if len(branches) != 0 {
-		t.Errorf("single chain should have no branches, got %d", len(branches))
+	// Single chain: map has entry but branch value is nil (no merkle path needed)
+	if b, ok := branches[0]; ok && len(b) > 0 {
+		t.Errorf("single chain should have nil branch, got %d hashes", len(b))
 	}
 }
 
@@ -652,8 +661,9 @@ func TestBitcoinNamecoinMerge(t *testing.T) {
 	if !bytes.Equal(auxRoot, nmcHash) {
 		t.Error("aux root should equal block hash for single chain")
 	}
-	if len(branches) != 0 {
-		t.Error("single aux chain should have no branches")
+	// Single chain: map has entry but branch value is nil
+	if b, ok := branches[0]; ok && len(b) > 0 {
+		t.Errorf("single aux chain should have nil branch, got %d hashes", len(b))
 	}
 
 	// Step 3: Build aux commitment for Bitcoin coinbase
@@ -696,7 +706,7 @@ func TestMultiAuxChainSHA256d(t *testing.T) {
 		},
 	}
 
-	root, branch := BuildAuxMerkleRoot(auxBlocks)
+	root, branches := BuildAuxMerkleRoot(auxBlocks)
 
 	// With 2 aux chains, we should have branches
 	if root == nil {
@@ -706,11 +716,16 @@ func TestMultiAuxChainSHA256d(t *testing.T) {
 		t.Errorf("root should be 32 bytes, got %d", len(root))
 	}
 
-	// Branch should not be empty with 2 aux chains
-	if len(branch) == 0 {
-		t.Error("branch should not be empty with 2 aux chains")
+	// Each chain should have a non-empty merkle branch with 2 aux chains
+	for _, ab := range auxBlocks {
+		b, ok := branches[ab.ChainIndex]
+		if !ok {
+			t.Errorf("missing branch for chain %s at index %d", ab.Symbol, ab.ChainIndex)
+		} else if len(b) == 0 {
+			t.Errorf("branch should not be empty for chain %s with 2 aux chains", ab.Symbol)
+		}
 	}
-	t.Logf("branch has %d elements", len(branch))
+	t.Logf("branches has %d chains", len(branches))
 }
 
 // TestChainSlotConsistency verifies slot calculation is deterministic.

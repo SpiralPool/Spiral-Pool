@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Hash Reactor V2.1.0 </em>
+  <em>Phi Hash Reactor V2.2.0 </em>
 </p>
 
 <p align="center">
@@ -59,21 +59,21 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | Feature | Details |
 |---------|---------|
 | **High availability** | VIP failover, Patroni replication, blockchain rsync, advisory lock payment fencing |
-| **Lock-free vardiff** | Per-session atomic state, asymmetric limits (4&times; up / 0.75&times; down), 50% variance floor |
-| **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
-| **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles per algorithm |
-| **Non-custodial solo payout** | Block reward embedded in coinbase tx &rarr; miner's wallet. No pool wallet, no custody |
-| **Prometheus metrics** | Per-session observability with worker-level labels |
-| **Pruned node support** | Optional per-coin blockchain pruning (5 GB cap). Saves 95%+ disk &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB. Enable at install time or via `spiralctl coin prune <TICKER>` |
-| **Runtime tuning** | Live operator control via `spiralctl` CLI |
-| **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
-| **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link. Operator-initiated only &mdash; no automatic swaps. See [TERMS.md 5D](TERMS.md) |
-| **Spiral Dash** | Interactive hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block finder history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups &amp; tags. Avalon time-based power schedules. Service control, log viewer, system updates. 23 built-in themes (port 1618) |
-| **Spiral Router** | Classifies miners at connection time via 47 verified user-agent patterns across 15 SHA-256d and 8 Scrypt difficulty profiles |
-| **Spiral Sentinel** | Device discovery, BraiinsOS/Vnish auto-scan, stratum URL &amp; wallet mismatch detection, health checks, temp/disk/hashrate alerts, block notifications, dry streak &amp; difficulty change detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, and generic webhooks |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
-| **Multi-coin smart port** | **⚠️ Experimental** &mdash; Single stratum port (16180) that mines multiple SHA-256d coins on a 24-hour weighted schedule. Automatic rotation, per-session tracking, failover. See [MULTI_COIN_PORT.md](docs/reference/MULTI_COIN_PORT.md) |
-| **Test suite** | 3,500+ unit, integration, chaos, and fuzz tests including 10 numbered chaos suites |
+| **Spiral Router** | Classifies miners at connect via 47 user-agent patterns across 23 difficulty profiles (15 SHA-256d, 8 Scrypt) |
+| **Lock-free vardiff** | Per-session atomic state, asymmetric retarget (4&times; up / 0.75&times; down), 50% variance floor |
+| **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles |
+| **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
+| **Non-custodial solo payout** | Block reward embedded in coinbase tx directly to miner's wallet &mdash; no pool custody |
+| **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
+| **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB |
+| **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 25 themes (port 1618) |
+| **Spiral Sentinel** | Device discovery, auto-scan (BraiinsOS/Vnish), stratum &amp; wallet mismatch detection, health/temp/hashrate alerts, block notifications, dry streak &amp; difficulty detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, webhooks |
+| **Multi coin smart port** | Single port (16180) rotating SHA-256d coins on a 24h weighted schedule with failover |
+| **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link (operator-initiated, no auto-swaps). See [TERMS.md 5D](TERMS.md) |
+| **Runtime tuning** | Live operator control via `spiralctl` CLI |
+| **Prometheus metrics** | Per-session observability with worker-level labels |
+| **Test suite** | 3,500+ unit, integration, chaos, and fuzz tests |
 
 ---
 
@@ -243,7 +243,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.0.0 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.2.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -316,4 +316,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Phi Hash Reactor 2.1.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.2.0 &mdash; Convergent difficulty. Minimal oscillation.*

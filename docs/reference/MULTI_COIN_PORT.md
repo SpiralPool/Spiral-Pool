@@ -1,4 +1,4 @@
-# Multi-Coin Smart Port
+# Multi Coin Smart Port
 
 Single stratum port that mines multiple SHA-256d coins. Miners connect once — the pool handles everything.
 
@@ -30,9 +30,10 @@ When a miner submits a share that meets the network target, it becomes a block. 
 Each miner session is tracked with its current coin assignment. When shares arrive:
 
 1. Look up session's assigned coin
-2. If the session was recently switched (within 10s grace window), try the old coin's pool first
-3. Route the share to the correct coin pool's `HandleMultiPortShare()`
-4. The coin pool validates, records, and checks for blocks as usual
+2. Resolve the correct payout wallet for this coin (see [Wallet Resolution](#wallet-resolution))
+3. If the session was recently switched (within 10s grace window), try the old coin's pool first
+4. Route the share to the correct coin pool's `HandleMultiPortShare()`
+5. The coin pool validates, records, and checks for blocks as usual
 
 ---
 
@@ -67,11 +68,14 @@ multi_port:
   enabled: true
   port: 16180                # Dedicated stratum port for multi-coin mining
   coins:
-    DGB: { weight: 80 }     # 80% of mining time on DigiByte
-    BCH: { weight: 15 }     # 15% on Bitcoin Cash
-    BTC: { weight: 5 }      # 5% on Bitcoin (lottery shots)
+    QBX:
+      weight: 96             # 96% of mining time on Q-BitX (~23 hours)
+      start_hour: 0          # Start at midnight (optional — omit to auto-sequence)
+    BC2:
+      weight: 4              # 4% on Bitcoin II (~1 hour)
+      start_hour: 23         # Start at 11 PM (optional)
   check_interval: 5m         # Re-evaluate every 5 minutes
-  prefer_coin: DGB           # Default coin on connect / tie-breaker
+  prefer_coin: QBX           # Default coin on connect / tie-breaker
   min_time_on_coin: 60s      # Minimum time before allowing a switch
   timezone: America/New_York # IANA timezone for 24h schedule (auto-set from install)
 ```
@@ -83,10 +87,13 @@ multi_port:
 | `enabled` | bool | `false` | Enable/disable the multi-coin port |
 | `port` | int | `16180` | Stratum port for multi-coin mining |
 | `coins` | map | required | Coin symbol to routing config. Each coin needs `weight` (0-100). All weights must sum to exactly 100 |
+| `coins.*.weight` | int | required | Percentage of daily mining time (0-100) |
+| `coins.*.start_hour` | float | auto | Optional custom start hour (0-23.99) in the configured timezone. If omitted, coins are sequenced from midnight in alphabetical order |
 | `check_interval` | duration | `30s` | How often to re-evaluate coin assignments |
 | `prefer_coin` | string | first coin | Default coin for new connections and tie-breaking |
 | `min_time_on_coin` | duration | `60s` | Minimum time a miner stays on a coin before switching. Prevents rapid flip-flopping. Bypassed if the current coin's daemon goes down |
 | `timezone` | string | from sentinel config | IANA timezone for the 24h schedule (e.g., `America/New_York`). Auto-populated from `display_timezone` during setup. Falls back to UTC |
+| `wallet_map` | map | none | Optional per-worker per-coin wallet overrides. See [Wallet Resolution](#wallet-resolution) below |
 
 ### Choosing `check_interval`
 
@@ -118,6 +125,46 @@ coins:
 ```
 
 At least 2 coins must have a positive weight. Set `weight: 0` to exclude a coin from the schedule.
+
+### Custom Start Times
+
+By default, coins are sequenced from midnight in alphabetical order. You can override this with `start_hour` to control exactly when each coin's time slot begins.
+
+```yaml
+coins:
+  QBX:
+    weight: 96           # 23 hours
+    start_hour: 0        # Midnight to 11 PM
+  BC2:
+    weight: 4            # 1 hour
+    start_hour: 23       # 11 PM to midnight
+```
+
+`start_hour` is a float in the configured timezone: `0` = midnight, `12.5` = 12:30 PM, `23` = 11 PM. Coins without `start_hour` are placed after those with one. The dashboard settings page provides a visual schedule preview with time inputs.
+
+### Wallet Resolution
+
+When the pool switches coins, different chains may use different address formats. The pool handles this automatically:
+
+1. **Automatic (default):** Each share is credited to the pool's configured payout address for the active coin (the `address` field in each coin's pool config). This is the normal mode — miners connect with any worker name, and the pool operator's wallet per coin receives the payouts. **No additional configuration needed.**
+
+2. **Manual override (`wallet_map`):** For public pools where individual miners need per-coin wallets, you can map worker names to specific addresses:
+
+```yaml
+multi_port:
+  # ... coins, weights, etc.
+  wallet_map:
+    Heat2Sats:
+      QBX: "Mqbx1abc..."
+      BC2: "1bc2xyz..."
+    worker2:
+      QBX: "Mqbx1def..."
+      BC2: "1bc2uvw..."
+```
+
+Resolution priority: explicit `wallet_map` entry > pool's coin payout address > miner's connect address.
+
+Worker name matching is case-insensitive and extracts the worker from `wallet.worker` format (e.g., a miner connecting as `abc123.Heat2Sats` matches the `Heat2Sats` entry).
 
 ---
 
@@ -190,18 +237,39 @@ The multi-coin port only works for SHA-256d coins. Scrypt coins (LTC, DOGE, DGB-
 
 ### `GET /api/multiport`
 
-Returns current multi-port status.
+Returns current multi-port configuration, computed schedule, and live stats.
 
 ```json
 {
   "enabled": true,
   "port": 16180,
-  "active_sessions": 47,
-  "total_switches": 1823,
-  "coin_distribution": { "DGB": 38, "BCH": 7, "BTC": 2 },
-  "allowed_coins": ["DGB", "BCH", "BTC"],
-  "coin_weights": { "DGB": 80, "BCH": 15, "BTC": 5 }
+  "coins": { "QBX": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
+  "prefer_coin": "QBX",
+  "timezone": "America/New_York",
+  "schedule": [
+    { "symbol": "QBX", "weight": 96, "start_h": 0, "end_h": 23 },
+    { "symbol": "BC2", "weight": 4, "start_h": 23, "end_h": 24 }
+  ],
+  "wallet_map": {},
+  "live": { "active_coin": "QBX", "next_switch": "BC2", "time_remaining": "2h 15m" },
+  "available_coins": [{ "symbol": "QBX", "name": "Q-BitX", "enabled": true }]
 }
+```
+
+### `POST /api/multiport`
+
+Update multi-port configuration (admin only). Restarts stratum on success.
+
+### `GET /api/multiport/wallets`
+
+Returns the current `wallet_map` and active coin list.
+
+### `POST /api/multiport/wallets`
+
+Update worker wallet mappings (admin only). Restarts stratum on success.
+
+```json
+{ "wallet_map": { "Heat2Sats": { "QBX": "Mqbx1...", "BC2": "1bc2..." } } }
 ```
 
 ### `GET /api/multiport/switches?limit=50`
@@ -231,7 +299,7 @@ Returns network difficulty state for all multi-port coins.
   "DGB": {
     "symbol": "DGB",
     "network_diff": 1234.5,
-    "block_time": 15,
+    "block_time": 15.0,
     "available": true,
     "last_updated": "2026-03-29T14:22:45Z"
   },
@@ -253,8 +321,8 @@ The Sentinel monitors the multi-coin port and fires alerts for:
 
 | Alert | Severity | Trigger |
 |-------|----------|---------|
-| `multiport_difficulty_spike` | Warning | >15% difficulty change on any multi-port coin |
-| `multiport_coin_switch_burst` | Info | 5+ coin switches in a single check interval |
+| `multi_port_difficulty_spike` | Warning | >15% difficulty change on any multi-port coin |
+| `multi_port_coin_switch` | Info | 5+ coin switches in a single check interval |
 
 ---
 

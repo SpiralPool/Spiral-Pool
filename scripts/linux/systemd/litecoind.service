@@ -20,7 +20,7 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 ExecStart={{LTC_DIR}}/bin/litecoind -daemon -conf={{INSTALL_DIR}}/ltc/litecoin.conf -datadir={{INSTALL_DIR}}/ltc
-ExecStop={{LTC_DIR}}/bin/litecoin-cli -conf={{INSTALL_DIR}}/ltc/litecoin.conf stop
+ExecStop={{LTC_DIR}}/bin/litecoin-cli -conf={{INSTALL_DIR}}/ltc/litecoin.conf -datadir={{INSTALL_DIR}}/ltc stop
 PIDFile={{INSTALL_DIR}}/ltc/litecoind.pid
 Restart=always
 RestartSec=30

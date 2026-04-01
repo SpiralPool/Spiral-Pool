@@ -11,7 +11,7 @@ Two installation paths exist for running Spiral Pool on Windows 11. Both are **e
 | **What it does** | Runs everything in Docker containers on Windows | Installs the full Linux stack inside a WSL2 Ubuntu VM |
 | **Installer** | `install-windows.ps1` (PowerShell) | `install.sh` (runs inside WSL2 Ubuntu) |
 | **Windows editions** | Home, Pro, Enterprise, Education | Home, Pro, Enterprise, Education |
-| **Coins** | Single coin only (14 choices) | All 14 coins, multi-coin, merge mining |
+| **Coins** | Single coin only (14 choices, see note) | All 14 coins, multi-coin, merge mining |
 | **Stratum** | V1 + TLS | V1 + V2 + TLS |
 | **Merge mining** | Not supported | Supported (BTC+NMC+SYS+XMY+FBTC, LTC+DOGE+PEP) |
 | **High availability** | Not supported | Not supported (requires bare metal Linux) |
@@ -90,6 +90,7 @@ The installer will:
 | 11 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
 | 12 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
 | 13 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
+| 14 | SYS | Syscoin | SHA256d | ~80 GB | 16335 |
 
 > Syscoin (SYS) appears in the menu but cannot be mined standalone. It requires merge mining with BTC, which is only available via native Linux installation.
 

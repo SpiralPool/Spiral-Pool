@@ -335,18 +335,18 @@ main()
 | Coin | Symbol | Approximate Storage |
 |------|--------|-------------------|
 | Bitcoin | BTC | 600 GB |
-| Bitcoin Cash | BCH | 350 GB |
-| Litecoin | LTC | 180 GB |
-| Syscoin | SYS | 85 GB |
-| Dogecoin | DOGE | 75 GB |
-| DigiByte | DGB | 45 GB |
-| Fractal Bitcoin | FBTC | 50 GB |
+| Bitcoin Cash | BCH | 250 GB |
+| Litecoin | LTC | 150 GB |
+| Syscoin | SYS | 25 GB |
+| Dogecoin | DOGE | 80 GB |
+| DigiByte | DGB | 60 GB |
+| Fractal Bitcoin | FBTC | 10 GB |
 | Q-BitX | QBX | 5 GB |
-| Namecoin | NMC | 12 GB |
+| Namecoin | NMC | 15 GB |
 | Myriad | XMY | 6 GB |
 | Bitcoin II | BC2 | 5 GB |
-| PepeCoin | PEP | 2 GB |
-| Catcoin | CAT | 1 GB |
+| PepeCoin | PEP | 5 GB |
+| Catcoin | CAT | 5 GB |
 | DGB-Scrypt | DGB-SCRYPT | (shares DGB data) |
 
 > Storage values are approximate and will vary based on blockchain growth and index configuration. All nodes run as full (unpruned) nodes. Plan for additional headroom.
@@ -766,4 +766,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.1.0*
+*Spiral Pool — Phi Hash Reactor 2.2.0*

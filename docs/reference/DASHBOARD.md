@@ -70,7 +70,7 @@ curl http://localhost:1618/api/health/ready     # Readiness (checks pool API)
 |-----|------|---------|-------------|
 | `dashboard_title` | string | `"My Solo Pool"` | Dashboard title |
 | `first_run` | bool | `true` | Shows setup wizard on first access |
-| `refresh_interval` | int | `30` | Miner poll interval (seconds) |
+| `refresh_interval` | int | `30` | Dashboard refresh interval (seconds) |
 | `theme` | string | `"cyberpunk"` | Active theme ID |
 | `display_currency` | string | `"CAD"` | Fiat currency for earnings |
 | `devices` | object | 26 type arrays | Miner device lists (see below) |
@@ -130,12 +130,14 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 
 ## Themes
 
-23 themes available in `src/dashboard/static/themes/`:
+25 themes available in `src/dashboard/static/themes/`:
 
 | Theme | Category |
 |-------|----------|
 | **V1.0 — Black Ice** | Codename |
-| **V2.0.0 — Phi Hash Reactor** | Codename |
+| **V1.2.2 — Convergent Spiral** | Codename |
+| **V2.0 — Phi Hash Reactor** | Codename |
+| **V2.2 — Phi Forge** | Codename |
 | **cyberpunk** (default) | Core |
 | 1337-h4x0r | Core |
 | dracula | Developer |
@@ -531,4 +533,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Phi Hash Reactor 2.1.0*
+*Spiral Dash &mdash; Phi Hash Reactor 2.2.0*

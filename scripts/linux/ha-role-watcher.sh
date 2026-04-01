@@ -243,7 +243,7 @@ get_all_peer_ips() {
             existing=$(grep 'ETCD_INITIAL_CLUSTER=' /etc/default/etcd 2>/dev/null | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | grep -v "^${local_ip:-}$")
             while IFS= read -r api_ip; do
                 [[ -z "$api_ip" ]] && continue
-                if ! echo "$existing" | grep -qx "$api_ip"; then
+                if ! echo "$existing" | grep -qxF "$api_ip"; then
                     echo "$api_ip"
                 fi
             done <<< "$peers_from_api"
@@ -265,7 +265,7 @@ get_all_peer_ips() {
         while IFS= read -r pat_ip; do
             [[ -z "$pat_ip" ]] && continue
             # Skip local IPs
-            if echo "$my_ips" | grep -qx "$pat_ip" 2>/dev/null; then
+            if echo "$my_ips" | grep -qxF "$pat_ip" 2>/dev/null; then
                 continue
             fi
             echo "$pat_ip"
@@ -687,6 +687,7 @@ run_watcher() {
     local addr_sync_last_check=0
     local ADDR_SYNC_INTERVAL=60  # Check address sync every 60s
     local failback_last_attempt=0
+    local stabilize_until=0  # Timestamp until which role changes are suppressed (VIP election grace period)
 
     while true; do
         # Simple log rotation — rotate when log exceeds 10MB
@@ -784,6 +785,14 @@ run_watcher() {
             if [[ "$current_interval" != "$POLL_INTERVAL" ]]; then
                 log "INFO" "API recovered after ${api_fail_count} failures, restoring ${POLL_INTERVAL}s poll interval"
             fi
+            # BUGFIX: After stratum restart, VIP election takes ~90s. During that
+            # window get_cluster_role() returns BACKUP/unknown, which the 3-check
+            # debounce (15s) treats as a real demotion — stopping sentinel + dash.
+            # Suppress role-change detection for 120s after API recovery so the
+            # VIP election can complete without false demotions.
+            local grace_secs=120
+            stabilize_until=$(( $(date +%s) + grace_secs ))
+            log "INFO" "API recovered after ${api_fail_count} failures — suppressing role changes for ${grace_secs}s (VIP election grace period)"
             api_fail_count=0
             current_interval="${POLL_INTERVAL}"
             etcd_recovery_last_attempt=0  # Reset so next outage can recover immediately
@@ -866,6 +875,33 @@ run_watcher() {
                         done
                     fi
                 fi
+            fi
+        fi
+
+        # BUGFIX: Skip role-change detection during VIP election grace period.
+        # After stratum restart, the API may briefly report BACKUP before the
+        # VIP election completes (~90s). Without this, the 3-check debounce
+        # (15s) fires a false demotion that kills sentinel and dashboard.
+        if [[ $stabilize_until -gt 0 ]]; then
+            local now_ts
+            now_ts=$(date +%s)
+            if [[ $now_ts -lt $stabilize_until ]]; then
+                # Still in grace period — update last_role if we see MASTER
+                # (election completed early), otherwise skip role change logic
+                if [[ "$current_role" == "MASTER" ]]; then
+                    log "INFO" "VIP election completed early — MASTER confirmed, ending grace period"
+                    stabilize_until=0
+                    save_role "MASTER"
+                    last_role="MASTER"
+                    # Ensure services are running after stratum restart
+                    trigger_service_control "RECOVERY" "MASTER"
+                fi
+                consecutive_count=0
+                pending_role=""
+                continue
+            else
+                log "INFO" "VIP election grace period expired"
+                stabilize_until=0
             fi
         fi
 

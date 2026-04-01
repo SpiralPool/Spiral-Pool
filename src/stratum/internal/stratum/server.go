@@ -545,8 +545,11 @@ func (s *Server) keepaliveLoop(ctx context.Context, session *protocol.Session) {
 		case <-ticker.C:
 			// Send mining.ping (client should respond with mining.pong)
 			ping := []byte(`{"id":null,"method":"mining.ping","params":[]}` + "\n")
+			session.WriteMu.Lock()
 			_ = session.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second)) // #nosec G104
-			if _, err := session.Conn.Write(ping); err != nil {
+			_, err := session.Conn.Write(ping)
+			session.WriteMu.Unlock()
+			if err != nil {
 				s.logger.Debugw("Keepalive failed, closing connection",
 					"sessionId", session.ID,
 					"error", err,
@@ -973,9 +976,12 @@ func (s *Server) sendJob(session *protocol.Session, job *protocol.Job) {
 		return
 	}
 
-	// Send to miner
+	// Send to miner (mutex prevents interleaving with keepalive/difficulty writes)
+	session.WriteMu.Lock()
 	_ = session.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second)) // #nosec G104
-	if _, err := session.Conn.Write(notifyMsg); err != nil {
+	_, err = session.Conn.Write(notifyMsg)
+	session.WriteMu.Unlock()
+	if err != nil {
 		s.logger.Warnw("Failed to send job",
 			"sessionId", session.ID,
 			"jobId", job.ID,
@@ -1004,10 +1010,12 @@ func (s *Server) BroadcastReconnect(waitTime int) {
 	var sent int
 	s.sessions.Range(func(id uint64, session *protocol.Session) bool {
 		if session.IsSubscribed() && session.Conn != nil {
+			session.WriteMu.Lock()
 			_ = session.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			if _, err := session.Conn.Write(msg); err == nil {
 				sent++
 			}
+			session.WriteMu.Unlock()
 		}
 		return true
 	})
@@ -1028,12 +1036,14 @@ func (s *Server) BroadcastMessage(message string) {
 	var sent, failed int
 	s.sessions.Range(func(id uint64, session *protocol.Session) bool {
 		if session.IsSubscribed() && session.Conn != nil {
+			session.WriteMu.Lock()
 			_ = session.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			if _, err := session.Conn.Write(msg); err != nil {
 				failed++
 			} else {
 				sent++
 			}
+			session.WriteMu.Unlock()
 		}
 		return true
 	})
@@ -1064,11 +1074,14 @@ func (s *Server) SendMessageToSession(sessionID uint64, message string) bool {
 		return false
 	}
 
+	session.WriteMu.Lock()
 	_ = session.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if _, err := session.Conn.Write(msg); err != nil {
+	_, writeErr := session.Conn.Write(msg)
+	session.WriteMu.Unlock()
+	if writeErr != nil {
 		s.logger.Warnw("Failed to send message to session",
 			"sessionId", sessionID,
-			"error", err,
+			"error", writeErr,
 		)
 		return false
 	}
@@ -1096,14 +1109,17 @@ func (s *Server) SendDifficulty(session *protocol.Session, difficulty float64) e
 
 	// Build the JSON-RPC notification
 	// Format: {"id":null,"method":"mining.set_difficulty","params":[difficulty]}
-	msg := fmt.Sprintf(`{"id":null,"method":"mining.set_difficulty","params":[%g]}`+"\n", difficulty)
+	msg := fmt.Sprintf(`{"id":null,"method":"mining.set_difficulty","params":[%f]}`+"\n", difficulty)
 
-	// Write to session (with timeout)
+	// Write to session (with timeout, mutex prevents interleaving)
+	session.WriteMu.Lock()
 	if err := session.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		session.WriteMu.Unlock()
 		return fmt.Errorf("failed to set write deadline: %w", err)
 	}
-
-	if _, err := session.Conn.Write([]byte(msg)); err != nil {
+	_, err := session.Conn.Write([]byte(msg))
+	session.WriteMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to send difficulty: %w", err)
 	}
 

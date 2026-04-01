@@ -114,6 +114,9 @@ type Session struct {
 	// RED-TEAM: Pre-auth message counter to prevent subscribe spam attacks
 	preAuthMessages uint32 // Atomic: messages received before authorization
 
+	// Write serialization: protects Conn.Write from concurrent goroutines
+	// (keepalive loop, sendJob, SendDifficulty, BroadcastJob all write from different goroutines)
+	WriteMu sync.Mutex
 }
 
 // SetDiffSent atomically marks that initial difficulty has been sent.
@@ -621,6 +624,11 @@ type AuxBlockData struct {
 
 	// Bits is the compact target representation.
 	Bits uint32
+
+	// MerkleBranch is the per-chain merkle branch (hex-encoded hashes) from this
+	// aux block's hash to the aux merkle root. Each aux chain at a different tree
+	// slot needs its own branch for correct AuxPoW proof construction.
+	MerkleBranch []string
 }
 
 // SetState transitions the job to a new state with timestamp.
@@ -692,6 +700,11 @@ func (j *Job) Clone() *Job {
 	if j.AuxBlocks != nil {
 		auxBlocks = make([]AuxBlockData, len(j.AuxBlocks))
 		for i, ab := range j.AuxBlocks {
+			var merkleBranchCopy []string
+			if ab.MerkleBranch != nil {
+				merkleBranchCopy = make([]string, len(ab.MerkleBranch))
+				copy(merkleBranchCopy, ab.MerkleBranch)
+			}
 			auxBlocks[i] = AuxBlockData{
 				Symbol:        ab.Symbol,
 				ChainID:       ab.ChainID,
@@ -702,6 +715,7 @@ func (j *Job) Clone() *Job {
 				ChainIndex:    ab.ChainIndex,
 				Difficulty:    ab.Difficulty,
 				Bits:          ab.Bits,
+				MerkleBranch:  merkleBranchCopy,
 			}
 		}
 	}

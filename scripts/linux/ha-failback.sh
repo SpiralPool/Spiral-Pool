@@ -156,7 +156,7 @@ get_all_peer_ips() {
             existing=$(grep 'ETCD_INITIAL_CLUSTER=' /etc/default/etcd 2>/dev/null | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | grep -v "^${local_ip_for_merge:-}$" || true)
             while IFS= read -r api_ip; do
                 [[ -z "$api_ip" ]] && continue
-                if ! echo "$existing" | grep -qx "$api_ip"; then
+                if ! echo "$existing" | grep -qxF "$api_ip"; then
                     echo "$api_ip"
                 fi
             done <<< "$peers_from_api"
@@ -178,7 +178,7 @@ get_all_peer_ips() {
         while IFS= read -r pat_ip; do
             [[ -z "$pat_ip" ]] && continue
             # Skip local IPs
-            if echo "$my_ips" | grep -qx "$pat_ip" 2>/dev/null; then
+            if echo "$my_ips" | grep -qxF "$pat_ip" 2>/dev/null; then
                 continue
             fi
             echo "$pat_ip"

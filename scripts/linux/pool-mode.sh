@@ -1893,12 +1893,18 @@ warn_ha_cluster_sync() {
     echo -e "     ${BLUE}sudo systemctl restart spiralstratum${NC}"
     echo ""
 
-    # Offer to sync now if servers are known (skip in non-interactive mode)
-    if [ "$NON_INTERACTIVE" != true ] && [ ${#HA_BACKUP_SERVERS[@]} -gt 0 ]; then
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-        read -p "Would you like to attempt automatic sync to HA peers now? (y/N): " do_sync
-        if [[ "$do_sync" =~ ^[Yy]$ ]]; then
+    # Sync HA cluster — automatic in non-interactive mode, prompted otherwise
+    if [ ${#HA_BACKUP_SERVERS[@]} -gt 0 ]; then
+        if [ "$NON_INTERACTIVE" = true ]; then
+            # Non-interactive (dashboard/automation): sync automatically
+            echo -e "${CYAN}Non-interactive mode: auto-syncing HA cluster...${NC}"
             sync_ha_cluster "${new_coins[@]}"
+        else
+            echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+            read -p "Would you like to attempt automatic sync to HA peers now? (y/N): " do_sync
+            if [[ "$do_sync" =~ ^[Yy]$ ]]; then
+                sync_ha_cluster "${new_coins[@]}"
+            fi
         fi
     fi
 
@@ -1996,6 +2002,18 @@ sync_ha_cluster() {
         if [ -f "$HA_CLUSTER_FILE" ]; then
             sudo -u "$HA_SSH_USER" scp -q "$HA_CLUSTER_FILE" "${HA_SSH_USER}@${server}:~/.sp-sync-cluster.tmp" 2>/dev/null && \
             sudo -u "$HA_SSH_USER" ssh "${HA_SSH_USER}@${server}" "[ ! -L ~/.sp-sync-cluster.tmp ] && sudo mv ~/.sp-sync-cluster.tmp $HA_CLUSTER_FILE && sudo chown root:root $HA_CLUSTER_FILE" 2>/dev/null
+        fi
+
+        # Copy coins.env if exists (multiport schedule / weights)
+        local coins_env="$SPIRALPOOL_DIR/config/coins.env"
+        if [ -f "$coins_env" ]; then
+            echo -e "  ${CYAN}Copying multiport configuration...${NC}"
+            if sudo -u "$HA_SSH_USER" scp -q "$coins_env" "${HA_SSH_USER}@${server}:~/.sp-sync-coins-env.tmp" 2>/dev/null && \
+               sudo -u "$HA_SSH_USER" ssh "${HA_SSH_USER}@${server}" "[ ! -L ~/.sp-sync-coins-env.tmp ] && sudo mv ~/.sp-sync-coins-env.tmp $coins_env && sudo chown root:root $coins_env && sudo chmod 600 $coins_env" 2>/dev/null; then
+                echo -e "  ${GREEN}✓ Multiport config copied${NC}"
+            else
+                echo -e "  ${YELLOW}⚠ Failed to copy coins.env (multiport may differ on $server)${NC}"
+            fi
         fi
 
         # Check/start nodes for each enabled coin
@@ -2366,8 +2384,9 @@ get_wallet_address() {
             echo "$NON_INTERACTIVE_WALLET"
             return 0
         fi
-        echo -e "${RED}Error: --wallet <address> is required in non-interactive mode${NC}" >&2
-        return 1
+        # No wallet provided — allowed for node-only install (wallet set later via dashboard)
+        echo "PENDING"
+        return 0
     fi
 
     case $coin in
@@ -2595,7 +2614,7 @@ extract_coin_config() {
     local backup_file=$2
 
     # Extract user, password, address for this coin from backup
-    local section_start=$(grep -n "symbol:\s*[\"']?${coin}[\"']?" "$backup_file" 2>/dev/null | head -1 | cut -d: -f1)
+    local section_start=$(grep -En "symbol:\s*[\"']?${coin}[\"']?" "$backup_file" 2>/dev/null | head -1 | cut -d: -f1)
 
     if [ -n "$section_start" ]; then
         # Get next 25 lines and extract values
@@ -3590,6 +3609,7 @@ install_node_if_needed() {
             unzip -o "$CAT_FILENAME"
             cp "${CAT_DIRNAME}/catcoind" /usr/local/bin/
             cp "${CAT_DIRNAME}/catcoin-cli" /usr/local/bin/
+            chmod +x /usr/local/bin/catcoind /usr/local/bin/catcoin-cli
             echo -e "${GREEN}✓ Catcoin Core ${CAT_VERSION} installed${NC}"
             ;;
 
@@ -3682,9 +3702,58 @@ install_node_if_needed() {
             unzip -o "$QBX_FILENAME"
             cp "qbitx" /usr/local/bin/
             cp "qbitx-cli" /usr/local/bin/
+            chmod +x /usr/local/bin/qbitx /usr/local/bin/qbitx-cli
             echo -e "${GREEN}✓ Q-BitX ${QBX_VERSION} installed${NC}"
             ;;
     esac
+}
+
+# Read existing prune setting from a coin's conf file (preserves user config).
+# For new coins (no existing conf), inherits the global PRUNE_ENABLED flag
+# from coins.env so all coins in a pruned installation start pruned.
+# Returns: sets EXISTING_PRUNE variable
+get_existing_prune() {
+    local conf_file=$1
+    # Default: read global prune flag from coins.env (set during initial install)
+    local global_prune="false"
+    local coins_env="$SPIRALPOOL_DIR/config/coins.env"
+    if [ -f "$coins_env" ]; then
+        global_prune=$(grep -oP '^PRUNE_ENABLED=\K(true|false)$' "$coins_env" 2>/dev/null || echo "false")
+    fi
+    if [ "$global_prune" = "true" ]; then
+        EXISTING_PRUNE=5000
+    else
+        EXISTING_PRUNE=0
+    fi
+    # If the coin already has a conf file, preserve its existing prune setting
+    if [ -f "$conf_file" ]; then
+        local val
+        val=$(grep -oP '^prune=\K.*' "$conf_file" 2>/dev/null)
+        if [ -n "$val" ]; then
+            EXISTING_PRUNE="$val"
+            return
+        fi
+    fi
+    # Fallback: if coins.env doesn't have PRUNE_ENABLED, check if ANY existing
+    # coin conf on this box is pruned — match that behavior for consistency
+    if [ "$global_prune" = "false" ]; then
+        local any_pruned=""
+        for cfile in "$SPIRALPOOL_DIR"/*/; do
+            local found_conf
+            found_conf=$(find "$cfile" -maxdepth 1 -name '*.conf' -type f 2>/dev/null | head -1)
+            if [ -n "$found_conf" ] && [ "$found_conf" != "$conf_file" ]; then
+                local pval
+                pval=$(grep -oP '^prune=\K[0-9]+' "$found_conf" 2>/dev/null | head -1)
+                if [ -n "$pval" ] && [ "$pval" -gt 0 ] 2>/dev/null; then
+                    any_pruned="$pval"
+                    break
+                fi
+            fi
+        done
+        if [ -n "$any_pruned" ]; then
+            EXISTING_PRUNE="$any_pruned"
+        fi
+    fi
 }
 
 # Setup node configuration and service for a coin
@@ -3697,6 +3766,8 @@ setup_node() {
         DGB)
             mkdir -p "$SPIRALPOOL_DIR/dgb"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/dgb"
+
+            get_existing_prune "$SPIRALPOOL_DIR/dgb/digibyte.conf"
 
             cat > "$SPIRALPOOL_DIR/dgb/digibyte.conf" << EOF
 # DIGIBYTE CORE - SPIRAL POOL CONFIGURATION
@@ -3716,7 +3787,21 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/dgb/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed.digibyte.io
+seednode=seed.diginode.tools
+seednode=seed.digibyteblockchain.org
+seednode=eu.digibyteseed.com
+seednode=seed.digibyte.link
+seednode=seed.quakeguy.com
+seednode=seed.aroundtheblock.app
+seednode=seed.digibyte.services
+addnode=157.97.68.86:12024
+addnode=15.204.95.99:12024
+addnode=37.59.32.10:12024
+addnode=173.212.197.63:12024
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/dgb/digibyte.conf"
             chmod 600 "$SPIRALPOOL_DIR/dgb/digibyte.conf"
@@ -3758,6 +3843,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/btc"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/btc"
 
+            get_existing_prune "$SPIRALPOOL_DIR/btc/bitcoin.conf"
             cat > "$SPIRALPOOL_DIR/btc/bitcoin.conf" << EOF
 # BITCOIN KNOTS - SPIRAL POOL CONFIGURATION
 chain=main
@@ -3777,7 +3863,28 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/btc/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed.bitcoin.sipa.be
+seednode=dnsseed.bluematt.me
+seednode=seed.bitcoin.jonasschnelli.ch
+seednode=seed.btc.petertodd.net
+seednode=seed.bitcoin.sprovoost.nl
+seednode=dnsseed.emzy.de
+seednode=seed.bitcoin.wiz.biz
+addnode=45.55.132.91:8333
+addnode=71.196.197.14:8333
+addnode=72.83.184.215:8333
+addnode=65.93.70.99:8333
+addnode=67.60.239.105:8333
+addnode=71.86.88.157:8333
+addnode=173.249.47.215:8333
+addnode=203.11.72.77:8333
+addnode=216.107.135.60:8333
+addnode=72.230.224.175:8333
+addnode=77.247.151.58:8333
+addnode=78.145.65.241:8333
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/btc/bitcoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/btc/bitcoin.conf"
@@ -3819,6 +3926,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/bch"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bch"
 
+            get_existing_prune "$SPIRALPOOL_DIR/bch/bitcoin.conf"
             cat > "$SPIRALPOOL_DIR/bch/bitcoin.conf" << EOF
 # BITCOIN CASH NODE - SPIRAL POOL CONFIGURATION
 listen=1
@@ -3837,7 +3945,32 @@ dbcache=2048
 par=0
 disablewallet=0
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed.flowee.cash
+seednode=seed-bch.bitcoinforks.org
+seednode=btccash-seeder.bitcoinunlimited.info
+seednode=seed.bchd.cash
+seednode=seed.bch.loping.net
+seednode=dnsseed.electroncash.de
+seednode=bchseed.c3-soft.com
+seednode=bch.bitjson.com
+addnode=195.3.223.29:8433
+addnode=199.217.115.27:8433
+addnode=3.142.98.179:8433
+addnode=35.163.48.30:8433
+addnode=35.198.46.157:8433
+addnode=51.91.196.151:8433
+addnode=174.140.196.19:8433
+addnode=193.164.205.249:8433
+addnode=194.14.246.11:8433
+addnode=8.219.86.245:8433
+addnode=15.204.95.99:8433
+addnode=18.139.1.192:8433
+addnode=51.159.104.35:8433
+addnode=57.129.18.162:8433
+addnode=65.109.90.134:8433
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bch/bitcoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/bch/bitcoin.conf"
@@ -3879,6 +4012,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/bc2"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bc2"
 
+            get_existing_prune "$SPIRALPOOL_DIR/bc2/bitcoinii.conf"
             cat > "$SPIRALPOOL_DIR/bc2/bitcoinii.conf" << EOF
 # BITCOIN II CORE - SPIRAL POOL CONFIGURATION
 # CRITICAL: BC2 addresses look IDENTICAL to Bitcoin (bc1q..., 1..., 3...)
@@ -3903,7 +4037,18 @@ disablewallet=0
 pid=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 debuglogfile=$SPIRALPOOL_DIR/bc2/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=dnsseed.bitcoin-ii.org
+seednode=bitcoinII.ddns.net
+addnode=173.249.0.253:8338
+addnode=193.164.205.250:8338
+addnode=89.38.128.175:8338
+addnode=98.22.238.18:8338
+addnode=144.76.79.60:8338
+addnode=75.130.145.1:8338
+addnode=45.32.205.199:8338
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bc2/bitcoinii.conf"
             chmod 600 "$SPIRALPOOL_DIR/bc2/bitcoinii.conf"
@@ -3947,6 +4092,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/ltc"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/ltc"
 
+            get_existing_prune "$SPIRALPOOL_DIR/ltc/litecoin.conf"
             cat > "$SPIRALPOOL_DIR/ltc/litecoin.conf" << EOF
 # LITECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (N=1024, r=1, p=1)
@@ -3968,7 +4114,20 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/ltc/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed-a.litecoin.loshan.co.uk
+seednode=dnsseed.thrasher.io
+seednode=dnsseed.litecointools.com
+seednode=dnsseed.litecoinpool.org
+seednode=dnsseed.koin-project.com
+addnode=95.211.152.112:9333
+addnode=95.217.32.30:9333
+addnode=108.234.193.105:9333
+addnode=77.235.26.96:9333
+addnode=91.228.147.153:9333
+addnode=108.171.202.18:9333
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/ltc/litecoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/ltc/litecoin.conf"
@@ -4010,6 +4169,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/doge"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/doge"
 
+            get_existing_prune "$SPIRALPOOL_DIR/doge/dogecoin.conf"
             cat > "$SPIRALPOOL_DIR/doge/dogecoin.conf" << EOF
 # DOGECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (N=1024, r=1, p=1)
@@ -4032,7 +4192,17 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/doge/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed.multidoge.org
+seednode=seed2.multidoge.org
+addnode=148.251.122.88:22556
+addnode=149.202.10.56:22556
+addnode=167.235.95.225:22556
+addnode=91.184.178.3:22556
+addnode=97.103.138.106:22556
+addnode=138.201.132.34:22556
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/doge/dogecoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/doge/dogecoin.conf"
@@ -4086,6 +4256,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/pep"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/pep"
 
+            get_existing_prune "$SPIRALPOOL_DIR/pep/pepecoin.conf"
             cat > "$SPIRALPOOL_DIR/pep/pepecoin.conf" << EOF
 # PEPECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (merge-mineable with LTC)
@@ -4105,7 +4276,17 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/pep/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seeds.pepecoin.org
+seednode=seeds.pepeblocks.com
+addnode=144.76.222.140:33874
+addnode=154.39.75.82:33874
+addnode=173.212.253.15:33874
+addnode=3.212.41.153:33874
+addnode=3.216.226.159:33874
+addnode=18.158.24.136:33874
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/pep/pepecoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/pep/pepecoin.conf"
@@ -4122,7 +4303,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/pepecoind -daemon -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep
+ExecStart=/usr/local/bin/pepecoind -daemon -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep -pid=$SPIRALPOOL_DIR/pep/pepecoind.pid
 ExecStop=/usr/local/bin/pepecoin-cli -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep stop
 PIDFile=$SPIRALPOOL_DIR/pep/pepecoind.pid
 Restart=always
@@ -4142,6 +4323,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/cat"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/cat"
 
+            get_existing_prune "$SPIRALPOOL_DIR/cat/catcoin.conf"
             cat > "$SPIRALPOOL_DIR/cat/catcoin.conf" << EOF
 # CATCOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (standalone, no merge mining)
@@ -4162,7 +4344,29 @@ par=0
 disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/cat/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=catcoin.seeds.multicoin.co
+seednode=dnsseed.catalyst.ovh
+seednode=dnsseed.catcointomars.top
+seednode=dnsseed.wildcat.ovh
+seednode=dnsseed.ogcatcoin.org
+seednode=dnsseed.catcoin.ovh
+seednode=dnsseed.bcats.top
+seednode=seed.catcoinwallets.com
+seednode=cat.geekhash.org
+addnode=91.206.16.214:9933
+addnode=93.127.199.243:9933
+addnode=103.229.81.113:9933
+addnode=165.22.66.115:9933
+addnode=195.114.193.178:9933
+addnode=199.192.19.91:9933
+addnode=86.105.51.204:9933
+addnode=91.121.217.71:9933
+addnode=135.125.225.85:9933
+addnode=140.99.164.14:9933
+addnode=159.100.6.121:9933
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/cat/catcoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/cat/catcoin.conf"
@@ -4179,7 +4383,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/catcoind -daemon -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat
+ExecStart=/usr/local/bin/catcoind -daemon -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat -pid=$SPIRALPOOL_DIR/cat/catcoind.pid
 ExecStop=/usr/local/bin/catcoin-cli -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat stop
 PIDFile=$SPIRALPOOL_DIR/cat/catcoind.pid
 Restart=always
@@ -4199,6 +4403,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/nmc"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/nmc"
 
+            get_existing_prune "$SPIRALPOOL_DIR/nmc/namecoin.conf"
             cat > "$SPIRALPOOL_DIR/nmc/namecoin.conf" << EOF
 # NAMECOIN CORE - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin since 2011)
@@ -4220,7 +4425,26 @@ disablewallet=0
 maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/nmc/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=nmc.seed.quisquis.de
+seednode=seed.nmc.markasoftware.com
+seednode=dnsseed1.nmc.dotbit.zone
+seednode=dnsseed2.nmc.dotbit.zone
+seednode=dnsseed.nmc.testls.space
+seednode=namecoin.seed.cypherstack.com
+addnode=13.246.63.174:8334
+addnode=15.204.102.127:8334
+addnode=18.167.52.159:8334
+addnode=8.214.158.13:8334
+addnode=8.218.231.1:8334
+addnode=185.87.45.95:8334
+addnode=212.51.144.42:8334
+addnode=212.95.39.169:8334
+addnode=23.106.36.28:8334
+addnode=23.108.191.143:8334
+addnode=23.108.191.178:8334
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/nmc/namecoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/nmc/namecoin.conf"
@@ -4237,7 +4461,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/namecoind -daemon -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc
+ExecStart=/usr/local/bin/namecoind -daemon -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc -pid=$SPIRALPOOL_DIR/nmc/namecoind.pid
 ExecStop=/usr/local/bin/namecoin-cli -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc stop
 PIDFile=$SPIRALPOOL_DIR/nmc/namecoind.pid
 Restart=always
@@ -4257,6 +4481,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/sys"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/sys"
 
+            get_existing_prune "$SPIRALPOOL_DIR/sys/syscoin.conf"
             cat > "$SPIRALPOOL_DIR/sys/syscoin.conf" << EOF
 # SYSCOIN CORE - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin)
@@ -4278,7 +4503,25 @@ disablewallet=0
 maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/sys/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed1.syscoin.org
+seednode=seed2.syscoin.org
+seednode=seed3.syscoin.org
+seednode=seed4.syscoin.org
+addnode=158.220.107.184:8369
+addnode=158.220.114.225:8369
+addnode=165.232.103.216:8369
+addnode=31.56.38.151:8369
+addnode=31.56.38.197:8369
+addnode=31.58.170.95:8369
+addnode=143.20.33.149:8369
+addnode=151.244.85.219:8369
+addnode=176.9.210.20:8369
+addnode=151.244.85.47:8369
+addnode=159.65.195.168:8369
+addnode=173.234.17.201:8369
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/sys/syscoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/sys/syscoin.conf"
@@ -4295,7 +4538,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/syscoind -daemon -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys
+ExecStart=/usr/local/bin/syscoind -daemon -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys -pid=$SPIRALPOOL_DIR/sys/syscoind.pid
 ExecStop=/usr/local/bin/syscoin-cli -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys stop
 PIDFile=$SPIRALPOOL_DIR/sys/syscoind.pid
 Restart=always
@@ -4316,6 +4559,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/xmy"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xmy"
 
+            get_existing_prune "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
             cat > "$SPIRALPOOL_DIR/xmy/myriadcoin.conf" << EOF
 # MYRIAD CORE - SPIRAL POOL CONFIGURATION
 # Multi-algo (SHA256d AuxPoW) - merge-mineable with Bitcoin
@@ -4337,7 +4581,25 @@ disablewallet=0
 maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/xmy/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed1.myriadcoin.org
+seednode=seed2.myriadcoin.org
+seednode=seed3.myriadcoin.org
+seednode=seed4.myriadcoin.org
+seednode=seed5.myriadcoin.org
+seednode=seed6.myriadcoin.org
+seednode=seed7.myriadcoin.org
+seednode=seed8.myriadcoin.org
+seednode=myriadseed1.cryptapus.org
+seednode=xmy-seed1.coinid.org
+addnode=54.37.139.32:10888
+addnode=91.206.16.214:10888
+addnode=199.241.187.130:10888
+addnode=89.189.0.226:10888
+addnode=85.15.179.171:10888
+addnode=62.210.123.48:10888
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
@@ -4354,7 +4616,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/myriadcoind -daemon -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy
+ExecStart=/usr/local/bin/myriadcoind -daemon -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy -pid=$SPIRALPOOL_DIR/xmy/myriadcoind.pid
 ExecStop=/usr/local/bin/myriadcoin-cli -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy stop
 PIDFile=$SPIRALPOOL_DIR/xmy/myriadcoind.pid
 Restart=always
@@ -4374,6 +4636,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/fbtc"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/fbtc"
 
+            get_existing_prune "$SPIRALPOOL_DIR/fbtc/fractal.conf"
             cat > "$SPIRALPOOL_DIR/fbtc/fractal.conf" << EOF
 # FRACTAL BITCOIN - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin)
@@ -4395,7 +4658,18 @@ disablewallet=0
 maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/fbtc/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+fixedseeds=1
+seednode=dnsseed-mainnet.fractalbitcoin.io
+seednode=dnsseed-mainnet.unisat.io
+seednode=dnsseed.fractalbitcoin.io
+addnode=5.9.118.219:8333
+addnode=173.212.223.9:8333
+addnode=49.51.68.155:8333
+addnode=150.136.38.223:8333
+addnode=3.124.82.188:8333
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/fbtc/fractal.conf"
             chmod 600 "$SPIRALPOOL_DIR/fbtc/fractal.conf"
@@ -4412,7 +4686,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/fractald -daemon -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc
+ExecStart=/usr/local/bin/fractald -daemon -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc -pid=$SPIRALPOOL_DIR/fbtc/fractald.pid
 ExecStop=/usr/local/bin/fractal-cli -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc stop
 PIDFile=$SPIRALPOOL_DIR/fbtc/fractald.pid
 Restart=always
@@ -4432,6 +4706,7 @@ EOF
             mkdir -p "$SPIRALPOOL_DIR/qbx"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/qbx"
 
+            get_existing_prune "$SPIRALPOOL_DIR/qbx/qbitx.conf"
             cat > "$SPIRALPOOL_DIR/qbx/qbitx.conf" << EOF
 # Q-BITX - SPIRAL POOL CONFIGURATION
 # SHA-256d Post-Quantum Bitcoin Fork (standalone, not merge-mineable)
@@ -4454,7 +4729,12 @@ disablewallet=0
 maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/qbx/debug.log
 printtoconsole=0
-prune=0
+prune=$EXISTING_PRUNE
+# Seed nodes for peer discovery
+forcednsseed=1
+seednode=seed.qbitx.org
+addnode=89.110.93.248:8334
+addnode=83.217.213.118:8334
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/qbx/qbitx.conf"
             chmod 600 "$SPIRALPOOL_DIR/qbx/qbitx.conf"
@@ -4471,7 +4751,7 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
-ExecStart=/usr/local/bin/qbitx -daemon -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx
+ExecStart=/usr/local/bin/qbitx -daemon -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx -pid=$SPIRALPOOL_DIR/qbx/qbitxd.pid
 ExecStop=/usr/local/bin/qbitx-cli -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx stop
 PIDFile=$SPIRALPOOL_DIR/qbx/qbitxd.pid
 Restart=always
@@ -4589,14 +4869,16 @@ stop_node() {
             ;;
     esac
 
-    # Stop and disable service
+    # CRITICAL: disable BEFORE stop.  If the dashboard's subprocess timeout
+    # kills pool-mode.sh between stop and disable, the service is still enabled
+    # and Restart=always will restart it after systemd eventually SIGKILLs it.
+    if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+        systemctl disable "$service" 2>/dev/null || true
+    fi
+
     if systemctl is-active --quiet "$service" 2>/dev/null; then
         echo "Stopping $coin node..."
         systemctl stop "$service" 2>/dev/null || true
-    fi
-
-    if systemctl is-enabled --quiet "$service" 2>/dev/null; then
-        systemctl disable "$service" 2>/dev/null || true
     fi
 
     # Remove service file
@@ -4607,81 +4889,31 @@ stop_node() {
         echo -e "${YELLOW}✓ $coin service removed${NC}"
     fi
 
-    # Close firewall ports for removed coin
-    echo "Closing firewall ports for $coin..."
+    # Close firewall ports for removed coin.
+    # IMPORTANT: Only close the daemon P2P port, NOT stratum ports.
+    # Stratum ports are managed by the stratum binary which listens on all
+    # configured coin ports simultaneously. Removing a coin's stratum port
+    # from UFW while stratum is still running (or before restart) can break
+    # miner connectivity. Stratum port cleanup happens naturally when stratum
+    # restarts and no longer binds the removed coin's port.
+    echo "Closing daemon P2P firewall port for $coin..."
     case $coin in
-        DGB)
-            ufw delete allow 12024/tcp 2>/dev/null || true
-            ufw delete allow 3333/tcp 2>/dev/null || true
-            ufw delete allow 3334/tcp 2>/dev/null || true
-            ;;
-        BTC)
-            ufw delete allow 8333/tcp 2>/dev/null || true
-            ufw delete allow 4333/tcp 2>/dev/null || true
-            ufw delete allow 4334/tcp 2>/dev/null || true
-            ;;
-        BCH)
-            ufw delete allow 8433/tcp 2>/dev/null || true
-            ufw delete allow 5333/tcp 2>/dev/null || true
-            ufw delete allow 5334/tcp 2>/dev/null || true
-            ;;
-        BC2)
-            ufw delete allow 8338/tcp 2>/dev/null || true
-            ufw delete allow 6333/tcp 2>/dev/null || true
-            ufw delete allow 6334/tcp 2>/dev/null || true
-            ;;
-        LTC)
-            ufw delete allow 9333/tcp 2>/dev/null || true
-            ufw delete allow 7333/tcp 2>/dev/null || true
-            ufw delete allow 7334/tcp 2>/dev/null || true
-            ;;
-        DOGE)
-            ufw delete allow 22556/tcp 2>/dev/null || true
-            ufw delete allow 8335/tcp 2>/dev/null || true
-            ufw delete allow 8337/tcp 2>/dev/null || true
-            ;;
-        PEP)
-            ufw delete allow 33874/tcp 2>/dev/null || true
-            ufw delete allow 10335/tcp 2>/dev/null || true
-            ufw delete allow 10336/tcp 2>/dev/null || true
-            ;;
-        CAT)
-            ufw delete allow 9933/tcp 2>/dev/null || true
-            ufw delete allow 12335/tcp 2>/dev/null || true
-            ufw delete allow 12336/tcp 2>/dev/null || true
-            ;;
-        NMC)
-            ufw delete allow 8334/tcp 2>/dev/null || true
-            ufw delete allow 14335/tcp 2>/dev/null || true
-            ufw delete allow 14336/tcp 2>/dev/null || true
-            ;;
-        SYS)
-            ufw delete allow 8369/tcp 2>/dev/null || true
-            ufw delete allow 15335/tcp 2>/dev/null || true
-            ufw delete allow 15336/tcp 2>/dev/null || true
-            ;;
-        XMY)
-            ufw delete allow 10888/tcp 2>/dev/null || true
-            ufw delete allow 17335/tcp 2>/dev/null || true
-            ufw delete allow 17336/tcp 2>/dev/null || true
-            ;;
-        FBTC)
-            ufw delete allow 8341/tcp 2>/dev/null || true
-            ufw delete allow 18335/tcp 2>/dev/null || true
-            ufw delete allow 18336/tcp 2>/dev/null || true
-            ;;
-        QBX)
-            ufw delete allow 8345/tcp 2>/dev/null || true
-            ufw delete allow 20335/tcp 2>/dev/null || true
-            ufw delete allow 20336/tcp 2>/dev/null || true
-            ;;
-        DGB-SCRYPT)
-            # Only close DGB-SCRYPT stratum ports, not DGB node ports
-            ufw delete allow 3336/tcp 2>/dev/null || true
-            ufw delete allow 3337/tcp 2>/dev/null || true
-            ;;
+        DGB)        ufw delete allow 12024/tcp 2>/dev/null || true ;;
+        BTC)        ufw delete allow 8333/tcp 2>/dev/null || true ;;
+        BCH)        ufw delete allow 8433/tcp 2>/dev/null || true ;;
+        BC2)        ufw delete allow 8338/tcp 2>/dev/null || true ;;
+        LTC)        ufw delete allow 9333/tcp 2>/dev/null || true ;;
+        DOGE)       ufw delete allow 22556/tcp 2>/dev/null || true ;;
+        PEP)        ufw delete allow 33874/tcp 2>/dev/null || true ;;
+        CAT)        ufw delete allow 9933/tcp 2>/dev/null || true ;;
+        NMC)        ufw delete allow 8334/tcp 2>/dev/null || true ;;
+        SYS)        ufw delete allow 8369/tcp 2>/dev/null || true ;;
+        XMY)        ufw delete allow 10888/tcp 2>/dev/null || true ;;
+        FBTC)       ufw delete allow 8341/tcp 2>/dev/null || true ;;
+        QBX)        ufw delete allow 8345/tcp 2>/dev/null || true ;;
+        DGB-SCRYPT) ;; # Uses same node as DGB — no daemon port to close
     esac
-    echo -e "${YELLOW}✓ Firewall ports closed for $coin${NC}"
+    echo -e "${YELLOW}✓ Daemon firewall port closed for $coin${NC}"
 }
 
 # Verify and heal service state - ensures services match config
@@ -4983,9 +5215,9 @@ generate_config() {
 
     # Start config file — write to temp file first, then atomic move
     local config_tmp="${CONFIG_FILE}.tmp.$$"
-    trap 'rm -f "$config_tmp"' EXIT
+    trap "rm -f '${CONFIG_FILE}.tmp.$$'" EXIT
     cat > "$config_tmp" << EOF
-# Spiral Pool v2.1.0 Configuration
+# Spiral Pool v2.2.0 Configuration
 # Generated by pool-mode.sh on $(date)
 # Mode: $([ ${#coins[@]} -eq 1 ] && echo "Solo" || echo "Multi-Coin")
 # Coins: ${coins[*]}
@@ -5067,6 +5299,87 @@ database:
     interval: 5s
 EOF
 
+    # Preserve sections from backup that generate_config does not manage.
+    # Without this, mode switches would lose multi_port, ha, pool, vip,
+    # mergeMining, stratum (per-coin overrides), payments, sentinel, etc.
+    if [ -f "$backup_file" ]; then
+        python3 -c "
+import yaml, sys
+try:
+    with open('$config_tmp') as f:
+        new_cfg = yaml.safe_load(f) or {}
+    with open('$backup_file') as f:
+        old_cfg = yaml.safe_load(f) or {}
+
+    # Sections that generate_config manages (do NOT copy from backup)
+    managed = {'version', 'global', 'coins', 'database'}
+
+    # Copy all non-managed sections from backup into new config
+    preserved = []
+    for key in old_cfg:
+        if key not in managed and key not in new_cfg:
+            new_cfg[key] = old_cfg[key]
+            preserved.append(key)
+
+    # Special handling for multi_port after mode switch
+    coin_list = new_cfg.get('coins', [])
+    coin_count = len(coin_list)
+    new_symbols = set()
+    for c in coin_list:
+        if isinstance(c, dict) and 'symbol' in c:
+            new_symbols.add(c['symbol'].upper())
+
+    mp = new_cfg.get('multi_port')
+    if mp and isinstance(mp, dict) and mp.get('enabled'):
+        if coin_count < 2:
+            # Solo mode — disable multi_port
+            mp['enabled'] = False
+            preserved.append('multi_port(disabled)')
+        else:
+            # Multi mode — remove stale coins from schedule
+            mp_coins = mp.get('coins', {})
+            if isinstance(mp_coins, dict) and new_symbols:
+                stale = [s for s in mp_coins if s.upper() not in new_symbols]
+                for s in stale:
+                    del mp_coins[s]
+                remaining = {s: c for s, c in mp_coins.items()
+                             if isinstance(c, dict) and c.get('weight', 0) > 0}
+                if len(remaining) < 2:
+                    mp['enabled'] = False
+                    preserved.append('multi_port(disabled, stale coins removed)')
+                elif stale:
+                    # Redistribute weights
+                    total = sum(c.get('weight', 0) for c in remaining.values())
+                    if total > 0:
+                        redist = 0
+                        keys = sorted(remaining.keys())
+                        for i, s in enumerate(keys):
+                            if i == len(keys) - 1:
+                                remaining[s]['weight'] = 100 - redist
+                            else:
+                                w = round(remaining[s]['weight'] / total * 100)
+                                remaining[s]['weight'] = w
+                                redist += w
+                    mp_coins.clear()
+                    mp_coins.update(remaining)
+                    preserved.append(f'multi_port(removed stale: {stale})')
+                # Fix prefer_coin
+                pc = mp.get('prefer_coin', '').upper()
+                if pc and pc not in {s.upper() for s in mp_coins} and remaining:
+                    mp['prefer_coin'] = max(remaining.keys(),
+                                            key=lambda s: remaining[s].get('weight', 0))
+                mp['coins'] = mp_coins
+
+    with open('$config_tmp', 'w') as f:
+        yaml.dump(new_cfg, f, default_flow_style=False, sort_keys=False)
+
+    if preserved:
+        print("Preserved from backup: " + ", ".join(preserved))
+except Exception as e:
+    print(f'Warning: could not preserve backup sections: {e}', file=sys.stderr)
+" 2>&1 && echo -e "${GREEN}✓ Preserved existing configuration sections${NC}" || true
+    fi
+
     # Atomic move: temp file → config file (prevents partial/truncated configs on error)
     mv -f "$config_tmp" "$CONFIG_FILE"
     chown "$POOL_USER:$POOL_USER" "$CONFIG_FILE"
@@ -5081,6 +5394,7 @@ EOF
 # Show change summary before making changes
 show_change_summary() {
     local new_coins=("$@")
+    local coin current  # CRITICAL: must be local to avoid clobbering caller's $coin
 
     detect_current_coins
 
@@ -5378,6 +5692,10 @@ switch_to_multi() {
     generate_config "${coins[@]}"
 
     echo ""
+    # Open smart port 16180 for multi-coin mode
+    ufw allow 16180/tcp comment "Spiral Pool Smart Port" 2>/dev/null || true
+    echo -e "${GREEN}✓ Firewall: opened port 16180/tcp (multi coin smart port)${NC}"
+
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  MULTI-COIN MODE ENABLED: ${coins[*]}${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
@@ -5427,17 +5745,269 @@ add_coin() {
 
     declare -A WALLET_ADDRESSES
 
-    # Get wallet for new coin
+    # Get wallet for new coin (may be "PENDING" if user will generate via dashboard)
     WALLET_ADDRESSES[$coin]=$(get_wallet_address "$coin")
     if [ -z "${WALLET_ADDRESSES[$coin]}" ]; then
         echo -e "${RED}Error: Wallet address is required${NC}"
         exit 1
     fi
+    if [ "${WALLET_ADDRESSES[$coin]}" = "PENDING" ]; then
+        echo -e "${YELLOW}⚠ No wallet address provided — node will be installed but payouts disabled until wallet is set${NC}"
+    fi
 
-    # Generate config with all coins
-    generate_config "${CURRENT_COINS[@]}"
+    # Surgically add ONLY the new coin to config.yaml — do NOT regenerate the
+    # entire config (which would restart all daemons, risk losing wallet
+    # addresses, and convert the config format).
+    echo -e "${CYAN}Adding $coin to config.yaml...${NC}"
 
-    # Check if node is installed
+    local wallet_addr="${WALLET_ADDRESSES[$coin]}"
+    local rpc_user=""
+    local rpc_pass=""
+
+    # Try to read existing RPC credentials from node config file
+    if read_node_rpc_credentials "$coin"; then
+        rpc_user="$NODE_RPC_USER"
+        rpc_pass="$NODE_RPC_PASS"
+    fi
+    # Generate if not found
+    if [ -z "$rpc_user" ]; then
+        rpc_user="spiral${coin,,}"
+    fi
+    if [ -z "$rpc_pass" ]; then
+        rpc_pass=$(openssl rand -hex 32)
+    fi
+
+    # Generate the new coin's YAML block
+    local coin_yaml_block
+    coin_yaml_block=$(generate_coin_config "$coin" "$wallet_addr" "$rpc_user" "$rpc_pass")
+
+    if [ -f "$CONFIG_FILE" ]; then
+        local backup_file="$CONFIG_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$CONFIG_FILE" "$backup_file"
+
+        if ! python3 - "$CONFIG_FILE" "$coin" "$coin_yaml_block" "$POOL_USER" << 'PYEOF'
+import sys, yaml, os, tempfile, pwd
+
+config_path = sys.argv[1]
+coin_symbol = sys.argv[2].upper()
+coin_yaml_raw = sys.argv[3]
+pool_user = sys.argv[4] if len(sys.argv) > 4 else None
+
+with open(config_path, 'r') as f:
+    config = yaml.safe_load(f)
+
+if not config:
+    print("ERROR: Could not parse config", file=sys.stderr)
+    sys.exit(1)
+
+# Parse the coin YAML block
+coin_entries = yaml.safe_load("coins:\n" + coin_yaml_raw)
+if not coin_entries or 'coins' not in coin_entries or not coin_entries['coins']:
+    print(f"ERROR: Could not parse coin config block for {coin_symbol}", file=sys.stderr)
+    sys.exit(1)
+new_coin = coin_entries['coins'][0]
+
+# Check if config is V1 (has 'pool:' key) or V2 (has 'coins:' key)
+if 'coins' in config and isinstance(config['coins'], list):
+    # V2 format — check coin isn't already there, then append
+    for existing in config['coins']:
+        if isinstance(existing, dict) and existing.get('symbol', '').upper() == coin_symbol:
+            print(f"{coin_symbol} already in config — skipping")
+            sys.exit(0)
+    config['coins'].append(new_coin)
+    print(f"Appended {coin_symbol} to existing V2 config")
+elif 'pool' in config:
+    # V1 format — convert to V2 by wrapping existing config in coins array
+    # Preserve ALL existing V1 settings as the first coin entry
+    v1_pool = config.get('pool', {})
+    v1_stratum = config.get('stratum', {})
+    v1_daemon = config.get('daemon', {})
+
+    # Map V1 coin names (e.g. "digibyte") to proper symbols (e.g. "DGB")
+    _v1_coin_to_symbol = {
+        'digibyte': 'DGB', 'digibytescrypt': 'DGB-SCRYPT',
+        'digibyte-scrypt': 'DGB-SCRYPT',
+        'bitcoin': 'BTC', 'bitcoincash': 'BCH', 'bitcoin-cash': 'BCH',
+        'bitcoinii': 'BC2', 'bitcoin-ii': 'BC2',
+        'litecoin': 'LTC', 'dogecoin': 'DOGE', 'pepecoin': 'PEP',
+        'catcoin': 'CAT', 'namecoin': 'NMC', 'syscoin': 'SYS',
+        'myriadcoin': 'XMY', 'fractalbitcoin': 'FBTC', 'fractal': 'FBTC',
+        'qbitx': 'QBX', 'q-bitx': 'QBX',
+    }
+    _v1_raw_lower = v1_pool.get('coin', 'DGB').lower()
+    _v1_raw_stripped = _v1_raw_lower.replace(' ', '').replace('-', '')
+    _v1_symbol = _v1_coin_to_symbol.get(_v1_raw_lower) or _v1_coin_to_symbol.get(_v1_raw_stripped) or v1_pool.get('coin', 'DGB').upper()
+
+    existing_coin = {
+        'symbol': _v1_symbol,
+        'pool_id': v1_pool.get('id', ''),
+        'enabled': True,
+        'address': v1_pool.get('address', ''),
+        'coinbase_text': v1_pool.get('coinbaseText', 'Spiral Pool'),
+    }
+
+    # Convert V1 stratum config to V2 CoinStratumConfig format.
+    # V1 uses "listen: 0.0.0.0:3333" → V2 uses "port: 3333"
+    # V1 uses "versionRolling:" → V2 uses "version_rolling:"
+    # V1 has top-level keys (listen, listenV2, tls) that V2 doesn't use per-coin.
+    # Only carry over fields that V2 CoinStratumConfig actually reads.
+    if v1_stratum:
+        v2_stratum = {}
+        # Extract port from V1 listen address "0.0.0.0:3333" → 3333
+        v1_listen = v1_stratum.get('listen', '')
+        if ':' in str(v1_listen):
+            try:
+                v2_stratum['port'] = int(str(v1_listen).rsplit(':', 1)[1])
+            except (ValueError, IndexError):
+                pass
+        # Extract V2 port from listenV2 "0.0.0.0:3334" → 3334
+        v1_listen_v2 = v1_stratum.get('listenV2', '')
+        if ':' in str(v1_listen_v2):
+            try:
+                v2_stratum['port_v2'] = int(str(v1_listen_v2).rsplit(':', 1)[1])
+            except (ValueError, IndexError):
+                pass
+        # Extract TLS port and cert/key paths
+        v1_tls = v1_stratum.get('tls', {})
+        if isinstance(v1_tls, dict) and v1_tls.get('enabled'):
+            v1_tls_listen = v1_tls.get('listenTLS', '')
+            if ':' in str(v1_tls_listen):
+                try:
+                    v2_stratum['port_tls'] = int(str(v1_tls_listen).rsplit(':', 1)[1])
+                except (ValueError, IndexError):
+                    pass
+            tls_cfg = {}
+            if v1_tls.get('certFile'):
+                tls_cfg['cert_file'] = v1_tls['certFile']
+            if v1_tls.get('keyFile'):
+                tls_cfg['key_file'] = v1_tls['keyFile']
+            if v1_tls.get('minVersion'):
+                tls_cfg['min_version'] = v1_tls['minVersion']
+            if tls_cfg:
+                v2_stratum['tls'] = tls_cfg
+        # Carry over difficulty (same schema in both V1 and V2)
+        if 'difficulty' in v1_stratum:
+            v2_stratum['difficulty'] = v1_stratum['difficulty']
+        # Carry over banning
+        if 'banning' in v1_stratum:
+            v2_stratum['banning'] = v1_stratum['banning']
+        # Carry over connection
+        if 'connection' in v1_stratum:
+            v2_stratum['connection'] = v1_stratum['connection']
+        # V1 "versionRolling" → V2 "version_rolling"
+        if 'versionRolling' in v1_stratum:
+            v2_stratum['version_rolling'] = v1_stratum['versionRolling']
+        elif 'version_rolling' in v1_stratum:
+            v2_stratum['version_rolling'] = v1_stratum['version_rolling']
+        # Carry over job rebroadcast
+        if 'jobRebroadcast' in v1_stratum:
+            v2_stratum['job_rebroadcast'] = v1_stratum['jobRebroadcast']
+        elif 'job_rebroadcast' in v1_stratum:
+            v2_stratum['job_rebroadcast'] = v1_stratum['job_rebroadcast']
+        existing_coin['stratum'] = v2_stratum
+
+    # Convert daemon to nodes array
+    if v1_daemon:
+        existing_coin['nodes'] = [{
+            'id': 'primary',
+            'host': v1_daemon.get('host', '127.0.0.1'),
+            'port': v1_daemon.get('port', 14022),
+            'user': v1_daemon.get('user', ''),
+            'password': v1_daemon.get('password', ''),
+            'priority': 0,
+            'weight': 1,
+        }]
+        zmq = v1_daemon.get('zmq', {})
+        if zmq:
+            existing_coin['nodes'][0]['zmq'] = zmq
+
+    # Preserve payments
+    v1_payments = config.get('payments', {})
+    if v1_payments:
+        existing_coin['payments'] = v1_payments
+    else:
+        existing_coin['payments'] = {'enabled': False, 'scheme': 'SOLO'}
+
+    # Build V2 config preserving global settings
+    new_config = {}
+    # Preserve version, global, and any other top-level keys
+    for key in config:
+        if key not in ('pool', 'stratum', 'daemon', 'payments', 'coins'):
+            new_config[key] = config[key]
+
+    new_config['version'] = config.get('version', 2)
+    if 'global' not in new_config:
+        new_config['global'] = config.get('global', {
+            'log_level': 'info',
+            'log_format': 'json',
+            'metrics_port': 9100,
+            'api_port': 4000,
+            'api_enabled': True,
+        })
+    # Ensure api_port/api_enabled exist in global (V2 reads from global:, not top-level api:)
+    g = new_config['global']
+    g.setdefault('api_port', 4000)
+    g.setdefault('api_enabled', True)
+    g.setdefault('log_level', 'info')
+    g.setdefault('log_format', 'json')
+    g.setdefault('metrics_port', 9100)
+    # Migrate admin API key from V1 api: section if missing from global
+    if 'admin_api_key' not in g:
+        v1_api = config.get('api', {})
+        v1_key = v1_api.get('adminApiKey', '')
+        if v1_key:
+            g['admin_api_key'] = v1_key
+
+    new_config['coins'] = [existing_coin, new_coin]
+
+    # Preserve database section
+    if 'database' in config:
+        new_config['database'] = config['database']
+
+    config = new_config
+    print(f"Converted V1 to V2 format, added {coin_symbol}")
+else:
+    print("ERROR: Unrecognized config format", file=sys.stderr)
+    sys.exit(1)
+
+# Atomic write
+dir_name = os.path.dirname(config_path)
+fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+try:
+    with os.fdopen(fd, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp_path, 0o600)
+    # Fix ownership so dashboard (spiraluser) can read it
+    if pool_user:
+        try:
+            pw = pwd.getpwnam(pool_user)
+            os.chown(tmp_path, pw.pw_uid, pw.pw_gid)
+        except KeyError:
+            pass
+    os.replace(tmp_path, config_path)
+    print("Config updated successfully")
+except Exception:
+    os.unlink(tmp_path)
+    raise
+PYEOF
+        then
+            echo -e "${RED}Error: Failed to update config. Restoring backup...${NC}"
+            cp "$backup_file" "$CONFIG_FILE"
+            exit 1
+        fi
+        chown "$POOL_USER:$POOL_USER" "$CONFIG_FILE"
+    else
+        # No config exists — generate fresh (first coin install)
+        declare -A WALLET_ADDRESSES_GEN
+        WALLET_ADDRESSES_GEN[$coin]="$wallet_addr"
+        WALLET_ADDRESSES=()
+        for k in "${!WALLET_ADDRESSES_GEN[@]}"; do WALLET_ADDRESSES[$k]="${WALLET_ADDRESSES_GEN[$k]}"; done
+        generate_config "${CURRENT_COINS[@]}"
+    fi
+
+    # Install and start ONLY the new coin's node — do NOT touch existing coins
     if ! check_node_installed "$coin"; then
         if [ "$NON_INTERACTIVE" = true ]; then
             if [ "$NON_INTERACTIVE_INSTALL_NODE" = true ]; then
@@ -5456,14 +6026,62 @@ add_coin() {
         fi
     fi
 
-    # Start the node service (setup_node already called by generate_config with matching RPC credentials)
+    # Setup and start ONLY the new coin's node
     if check_node_installed "$coin"; then
-        echo ""
+        setup_node "$coin" "$rpc_user" "$rpc_pass"
         start_node "$coin"
-
         echo -e "${GREEN}✓ $coin node service started${NC}"
         echo -e "  ${CYAN}Service: Restart=always, RestartSec=30${NC}"
         echo -e "  ${CYAN}The service will automatically restart on failure${NC}"
+    fi
+
+    # Health check: verify existing coin daemons are still running.
+    # Starting a new coin's initial sync can cause OOM pressure that kills
+    # existing daemons.  If systemd hit StartLimitBurst it won't auto-restart,
+    # so we reset-failed and restart manually.
+    # IMPORTANT: Only restart daemons whose service is ENABLED (user intentionally
+    # installed them).  Do NOT restart disabled/removed services.
+    sleep 5  # give the new daemon a moment to allocate memory
+    for existing in "${CURRENT_COINS[@]}"; do
+        [ "$existing" = "$coin" ] && continue  # skip the coin we just added
+        local svc=""
+        case $existing in
+            DGB|DGB-SCRYPT) svc="digibyted" ;;
+            BTC)  svc="bitcoind" ;;
+            BCH)  svc="bitcoind-bch" ;;
+            BC2)  svc="bitcoiniid" ;;
+            LTC)  svc="litecoind" ;;
+            DOGE) svc="dogecoind" ;;
+            PEP)  svc="pepecoind" ;;
+            CAT)  svc="catcoind" ;;
+            NMC)  svc="namecoind" ;;
+            SYS)  svc="syscoind" ;;
+            XMY)  svc="myriadcoind" ;;
+            FBTC) svc="fractald" ;;
+            QBX)  svc="qbitxd" ;;
+        esac
+        [ -z "$svc" ] && continue
+        # Only restart services that are enabled (intentionally installed).
+        # Skip disabled services — user may have deliberately stopped/removed them.
+        if ! systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            continue
+        fi
+        if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
+            echo -e "${YELLOW}⚠ $existing node ($svc) is not running — restarting...${NC}"
+            systemctl reset-failed "$svc" 2>/dev/null || true
+            systemctl start "$svc" 2>/dev/null || true
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                echo -e "${GREEN}✓ $existing node recovered${NC}"
+            else
+                echo -e "${RED}✗ $existing node failed to restart — check: sudo journalctl -u $svc${NC}"
+            fi
+        fi
+    done
+
+    # Open smart port 16180 when we now have 2+ coins (multi-coin mode)
+    if [ ${#CURRENT_COINS[@]} -ge 2 ]; then
+        ufw allow 16180/tcp comment "Spiral Pool Smart Port" 2>/dev/null || true
+        echo -e "${GREEN}✓ Firewall: opened port 16180/tcp (multi coin smart port)${NC}"
     fi
 
     echo ""
@@ -5602,15 +6220,17 @@ remove_coin() {
             ;;
     esac
 
-    # Double-check service is stopped and disabled (skip if no service, e.g., DGB-SCRYPT)
+    # Double-check service is disabled and stopped (skip if no service, e.g., DGB-SCRYPT)
+    # CRITICAL: disable BEFORE stop — if dashboard timeout kills this script
+    # between stop and disable, Restart=always will restart the daemon.
+    if [ -n "$service" ] && systemctl is-enabled --quiet "$service" 2>/dev/null; then
+        systemctl disable "$service" 2>/dev/null || true
+    fi
+
     if [ -n "$service" ] && systemctl is-active --quiet "$service" 2>/dev/null; then
         echo -e "${YELLOW}Warning: Service still running, force stopping...${NC}"
         systemctl stop "$service" 2>/dev/null || true
         systemctl kill "$service" 2>/dev/null || true
-    fi
-
-    if [ -n "$service" ] && systemctl is-enabled --quiet "$service" 2>/dev/null; then
-        systemctl disable "$service" 2>/dev/null || true
     fi
 
     # Remove service file if still exists
@@ -5651,9 +6271,172 @@ remove_coin() {
         fi
     fi
 
-    # Generate config without the removed coin
-    declare -A WALLET_ADDRESSES
-    generate_config "${new_coins[@]}"
+    # Surgically remove ONLY the coin entry from config.yaml — do NOT regenerate
+    # the entire config (which would restart all daemons, risk losing wallet
+    # addresses, and convert the config format).
+    echo -e "${CYAN}Removing $coin from config.yaml...${NC}"
+    if [ -f "$CONFIG_FILE" ]; then
+        local backup_file="$CONFIG_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$CONFIG_FILE" "$backup_file"
+
+        if ! python3 - "$CONFIG_FILE" "$coin" "$POOL_USER" << 'PYEOF'
+import sys, yaml, os, tempfile, pwd
+
+config_path = sys.argv[1]
+coin_to_remove = sys.argv[2].upper()
+pool_user = sys.argv[3] if len(sys.argv) > 3 else None
+
+with open(config_path, 'r') as f:
+    config = yaml.safe_load(f)
+
+if not config:
+    print(f"ERROR: Could not parse {config_path}", file=sys.stderr)
+    sys.exit(1)
+
+# V2 format: coins is a list of dicts with 'symbol' key
+coins = config.get('coins', [])
+if isinstance(coins, list):
+    original_count = len(coins)
+    # Log all symbols BEFORE removal for debugging
+    before_symbols = [c.get('symbol', '???') for c in coins if isinstance(c, dict)]
+    print(f"Before: {original_count} coins: {before_symbols}")
+
+    kept = []
+    removed = []
+    for c in coins:
+        if isinstance(c, dict) and c.get('symbol', '').upper() == coin_to_remove:
+            removed.append(c.get('symbol', '???'))
+        else:
+            kept.append(c)
+
+    print(f"Removing: {removed}")
+    print(f"Keeping: {[c.get('symbol', '???') for c in kept if isinstance(c, dict)]}")
+
+    # SAFETY: Abort if we'd remove more than 1 entry or remove everything
+    if len(removed) > 1:
+        print(f"ERROR: Would remove {len(removed)} entries — expected at most 1. ABORTING.", file=sys.stderr)
+        sys.exit(1)
+    if len(removed) == 1 and len(kept) == 0:
+        print(f"ERROR: Would leave coins list empty. ABORTING.", file=sys.stderr)
+        sys.exit(1)
+    if len(removed) == 0:
+        print(f"Warning: {coin_to_remove} not found in coins list")
+    else:
+        print(f"Removed {coin_to_remove} from config (1 entry)")
+
+    config['coins'] = kept
+
+# Clean up multi_port section if the removed coin was in the smart port schedule.
+# Without this, the next stratum restart would fail because multi_port references
+# a coin that no longer exists in the coins: array.
+mp = config.get('multi_port')
+if mp and isinstance(mp, dict) and mp.get('enabled'):
+    mp_coins = mp.get('coins', {})
+    if isinstance(mp_coins, dict) and coin_to_remove in mp_coins:
+        removed_weight = mp_coins[coin_to_remove].get('weight', 0) if isinstance(mp_coins[coin_to_remove], dict) else 0
+        del mp_coins[coin_to_remove]
+        remaining = {s: c for s, c in mp_coins.items() if isinstance(c, dict)}
+        weighted = {s: c for s, c in remaining.items() if c.get('weight', 0) > 0}
+
+        if len(remaining) < 2:
+            mp['enabled'] = False
+            print(f"Multi-port disabled: only {len(remaining)} coin(s) remain after removing {coin_to_remove}")
+        elif removed_weight > 0 and weighted:
+            # Redistribute weights proportionally among weighted coins
+            total_remaining = sum(c.get('weight', 0) for c in weighted.values())
+            if total_remaining > 0:
+                redistributed = 0
+                coins_list = sorted(weighted.keys())
+                for i, s in enumerate(coins_list):
+                    if i == len(coins_list) - 1:
+                        weighted[s]['weight'] = 100 - redistributed
+                    else:
+                        new_w = round(weighted[s]['weight'] / total_remaining * 100)
+                        weighted[s]['weight'] = new_w
+                        redistributed += new_w
+            # Preserve all coins (including zero-weight) in the schedule
+            mp_coins.clear()
+            mp_coins.update(remaining)
+            print(f"Redistributed smart port weights: {remaining}")
+
+        # Fix prefer_coin if it was the removed coin
+        if mp.get('prefer_coin', '').upper() == coin_to_remove and remaining:
+            mp['prefer_coin'] = max(remaining.keys(), key=lambda s: remaining[s].get('weight', 0))
+
+        mp['coins'] = mp_coins
+        config['multi_port'] = mp
+        print(f"Cleaned up multi_port after removing {coin_to_remove}")
+
+        # Sync coins.env so install.sh/upgrades don't restore stale schedule
+        coins_env = '/spiralpool/config/coins.env'
+        if os.path.exists(coins_env):
+            try:
+                with open(coins_env, 'r') as rf:
+                    env_lines = rf.read().splitlines()
+                def set_env(key, value):
+                    for i, line in enumerate(env_lines):
+                        if line.startswith(f'{key}='):
+                            env_lines[i] = f'{key}={value}'
+                            return
+                    env_lines.append(f'{key}={value}')
+
+                if not mp.get('enabled', False):
+                    set_env('MULTIPORT_ENABLED', 'false')
+                else:
+                    sorted_coins = sorted(mp_coins.keys())
+                    set_env('MULTIPORT_ENABLED', 'true')
+                    set_env('MULTIPORT_COINS', ','.join(sorted_coins))
+                    set_env('MULTIPORT_WEIGHTS', ','.join(
+                        str(mp_coins[s].get('weight', 0) if isinstance(mp_coins[s], dict) else 0)
+                        for s in sorted_coins))
+                    prefer = mp.get('prefer_coin', '')
+                    set_env('MULTIPORT_PREFER_COIN', prefer.upper() if prefer else '')
+
+                with open(coins_env, 'w') as ef:
+                    ef.write('\n'.join(env_lines) + '\n')
+                    ef.flush()
+                    os.fsync(ef.fileno())
+            except Exception as e:
+                print(f"Warning: failed to update coins.env: {e}")
+
+# Atomic write
+dir_name = os.path.dirname(config_path)
+fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+try:
+    with os.fdopen(fd, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp_path, 0o600)
+    # Fix ownership so dashboard (spiraluser) can read it
+    if pool_user:
+        try:
+            pw = pwd.getpwnam(pool_user)
+            os.chown(tmp_path, pw.pw_uid, pw.pw_gid)
+        except KeyError:
+            pass  # user not found, chown in bash will handle it
+    os.replace(tmp_path, config_path)
+    print("Config updated successfully")
+except Exception:
+    os.unlink(tmp_path)
+    raise
+PYEOF
+        then
+            echo -e "${RED}Error: Failed to update config. Restoring backup...${NC}"
+            cp "$backup_file" "$CONFIG_FILE"
+            exit 1
+        fi
+        chown "$POOL_USER:$POOL_USER" "$CONFIG_FILE"
+    fi
+
+    # Ensure removed coin's service file is gone
+    if [ -n "$service_file" ] && [ -f "$service_file" ]; then
+        rm -f "$service_file"
+        systemctl daemon-reload
+    fi
+    if [ -n "$service" ]; then
+        systemctl reset-failed "$service" 2>/dev/null || true
+    fi
 
     echo ""
     echo -e "${GREEN}✓ Removed $coin from configuration${NC}"
@@ -6105,8 +6888,7 @@ case "${1:-}" in
         echo ""
 
         # Query the VIP manager status API
-        local status_port=5354
-        local status_response
+        status_port=5354
 
         status_response=$(curl -s --connect-timeout 2 "http://127.0.0.1:${status_port}/status" 2>/dev/null)
 
@@ -6125,11 +6907,11 @@ case "${1:-}" in
         fi
 
         # Parse JSON response (basic parsing with grep/sed)
-        local role=$(echo "$status_response" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
-        local state=$(echo "$status_response" | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
-        local vip=$(echo "$status_response" | grep -o '"vipAddress":"[^"]*"' | cut -d'"' -f4)
-        local has_vip=$(echo "$status_response" | grep -o '"hasVIP":[^,}]*' | cut -d':' -f2)
-        local node_count=$(echo "$status_response" | grep -o '"nodeCount":[^,}]*' | cut -d':' -f2)
+        role=$(echo "$status_response" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
+        state=$(echo "$status_response" | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
+        vip=$(echo "$status_response" | grep -o '"vipAddress":"[^"]*"' | cut -d'"' -f4)
+        has_vip=$(echo "$status_response" | grep -o '"hasVIP":[^,}]*' | cut -d':' -f2)
+        node_count=$(echo "$status_response" | grep -o '"nodeCount":[^,}]*' | cut -d':' -f2)
 
         echo -e "  HA Status:    ${GREEN}ENABLED${NC}"
         echo -e "  Role:         ${CYAN}$role${NC}"

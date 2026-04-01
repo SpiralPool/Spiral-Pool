@@ -220,6 +220,17 @@ func (m *Manager) RefreshAuxBlocks(ctx context.Context) ([]AuxBlockData, error) 
 		}
 	}
 
+	// Recalculate ChainIndex for all aux blocks now that we know the tree size.
+	// Each coin's ParseAuxBlockResponse hardcodes ChainIndex=0, which is only correct
+	// for single-chain merge mining. With multiple aux chains, the slot is determined
+	// by AuxChainSlot(chainID, merkleNonce=0, treeSize).
+	if len(auxBlocks) > 1 {
+		treeSize := uint32(MerkleTreeSize(len(auxBlocks)))
+		for i := range auxBlocks {
+			auxBlocks[i].ChainIndex = coin.AuxChainSlot(auxBlocks[i].ChainID, 0, treeSize)
+		}
+	}
+
 	// Store atomically
 	m.currentAux.Store(&auxBlocks)
 	m.lastRefresh = time.Now()
@@ -263,7 +274,7 @@ func (m *Manager) GetAuxBlockBySymbol(symbol string) *AuxBlockData {
 //   - root: 32-byte aux merkle root for coinbase embedding
 //   - branches: Merkle branches for each aux block (for proof construction)
 //   - treeSize: Number of leaves in the merkle tree
-func (m *Manager) BuildAuxMerkleData(auxBlocks []AuxBlockData) (root []byte, branches [][]byte, treeSize uint32) {
+func (m *Manager) BuildAuxMerkleData(auxBlocks []AuxBlockData) (root []byte, branches map[int][][]byte, treeSize uint32) {
 	if len(auxBlocks) == 0 {
 		return nil, nil, 0
 	}

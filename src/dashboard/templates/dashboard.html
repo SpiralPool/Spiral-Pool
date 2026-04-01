@@ -768,6 +768,11 @@
             #sortable-sections > .sortable-half {
                 grid-column: 1 / -1;
             }
+            /* Stack coin nodes + smart port/miner management on mobile */
+            #smartport-panel { max-width: 100% !important; }
+            div:has(> #mgmt-coin-nodes) {
+                grid-template-columns: 1fr !important;
+            }
             /* Section headers wrap on mobile */
             .collapsible-header {
                 flex-wrap: wrap;
@@ -2767,6 +2772,9 @@
                 <span class="drag-handle" title="Drag to reorder">⠿</span>
                 <h3>📊 Statistics</h3>
                 <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <select id="stats-coin-selector" class="stats-period-dropdown" onchange="changeStatsCoin(this.value)" onclick="event.stopPropagation()" style="display:none; min-width:120px; font-size:0.75rem; padding-right:24px; border-color:var(--neon-blue, #3b9dff); background:rgba(59,157,255,0.1);">
+                        <option value="all">All Coins</option>
+                    </select>
                     <select id="stats-period-selector" class="stats-period-dropdown" onchange="changeStatsPeriod(this.value)" onclick="event.stopPropagation()">
                         <option value="15m">15M</option>
                         <option value="1h">1H</option>
@@ -2856,6 +2864,7 @@
                 </div>
             </div>
         </section>
+
 
         <!-- Fleet Group Summary Bar -->
         <div id="fleet-group-summary" class="fleet-group-bar" style="display:none;"></div>
@@ -3007,7 +3016,7 @@
                             <div class="health-stats-grid">
                                 <div class="health-stat">
                                     <span class="health-stat-label">Uptime</span>
-                                    <span class="health-stat-value" id="pool-uptime">--</span>
+                                    <span class="health-stat-value" id="health-pool-uptime">--</span>
                                 </div>
                                 <div class="health-stat">
                                     <span class="health-stat-label">Connections</span>
@@ -3041,21 +3050,22 @@
                         </div>
                     </div>
 
-                    <!-- Node Health Cards (dynamically populated) -->
+                    <!-- Node Health Cards (full width) -->
                     <div id="node-health-cards">
-                        <div class="health-card node-health">
-                            <div class="health-card-header">
-                                <div class="health-title">
-                                    <span class="health-icon">🔗</span>
-                                    <span>Blockchain Nodes</span>
-                                </div>
-                                <div class="health-status">
-                                    <span class="status-dot offline"></span>
-                                    <span class="status-text">Loading...</span>
+                            <div class="health-card node-health">
+                                <div class="health-card-header">
+                                    <div class="health-title">
+                                        <span class="health-icon">🔗</span>
+                                        <span>Blockchain Nodes</span>
+                                    </div>
+                                    <div class="health-status">
+                                        <span class="status-dot offline"></span>
+                                        <span class="status-text">Loading...</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
                     </div>
+
                 </div>
 
             </div>
@@ -3278,6 +3288,59 @@
 
             </div>
 
+            <!-- Coin Nodes (left) + Smart Port & Miner Management (right) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; align-items: start;">
+                <!-- LEFT: Coin Nodes -->
+                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Coin Nodes</div>
+                        <button onclick="refreshCoinNodes()" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Refresh</button>
+                    </div>
+                    <div id="mgmt-coin-nodes" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                    <div id="coin-node-console" style="display: none; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 0.5rem; max-height: 200px; overflow-y: auto; font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.75rem; color: var(--text-muted, #94a3b8); white-space: pre-wrap; word-break: break-all;">
+                    </div>
+                </div>
+
+                <!-- RIGHT: Smart Port + Device Types stacked -->
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <!-- Smart Port -->
+                    <div id="smartport-panel" style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid rgba(168, 85, 247, 0.2); opacity: 0.4;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--neon-purple, #a855f7);">Smart Port</div>
+                            <div class="health-status" id="smartport-status-badge">
+                                <span class="status-dot offline"></span>
+                                <span class="status-text" style="font-size: 0.75rem;">Inactive</span>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted); font-size: 0.75rem;">Port 16180 — auto coin rotation</span>
+                        </div>
+                        <div id="smartport-active-coin" style="margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 600; font-family: var(--font-mono, 'Share Tech Mono', monospace);">
+                            <span id="smartport-inactive-msg" style="color: var(--text-muted); font-size: 0.8rem;">To enable Multi Coin Smart Port, go to <a href="/settings" style="color: var(--neon-purple, #a855f7); text-decoration: none;">/settings</a> or click the <a href="/settings" style="color: var(--neon-purple, #a855f7); text-decoration: none;">&#9881; gear</a> at the top right.</span>
+                        </div>
+                        <div id="smartport-schedule-bars" style="display: grid; gap: 0.3rem;">
+                            <!-- Filled dynamically -->
+                        </div>
+                        <div style="margin-top: 0.75rem; text-align: right;">
+                            <a href="/settings" style="color: var(--neon-purple, #a855f7); font-size: 0.75rem; text-decoration: none;">Configure &rarr;</a>
+                        </div>
+                    </div>
+
+                    <!-- Device Types (condensed) -->
+                    <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                        <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.5rem;">Device Types</div>
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+                            <div style="width: 160px; height: 160px;">
+                                <canvas id="chart-device-types"></canvas>
+                            </div>
+                            <div id="device-type-legend" style="font-size: 0.75rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Miner Management (full width) -->
             <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03)); margin-bottom: 1rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
@@ -3287,7 +3350,7 @@
                 <div style="color: var(--neon-orange, #fb923c); font-size: 0.65rem; margin-bottom: 0.5rem; padding: 4px 8px; background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.15); border-radius: 4px;">
                     Changing frequency, voltage, or fan settings beyond manufacturer specs may cause hardware damage and void warranty.
                 </div>
-                <div id="mgmt-miners" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                <div id="mgmt-miners" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem; overflow-x: auto;">
                     <div style="color: var(--text-muted);">Loading miners...</div>
                 </div>
             </div>
@@ -3324,17 +3387,6 @@
             </div>
         </div>
 
-        <!-- Device Type Breakdown -->
-        <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03)); margin: 0 0.5rem 1rem;">
-            <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Device Types</div>
-            <div style="display: flex; align-items: center; justify-content: center; gap: 2rem; flex-wrap: wrap; padding: 0.5rem;">
-                <div style="width: 220px; height: 220px;">
-                    <canvas id="chart-device-types"></canvas>
-                </div>
-                <div id="device-type-legend" style="font-size: 0.8rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);"></div>
-            </div>
-        </div>
-
     </div><!-- /tab-management -->
 
     </main>
@@ -3343,7 +3395,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.0.1</span>
+            <span>Spiral Pool Dashboard v2.2.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -3369,6 +3421,7 @@
                 lastMgmtUpdate = 0;
                 lastUpdatesCheck = 0;
                 updateManagementInfo();
+                refreshCoinNodes();
                 loadWorkerGroups();
                 refreshMinerManagement();
                 checkSystemUpdates();
@@ -3568,6 +3621,21 @@
             statsHistoryData[m] = { '15m': [], '1h': [], '6h': [], '12h': [], '24h': [], '7d': [], '30d': [] };
             statsLastUpdate[m] = { '15m': 0, '1h': 0, '6h': 0, '12h': 0, '24h': 0, '7d': 0, '30d': 0 };
         });
+
+        // Per-coin history: {coinSymbol: {metric: {period: [{time, value, timestamp}]}}}
+        // Lazily initialized when per_coin_stats arrive
+        const statsPerCoinHistory = {};
+        const statsPerCoinLastUpdate = {};
+        function ensurePerCoinHistory(sym) {
+            if (!statsPerCoinHistory[sym]) {
+                statsPerCoinHistory[sym] = {};
+                statsPerCoinLastUpdate[sym] = {};
+                Object.keys(statsMetrics).forEach(m => {
+                    statsPerCoinHistory[sym][m] = { '15m': [], '1h': [], '6h': [], '12h': [], '24h': [], '7d': [], '30d': [] };
+                    statsPerCoinLastUpdate[sym][m] = { '15m': 0, '1h': 0, '6h': 0, '12h': 0, '24h': 0, '7d': 0, '30d': 0 };
+                });
+            }
+        }
 
         const statsHistoryConfig = {
             '15m': { maxPoints: 30,  intervalMs: 30 * 1000,          label: '15 Minutes' },
@@ -3837,6 +3905,39 @@
             updateAllStatsCharts();
         }
 
+        // Record per-coin stats history so charts update when a specific coin is selected
+        function updatePerCoinStatsHistory(perCoinData) {
+            const now = Date.now();
+            for (const [sym, s] of Object.entries(perCoinData)) {
+                ensurePerCoinHistory(sym);
+                const coinValues = {
+                    'pool_hashrate': s.hashrate || 0,
+                    'network_hashrate': s.network_hashrate || 0,
+                    'network_difficulty': s.difficulty || 0,
+                    'connected_miners': s.miners || 0,
+                    'blocks_found': s.blocks || 0,
+                    'shares_rate': s.shares || 0
+                };
+                Object.keys(statsHistoryConfig).forEach(period => {
+                    const config = statsHistoryConfig[period];
+                    Object.keys(coinValues).forEach(metric => {
+                        if (now - statsPerCoinLastUpdate[sym][metric][period] >= config.intervalMs) {
+                            const timeLabel = formatStatsTimeLabel(period);
+                            statsPerCoinHistory[sym][metric][period].push({
+                                time: timeLabel,
+                                value: coinValues[metric],
+                                timestamp: now
+                            });
+                            if (statsPerCoinHistory[sym][metric][period].length > config.maxPoints) {
+                                statsPerCoinHistory[sym][metric][period].shift();
+                            }
+                            statsPerCoinLastUpdate[sym][metric][period] = now;
+                        }
+                    });
+                });
+            }
+        }
+
         // Format time label based on period
         function formatStatsTimeLabel(period) {
             const now = new Date();
@@ -3857,7 +3958,15 @@
                 const chart = statsCharts[metricKey];
                 if (!chart) return;
 
-                const data = statsHistoryData[metricKey][currentStatsPeriod] || [];
+                // Use per-coin history when a specific coin is selected
+                let data;
+                if (_selectedStatsCoin && _selectedStatsCoin !== 'all' &&
+                    statsPerCoinHistory[_selectedStatsCoin] &&
+                    statsPerCoinHistory[_selectedStatsCoin][metricKey]) {
+                    data = statsPerCoinHistory[_selectedStatsCoin][metricKey][currentStatsPeriod] || [];
+                } else {
+                    data = statsHistoryData[metricKey][currentStatsPeriod] || [];
+                }
                 chart.data.labels = data.map(h => h.time);
                 chart.data.datasets[0].data = data.map(h => h.value);
                 chart.update('none');
@@ -3867,34 +3976,45 @@
             updateStatsValueDisplays();
         }
 
-        // Update the value text in each chart card header
+        // Update the value text in each chart card header (aggregated totals)
         function updateStatsValueDisplays() {
-            // Pool Hashrate
+            // If a specific coin is selected, applyStatsCoinFilter handles display
+            if (_selectedStatsCoin && _selectedStatsCoin !== 'all' && _lastPerCoinStats[_selectedStatsCoin]) return;
+
+            // Pool Hashrate (aggregated across all coins)
             const poolEl = document.getElementById('chart-val-pool-hashrate');
             if (poolEl && currentHashrateThs !== undefined) {
                 poolEl.textContent = formatHashrate(currentHashrateThs) + ' ' + getHashrateUnit(currentHashrateThs);
             }
-            // Network Hashrate
+            // Network Hashrate — only meaningful for single coin
             const netEl = document.getElementById('chart-val-network-hashrate');
-            if (netEl && _lastNetworkHashrate > 0) {
-                netEl.textContent = formatHashrateValue(_lastNetworkHashrate);
+            if (netEl) {
+                if (Object.keys(_lastPerCoinStats).length >= 2) {
+                    netEl.textContent = 'Select coin ▸';
+                } else if (_lastNetworkHashrate > 0) {
+                    netEl.textContent = formatHashrateValue(_lastNetworkHashrate);
+                }
             }
-            // Difficulty
+            // Difficulty — only meaningful for single coin
             const diffEl = document.getElementById('chart-val-difficulty');
-            if (diffEl && currentNetworkDifficulty > 0) {
-                diffEl.textContent = formatDifficultyValue(currentNetworkDifficulty);
+            if (diffEl) {
+                if (Object.keys(_lastPerCoinStats).length >= 2) {
+                    diffEl.textContent = 'Select coin ▸';
+                } else if (currentNetworkDifficulty > 0) {
+                    diffEl.textContent = formatDifficultyValue(currentNetworkDifficulty);
+                }
             }
-            // Workers & Miners
+            // Workers & Miners (aggregated)
             const workEl = document.getElementById('chart-val-workers');
             if (workEl) {
                 const poolW = _lastConnectedMiners || 0;
                 const farmM = _lastTotalMiners || 0;
                 workEl.textContent = poolW + ' w' + (farmM > 0 ? ' \u00B7 ' + farmM + ' m' : '');
             }
-            // Blocks Found
+            // Blocks Found (aggregated)
             const blocksEl = document.getElementById('chart-val-blocks-found');
             if (blocksEl) blocksEl.textContent = _lastBlocksFound || 0;
-            // Shares Rate
+            // Shares Rate (aggregated)
             const sharesEl = document.getElementById('chart-val-shares-rate');
             if (sharesEl) sharesEl.textContent = _lastSharesRate > 0 ? _lastSharesRate.toFixed(2) + '/s' : '--';
         }
@@ -3905,6 +4025,81 @@
         let _lastTotalMiners = 0;
         let _lastBlocksFound = 0;
         let _lastSharesRate = 0;
+        let _selectedStatsCoin = 'all';
+        let _lastPerCoinStats = {};  // cached per-coin data from API
+
+        function changeStatsCoin(value) {
+            _selectedStatsCoin = value;
+            // Re-render charts with per-coin or aggregated history
+            updateAllStatsCharts();
+            // Re-render value displays with the selected coin's stats
+            applyStatsCoinFilter();
+        }
+
+        function applyStatsCoinFilter() {
+            const pcs = _lastPerCoinStats;
+            const coins = Object.keys(pcs);
+            if (_selectedStatsCoin === 'all' || !pcs[_selectedStatsCoin]) {
+                // Aggregated: show totals for pool stats, N/A for network stats
+                updateStatsValueDisplays();
+                // Network hashrate/difficulty are meaningless when aggregated
+                if (coins.length >= 2) {
+                    const netEl = document.getElementById('chart-val-network-hashrate');
+                    const diffEl = document.getElementById('chart-val-difficulty');
+                    if (netEl) netEl.textContent = 'Select coin ▸';
+                    if (diffEl) diffEl.textContent = 'Select coin ▸';
+                }
+            } else {
+                // Single coin selected — show its specific stats
+                const s = pcs[_selectedStatsCoin];
+                const poolEl = document.getElementById('chart-val-pool-hashrate');
+                if (poolEl) {
+                    const ths = (s.hashrate || 0) / 1e12;
+                    poolEl.textContent = formatHashrate(ths) + ' ' + getHashrateUnit(ths);
+                }
+                const netEl = document.getElementById('chart-val-network-hashrate');
+                if (netEl) {
+                    // Use actual network hashrate from stratum API (already computed with correct block time)
+                    const netHps = s.network_hashrate || 0;
+                    netEl.textContent = netHps > 0 ? formatHashrateValue(netHps) : '--';
+                }
+                const diffEl = document.getElementById('chart-val-difficulty');
+                if (diffEl) {
+                    diffEl.textContent = s.difficulty ? formatDifficultyValue(s.difficulty) : '--';
+                }
+                const workEl = document.getElementById('chart-val-workers');
+                if (workEl) workEl.textContent = (s.miners || 0) + ' w';
+                const blocksEl = document.getElementById('chart-val-blocks-found');
+                if (blocksEl) blocksEl.textContent = s.blocks || 0;
+                const sharesEl = document.getElementById('chart-val-shares-rate');
+                if (sharesEl) sharesEl.textContent = (s.shares || 0) > 0 ? (s.shares).toFixed(2) + '/s' : '--';
+            }
+        }
+
+        function updateStatsCoinSelector(perCoinData) {
+            const sel = document.getElementById('stats-coin-selector');
+            if (!sel) return;
+            const coins = Object.keys(perCoinData || {});
+            if (coins.length < 2) {
+                sel.style.display = 'none';
+                return;
+            }
+            sel.style.display = '';
+            // Rebuild options if coins changed
+            const existing = Array.from(sel.options).map(o => o.value).filter(v => v !== 'all');
+            if (JSON.stringify(existing) !== JSON.stringify(coins)) {
+                const prev = sel.value;
+                sel.innerHTML = '<option value="all">All Coins</option>';
+                coins.forEach(sym => {
+                    const opt = document.createElement('option');
+                    opt.value = sym;
+                    opt.textContent = sym;
+                    sel.appendChild(opt);
+                });
+                if (prev && coins.includes(prev)) sel.value = prev;
+            }
+        }
+
 
         // Change stats period (shared for all 4 charts)
         function changeStatsPeriod(period) {
@@ -4198,6 +4393,343 @@
             }
         }
 
+        // =====================================================================
+        // Coin Node Management
+        // =====================================================================
+        let _coinNodeSyncTimers = {};
+
+        let _coinNodeRefreshTimer = null;
+
+        async function refreshCoinNodes() {
+            const container = document.getElementById('mgmt-coin-nodes');
+            if (!container) return;
+            try {
+                const resp = await fetch('/api/nodes');
+                if (!resp.ok) { container.innerHTML = '<div style="color:var(--neon-red)">Failed to load</div>'; return; }
+                const data = await resp.json();
+                if (!data.success || !data.nodes) return;
+
+                const nodes = data.nodes;
+                const symbols = Object.keys(nodes).sort();
+                const installedCount = symbols.filter(s => nodes[s].enabled).length;
+                let hasSyncing = false;
+
+                let html = '<div style="display: grid; gap: 4px;">';
+                symbols.forEach(rawSym => {
+                    // Sanitize symbol to prevent XSS via API-sourced data
+                    const sym = rawSym.replace(/[^A-Za-z0-9\-]/g, '');
+                    const n = nodes[rawSym];
+                    const installed = n.enabled;
+                    const online = n.status === 'online';
+                    const syncing = installed && online && (n.sync_progress || 0) < 99.99;
+                    if (syncing) hasSyncing = true;
+
+                    // Status indicator
+                    let statusHtml;
+                    if (!installed) {
+                        statusHtml = '<span style="color:var(--text-muted);font-size:0.75rem;">not installed</span>';
+                    } else if (!online) {
+                        statusHtml = '<span style="color:var(--neon-red,#f87171);font-size:0.75rem;">&#x25CF; offline</span>';
+                    } else if (syncing) {
+                        const pct = (n.sync_progress||0).toFixed(1);
+                        const blk = formatNumber(n.blocks||0);
+                        const hdr = formatNumber(n.headers||0);
+                        statusHtml = `<span style="color:var(--neon-orange,#fb923c);font-size:0.75rem;">&#x25CF; syncing ${pct}% (${blk}/${hdr})</span>`;
+                    } else {
+                        statusHtml = `<span style="color:var(--neon-green,#4ade80);font-size:0.75rem;">&#x25CF; synced (${formatNumber(n.blocks||0)})</span>`;
+                    }
+
+                    // Action buttons
+                    let btnHtml;
+                    if (installed) {
+                        // Stop / Start buttons
+                        const stopBtn = online
+                            ? `<button onclick="coinNodeAction('${sym}','stop')" style="background:rgba(251,146,60,0.15);border:1px solid rgba(251,146,60,0.3);color:var(--neon-orange,#fb923c);padding:1px 6px;border-radius:3px;font-size:0.7rem;font-family:inherit;cursor:pointer;" title="Stop ${sym} daemon">Stop</button>`
+                            : `<button onclick="coinNodeAction('${sym}','start')" style="background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.3);color:var(--neon-green,#4ade80);padding:1px 6px;border-radius:3px;font-size:0.7rem;font-family:inherit;cursor:pointer;" title="Start ${sym} daemon">Start</button>`;
+                        // Remove button
+                        const disabled = installedCount <= 1;
+                        const opacity = disabled ? 'opacity:0.4;cursor:not-allowed;' : 'cursor:pointer;';
+                        const onclick = disabled ? '' : `onclick="removeCoinNode('${sym}')"`;
+                        const removeBtn = `<button ${onclick} style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);color:#ff4444;padding:1px 6px;border-radius:3px;font-size:0.7rem;font-family:inherit;${opacity}"${disabled ? ' disabled title="Cannot remove last coin"' : ''}>Remove</button>`;
+                        btnHtml = `<span style="display:flex;gap:4px;">${stopBtn}${removeBtn}</span>`;
+                    } else {
+                        btnHtml = `<button onclick="showInstallOptions('${sym}')" style="background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.3);color:var(--neon-cyan);padding:1px 6px;border-radius:3px;font-size:0.7rem;font-family:inherit;cursor:pointer;">Install</button>`;
+                    }
+
+                    // Stratum port info (only for installed coins)
+                    const ports = n.stratum_ports || {};
+                    const portHtml = installed && ports.v1 ? `<span style="color:var(--text-muted);font-size:0.7rem;margin:0 6px;">:${ports.v1}</span>` : '';
+
+                    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:rgba(255,255,255,0.02);border-radius:4px;">` +
+                        `<span style="color:var(--text-primary);min-width:40px;font-weight:600;">${sym}</span>` +
+                        `<span style="color:var(--text-secondary);flex:1;margin:0 8px;font-size:0.8rem;">${escapeHtml(n.name || sym)}</span>` +
+                        `${portHtml}` +
+                        `${statusHtml}` +
+                        `<span style="margin-left:8px;">${btnHtml}</span>` +
+                        `</div>`;
+                });
+                html += '</div>';
+                container.innerHTML = html;
+
+                // Auto-refresh every 15s while any coin is syncing or being watched
+                if (hasSyncing || Object.keys(_coinNodeSyncTimers).length > 0) {
+                    if (!_coinNodeRefreshTimer) {
+                        _coinNodeRefreshTimer = setInterval(() => refreshCoinNodes(), 15000);
+                    }
+                } else if (_coinNodeRefreshTimer) {
+                    clearInterval(_coinNodeRefreshTimer);
+                    _coinNodeRefreshTimer = null;
+                }
+            } catch (e) {
+                container.innerHTML = '<div style="color:var(--neon-red)">Error loading nodes</div>';
+            }
+        }
+
+        async function coinNodeAction(sym, action) {
+            const label = action === 'stop' ? 'Stopping' : 'Starting';
+            coinNodeLog(`${label} ${sym} daemon...`, 'var(--neon-orange,#fb923c)');
+            try {
+                const resp = await fetch(`/api/nodes/${encodeURIComponent(sym)}/${action}`, {method: 'POST'});
+                const data = await resp.json();
+                if (data.success) {
+                    coinNodeLog(`${sym} ${action === 'stop' ? 'stopped' : 'started'} successfully`, 'var(--neon-green,#4ade80)');
+                } else {
+                    coinNodeLog(`Failed to ${action} ${sym}: ${data.error || 'unknown error'}`, 'var(--neon-red,#f87171)');
+                }
+            } catch (e) {
+                coinNodeLog(`Error: ${e.message}`, 'var(--neon-red,#f87171)');
+            }
+            refreshCoinNodes();
+        }
+
+        function coinNodeLog(msg, color) {
+            const el = document.getElementById('coin-node-console');
+            if (!el) return;
+            el.style.display = 'block';
+            const ts = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.style.color = color || 'var(--text-muted)';
+            line.textContent = `[${ts}] ${msg}`;
+            el.appendChild(line);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function showInstallOptions(sym) {
+            // Create a modal overlay for install options
+            const overlay = document.createElement('div');
+            overlay.id = 'coin-install-modal';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = `
+                <div style="background:var(--bg-card,#1a1a2e);border:1px solid var(--border-primary,rgba(255,255,255,0.1));border-radius:8px;padding:1.5rem;max-width:420px;width:90%;font-family:var(--font-mono,'Share Tech Mono',monospace);">
+                    <div style="font-size:1rem;font-weight:600;color:var(--text-primary,#e2e8f0);margin-bottom:1rem;">Install ${sym} Node</div>
+                    <div style="color:var(--text-secondary,#94a3b8);font-size:0.8rem;margin-bottom:1.25rem;">
+                        A wallet address is needed to receive mining payouts. You can enter one now or generate one from the node after it starts.
+                    </div>
+
+                    <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                        <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:0.75rem;">
+                            <div style="font-size:0.75rem;color:var(--neon-cyan,#00d4ff);font-weight:600;margin-bottom:0.5rem;">I have a wallet address</div>
+                            <input type="text" id="coin-install-wallet" placeholder="Enter your ${sym} wallet address..."
+                                style="width:100%;box-sizing:border-box;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:var(--text-primary,#e2e8f0);padding:6px 8px;border-radius:4px;font-size:0.8rem;font-family:inherit;margin-bottom:0.5rem;">
+                            <button onclick="doInstallWithWallet('${sym}')" style="background:rgba(0,212,255,0.2);border:1px solid rgba(0,212,255,0.4);color:var(--neon-cyan,#00d4ff);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.75rem;font-family:inherit;width:100%;">Install with this wallet</button>
+                        </div>
+
+                        <div style="text-align:center;color:var(--text-muted,#6b7280);font-size:0.7rem;">- or -</div>
+
+                        <div style="background:rgba(74,222,128,0.05);border:1px solid rgba(74,222,128,0.2);border-radius:6px;padding:0.75rem;">
+                            <div style="font-size:0.75rem;color:var(--neon-green,#4ade80);font-weight:600;margin-bottom:0.25rem;">Generate a wallet from the node</div>
+                            <div style="font-size:0.7rem;color:var(--text-muted,#6b7280);margin-bottom:0.5rem;">Installs the node first, then generates a wallet address once it starts. You MUST back up the wallet.dat file.</div>
+                            <button onclick="doInstallAndGenerate('${sym}')" style="background:rgba(74,222,128,0.2);border:1px solid rgba(74,222,128,0.4);color:var(--neon-green,#4ade80);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.75rem;font-family:inherit;width:100%;">Install and generate wallet</button>
+                        </div>
+                    </div>
+
+                    <button onclick="document.getElementById('coin-install-modal').remove()" style="margin-top:1rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-muted,#6b7280);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.75rem;font-family:inherit;width:100%;">Cancel</button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        }
+
+        function pollInstallStatus(sym, generateWallet) {
+            const poller = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/nodes/${sym}/install-status`);
+                    const data = await resp.json();
+                    if (data.status === 'done') {
+                        clearInterval(poller);
+                        coinNodeLog(data.message, 'var(--neon-green)');
+                        refreshCoinNodes();
+                        startSyncWatch(sym);
+                        if (generateWallet) {
+                            coinNodeLog(`${sym}: Waiting for node to start before generating wallet...`, 'var(--neon-cyan)');
+                            pollWalletGeneration(sym);
+                        }
+                    } else if (data.status === 'error') {
+                        clearInterval(poller);
+                        coinNodeLog(data.message, 'var(--neon-red)');
+                    } else {
+                        // still installing/removing — update the log with elapsed time
+                        const elapsed = data.started ? Math.round((Date.now()/1000) - data.started) : 0;
+                        coinNodeLog(`${sym}: ${data.message} (${elapsed}s)`, 'var(--text-muted)');
+                    }
+                } catch (e) {
+                    // Dashboard might be restarting — keep polling
+                }
+            }, 3000);
+        }
+
+        function pollWalletGeneration(sym) {
+            let attempts = 0;
+            // No timeout — polls until success or permanent failure.
+            // BTC block index loading can take hours/days on slow hardware.
+            // Stops only on: success, permanent error (retryable=false), or page navigation.
+            const walletPoller = setInterval(async () => {
+                attempts++;
+                try {
+                    const wResp = await fetch(`/api/nodes/${sym}/generate-wallet`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'}
+                    });
+                    const wData = await wResp.json();
+                    if (wData.success && wData.address) {
+                        clearInterval(walletPoller);
+                        coinNodeLog(`${sym} WALLET GENERATED: ${wData.address}`, 'var(--neon-green)');
+                        coinNodeLog(`IMPORTANT: Back up /spiralpool/${sym.toLowerCase()}/wallet.dat — losing it means losing access to this address!`, 'var(--neon-orange)');
+                        alert(`${sym} Wallet Generated!\n\nAddress: ${wData.address}\n\nIMPORTANT: Back up the wallet.dat file on your server.\nLosing it means losing access to your mining payouts.`);
+                        refreshCoinNodes();
+                    } else if (wData.retryable === false) {
+                        // Permanent failure — node is up but wallet generation failed
+                        clearInterval(walletPoller);
+                        coinNodeLog(`${sym}: ${wData.error || 'Wallet generation failed permanently'}`, 'var(--neon-red)');
+                    } else {
+                        // Retryable — node still loading block index
+                        const mins = Math.floor(attempts * 5 / 60);
+                        const timeStr = mins > 0 ? `${mins}m` : `${attempts * 5}s`;
+                        coinNodeLog(`${sym}: node loading block index (${timeStr} elapsed)...`, 'var(--text-muted)');
+                    }
+                } catch (e) {
+                    coinNodeLog(`${sym}: waiting for node... (attempt ${attempts})`, 'var(--text-muted)');
+                }
+            }, 5000);
+        }
+
+        async function doInstallWithWallet(sym) {
+            const input = document.getElementById('coin-install-wallet');
+            const wallet = (input ? input.value : '').trim();
+            if (!wallet) { alert(`Please enter a ${sym} wallet address.`); return; }
+            const modal = document.getElementById('coin-install-modal');
+            if (modal) modal.remove();
+
+            coinNodeLog(`Installing ${sym} node with wallet ${wallet.substring(0,8)}...`, 'var(--neon-cyan)');
+            try {
+                const resp = await fetch(`/api/nodes/${sym}/install`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({wallet: wallet})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    pollInstallStatus(sym, false);
+                } else {
+                    coinNodeLog(`Install failed: ${data.error}`, 'var(--neon-red)');
+                }
+            } catch (e) {
+                coinNodeLog(`Install error: ${e.message}`, 'var(--neon-red)');
+            }
+        }
+
+        async function doInstallAndGenerate(sym) {
+            const modal = document.getElementById('coin-install-modal');
+            if (modal) modal.remove();
+
+            coinNodeLog(`Installing ${sym} node (wallet will be generated after startup)...`, 'var(--neon-cyan)');
+            try {
+                const resp = await fetch(`/api/nodes/${sym}/install`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    pollInstallStatus(sym, true);
+                } else {
+                    coinNodeLog(`Install failed: ${data.error}`, 'var(--neon-red)');
+                }
+            } catch (e) {
+                coinNodeLog(`Install error: ${e.message}`, 'var(--neon-red)');
+            }
+        }
+
+        async function removeCoinNode(sym) {
+            if (!confirm(`Remove ${sym} node?\n\nThis will:\n- Stop the ${sym} service\n- Remove ${sym} from pool config\n- NOT delete blockchain data (can reinstall later)\n- NOT affect other running coins`)) return;
+
+            coinNodeLog(`Removing ${sym} node...`, 'var(--neon-orange)');
+            try {
+                const resp = await fetch(`/api/nodes/${sym}/remove`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    // Async — poll for completion
+                    const poller = setInterval(async () => {
+                        try {
+                            const sResp = await fetch(`/api/nodes/${sym}/install-status`);
+                            const sData = await sResp.json();
+                            if (sData.status === 'done') {
+                                clearInterval(poller);
+                                coinNodeLog(sData.message, 'var(--neon-green)');
+                                stopSyncWatch(sym);
+                                refreshCoinNodes();
+                            } else if (sData.status === 'error') {
+                                clearInterval(poller);
+                                coinNodeLog(sData.message, 'var(--neon-red)');
+                            }
+                        } catch (e) { /* dashboard may be restarting */ }
+                    }, 2000);
+                } else {
+                    coinNodeLog(`Remove failed: ${data.error}`, 'var(--neon-red)');
+                }
+            } catch (e) {
+                coinNodeLog(`Remove error: ${e.message}`, 'var(--neon-red)');
+            }
+        }
+
+        function startSyncWatch(sym) {
+            stopSyncWatch(sym);
+            _coinNodeSyncTimers[sym] = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/nodes/${sym}/sync`);
+                    const data = await resp.json();
+                    if (!data.success) {
+                        coinNodeLog(`${sym}: waiting for node to start...`, 'var(--text-muted)');
+                        return;
+                    }
+                    const s = data.sync;
+                    if (s.is_synced) {
+                        coinNodeLog(`${sym}: fully synced at block ${formatNumber(s.blocks)}`, 'var(--neon-green)');
+                        stopSyncWatch(sym);
+                        refreshCoinNodes();
+                    } else if (s.progress_percent != null) {
+                        const pct = s.progress_percent.toFixed(2);
+                        const remaining = formatNumber(s.blocks_remaining || 0);
+                        coinNodeLog(`${sym}: syncing ${pct}% — block ${formatNumber(s.blocks || 0)}/${formatNumber(s.headers || 0)} (${remaining} remaining, ${s.size_on_disk_gb || '?'} GB on disk)`);
+                    }
+                } catch (e) { /* silently retry */ }
+            }, 10000);
+            // Also start auto-refresh on the card
+            if (!_coinNodeRefreshTimer) {
+                _coinNodeRefreshTimer = setInterval(() => refreshCoinNodes(), 15000);
+            }
+        }
+
+        function stopSyncWatch(sym) {
+            if (_coinNodeSyncTimers[sym]) {
+                clearInterval(_coinNodeSyncTimers[sym]);
+                delete _coinNodeSyncTimers[sym];
+            }
+        }
+
         let logRawLines = [];  // Store raw log lines for filtering
         let logPaused = false;
 
@@ -4434,7 +4966,7 @@
                     if (result.output) el.innerHTML += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;">${escapeHtml(result.output)}</div>`;
                 }
             } catch (e) {
-                if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Upgrade failed: ${e.message}</div>`;
+                if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Upgrade failed: ${escapeHtml(e.message)}</div>`;
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
             }
@@ -4876,13 +5408,15 @@
         let lastBlockHeight = null;
 
         // Block Found Celebration
-        function triggerBlockCelebration(newBlocks = 1, blockFinder = null, blockHeight = null) {
+        function triggerBlockCelebration(newBlocks = 1, blockFinder = null, blockHeight = null, blockCoin = null) {
             // Update celebration display with live reward info
             const rewardEl = document.getElementById('celebration-reward');
-            const precision = getCoinPrecision(currentCoin);
+            // Use the block's actual coin, not the global currentCoin (which may be wrong in multi-coin mode)
+            const celebCoin = blockCoin || currentCoin;
+            const precision = getCoinPrecision(celebCoin);
             const rewardCoin = (currentBlockReward * newBlocks).toFixed(precision);
             // SECURITY: Escape coin symbol for HTML context
-            const safeCoin = escapeHtml(currentCoin);
+            const safeCoin = escapeHtml(celebCoin);
             const cur = currencyConfig.primary;
             const curPrice = currentCoinPrices[cur.code] || currentCoinPriceUsd || 0;
 
@@ -4890,7 +5424,7 @@
                 const rewardFiat = (currentBlockReward * newBlocks * curPrice).toFixed(cur.decimals);
                 rewardEl.innerHTML = `${rewardCoin} ${safeCoin}<br><span style="font-size: 1.5rem; color: var(--neon-cyan);">\u2248 ${cur.symbol}${rewardFiat} ${cur.name}</span>`;
             } else {
-                rewardEl.textContent = `${rewardCoin} ${currentCoin}`;
+                rewardEl.textContent = `${rewardCoin} ${celebCoin}`;
             }
 
             // Update miner info in celebration
@@ -5044,14 +5578,14 @@
         }
 
         // Check for new blocks
-        function checkForNewBlocks(currentBlockCount, blockFinder = null, blockHeight = null, quietHours = false) {
+        function checkForNewBlocks(currentBlockCount, blockFinder = null, blockHeight = null, quietHours = false, blockCoin = null) {
             if (lastKnownBlockCount !== null && currentBlockCount > lastKnownBlockCount) {
                 const newBlocks = currentBlockCount - lastKnownBlockCount;
-                console.log(`New block(s) detected! ${lastKnownBlockCount} -> ${currentBlockCount}`, blockFinder ? `by ${blockFinder}` : '');
+                console.log(`New block(s) detected! ${lastKnownBlockCount} -> ${currentBlockCount}`, blockFinder ? `by ${blockFinder}` : '', blockCoin ? `(${blockCoin})` : '');
                 if (quietHours) {
                     console.log('Block celebration suppressed — quiet hours active');
                 } else {
-                    triggerBlockCelebration(newBlocks, blockFinder, blockHeight);
+                    triggerBlockCelebration(newBlocks, blockFinder, blockHeight, blockCoin);
                 }
             }
             lastKnownBlockCount = currentBlockCount;
@@ -5236,6 +5770,55 @@
             } finally {
                 btn.classList.remove('restarting');
                 btn.disabled = false;
+            }
+        }
+
+        // Stop blockchain node service
+        async function stopNode(symbol, nodeName) {
+            if (!symbol) { symbol = currentNodeSymbol; }
+            if (!nodeName) { nodeName = 'Blockchain Node'; }
+            if (!confirm(`Stop ${nodeName}? The node daemon will be shut down.`)) return;
+
+            const btn = document.getElementById('node-stop-btn-' + symbol);
+            if (btn) { btn.disabled = true; }
+
+            try {
+                const response = await fetch(`/api/nodes/${symbol}/stop`, {method: 'POST'});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                if (result.success) {
+                    alert(`${nodeName} stopped.`);
+                } else {
+                    alert(`Failed to stop ${nodeName}: ${result.error || 'Unknown error'}`);
+                }
+            } catch (e) {
+                alert(`Error stopping ${nodeName}: ${e.message}`);
+            } finally {
+                if (btn) { btn.disabled = false; }
+            }
+        }
+
+        // Start blockchain node service
+        async function startNode(symbol, nodeName) {
+            if (!symbol) { symbol = currentNodeSymbol; }
+            if (!nodeName) { nodeName = 'Blockchain Node'; }
+
+            const btn = document.getElementById('node-start-btn-' + symbol);
+            if (btn) { btn.disabled = true; }
+
+            try {
+                const response = await fetch(`/api/nodes/${symbol}/start`, {method: 'POST'});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                if (result.success) {
+                    alert(`${nodeName} started.`);
+                } else {
+                    alert(`Failed to start ${nodeName}: ${result.error || 'Unknown error'}`);
+                }
+            } catch (e) {
+                alert(`Error starting ${nodeName}: ${e.message}`);
+            } finally {
+                if (btn) { btn.disabled = false; }
             }
         }
 
@@ -6912,6 +7495,16 @@
             updateStatsHistory(poolHashrateHps, networkHashrateHps, networkDiff, poolMinersConnected, blocksFound, sharesRate);
             updateStatsValueDisplays();
 
+            // Per-coin stats breakdown (multi-coin mode)
+            if (data.per_coin_stats) {
+                _lastPerCoinStats = data.per_coin_stats;
+                updateStatsCoinSelector(data.per_coin_stats);
+                // Record per-coin history for chart switching
+                updatePerCoinStatsHistory(data.per_coin_stats);
+            }
+            // Always re-apply coin filter so selected coin stays current
+            applyStatsCoinFilter();
+
             // Power stats (optional elements - may not exist in all layouts)
             const powerEl = document.getElementById('total-power');
             if (powerEl) powerEl.textContent = (totals.power_watts || 0).toFixed(2);
@@ -6966,12 +7559,13 @@
             // stale celebrations after page reload, service restart, or session clear
             const blockFinder = data.last_block_finder || null;
             const blockHeight = data.last_block_height || null;
+            const blockCoin = data.last_block_coin || null;
             const celebrationQuiet = data.celebration_quiet_hours || false;
             const blockTime = data.last_block_time ? new Date(data.last_block_time).getTime() : 0;
             const blockAgeMs = blockTime > 0 ? (Date.now() - blockTime) : Infinity;
             const isRecentBlock = blockAgeMs < 5 * 60 * 1000; // 5 minutes
             if (isRecentBlock) {
-                checkForNewBlocks(currentBlocks, blockFinder, blockHeight, celebrationQuiet);
+                checkForNewBlocks(currentBlocks, blockFinder, blockHeight, celebrationQuiet, blockCoin);
             } else {
                 // Still update the block count tracker without firing celebration
                 lastKnownBlockCount = currentBlocks;
@@ -7128,10 +7722,11 @@
                 document.getElementById('connection-status').style.color = 'var(--neon-red)';
             }
 
-            // Also fetch health data, ETB, and leaderboard
+            // Also fetch health data, ETB, leaderboard, and smart port status
             fetchHealthData();
             fetchETBData();
             fetchLeaderboard();
+            fetchSmartPortStatus();
         }
 
         // Fetch and update Estimated Time to Block
@@ -7283,7 +7878,7 @@
                     }
                 }
 
-                document.getElementById('pool-uptime').textContent = formatUptimeHealth(pool.uptime);
+                document.getElementById('health-pool-uptime').textContent = formatUptimeHealth(pool.uptime);
                 document.getElementById('pool-connections').textContent = pool.connections || 0;
                 document.getElementById('pool-hashrate').textContent = formatHealthHashrate(pool.hashrate);
                 document.getElementById('pool-shares-sec').textContent = (pool.shares_per_sec || 0).toFixed(2);
@@ -7362,6 +7957,8 @@
                                         <span class="status-text">${statusText}</span>
                                         ${n.pruned ? '<span class="pruned-badge">Pruned</span>' : ''}
                                     </div>
+                                    <button class="restart-btn" id="node-stop-btn-${escapeHtml(symbol)}" onclick="stopNode('${symbol.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}', '${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Stop ${escapeHtml(name)}" style="font-size:0.7rem;">⏹</button>
+                                    <button class="restart-btn" id="node-start-btn-${escapeHtml(symbol)}" onclick="startNode('${symbol.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}', '${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Start ${escapeHtml(name)}" style="font-size:0.7rem;">▶</button>
                                     <button class="restart-btn" id="node-restart-btn-${escapeHtml(symbol)}" onclick="restartNode('${symbol.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}', '${name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Restart ${escapeHtml(name)}">🔄</button>
                                 </div>
                             </div>
@@ -7427,6 +8024,8 @@
                                     <span class="status-text">${statusText}</span>
                                     ${node.pruned ? '<span class="pruned-badge">Pruned</span>' : ''}
                                 </div>
+                                <button class="restart-btn" onclick="stopNode()" title="Stop Node" style="font-size:0.7rem;">⏹</button>
+                                <button class="restart-btn" onclick="startNode()" title="Start Node" style="font-size:0.7rem;">▶</button>
                                 <button class="restart-btn" onclick="restartNode()" title="Restart Node">🔄</button>
                             </div>
                         </div>
@@ -7448,6 +8047,94 @@
             } catch (e) {
                 console.error('Failed to fetch health data:', e);
             }
+        }
+
+        // Smart Port panel — fetch schedule from /api/multiport and render
+        async function fetchSmartPortStatus() {
+            const panel = document.getElementById('smartport-panel');
+            if (!panel) return;
+            const inactiveMsg = document.getElementById('smartport-inactive-msg');
+            try {
+                const resp = await fetch('/api/multiport');
+                if (!resp.ok) {
+                    // API not available — show greyed-out inactive state
+                    panel.style.opacity = '0.4';
+                    if (inactiveMsg) inactiveMsg.style.display = '';
+                    return;
+                }
+                const data = await resp.json();
+                if (!data.enabled) {
+                    // Disabled — greyed out with inactive message
+                    panel.style.opacity = '0.4';
+                    const badge = document.getElementById('smartport-status-badge');
+                    if (badge) badge.innerHTML = `<span class="status-dot offline"></span><span class="status-text">Inactive</span>`;
+                    if (inactiveMsg) inactiveMsg.style.display = '';
+                    const barsEl = document.getElementById('smartport-schedule-bars');
+                    if (barsEl) barsEl.innerHTML = '';
+                    return;
+                }
+
+                // Enabled — full opacity, hide inactive message
+                panel.style.opacity = '1';
+                if (inactiveMsg) inactiveMsg.style.display = 'none';
+
+                // Status badge
+                const badge = document.getElementById('smartport-status-badge');
+                if (badge) {
+                    const live = data.live || {};
+                    const isLive = !!live.active_coin;
+                    badge.innerHTML = `<span class="status-dot ${isLive ? 'online' : 'syncing'}"></span><span class="status-text">${isLive ? 'Active' : 'Waiting'}</span>`;
+                }
+
+                // Active coin from live stats
+                const activeEl = document.getElementById('smartport-active-coin');
+                if (activeEl) {
+                    const live = data.live || {};
+                    const activeCoin = live.active_coin || '--';
+                    const nextSwitch = live.next_switch || '';
+                    const timeLeft = live.time_remaining || '';
+                    let extra = '';
+                    if (nextSwitch) extra += ` <span style="color:var(--text-muted);font-size:0.75rem;">next: ${escapeHtml(nextSwitch)}</span>`;
+                    if (timeLeft) extra += ` <span style="color:var(--text-muted);font-size:0.75rem;">(${escapeHtml(timeLeft)})</span>`;
+                    activeEl.innerHTML = `Mining: <span style="color:var(--neon-cyan,#00d4ff);">${escapeHtml(activeCoin)}</span>${extra}`;
+                }
+
+                // Schedule bars from schedule array [{symbol, weight, start_h, end_h}]
+                const barsEl = document.getElementById('smartport-schedule-bars');
+                if (barsEl && data.schedule) {
+                    const colors = {'QBX': '#a855f7', 'BTC': '#f7931a', 'BCH': '#4caf50', 'BC2': '#2196f3',
+                                    'FBTC': '#ff5722', 'DGB': '#006ad2', 'LTC': '#bfbbbb', 'DOGE': '#c3a634',
+                                    'PEP': '#3cb043', 'CAT': '#e91e63', 'NMC': '#186ab4', 'SYS': '#0084c7',
+                                    'XMY': '#e24f00'};
+                    let html = '';
+                    for (const entry of data.schedule) {
+                        const coin = entry.symbol || '??';
+                        let rawH = (entry.end_h || 0) - (entry.start_h || 0);
+                        if (rawH < 0) rawH += 24;  // wraps midnight
+                        const hours = rawH.toFixed(1);
+                        const pct = (parseFloat(hours) / 24 * 100).toFixed(1);
+                        const clr = colors[coin] || '#888';
+                        const timeRange = `${formatHour(entry.start_h)}–${formatHour(entry.end_h)}`;
+                        html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                            <span style="width:3rem;text-align:right;font-weight:600;color:${clr};">${escapeHtml(coin)}</span>
+                            <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                <div style="width:${pct}%;height:100%;background:${clr};border-radius:4px;transition:width 0.3s;"></div>
+                            </div>
+                            <span style="width:5rem;color:var(--text-muted);font-size:0.7rem;">${timeRange} (${hours}h)</span>
+                        </div>`;
+                    }
+                    barsEl.innerHTML = html;
+                }
+            } catch (e) {
+                // Error — show greyed-out inactive state
+                panel.style.opacity = '0.4';
+                if (inactiveMsg) inactiveMsg.style.display = '';
+            }
+        }
+        function formatHour(h) {
+            const hh = Math.floor(h);
+            const mm = Math.round((h - hh) * 60);
+            return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
         }
 
         // Force refresh
@@ -8237,7 +8924,7 @@
                 name: name,
                 id: id,
                 author: 'Custom',
-                version: '2.0.1',
+                version: '2.2.0',
                 description: 'User-created custom theme',
                 category: 'Custom',
                 colors: colors,

@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.1.0-PHI_HASH_REACTOR"
+__version__ = "2.2.0-PHI_HASH_REACTOR"
 
 import os
 import json
@@ -459,6 +459,8 @@ _pool_stats_lock = threading.Lock()
 _lifetime_stats_lock = threading.Lock()
 _share_heatmap_lock = threading.Lock()
 _node_operation_lock = threading.Lock()  # Serialize install/remove to prevent concurrent pool-mode.sh
+_config_file_lock = threading.RLock()   # Serialize all read-modify-write cycles on POOL_CONFIG_PATH (reentrant for nested calls)
+_node_operation_status = {}  # Track async install/remove status: {SYMBOL: {status, message, ...}}
 
 # HTTP Session with connection pooling for better performance
 # Reuses TCP connections instead of creating new ones for each request
@@ -1305,7 +1307,9 @@ pool_stats_cache = {
     "last_block_time": None,
     "last_block_finder": None,  # Miner that found the last block
     "last_block_height": None,
-    "status": "unknown"
+    "last_block_coin": None,  # Coin symbol of the most recent block
+    "status": "unknown",
+    "per_coin": {}  # Per-coin stats: {symbol: {hashrate, miners, shares, blocks, difficulty, block_height}}
 }
 
 # ============================================
@@ -1676,36 +1680,117 @@ def fetch_pool_stats():
                 pool_stats_cache["last_update"] = time.time()
             return pool_stats_cache
 
-        # Fetch blocks info (network I/O outside lock)
-        blocks_data = None
-        try:
-            blocks_response = requests.get(
-                f"{POOL_API_URL}/api/pools/{get_pool_id()}/blocks",
-                timeout=5
-            )
-            if blocks_response.status_code == 200:
-                blocks_data = blocks_response.json()
-        except (requests.exceptions.RequestException, ValueError, KeyError):
-            pass
+        # Fetch blocks from ALL pools (multi-coin support)
+        all_blocks = []
+        pools = data.get("pools", [])
+
+        # Pre-build pool_id → coin symbol map so we can tag blocks
+        _pool_coin_map_pre = {}
+        for p in pools:
+            pid = p.get("id", "")
+            if not pid:
+                continue
+            coin_info = p.get("coin", {})
+            coin_type = coin_info.get("type", "") if isinstance(coin_info, dict) else ""
+            if coin_type:
+                _pool_coin_map_pre[pid] = coin_type
+
+        for p in pools:
+            pid = p.get("id", "")
+            if not pid:
+                continue
+            try:
+                blocks_response = requests.get(
+                    f"{POOL_API_URL}/api/pools/{pid}/blocks",
+                    timeout=5
+                )
+                if blocks_response.status_code == 200:
+                    pool_blocks = blocks_response.json()
+                    # Tag each block with its pool's coin type if not already set
+                    coin_tag = _pool_coin_map_pre.get(pid, "")
+                    for blk in pool_blocks:
+                        if not blk.get("coin") and coin_tag:
+                            blk["coin"] = coin_tag
+                    all_blocks.extend(pool_blocks)
+            except (requests.exceptions.RequestException, ValueError, KeyError):
+                pass
+        # Sort all blocks by created time (newest first)
+        all_blocks.sort(key=lambda b: b.get("created", ""), reverse=True)
+
+        # Coin-type normalization map for pool API coin types
+        _pool_coin_map = {
+            "digibyte": "DGB", "dgb": "DGB",
+            "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
+            "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
+            "bitcoin": "BTC", "btc": "BTC",
+            "litecoin": "LTC", "ltc": "LTC",
+            "dogecoin": "DOGE", "doge": "DOGE",
+            "pepecoin": "PEP", "pep": "PEP",
+            "catcoin": "CAT", "cat": "CAT",
+            "namecoin": "NMC", "nmc": "NMC",
+            "syscoin": "SYS", "sys": "SYS",
+            "myriadcoin": "XMY", "myriad": "XMY", "xmy": "XMY",
+            "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
+            "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
+        }
+
+        # Build per-coin block counts from fetched blocks
+        _per_coin_blocks = {}
+        for blk in all_blocks:
+            bc = blk.get("coin", "") or ""
+            if bc:
+                bc_norm = _pool_coin_map.get(bc.lower(), bc.upper())
+                _per_coin_blocks[bc_norm] = _per_coin_blocks.get(bc_norm, 0) + 1
 
         # Update all cache fields atomically under lock
         with _pool_stats_lock:
             got_pool_data = False
-            if data.get("pools") and len(data["pools"]) > 0:
-                pool = data["pools"][0]
-                stats = pool.get("poolStats", {})
+            if pools:
+                # Aggregate stats across ALL pools (multi-coin support)
+                total_miners = 0
+                total_hashrate = 0
+                total_shares = 0.0
+                # Use the primary (first) pool for network stats
+                primary_stats = pools[0].get("poolStats", {})
+                per_coin = {}
+                for p in pools:
+                    stats = p.get("poolStats", {})
+                    miners = stats.get("connectedMiners", 0)
+                    hashrate = stats.get("poolHashrate", 0)
+                    shares = stats.get("sharesPerSecond", 0)
+                    total_miners += miners
+                    total_hashrate += hashrate
+                    total_shares += shares
 
-                pool_stats_cache["connected_miners"] = stats.get("connectedMiners", 0)
-                pool_stats_cache["pool_hashrate"] = stats.get("poolHashrate", 0)
-                pool_stats_cache["shares_per_second"] = stats.get("sharesPerSecond", 0)
-                pool_stats_cache["network_difficulty"] = stats.get("networkDifficulty", 0)
-                pool_stats_cache["block_height"] = stats.get("blockHeight", 0)
+                    # Extract coin symbol from pool's coin.type field
+                    coin_info = p.get("coin", {})
+                    coin_type = coin_info.get("type", "") if isinstance(coin_info, dict) else ""
+                    coin_symbol = _pool_coin_map.get(coin_type.lower(), coin_type.upper()) if coin_type else ""
+                    pool_net = p.get("networkStats", {}) or {}
+                    if coin_symbol:
+                        per_coin[coin_symbol] = {
+                            "hashrate": hashrate,
+                            "miners": miners,
+                            "shares": shares,
+                            "difficulty": pool_net.get("networkDifficulty", stats.get("networkDifficulty", 0)),
+                            "network_hashrate": pool_net.get("networkHashrate", stats.get("networkHashrate", 0)),
+                            "block_height": pool_net.get("blockHeight", stats.get("blockHeight", 0)),
+                            "blocks": _per_coin_blocks.get(coin_symbol, 0),
+                            "pool_id": p.get("id", ""),
+                        }
+
+                pool_stats_cache["connected_miners"] = total_miners
+                pool_stats_cache["pool_hashrate"] = total_hashrate
+                pool_stats_cache["shares_per_second"] = total_shares
+                pool_stats_cache["network_difficulty"] = primary_stats.get("networkDifficulty", 0)
+                pool_stats_cache["block_height"] = primary_stats.get("blockHeight", 0)
+                pool_stats_cache["per_coin"] = per_coin
                 pool_stats_cache["status"] = "online"
                 got_pool_data = True
 
             new_blocks_to_announce = []
-            if blocks_data is not None:
-                blocks = blocks_data
+            if all_blocks:
+                blocks = all_blocks
                 old_count = pool_stats_cache["blocks_found"]
                 new_count = len(blocks)
                 pool_stats_cache["blocks_found"] = new_count
@@ -1714,8 +1799,11 @@ def fetch_pool_stats():
                     latest_block = blocks[0]
                     pool_stats_cache["last_block_time"] = latest_block.get("created")
                     pool_stats_cache["last_block_height"] = latest_block.get("blockHeight")
-                    # Get the miner who found the block (worker name or address)
-                    pool_stats_cache["last_block_finder"] = latest_block.get("worker") or latest_block.get("miner") or latest_block.get("minerAddress") or latest_block.get("source")
+                    # Get the miner who found the block (prefer worker/source name over wallet address)
+                    pool_stats_cache["last_block_finder"] = latest_block.get("worker") or latest_block.get("source") or latest_block.get("miner") or latest_block.get("minerAddress")
+                    # Normalize and store the coin of the latest block
+                    raw_bc = latest_block.get("coin", "")
+                    pool_stats_cache["last_block_coin"] = _pool_coin_map.get(raw_bc.lower(), raw_bc.upper()) if raw_bc else ""
                 # Detect newly found blocks (count increased since last poll).
                 # old_count == -1 on the very first poll — just establishes the baseline,
                 # no celebration (avoids false-triggering existing blocks on startup).
@@ -1734,8 +1822,10 @@ def fetch_pool_stats():
         # Broadcast new blocks OUTSIDE the lock (avoids holding lock during I/O)
         for blk in new_blocks_to_announce:
             try:
+                raw_coin = blk.get("coin", "")
+                norm_coin = _pool_coin_map.get(raw_coin.lower(), raw_coin.upper()) if raw_coin else ""
                 broadcast_block_found({
-                    "coin": blk.get("coin", ""),
+                    "coin": norm_coin,
                     "height": blk.get("blockHeight", "?"),
                     "miner": blk.get("miner", ""),
                     "worker": blk.get("worker", ""),
@@ -2464,6 +2554,9 @@ def digibyte_rpc(method, params=None):
             timeout=10
         )
         result = response.json()
+        if result.get("error"):
+            print(f"RPC error ({method}): {result['error']}")
+            return None
         return result.get("result")
     except Exception as e:
         print(f"RPC error ({method}): {e}")
@@ -3510,13 +3603,21 @@ def load_multi_coin_config():
     global MULTI_COIN_NODES, _multi_coin_config_loaded
     _multi_coin_config_loaded = True  # Set before loading so concurrent calls don't pile up
 
+    # Reset ALL coins to disabled before loading — ensures coins removed from
+    # config.yaml don't stay enabled in memory from a previous load.
+    for node in MULTI_COIN_NODES.values():
+        node['enabled'] = False
+
     try:
         import yaml
 
-        # Try V2 multi-coin config first
-        if os.path.exists(POOL_CONFIG_PATH):
-            with open(POOL_CONFIG_PATH, 'r') as f:
-                config = yaml.safe_load(f)
+        # FIX: Acquire config file lock to prevent reading partial YAML writes
+        # from concurrent update_multiport / update_pool_mode operations.
+        with _config_file_lock:
+            # Try V2 multi-coin config first
+            if os.path.exists(POOL_CONFIG_PATH):
+                with open(POOL_CONFIG_PATH, 'r') as f:
+                    config = yaml.safe_load(f)
 
                 # Check for V2 multi-coin config
                 coins = config.get('coins', [])
@@ -3720,8 +3821,9 @@ def _get_cached_coin_version(symbol):
     return ""
 
 
-def coin_rpc(symbol, method, params=None):
-    """Make an RPC call to a specific coin's node"""
+def coin_rpc(symbol, method, params=None, wallet=None):
+    """Make an RPC call to a specific coin's node.
+    If wallet is specified, targets that named wallet via /wallet/<name> URL path."""
     symbol = symbol.upper()
     if symbol not in MULTI_COIN_NODES:
         return None
@@ -3758,8 +3860,11 @@ def coin_rpc(symbol, method, params=None):
             "method": method,
             "params": params or []
         }
+        rpc_url = f"http://{node['rpc_host']}:{node['rpc_port']}"
+        if wallet:
+            rpc_url += f"/wallet/{wallet}"
         response = requests.post(
-            f"http://{node['rpc_host']}:{node['rpc_port']}",
+            rpc_url,
             json=payload,
             auth=(node['rpc_user'], node['rpc_password']),
             timeout=10
@@ -3829,7 +3934,19 @@ def fetch_coin_node_health(symbol):
             health["chain"] = bc_info.get("chain", "")
             health["blocks"] = bc_info.get("blocks", 0)
             health["headers"] = bc_info.get("headers", 0)
-            health["sync_progress"] = round(bc_info.get("verificationprogress", 0) * 100, 2)
+            # Some daemons (QBX, BC2, etc.) report low verificationprogress even
+            # when fully synced.  Use blocks/headers when blocks >= headers and
+            # IBD is false — this is authoritative for any coin.
+            _blk = bc_info.get("blocks", 0)
+            _hdr = bc_info.get("headers", 0)
+            _ibd = bc_info.get("initialblockdownload", True)
+            _vp = bc_info.get("verificationprogress", 0) * 100
+            if not _ibd and _hdr > 0 and _blk >= _hdr:
+                health["sync_progress"] = 100.0
+            elif _hdr > 0 and _blk / _hdr * 100 > _vp:
+                health["sync_progress"] = round(min(_blk / _hdr * 100, 100), 2)
+            else:
+                health["sync_progress"] = round(_vp, 2)
             health["size_on_disk_gb"] = round(bc_info.get("size_on_disk", 0) / 1024 / 1024 / 1024, 2)
             health["pruned"] = bc_info.get("pruned", False)
             # For multi-algo coins (DGB), getblockchaininfo "difficulty" is
@@ -3861,10 +3978,10 @@ def fetch_coin_node_health(symbol):
         if uptime:
             health["uptime"] = uptime
 
-        # Calculate network hashrate — prefer node RPC (actual recent block timing)
+        # Calculate network hashrate — prefer per-coin RPC getnetworkhashps (actual recent block timing)
         # over the formula (diff * 2^32 / block_time) which assumes target block rate
-        rpc_nhps = pool_stats_cache.get("node_networkhashps", 0)
-        if rpc_nhps and rpc_nhps > 0:
+        rpc_nhps = coin_rpc(symbol, "getnetworkhashps")
+        if rpc_nhps and isinstance(rpc_nhps, (int, float)) and rpc_nhps > 0:
             health["network_hashrate"] = rpc_nhps
         elif health["difficulty"] > 0:
             coin_block_times = {
@@ -4071,13 +4188,18 @@ def fetch_health_data():
             node_health["blocks"] = bc_info.get("blocks", 0)
             node_health["headers"] = bc_info.get("headers", 0)
             node_health["verification_progress"] = bc_info.get("verificationprogress", 0)
-            # QBX has near-zero verificationprogress due to low chain work — use blocks/headers instead
+            # Some daemons report low verificationprogress even when synced.
+            # Use blocks/headers when authoritative.
             _blocks = bc_info.get("blocks", 0)
             _headers = bc_info.get("headers", 0)
-            if primary_coin and primary_coin.upper() in ("QBX", "QBITX") and _headers > 0:
+            _ibd = bc_info.get("initialblockdownload", True)
+            _vp = bc_info.get("verificationprogress", 0) * 100
+            if not _ibd and _headers > 0 and _blocks >= _headers:
+                node_health["sync_progress"] = 100.0
+            elif _headers > 0 and _blocks / _headers * 100 > _vp:
                 node_health["sync_progress"] = round(min(_blocks / _headers * 100, 100), 2)
             else:
-                node_health["sync_progress"] = round(bc_info.get("verificationprogress", 0) * 100, 2)
+                node_health["sync_progress"] = round(_vp, 2)
             node_health["size_on_disk_gb"] = round(bc_info.get("size_on_disk", 0) / 1024 / 1024 / 1024, 2)
             node_health["pruned"] = bc_info.get("pruned", False)
             # For multi-algo coins (DGB), getblockchaininfo "difficulty" is
@@ -4150,20 +4272,35 @@ def fetch_health_data():
     # Always populate nodes dict for all enabled coins (solo, multi, merge)
     enabled_coins = coins.get("enabled", [])
     all_nodes_health = {}
+    enabled_set = set(enabled_coins)
     for coin_symbol in enabled_coins:
         if coin_symbol == primary_coin:
             all_nodes_health[coin_symbol] = node_health.copy()
             all_nodes_health[coin_symbol]["coin"] = coin_symbol
             all_nodes_health[coin_symbol]["name"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("name", coin_symbol)
             all_nodes_health[coin_symbol]["algorithm"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("algorithm", "")
-            mm = MULTI_COIN_NODES.get(coin_symbol, {}).get("merge_mining")
-            all_nodes_health[coin_symbol]["merge_mining"] = mm
         else:
             coin_health = fetch_coin_node_health(coin_symbol)
             coin_health["algorithm"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("algorithm", "")
-            mm = MULTI_COIN_NODES.get(coin_symbol, {}).get("merge_mining")
-            coin_health["merge_mining"] = mm
             all_nodes_health[coin_symbol] = coin_health
+        # Merge-mining badge: only show roles when the counterpart chains are
+        # actually installed.  Running FBTC without BTC → solo, not broken merge.
+        # Running BTC without any aux chains → solo, not misleading [PARENT].
+        mm_raw = MULTI_COIN_NODES.get(coin_symbol, {}).get("merge_mining")
+        mm = None
+        if mm_raw:
+            mm = dict(mm_raw)  # shallow copy so we don't mutate the global
+            if mm.get("role") == "auxiliary":
+                parent = mm.get("parent_chain", "")
+                if parent not in enabled_set:
+                    mm = None  # parent not installed — show as standalone
+            elif mm.get("role") == "parent":
+                installed_aux = [c for c in mm.get("aux_chains", []) if c in enabled_set]
+                if installed_aux:
+                    mm["aux_chains"] = installed_aux
+                else:
+                    mm = None  # no aux chains installed — no point showing [PARENT]
+        all_nodes_health[coin_symbol]["merge_mining"] = mm
     health_cache["nodes"] = all_nodes_health
     health_cache["multi_coin_mode"] = len(enabled_coins) > 1
 
@@ -7212,9 +7349,9 @@ def fetch_avalon(ip, port=4028, timeout=5):
     # SECURITY: IP validation is handled in cgminer_command
     try:
         # Get all data from CGMiner API
-        summary = cgminer_command(ip, port, "summary", timeout)
-        stats = cgminer_command(ip, port, "stats", timeout)
-        pools = cgminer_command(ip, port, "pools", timeout)
+        summary = cgminer_command(ip, port, "summary", timeout=timeout)
+        stats = cgminer_command(ip, port, "stats", timeout=timeout)
+        pools = cgminer_command(ip, port, "pools", timeout=timeout)
 
         if "error" in summary:
             raise Exception(summary["error"])
@@ -7514,11 +7651,11 @@ def fetch_antminer(ip, port=4028, timeout=5):
     # SECURITY: IP validation is handled in cgminer_command
     try:
         # Get summary for hashrate and share counts
-        summary = cgminer_command(ip, port, "summary", timeout)
+        summary = cgminer_command(ip, port, "summary", timeout=timeout)
         # Get stats for temperatures, fans, and hardware info
-        stats = cgminer_command(ip, port, "stats", timeout)
+        stats = cgminer_command(ip, port, "stats", timeout=timeout)
         # Get pools for pool connection info
-        pools = cgminer_command(ip, port, "pools", timeout)
+        pools = cgminer_command(ip, port, "pools", timeout=timeout)
 
         if "error" in summary:
             raise Exception(summary["error"])
@@ -7682,11 +7819,11 @@ def fetch_whatsminer(ip, port=4028, timeout=5):
     # SECURITY: IP validation is handled in cgminer_command
     try:
         # Get summary for hashrate and share counts
-        summary = cgminer_command(ip, port, "summary", timeout)
+        summary = cgminer_command(ip, port, "summary", timeout=timeout)
         # Get stats for detailed hardware info
-        stats = cgminer_command(ip, port, "devs", timeout)
+        stats = cgminer_command(ip, port, "devs", timeout=timeout)
         # Get pools for connection info
-        pools = cgminer_command(ip, port, "pools", timeout)
+        pools = cgminer_command(ip, port, "pools", timeout=timeout)
 
         if "error" in summary:
             raise Exception(summary["error"])
@@ -7721,7 +7858,7 @@ def fetch_whatsminer(ip, port=4028, timeout=5):
                     chip_temps.append(temp)
 
         # Also check STATS if available
-        stats_data = cgminer_command(ip, port, "stats", timeout)
+        stats_data = cgminer_command(ip, port, "stats", timeout=timeout)
         if "STATS" in stats_data:
             for stat in stats_data["STATS"]:
                 # Model detection
@@ -7820,11 +7957,11 @@ def fetch_innosilicon(ip, port=4028, timeout=5):
     # SECURITY: IP validation is handled in cgminer_command
     try:
         # Get summary for hashrate and share counts
-        summary = cgminer_command(ip, port, "summary", timeout)
+        summary = cgminer_command(ip, port, "summary", timeout=timeout)
         # Get stats for hardware details
-        stats = cgminer_command(ip, port, "stats", timeout)
+        stats = cgminer_command(ip, port, "stats", timeout=timeout)
         # Get pools for connection info
-        pools = cgminer_command(ip, port, "pools", timeout)
+        pools = cgminer_command(ip, port, "pools", timeout=timeout)
 
         if "error" in summary:
             raise Exception(summary["error"])
@@ -9427,9 +9564,9 @@ def update_config():
 
     # Track if pool mode changed (requires restart)
     old_pool_mode = config.get("pool_mode", "solo")
-    old_coins = [c.get("symbol") for c in config.get("coins", [])]
+    old_coins = [c.get("symbol") for c in config.get("coins", []) if isinstance(c, dict)]
     new_pool_mode = new_config.get("pool_mode", old_pool_mode)
-    new_coins = [c.get("symbol") for c in new_config.get("coins", [])]
+    new_coins = [c.get("symbol") for c in new_config.get("coins", []) if isinstance(c, dict)]
 
     # First-run completion: services need restart to pick up sentinel config,
     # expected hashrate, and any settings configured during initial setup
@@ -9474,12 +9611,30 @@ def update_config():
 
     # Save pool config to the main pool config file if coins changed
     if new_config.get("coins"):
-        try:
-            save_pool_coin_config(new_config.get("coins", []), new_config.get("multi_coin_enabled", False))
-        except Exception as e:
-            # Log error but return generic message
-            app.logger.error(f"Config save error: {str(e)}")
-            return jsonify({"success": False, "error": "Failed to save pool configuration"}), 500
+        # Serialize all config.yaml read-modify-write operations to prevent
+        # concurrent requests from overwriting each other's changes.
+        with _config_file_lock:
+            try:
+                save_pool_coin_config(new_config.get("coins", []), new_config.get("multi_coin_enabled", False))
+            except Exception as e:
+                # Log error but return generic message
+                app.logger.error(f"Config save error: {str(e)}")
+                return jsonify({"success": False, "error": "Failed to save pool configuration"}), 500
+
+            # Clean up multi_port for any coins removed from the pool config
+            removed_coins = set(c.upper() for c in old_coins if c) - set(c.upper() for c in new_coins if c)
+            for sym in removed_coins:
+                try:
+                    _cleanup_multiport_after_remove(sym)
+                except Exception as e:
+                    app.logger.warning(f"multi_port cleanup for {sym}: {e}")
+
+            # Disable multi_port when switching to solo mode (needs >=2 coins)
+            if new_pool_mode == "solo" and old_pool_mode != "solo":
+                try:
+                    _disable_multiport_if_enabled()
+                except Exception as e:
+                    app.logger.warning(f"multi_port solo disable: {e}")
 
     save_config(config)
 
@@ -9498,10 +9653,22 @@ def update_config():
     changed_keys = [k for k in new_config if k in allowed_keys]
     record_activity("config", f"Configuration updated: {', '.join(changed_keys)}", {"keys": changed_keys})
 
+    # Check if HA cluster needs sync after coin changes
+    ha_sync_required = False
+    if new_config.get("coins"):
+        ha_status = fetch_ha_status()
+        if ha_status.get("enabled", False):
+            ha_sync_required = True
+            app.logger.warning(
+                "HA cluster detected — coin config changed locally. "
+                "Secondary nodes need sync: run 'pool-mode.sh --ha-sync' or use spiralctl ha sync-config"
+            )
+
     # Return success without exposing full config
     return jsonify({
         "success": True,
         "requires_restart": requires_restart,
+        "ha_sync_required": ha_sync_required,
         "pool_mode": config.get("pool_mode"),
         "coins": [{"symbol": c.get("symbol")} for c in config.get("coins", [])]
     })
@@ -9553,9 +9720,34 @@ def save_pool_coin_config(coins, multi_coin_enabled):
         except (yaml.YAMLError, IOError):
             pool_config = {}
 
-    # Update coins configuration
+    # Update coins configuration — MERGE with existing config to preserve
+    # fields the dashboard doesn't manage (difficulty, banning, merge_mining,
+    # payments, nodes, TLS, etc.). Only update dashboard-managed fields.
     pool_config["version"] = 2 if multi_coin_enabled else 1
-    pool_config["coins"] = []
+
+    # Ensure global section has API settings when switching to V2.
+    # V1 uses top-level "api:" block; V2 reads from "global:".  Without this,
+    # enabling multi-coin via the dashboard kills the REST API (port 4000).
+    if multi_coin_enabled:
+        g = pool_config.setdefault("global", {})
+        g.setdefault("api_port", 4000)
+        g.setdefault("api_enabled", True)
+        g.setdefault("log_level", "info")
+        g.setdefault("log_format", "json")
+        g.setdefault("metrics_port", 9100)
+        # Migrate admin API key from V1 api: section if not already in global
+        if "admin_api_key" not in g:
+            v1_api = pool_config.get("api", {})
+            v1_key = v1_api.get("adminApiKey", "")
+            if v1_key:
+                g["admin_api_key"] = v1_key
+
+    # Build lookup of existing coins by symbol for merging
+    existing_coins = {}
+    for existing_coin in pool_config.get("coins", []):
+        sym = existing_coin.get("symbol", "").upper()
+        if sym:
+            existing_coins[sym] = existing_coin
 
     # Alphabetical order (no coin preference)
     default_ports = {"BC2": 6333, "BCH": 5333, "BTC": 4333, "CAT": 12335,
@@ -9570,31 +9762,50 @@ def save_pool_coin_config(coins, multi_coin_enabled):
     # Scrypt coins need different algorithm suffix
     scrypt_coins = {"LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT"}
 
+    merged_coins = []
     for coin_config in coins:
         symbol = coin_config.get("symbol", "").upper()
         if not symbol or symbol not in default_ports:
             # Skip invalid coins - don't assume DGB
             continue
 
+        # Start from existing coin config if present, preserving all fields
+        if symbol in existing_coins:
+            merged = dict(existing_coins[symbol])
+        else:
+            merged = {}
+
         # Generate pool_id with underscores (required by PostgreSQL identifier rules)
-        # Use algorithm suffix based on coin type
         algo_suffix = "scrypt" if symbol in scrypt_coins else "sha256"
-        # Convert symbol to valid pool_id (e.g., DGB-SCRYPT -> dgb_scrypt)
         pool_id_symbol = symbol.lower().replace("-", "_")
         pool_id = f"{pool_id_symbol}_{algo_suffix}" if algo_suffix not in pool_id_symbol else pool_id_symbol
 
-        pool_config["coins"].append({
-            "symbol": symbol,
-            "enabled": coin_config.get("enabled", True),
-            "address": coin_config.get("wallet_address", ""),
-            "pool_id": pool_id,
-            "stratum": {
-                "port": default_ports[symbol]  # Use coin-specific port, no fallback
-            },
-            "daemon": {
-                "port": default_rpc_ports[symbol]  # Use coin-specific port, no fallback
-            }
-        })
+        # Update only dashboard-managed fields; preserve everything else
+        merged["symbol"] = symbol
+        merged["enabled"] = coin_config.get("enabled", True)
+        merged["address"] = coin_config.get("wallet_address", merged.get("address", ""))
+        merged["pool_id"] = merged.get("pool_id", pool_id)
+
+        # Only set stratum.port and daemon.port if not already configured
+        stratum_cfg = merged.get("stratum", {})
+        if not stratum_cfg.get("port"):
+            stratum_cfg["port"] = default_ports[symbol]
+        merged["stratum"] = stratum_cfg
+
+        if "daemon" in merged:
+            daemon_cfg = merged["daemon"]
+            if not daemon_cfg.get("port"):
+                daemon_cfg["port"] = default_rpc_ports[symbol]
+        elif "nodes" not in merged:
+            # Only set daemon if no nodes array exists (V2 uses nodes[])
+            merged["daemon"] = {"port": default_rpc_ports[symbol]}
+
+        merged_coins.append(merged)
+
+    pool_config["coins"] = merged_coins
+
+    if not pool_config["coins"]:
+        raise ValueError("No valid coins to save — refusing to write empty coins list")
 
     # Write config atomically (temp + fsync + rename) to prevent corruption on crash
     try:
@@ -9606,6 +9817,7 @@ def save_pool_coin_config(coins, multi_coin_enabled):
                 yaml.dump(pool_config, f, default_flow_style=False, sort_keys=False)
                 f.flush()
                 os.fsync(f.fileno())
+            os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, config_path)
         except BaseException:
             try:
@@ -9639,7 +9851,7 @@ def restart_services():
         # Try systemctl restart (Linux with systemd)
         # Using explicit list of allowed services (no user input in command)
         result = subprocess.run(
-            ["sudo", "systemctl", "restart", "spiralstratum", "spiralsentinel"],
+            ["sudo", "/bin/systemctl", "restart", "spiralstratum", "spiralsentinel"],
             capture_output=True,
             text=True,
             timeout=30
@@ -9802,6 +10014,7 @@ def get_miners():
             "last_block_finder": pool_stats.get("last_block_finder"),
             "last_block_height": pool_stats.get("last_block_height"),
             "last_block_time": pool_stats.get("last_block_time"),
+            "last_block_coin": pool_stats.get("last_block_coin", ""),
             "last_update": miner_cache["last_update"],
             # Pool hashrate from stratum server (workers connected to THIS pool)
             "pool_hashrate": pool_stats.get("pool_hashrate", 0),
@@ -9827,6 +10040,8 @@ def get_miners():
                 "multi_coin_mode": coins.get("multi_coin_mode", False),
                 "merge_mining": _get_merge_mining_map(coins.get("enabled", [])),
             },
+            # Per-coin stats breakdown for multi-coin dashboards
+            "per_coin_stats": pool_stats.get("per_coin", {}),
             # H-3: Wrong pool detection for UI warning
             "wrong_pool_detected": is_wrong_pool,
             "pool_status": "wrong_pool" if is_wrong_pool else "ok",
@@ -9891,6 +10106,7 @@ def refresh_miners():
             "last_block_finder": pool_stats.get("last_block_finder"),
             "last_block_height": pool_stats.get("last_block_height"),
             "last_block_time": pool_stats.get("last_block_time"),
+            "last_block_coin": pool_stats.get("last_block_coin", ""),
             "last_update": miner_cache["last_update"],
             # Pool hashrate from stratum server (workers connected to THIS pool)
             "pool_hashrate": pool_stats.get("pool_hashrate", 0),
@@ -10262,7 +10478,7 @@ def get_miner_stats(name):
 @api_key_or_login_required
 def test_device():
     """Test connection to a device"""
-    data = request.json
+    data = request.json or {}
     device_type = data.get("type", "axeos")
     ip = data.get("ip")
     port = data.get("port", 4028)
@@ -10501,7 +10717,7 @@ def settings():
 @admin_required
 def restart_device():
     """Restart a miner device (AxeOS-based miners and Avalon ASICs)"""
-    data = request.json
+    data = request.json or {}
     name = data.get("name", "")
     ip = data.get("ip", "")
     device_type = data.get("type", "").lower()
@@ -10592,7 +10808,7 @@ def restart_device():
 @admin_required
 def update_device_frequency():
     """Update miner frequency (AxeOS-based miners only)"""
-    data = request.json
+    data = request.json or {}
     name = data.get("name", "")
     ip = data.get("ip", "")
     device_type = data.get("type", "").lower()
@@ -10666,7 +10882,7 @@ def overclock_device():
     WARNING: Overclocking can cause hardware damage. Users must accept
     responsibility before using this feature.
     """
-    data = request.json
+    data = request.json or {}
     name = data.get("name", "")
     ip = data.get("ip", "")
     device_type = data.get("type", "").lower()
@@ -11348,14 +11564,31 @@ def get_system_info():
     service_names = [
         "spiralstratum", "spiralsentinel", "spiraldash"
     ]
-    # Add coin daemon services from config
+    # Add coin daemon services — check ALL coins in MULTI_COIN_NODES, not just
+    # get_enabled_coins().  A coin whose daemon crashed still needs its service
+    # visible so the user can see it's down and take action.
     try:
         coins_info = get_enabled_coins()
-        for sym in coins_info.get("enabled", []):
-            node = MULTI_COIN_NODES.get(sym, {})
+        enabled_syms = set(coins_info.get("enabled", []))
+        for sym, node in MULTI_COIN_NODES.items():
             svc = node.get("service_name")
-            if svc and svc not in service_names:
+            if not svc or svc in service_names:
+                continue
+            # Show service if: coin is enabled in config, OR the systemd
+            # unit file exists on disk (coin was installed but maybe config
+            # lost it).
+            if sym in enabled_syms:
                 service_names.append(svc)
+            else:
+                try:
+                    unit_check = subprocess.run(
+                        ["systemctl", "cat", svc],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    if unit_check.returncode == 0:
+                        service_names.append(svc)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -11623,7 +11856,7 @@ def restart_stratum():
     try:
         import subprocess
         result = subprocess.run(
-            ['sudo', 'systemctl', 'restart', 'spiralstratum'],
+            ['sudo', '/bin/systemctl', 'restart', 'spiralstratum'],
             capture_output=True,
             text=True,
             timeout=30
@@ -11645,12 +11878,12 @@ def restart_stratum():
         return jsonify({"success": False, "error": "Failed to restart Spiral Stratum"})
 
 
-# ── Multi-Coin Smart Port Management ─────────────────────────────────────────
+# ── Multi Coin Smart Port Management ─────────────────────────────────────────
 
 @app.route('/api/multiport', methods=['GET'])
 @api_key_or_login_required
 def get_multiport():
-    """Get multi-coin smart port configuration and live stats.
+    """Get multi coin smart port configuration and live stats.
 
     Returns config from config.yaml plus live stats from stratum API.
     """
@@ -11681,6 +11914,7 @@ def get_multiport():
                 result["check_interval"] = str(mp.get("check_interval", "30s"))
                 result["min_time_on_coin"] = str(mp.get("min_time_on_coin", "60s"))
                 result["timezone"] = mp.get("timezone", "")
+                result["wallet_map"] = mp.get("wallet_map", {})
     except Exception as e:
         app.logger.error(f"Failed to read multiport config: {e}")
 
@@ -11703,37 +11937,89 @@ def get_multiport():
         if not result["timezone"]:
             result["timezone"] = "UTC"
 
-    # Proxy live stats from stratum API
+    # Proxy live stats from stratum API and derive active_coin for the dashboard
     if result["enabled"]:
         try:
             import requests as req_lib
             resp = req_lib.get(f"{POOL_API_URL}/api/multiport", timeout=3)
             if resp.status_code == 200:
-                result["live"] = resp.json()
+                live = resp.json()
+                # Derive active_coin from coin_distribution (coin with most miners)
+                dist = live.get("coin_distribution", {})
+                if dist:
+                    active = max(dist, key=dist.get)
+                    live["active_coin"] = active
+                elif live.get("allowed_coins"):
+                    live["active_coin"] = live["allowed_coins"][0]
+                result["live"] = live
         except Exception:
             pass  # stratum may not be running
 
-    # Build schedule from weights
+    # Build schedule from weights + optional custom start_hour
     coins = result.get("coins", {})
     total_weight = sum(c.get("weight", 0) if isinstance(c, dict) else 0 for c in coins.values())
     schedule = []
-    cumulative = 0.0
     if total_weight > 0:
+        # Collect active coins with their hours
+        active = []
         for symbol, cfg in sorted(coins.items()):
-            w = cfg.get("weight", 0) if isinstance(cfg, dict) else 0
+            if not isinstance(cfg, dict):
+                continue
+            w = cfg.get("weight", 0)
             if w <= 0:
                 continue
             frac = w / total_weight
-            start_h = cumulative * 24
-            cumulative += frac
-            end_h = cumulative * 24
-            schedule.append({
-                "symbol": symbol,
-                "weight": w,
-                "start_h": round(start_h, 1),
-                "end_h": round(end_h, 1),
-            })
+            hours = frac * 24
+            custom_start = cfg.get("start_hour")
+            active.append({"symbol": symbol, "weight": w, "hours": hours,
+                           "custom_start": custom_start})
+
+        # Build contiguous schedule: anchor from first coin's start_hour,
+        # then sequence all coins using weights for duration.  This
+        # guarantees full 24h coverage with no gaps or collisions.
+        active.sort(key=lambda a: (a["custom_start"] if a["custom_start"] is not None else 999, a["symbol"]))
+        anchor = active[0]["custom_start"] if active[0]["custom_start"] is not None else 0.0
+        cursor = float(anchor)
+        for a in active:
+            hours = (a["weight"] / total_weight) * 24
+            start_h = cursor % 24
+            end_h = (cursor + hours) % 24
+            schedule.append({"symbol": a["symbol"], "weight": a["weight"],
+                             "start_h": round(start_h, 2), "end_h": round(end_h, 2)})
+            cursor += hours
     result["schedule"] = schedule
+
+    # Compute next_switch and time_remaining from schedule + timezone
+    if schedule and result.get("live") and result["live"].get("active_coin"):
+        try:
+            from datetime import datetime as _dt
+            import pytz
+            tz_name = result.get("timezone", "UTC")
+            try:
+                tz = pytz.timezone(tz_name)
+            except Exception:
+                tz = pytz.UTC
+            now = _dt.now(tz)
+            now_h = now.hour + now.minute / 60.0 + now.second / 3600.0
+            active = result["live"]["active_coin"]
+            # Find current slot's end and the next coin
+            for i, slot in enumerate(schedule):
+                if slot["symbol"] == active:
+                    end_h = slot["end_h"]
+                    # Handle midnight wrap
+                    if end_h < slot["start_h"]:
+                        end_h += 24
+                    remaining_h = end_h - now_h
+                    if remaining_h < 0:
+                        remaining_h += 24
+                    hours = int(remaining_h)
+                    minutes = int((remaining_h - hours) * 60)
+                    result["live"]["time_remaining"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+                    next_slot = schedule[(i + 1) % len(schedule)]
+                    result["live"]["next_switch"] = next_slot["symbol"]
+                    break
+        except Exception:
+            pass
 
     # Available SHA-256d coins (for the UI to show toggle options)
     sha256d_available = []
@@ -11752,7 +12038,7 @@ def get_multiport():
 @app.route('/api/multiport', methods=['POST'])
 @admin_required
 def update_multiport():
-    """Update multi-coin smart port configuration.
+    """Update multi coin smart port configuration.
 
     Expects JSON: { "enabled": true, "coins": {"DGB": {"weight": 80}, "BTC": {"weight": 20}}, "prefer_coin": "DGB" }
     Weights must sum to exactly 100.
@@ -11766,6 +12052,7 @@ def update_multiport():
     enabled = data.get("enabled", True)
     coins = data.get("coins", {})
     prefer_coin = data.get("prefer_coin", "")
+    wallet_map = data.get("wallet_map")  # None means "don't touch existing"
 
     # Validate coins
     if enabled:
@@ -11794,85 +12081,150 @@ def update_multiport():
         if total != 100:
             return jsonify({"success": False, "error": f"Weights must sum to 100, got {total}"}), 400
 
-    # Read existing config
-    try:
-        with open(POOL_CONFIG_PATH, 'r') as f:
-            config = pyyaml.safe_load(f)
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to read config: {e}"}), 500
-
-    # Validate prefer_coin is in the configured coins
-    if enabled and prefer_coin:
-        if prefer_coin.upper() not in {sym.upper() for sym in coins}:
-            return jsonify({"success": False, "error": f"Preferred coin {prefer_coin.upper()} not in configured coins"}), 400
-
-    # Update multi_port section
-    # Normalize coin symbols to uppercase
-    normalized_coins = {}
-    for sym, cfg in coins.items():
-        normalized_coins[sym.upper()] = cfg
-
-    # Resolve timezone: from request, existing config, sentinel config, or UTC
-    tz = data.get("timezone", "")
-    if not tz:
-        tz = (config.get("multi_port") or {}).get("timezone", "")
-    if not tz:
+    # Serialize config read-modify-write to prevent concurrent overwrites
+    with _config_file_lock:
+        # Read existing config
         try:
-            sentinel_paths = [
-                os.path.join(os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool"), "config", "sentinel", "config.json"),
-                os.path.expanduser("~/.spiralsentinel/config.json"),
-            ]
-            for sp in sentinel_paths:
-                if sp and os.path.exists(sp):
-                    import json as _json
-                    with open(sp, 'r') as f:
-                        tz = _json.load(f).get("display_timezone", "UTC")
-                    break
-        except Exception:
-            pass
-    if not tz:
-        tz = "UTC"
+            with open(POOL_CONFIG_PATH, 'r') as f:
+                config = pyyaml.safe_load(f)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to read config: {e}"}), 500
 
-    config["multi_port"] = {
-        "enabled": enabled,
-        "port": 16180,
-        "coins": normalized_coins,
-        "check_interval": data.get("check_interval", "30s"),
-        "prefer_coin": prefer_coin.upper() if prefer_coin else "",
-        "min_time_on_coin": data.get("min_time_on_coin", "60s"),
-        "timezone": tz,
-    }
+        # Validate prefer_coin is in the configured coins
+        if enabled and prefer_coin:
+            if prefer_coin.upper() not in {sym.upper() for sym in coins}:
+                return jsonify({"success": False, "error": f"Preferred coin {prefer_coin.upper()} not in configured coins"}), 400
 
-    # Write back — SECURITY: config contains credentials, mode 0600 (atomic write)
-    try:
-        import tempfile
-        dir_name = os.path.dirname(POOL_CONFIG_PATH)
-        fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+        # Validate that all multi_port coins are actually in the pool's coins array
+        if enabled:
+            pool_coins = set()
+            cfg_coins = config.get("coins", [])
+            if isinstance(cfg_coins, list):
+                # V2 format: list of dicts with "symbol" key
+                for entry in cfg_coins:
+                    if isinstance(entry, dict) and "symbol" in entry:
+                        pool_coins.add(entry["symbol"].upper())
+            elif isinstance(cfg_coins, dict):
+                # V1 fallback: dict keyed by symbol
+                pool_coins = {k.upper() for k in cfg_coins.keys()}
+            for sym in coins:
+                if sym.upper() not in pool_coins:
+                    return jsonify({"success": False, "error": f"{sym.upper()} is not configured as a pool coin"}), 400
+
+        # Update multi_port section
+        # Normalize coin symbols to uppercase
+        normalized_coins = {}
+        for sym, cfg in coins.items():
+            normalized_coins[sym.upper()] = cfg
+
+        # Enforce contiguous schedule: auto-compute start_hour values so there
+        # are no gaps in the 24h cycle.  Coins are ordered by their existing
+        # start_hour (if set), then alphabetically.  Each coin's start_hour is
+        # set to the end of the previous coin's slot.
+        if enabled:
+            active = []
+            for sym, cfg in normalized_coins.items():
+                if not isinstance(cfg, dict):
+                    continue
+                w = cfg.get("weight", 0)
+                if w <= 0:
+                    continue
+                sh = cfg.get("start_hour")
+                active.append((sym, w, sh))
+            if active:
+                # Sort by start_hour (if set), then alphabetically
+                active.sort(key=lambda x: (x[2] if x[2] is not None else 999, x[0]))
+                anchor = active[0][2] if active[0][2] is not None else 0.0
+                cursor = float(anchor)
+                total_w = sum(w for _, w, _ in active)
+                for sym, w, _ in active:
+                    hours = (w / total_w) * 24
+                    normalized_coins[sym]["start_hour"] = round(cursor % 24, 4)
+                    cursor += hours
+
+        # Resolve timezone: from request, existing config, sentinel config, or UTC
+        tz = data.get("timezone", "")
+        if not tz:
+            tz = (config.get("multi_port") or {}).get("timezone", "")
+        if not tz:
+            try:
+                sentinel_paths = [
+                    os.path.join(os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool"), "config", "sentinel", "config.json"),
+                    os.path.expanduser("~/.spiralsentinel/config.json"),
+                ]
+                for sp in sentinel_paths:
+                    if sp and os.path.exists(sp):
+                        import json as _json
+                        with open(sp, 'r') as f:
+                            tz = _json.load(f).get("display_timezone", "UTC")
+                        break
+            except Exception:
+                pass
+        if not tz:
+            tz = "UTC"
+
+        mp_cfg = {
+            "enabled": enabled,
+            "port": 16180,
+            "coins": normalized_coins,
+            "check_interval": data.get("check_interval", "30s"),
+            "prefer_coin": prefer_coin.upper() if prefer_coin else "",
+            "min_time_on_coin": data.get("min_time_on_coin", "60s"),
+            "timezone": tz,
+        }
+        # Preserve or update wallet_map
+        if wallet_map is not None:
+            # Validate: each worker entry must map coin symbols to non-empty addresses
+            valid_coins = {sym.upper() for sym in normalized_coins}
+            cleaned_map = {}
+            for worker, addrs in wallet_map.items():
+                if not isinstance(addrs, dict) or not worker.strip():
+                    continue
+                cleaned_addrs = {}
+                for coin, addr in addrs.items():
+                    if coin.upper() in valid_coins and isinstance(addr, str) and addr.strip():
+                        cleaned_addrs[coin.upper()] = addr.strip()
+                if cleaned_addrs:
+                    cleaned_map[worker.strip()] = cleaned_addrs
+            if cleaned_map:
+                mp_cfg["wallet_map"] = cleaned_map
+        else:
+            # Preserve existing wallet_map if not provided in this request
+            existing_wm = (config.get("multi_port") or {}).get("wallet_map")
+            if existing_wm:
+                mp_cfg["wallet_map"] = existing_wm
+        config["multi_port"] = mp_cfg
+
+        # Write back — SECURITY: config contains credentials, mode 0600 (atomic write)
         try:
-            with os.fdopen(fd, 'w') as f:
-                pyyaml.dump(config, f, default_flow_style=False, sort_keys=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.chmod(tmp_path, 0o600)
-            os.replace(tmp_path, POOL_CONFIG_PATH)
-        except Exception:
-            os.unlink(tmp_path)
-            raise
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to write config: {e}"}), 500
+            import tempfile
+            dir_name = os.path.dirname(POOL_CONFIG_PATH)
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    pyyaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.chmod(tmp_path, 0o600)
+                os.replace(tmp_path, POOL_CONFIG_PATH)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to write config: {e}"}), 500
 
-    # Update coins.env
-    try:
-        _update_coins_env_multiport(enabled, normalized_coins, prefer_coin)
-    except Exception as e:
-        app.logger.warning(f"Failed to update coins.env: {e}")
+        # Update coins.env while still holding lock to prevent config/coins.env desync
+        try:
+            _update_coins_env_multiport(enabled, normalized_coins, prefer_coin)
+        except Exception as e:
+            app.logger.warning(f"Failed to update coins.env: {e}")
 
     # Restart stratum to apply
     restart_msg = ""
     try:
         import subprocess
         result = subprocess.run(
-            ['sudo', 'systemctl', 'restart', 'spiralstratum'],
+            ['sudo', '/bin/systemctl', 'restart', 'spiralstratum'],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
@@ -11887,8 +12239,252 @@ def update_multiport():
 
     return jsonify({
         "success": True,
-        "message": f"Multi-coin smart port {action}. {restart_msg}",
+        "message": f"Multi coin smart port {action}. {restart_msg}",
     })
+
+
+@app.route('/api/multiport/wallets', methods=['GET', 'POST'])
+@admin_required
+def multiport_wallets():
+    """Manage per-worker per-coin wallet mappings for Smart Port.
+
+    GET: Returns current wallet_map from config.
+    POST: Replaces wallet_map. Expects JSON: {"wallet_map": {"Worker1": {"QBX": "addr1", "BC2": "addr2"}, ...}}
+    """
+    import yaml as pyyaml
+
+    if request.method == 'GET':
+        try:
+            if os.path.exists(POOL_CONFIG_PATH):
+                with open(POOL_CONFIG_PATH, 'r') as f:
+                    cfg = pyyaml.safe_load(f)
+                wm = (cfg.get("multi_port") or {}).get("wallet_map", {})
+                coins = list((cfg.get("multi_port") or {}).get("coins", {}).keys())
+                return jsonify({"wallet_map": wm, "coins": coins})
+        except Exception as e:
+            return jsonify({"wallet_map": {}, "coins": [], "error": str(e)})
+        return jsonify({"wallet_map": {}, "coins": []})
+
+    # POST: update wallet_map
+    data = request.get_json()
+    if not data or "wallet_map" not in data:
+        return jsonify({"success": False, "error": "wallet_map required"}), 400
+
+    wallet_map = data["wallet_map"]
+    if not isinstance(wallet_map, dict):
+        return jsonify({"success": False, "error": "wallet_map must be an object"}), 400
+
+    with _config_file_lock:
+        try:
+            with open(POOL_CONFIG_PATH, 'r') as f:
+                cfg = pyyaml.safe_load(f)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to read config: {e}"}), 500
+
+        mp = cfg.get("multi_port")
+        if not mp:
+            return jsonify({"success": False, "error": "multi_port not configured"}), 400
+
+        valid_coins = {sym.upper() for sym in mp.get("coins", {}).keys()}
+
+        # Validate and clean
+        cleaned = {}
+        for worker, addrs in wallet_map.items():
+            if not isinstance(addrs, dict) or not worker.strip():
+                continue
+            cleaned_addrs = {}
+            for coin, addr in addrs.items():
+                if coin.upper() in valid_coins and isinstance(addr, str) and addr.strip():
+                    cleaned_addrs[coin.upper()] = addr.strip()
+            if cleaned_addrs:
+                cleaned[worker.strip()] = cleaned_addrs
+
+        if cleaned:
+            mp["wallet_map"] = cleaned
+        elif "wallet_map" in mp:
+            del mp["wallet_map"]
+
+        try:
+            import tempfile
+            dir_name = os.path.dirname(POOL_CONFIG_PATH)
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    pyyaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.chmod(tmp_path, 0o600)
+                os.replace(tmp_path, POOL_CONFIG_PATH)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Failed to write config: {e}"}), 500
+
+    # Restart stratum to pick up new wallet mappings
+    restart_msg = ""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['sudo', '/bin/systemctl', 'restart', 'spiralstratum'],
+            capture_output=True, text=True, timeout=30
+        )
+        restart_msg = "Stratum restarted" if result.returncode == 0 else "Config saved, restart stratum manually"
+    except Exception:
+        restart_msg = "Config saved, restart stratum manually"
+
+    app.logger.info(f"Wallet map updated by {request.remote_addr}: {len(cleaned)} workers")
+    return jsonify({"success": True, "message": f"Wallet mappings saved. {restart_msg}", "wallet_map": cleaned})
+
+
+def _disable_multiport_if_enabled():
+    """Disable multi_port when switching to solo mode.
+
+    Reads config.yaml, checks if multi_port.enabled is true, sets it to false,
+    writes back atomically, and updates coins.env.
+    """
+    import yaml as pyyaml
+
+    with _config_file_lock:
+        try:
+            with open(POOL_CONFIG_PATH, 'r') as f:
+                config = pyyaml.safe_load(f)
+        except Exception as e:
+            app.logger.warning(f"_disable_multiport_if_enabled: could not read config: {e}")
+            return
+
+        mp = config.get("multi_port")
+        if not mp or not mp.get("enabled"):
+            return  # already disabled or no section
+
+        mp["enabled"] = False
+        config["multi_port"] = mp
+
+        # Atomic write
+        try:
+            import tempfile
+            dir_name = os.path.dirname(POOL_CONFIG_PATH)
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    pyyaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.chmod(tmp_path, 0o600)
+                os.replace(tmp_path, POOL_CONFIG_PATH)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
+        except Exception as e:
+            app.logger.error(f"_disable_multiport_if_enabled: failed to write config: {e}")
+            return
+
+        # Update coins.env while still holding lock to prevent config/coins.env desync
+        try:
+            mp_coins = mp.get("coins", {})
+            _update_coins_env_multiport(False, mp_coins, mp.get("prefer_coin", ""))
+        except Exception as e:
+            app.logger.warning(f"_disable_multiport_if_enabled: failed to update coins.env: {e}")
+
+    app.logger.info("Multi-port disabled (solo mode switch)")
+
+
+def _cleanup_multiport_after_remove(symbol):
+    """Remove a coin from the multi_port config section after node removal.
+
+    If the removed coin was in the smart port schedule, its weight is
+    redistributed proportionally among the remaining coins.  If only 1 coin
+    remains, multi_port is disabled entirely (needs >=2 coins).
+
+    This prevents stratum startup failures where multi_port references a coin
+    that no longer exists in the coins: array.
+    """
+    import yaml as pyyaml
+
+    with _config_file_lock:
+        try:
+            with open(POOL_CONFIG_PATH, 'r') as f:
+                config = pyyaml.safe_load(f)
+        except Exception as e:
+            app.logger.warning(f"_cleanup_multiport_after_remove: could not read config: {e}")
+            return
+
+        mp = config.get("multi_port")
+        if not mp or not mp.get("enabled"):
+            return
+
+        mp_coins = mp.get("coins", {})
+        if not isinstance(mp_coins, dict):
+            return
+
+        # Check if the removed coin is in the smart port schedule
+        sym_upper = symbol.upper()
+        if sym_upper not in mp_coins:
+            return  # not in schedule, nothing to do
+
+        removed_weight = mp_coins[sym_upper].get("weight", 0) if isinstance(mp_coins[sym_upper], dict) else 0
+        del mp_coins[sym_upper]
+
+        remaining = {s: c for s, c in mp_coins.items() if isinstance(c, dict)}
+        weighted = {s: c for s, c in remaining.items() if c.get("weight", 0) > 0}
+
+        if len(remaining) < 2:
+            # Can't run multi_port with <2 coins — disable it
+            mp["enabled"] = False
+            app.logger.warning(f"Multi-port disabled: only {len(remaining)} coin(s) remain after removing {sym_upper}")
+        elif removed_weight > 0 and weighted:
+            # Redistribute removed weight proportionally among weighted coins
+            total_remaining = sum(c.get("weight", 0) for c in weighted.values())
+            if total_remaining > 0:
+                redistributed = 0
+                coins_list = sorted(weighted.keys())
+                for i, s in enumerate(coins_list):
+                    if i == len(coins_list) - 1:
+                        # Last coin gets remainder to ensure exact 100
+                        weighted[s]["weight"] = 100 - redistributed
+                    else:
+                        new_w = round((weighted[s]["weight"] / total_remaining) * 100)
+                        weighted[s]["weight"] = new_w
+                        redistributed += new_w
+            # Preserve all coins (including zero-weight) in the schedule
+            mp_coins.clear()
+            mp_coins.update(remaining)
+
+        # Update prefer_coin if it was the removed coin
+        if mp.get("prefer_coin", "").upper() == sym_upper and remaining:
+            # Pick the coin with the highest weight
+            mp["prefer_coin"] = max(remaining.keys(), key=lambda s: remaining[s].get("weight", 0))
+
+        mp["coins"] = mp_coins
+        config["multi_port"] = mp
+
+        # Atomic write
+        try:
+            import tempfile
+            dir_name = os.path.dirname(POOL_CONFIG_PATH)
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    pyyaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.chmod(tmp_path, 0o600)
+                os.replace(tmp_path, POOL_CONFIG_PATH)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
+        except Exception as e:
+            app.logger.error(f"_cleanup_multiport_after_remove: failed to write config: {e}")
+            return
+
+        # Update coins.env while still holding lock to prevent config/coins.env desync
+        try:
+            _update_coins_env_multiport(mp.get("enabled", False), mp_coins, mp.get("prefer_coin", ""))
+        except Exception as e:
+            app.logger.warning(f"_cleanup_multiport_after_remove: failed to update coins.env: {e}")
+
+    app.logger.info(f"Cleaned up multi_port config after removing {sym_upper}: "
+                     f"remaining={list(mp_coins.keys())}, enabled={mp.get('enabled')}")
 
 
 def _update_coins_env_multiport(enabled, coins, prefer_coin):
@@ -11918,8 +12514,22 @@ def _update_coins_env_multiport(enabled, coins, prefer_coin):
     set_line("MULTIPORT_WEIGHTS", weight_list)
     set_line("MULTIPORT_PREFER_COIN", (prefer_coin or "").upper())
 
-    with open(coins_env_path, 'w') as f:
-        f.write("\n".join(lines) + "\n")
+    import tempfile
+    dir_name = os.path.dirname(coins_env_path)
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.env.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, coins_env_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 @app.route('/api/nodes/<symbol>/install', methods=['POST'])
@@ -11927,8 +12537,8 @@ def _update_coins_env_multiport(enabled, coins, prefer_coin):
 def install_node(symbol):
     """Install a coin node via pool-mode.sh --add --yes --wallet <addr>.
 
-    Blocks until installation completes (up to 5 min timeout).
-    Use GET /api/nodes/<symbol>/sync to monitor blockchain sync progress after.
+    Returns immediately with 202 Accepted. Install runs in background thread.
+    Poll GET /api/nodes/<symbol>/install-status for progress.
     """
     symbol = symbol.upper()
     if symbol not in MULTI_COIN_NODES:
@@ -11938,12 +12548,10 @@ def install_node(symbol):
     if node.get('enabled', False):
         return jsonify({"success": False, "error": f"{symbol} is already installed"}), 400
 
-    # Wallet address is required for coin installation
+    # Wallet address — optional (user can generate one from node after install)
     data = request.get_json(silent=True) or {}
     wallet = (data.get("wallet") or "").strip()
-    if not wallet:
-        return jsonify({"success": False, "error": "Wallet address is required"}), 400
-    if not validate_wallet_address(symbol, wallet):
+    if wallet and not validate_wallet_address(symbol, wallet):
         return jsonify({"success": False, "error": f"Invalid wallet address format for {symbol}"}), 400
 
     # SECURITY: Rate limiting
@@ -11955,37 +12563,190 @@ def install_node(symbol):
     if not _node_operation_lock.acquire(blocking=False):
         return jsonify({"success": False, "error": "Another coin operation is in progress — try again shortly"}), 409
 
-    script = "/spiralpool/scripts/pool-mode.sh"
+    # Mark as installing and return immediately
+    _node_operation_status[symbol] = {"status": "installing", "message": f"Installing {symbol} node...", "started": time.time()}
+
+    def _run_install():
+        script = "/spiralpool/scripts/pool-mode.sh"
+        try:
+            import subprocess
+            cmd = [
+                'sudo', 'systemd-run', '--pipe', '--quiet',
+                '--property=WorkingDirectory=/tmp',
+                '/bin/bash', script, '--add', symbol,
+                '--yes',
+            ]
+            if wallet:
+                cmd.extend(['--wallet', wallet])
+            # Node install can involve downloading binaries + writing configs;
+            # 10 min is generous but prevents dashboard from killing a slow install.
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode == 0:
+                load_multi_coin_config()
+                # Invalidate BOTH caches so next request gets fresh state
+                multi_coin_health_cache["last_update"] = 0
+                active_coins["last_update"] = 0
+                app.logger.info(f"Coin {symbol} installed by {client_ip}")
+                # pool-mode.sh --yes now auto-syncs HA peers; note in status if HA is active
+                ha_status = fetch_ha_status()
+                ha_note = " HA cluster sync attempted." if ha_status.get("enabled", False) else ""
+                _node_operation_status[symbol] = {"status": "done", "message": f"{symbol} node installed. Blockchain sync starting.{ha_note}"}
+            else:
+                error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+                app.logger.error(f"Failed to install {symbol}: {error_msg}")
+                _node_operation_status[symbol] = {"status": "error", "message": f"Installation failed: {error_msg}"}
+        except subprocess.TimeoutExpired:
+            _node_operation_status[symbol] = {"status": "error", "message": "Installation timed out (10 min) — check service manually"}
+        except Exception as e:
+            _node_operation_status[symbol] = {"status": "error", "message": f"Failed to run installer: {e}"}
+        finally:
+            _node_operation_lock.release()
+
+    threading.Thread(target=_run_install, daemon=True).start()
+    return jsonify({"success": True, "message": f"{symbol} installation started."}), 202
+
+
+@app.route('/api/nodes/<symbol>/install-status', methods=['GET'])
+@admin_required
+def install_status(symbol):
+    """Poll install/remove progress for a coin."""
+    symbol = symbol.upper()
+    status = _node_operation_status.get(symbol)
+    if not status:
+        return jsonify({"status": "none", "message": "No operation in progress"})
+    return jsonify(status)
+
+
+@app.route('/api/nodes/<symbol>/generate-wallet', methods=['POST'])
+@admin_required
+def generate_wallet(symbol):
+    """Generate a new wallet address from the coin node's built-in wallet.
+
+    Calls getnewaddress via RPC. The node must be running and responding.
+    Updates config.yaml with the generated address.
+    """
+    symbol = symbol.upper()
+    if symbol not in MULTI_COIN_NODES:
+        return jsonify({"success": False, "error": f"Unknown coin: {symbol}"}), 400
+
+    node = MULTI_COIN_NODES[symbol]
+    if not node.get('enabled', False):
+        return jsonify({"success": False, "error": f"{symbol} node is not installed/enabled"}), 400
+
+    # SECURITY: Rate limiting
+    client_ip = request.remote_addr or "unknown"
+    if not check_rate_limit(client_ip, "node_install"):
+        return jsonify({"success": False, "error": "Rate limited — try again later"}), 429
+
+    # Generate address via RPC — may fail during initial block loading (error -28)
+    # which is normal after install. The frontend polls this endpoint until it succeeds.
+    # install.sh creates named wallets as "pool-<coin>" (e.g., pool-btc, pool-dgb).
+    # We must target the correct wallet via /wallet/<name> URL path.
+    # When adding coins via dashboard (pool-mode.sh --add), the named wallet may not
+    # exist yet — createwallet is only called during install.sh's wallet flow.
+    # We attempt createwallet here if getnewaddress fails on the named wallet.
+    wallet_name = f"pool-{symbol.lower()}"
+    address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name)
+    if not address:
+        # Wallet may not exist yet (dashboard-added coins skip install.sh wallet flow).
+        # Try creating it, then load it if it already exists, then retry getnewaddress.
+        create_result = coin_rpc(symbol, "createwallet", params=[wallet_name])
+        if create_result is None:
+            # createwallet failed — maybe wallet already exists but isn't loaded
+            coin_rpc(symbol, "loadwallet", params=[wallet_name])
+        if create_result is not None or coin_rpc(symbol, "listwallets") is not None:
+            address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name)
+    if not address:
+        # Try without wallet name (old daemons or default wallet setups)
+        address = coin_rpc(symbol, "getnewaddress")
+    if not address:
+        # Check if node is still loading blocks (HTTP 503 / error -28) vs truly down
+        loading_check = coin_rpc(symbol, "getblockchaininfo")
+        if loading_check is None:
+            return jsonify({
+                "success": False,
+                "error": f"{symbol} node is still loading — wallet generation will succeed once the block index is loaded (this is NOT a full sync, typically a few minutes)",
+                "retryable": True
+            }), 503
+        else:
+            # Node responded to getblockchaininfo but getnewaddress failed —
+            # could be a wallet issue (wallet disabled, etc.)
+            return jsonify({
+                "success": False,
+                "error": f"Could not generate wallet for {symbol} — the node is running but getnewaddress failed. Check if the wallet is enabled in the daemon config.",
+                "retryable": False
+            }), 500
+
+    # Validate the generated address
+    if not validate_wallet_address(symbol, address):
+        app.logger.error(f"Node generated invalid address for {symbol}: {address}")
+        return jsonify({"success": False, "error": "Node returned an unexpected address format"}), 500
+
+    # Update config.yaml with the new address (locked to prevent concurrent overwrites)
     try:
-        import subprocess
-        # Use systemd-run to escape ProtectSystem=strict namespace.
-        # pool-mode.sh writes to /spiralpool/<coin>/, /etc/systemd/system/, etc.
-        # --yes skips interactive prompts, --wallet supplies the address.
-        cmd = [
-            'sudo', 'systemd-run', '--pipe', '--quiet',
-            '--property=WorkingDirectory=/tmp',
-            '/bin/bash', script, '--add', symbol,
-            '--yes', '--wallet', wallet
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode == 0:
-            # Reload config so dashboard picks up the new coin
-            load_multi_coin_config()
-            app.logger.info(f"Coin {symbol} installed by {client_ip}")
+        import yaml as pyyaml_gen
+        with _config_file_lock:
+            with open(POOL_CONFIG_PATH, 'r') as f:
+                config = pyyaml_gen.safe_load(f)
+
+            # Find the coin entry in the coins list and update its address
+            coins_list = config.get('coins', [])
+            updated = False
+            for entry in coins_list:
+                if not isinstance(entry, dict):
+                    continue
+                entry_sym = entry.get('symbol', '').upper()
+                coin_info = entry.get('coin', {})
+                if isinstance(coin_info, dict):
+                    entry_sym = coin_info.get('type', '').upper() or entry_sym
+                elif isinstance(coin_info, str):
+                    entry_sym = coin_info.upper()
+                if entry_sym == symbol:
+                    entry['address'] = address
+                    updated = True
+                    break
+
+            if updated:
+                import tempfile
+                dir_name = os.path.dirname(POOL_CONFIG_PATH)
+                fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.yaml.tmp')
+                try:
+                    with os.fdopen(fd, 'w') as f:
+                        pyyaml_gen.dump(config, f, default_flow_style=False, sort_keys=False)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.chmod(tmp_path, 0o600)
+                    os.replace(tmp_path, POOL_CONFIG_PATH)
+                except Exception:
+                    os.unlink(tmp_path)
+                    raise
+
+        if updated:
+            app.logger.info(f"Generated wallet for {symbol}: {address} (by {client_ip})")
             return jsonify({
                 "success": True,
-                "message": f"{symbol} node installation started. Use sync status to monitor progress.",
+                "address": address,
+                "message": f"Wallet generated for {symbol}. SAVE THIS ADDRESS — it receives your mining payouts.",
+                "warning": "Back up your node's wallet.dat file to avoid losing access to this address."
             })
         else:
-            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-            app.logger.error(f"Failed to install {symbol}: {error_msg}")
-            return jsonify({"success": False, "error": f"Installation failed: {error_msg}"}), 500
-    except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "error": "Installation timed out (5 min)"}), 504
+            # Coin not found in config.yaml coins array — address generated but not saved
+            app.logger.error(f"Generated {symbol} wallet {address} but coin not found in config.yaml coins array")
+            return jsonify({
+                "success": True,
+                "address": address,
+                "message": f"Wallet generated but {symbol} not found in config — manually add address: {address}",
+                "warning": f"{symbol} is not in config.yaml coins array. Add the address manually or reinstall the coin."
+            })
     except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to run installer: {e}"}), 500
-    finally:
-        _node_operation_lock.release()
+        # Address was generated successfully even if config update fails
+        app.logger.error(f"Generated {symbol} wallet {address} but config update failed: {e}")
+        return jsonify({
+            "success": True,
+            "address": address,
+            "message": f"Wallet generated but config update failed. Manually set address: {address}",
+            "warning": str(e)
+        })
 
 
 @app.route('/api/nodes/<symbol>/remove', methods=['POST'])
@@ -11993,6 +12754,8 @@ def install_node(symbol):
 def remove_node(symbol):
     """Remove a coin node via pool-mode.sh --remove --yes.
 
+    Returns immediately with 202 Accepted. Removal runs in background thread.
+    Poll GET /api/nodes/<symbol>/install-status for progress.
     Refuses to remove the last installed coin.
     Preserves blockchain data by default (no --delete-data).
     """
@@ -12018,33 +12781,49 @@ def remove_node(symbol):
     if not _node_operation_lock.acquire(blocking=False):
         return jsonify({"success": False, "error": "Another coin operation is in progress — try again shortly"}), 409
 
-    script = "/spiralpool/scripts/pool-mode.sh"
-    try:
-        import subprocess
-        # --yes skips interactive confirmations; data is preserved (no --delete-data)
-        cmd = [
-            'sudo', 'systemd-run', '--pipe', '--quiet',
-            '--property=WorkingDirectory=/tmp',
-            '/bin/bash', script, '--remove', symbol, '--yes'
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode == 0:
-            load_multi_coin_config()
-            app.logger.info(f"Coin {symbol} removed by {client_ip}")
-            return jsonify({
-                "success": True,
-                "message": f"{symbol} node removed successfully.",
-            })
-        else:
-            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-            app.logger.error(f"Failed to remove {symbol}: {error_msg}")
-            return jsonify({"success": False, "error": f"Removal failed: {error_msg}"}), 500
-    except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "error": "Removal timed out"}), 504
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to run removal: {e}"}), 500
-    finally:
-        _node_operation_lock.release()
+    _node_operation_status[symbol] = {"status": "removing", "message": f"Removing {symbol} node...", "started": time.time()}
+
+    def _run_remove():
+        script = "/spiralpool/scripts/pool-mode.sh"
+        try:
+            import subprocess
+            cmd = [
+                'sudo', 'systemd-run', '--pipe', '--quiet',
+                '--property=WorkingDirectory=/tmp',
+                '/bin/bash', script, '--remove', symbol, '--yes'
+            ]
+            # Timeout must be >= service TimeoutStopSec (600s) — stopping a
+            # syncing daemon can take minutes.  Previous 120s caused silent
+            # failures where the subprocess was killed but the daemon kept running.
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=660)
+            if result.returncode == 0:
+                load_multi_coin_config()
+                # Invalidate BOTH caches so next request gets fresh state
+                multi_coin_health_cache["last_update"] = 0
+                active_coins["last_update"] = 0
+
+                # Clean up multi_port config section if the removed coin was
+                # in the smart port schedule. pool-mode.sh also does its own
+                # cleanup, but this is a safety net — idempotent if already done.
+                _cleanup_multiport_after_remove(symbol)
+
+                app.logger.info(f"Coin {symbol} removed by {client_ip}")
+                ha_status = fetch_ha_status()
+                ha_note = " HA cluster sync attempted." if ha_status.get("enabled", False) else ""
+                _node_operation_status[symbol] = {"status": "done", "message": f"{symbol} node removed successfully.{ha_note}"}
+            else:
+                error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+                app.logger.error(f"Failed to remove {symbol}: {error_msg}")
+                _node_operation_status[symbol] = {"status": "error", "message": f"Removal failed: {error_msg}"}
+        except subprocess.TimeoutExpired:
+            _node_operation_status[symbol] = {"status": "error", "message": "Removal timed out (11 min) — check service manually: sudo systemctl status fractald/qbitxd/etc"}
+        except Exception as e:
+            _node_operation_status[symbol] = {"status": "error", "message": f"Failed to run removal: {e}"}
+        finally:
+            _node_operation_lock.release()
+
+    threading.Thread(target=_run_remove, daemon=True).start()
+    return jsonify({"success": True, "message": f"{symbol} removal started."}), 202
 
 
 @app.route('/api/nodes/<symbol>/restart', methods=['POST'])
@@ -12072,7 +12851,7 @@ def restart_node(symbol):
     try:
         import subprocess
         result = subprocess.run(
-            ['sudo', 'systemctl', 'restart', service_name],
+            ['sudo', '/bin/systemctl', 'restart', service_name],
             capture_output=True,
             text=True,
             timeout=30
@@ -12118,11 +12897,13 @@ def stop_node(symbol):
 
     try:
         import subprocess
+        # Stopping a syncing daemon can take minutes (TimeoutStopSec=600 in
+        # service files).  Use 660s to avoid killing systemctl before it finishes.
         result = subprocess.run(
-            ['sudo', 'systemctl', 'stop', service_name],
+            ['sudo', '/bin/systemctl', 'stop', service_name],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=660
         )
         if result.returncode == 0:
             app.logger.info(f"Node {symbol} stopped by {client_ip}")
@@ -12136,6 +12917,8 @@ def stop_node(symbol):
                 "success": False,
                 "error": "Service stop failed. Check system logs for details."
             })
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": f"Stop timed out — daemon may still be shutting down. Check: sudo systemctl status {service_name}"})
     except Exception as e:
         app.logger.error(f"Node stop exception: {e}")
         return jsonify({"success": False, "error": "Failed to stop node"})
@@ -12165,8 +12948,15 @@ def start_node(symbol):
 
     try:
         import subprocess
+        # Clear any StartLimitBurst failures so systemd allows the start.
+        # Without this, a daemon that crashed 5 times in 10 minutes will
+        # refuse to start until the user manually runs reset-failed.
+        subprocess.run(
+            ['sudo', '/bin/systemctl', 'reset-failed', service_name],
+            capture_output=True, text=True, timeout=5
+        )
         result = subprocess.run(
-            ['sudo', 'systemctl', 'start', service_name],
+            ['sudo', '/bin/systemctl', 'start', service_name],
             capture_output=True,
             text=True,
             timeout=30
@@ -12178,10 +12968,11 @@ def start_node(symbol):
                 "message": f"{node['name']} node started"
             })
         else:
-            app.logger.warning(f"Node {symbol} start failed for {client_ip}")
+            error_detail = result.stderr.strip() or "Check system logs for details."
+            app.logger.warning(f"Node {symbol} start failed for {client_ip}: {error_detail}")
             return jsonify({
                 "success": False,
-                "error": "Service start failed. Check system logs for details."
+                "error": f"Service start failed. {error_detail}"
             })
     except Exception as e:
         app.logger.error(f"Node start exception: {e}")
@@ -12237,7 +13028,7 @@ def service_control(service, action):
 
     try:
         result = subprocess.run(
-            ['sudo', 'systemctl', action, service],
+            ['sudo', '/bin/systemctl', action, service],
             capture_output=True,
             text=True,
             timeout=30
@@ -12684,14 +13475,27 @@ def get_node_sync_status(symbol):
     headers = bc_info.get("headers", 0)
     progress = bc_info.get("verificationprogress", 0)
 
-    # Estimate time remaining based on current sync rate
+    # Many daemons report inaccurate verificationprogress (QBX, BC2, etc.).
+    # Use blocks/headers as authoritative when IBD is false and blocks >= headers.
+    ibd = bc_info.get("initialblockdownload", True)
+    vp_pct = round(progress * 100, 4)
+    if not ibd and headers > 0 and blocks >= headers:
+        progress_pct = 100.0
+        is_synced = True
+    elif headers > 0 and blocks / headers * 100 > vp_pct:
+        progress_pct = round(min(blocks / headers * 100, 100), 4)
+        is_synced = blocks >= headers
+    else:
+        progress_pct = vp_pct
+        is_synced = progress >= 0.9999
+
     sync_status = {
         "symbol": symbol,
         "blocks": blocks,
         "headers": headers,
-        "progress_percent": round(progress * 100, 4),
+        "progress_percent": progress_pct,
         "blocks_remaining": headers - blocks if headers > blocks else 0,
-        "is_synced": progress >= 0.9999,
+        "is_synced": is_synced,
         "chain": bc_info.get("chain", ""),
         "size_on_disk_gb": round(bc_info.get("size_on_disk", 0) / 1024 / 1024 / 1024, 2),
         "pruned": bc_info.get("pruned", False)
@@ -13060,11 +13864,11 @@ def get_stratum_connect_info():
 @admin_required
 def add_discovered_devices():
     """Add discovered devices to configuration"""
-    data = request.json
+    data = request.json or {}
     devices_to_add = data.get("devices", [])
 
     if not devices_to_add:
-        return jsonify({"success": False, "error": "No devices provided"})
+        return jsonify({"success": False, "error": "No devices provided"}), 400
 
     config = load_config()
 
@@ -13775,7 +14579,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.1.0 PHI HASH REACTOR"},
+        "footer": {"text": f"Spiral Pool v2.2.0 PHI HASH REACTOR"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -13952,7 +14756,7 @@ def cgminer_command_v2(ip, port, command, parameter=""):
 @api_key_or_login_required
 def get_cgminer_stats():
     """ Get detailed CGMiner stats for ASIC miners"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
 
@@ -13989,7 +14793,7 @@ def get_cgminer_stats():
 @admin_required
 def cgminer_restart():
     """ Restart ASIC miner via CGMiner API"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     device_type = data.get("type", "").lower()
@@ -14047,7 +14851,7 @@ def cgminer_set_fan():
     NOTE: Stock Antminer/WhatsMiner firmware does NOT support ascset fan control.
     Only Avalon/Canaan devices are confirmed to support this command.
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     fan_speed = data.get("fan_speed", 0)  # 0 = auto (100% range), otherwise fixed percent
@@ -14084,7 +14888,7 @@ def cgminer_set_fan():
 @admin_required
 def cgminer_set_frequency():
     """ Set mining frequency on ASIC miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     frequency = data.get("frequency", 0)
@@ -14116,7 +14920,7 @@ def cgminer_set_frequency():
 @api_key_or_login_required
 def whatsminer_info():
     """ Get Whatsminer detailed info via btminer API"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
 
@@ -14179,7 +14983,7 @@ def axeos_api_call(ip, endpoint, method="GET", data=None, timeout=10):
 @api_key_or_login_required
 def get_axeos_stats():
     """ Get detailed stats from AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
 
     if not ip:
@@ -14303,7 +15107,7 @@ def get_axeos_stats():
 @admin_required
 def axeos_restart():
     """ Restart AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
 
     if not ip:
@@ -14326,7 +15130,7 @@ def axeos_restart():
 @admin_required
 def axeos_set_frequency():
     """ Set mining frequency on AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     frequency = data.get("frequency", 0)
 
@@ -14360,7 +15164,7 @@ def axeos_set_frequency():
 @admin_required
 def axeos_set_voltage():
     """ Set core voltage on AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     voltage = data.get("voltage", 0)
 
@@ -14398,7 +15202,7 @@ def axeos_set_fan():
       manualFanSpeed — uint16 0-100%, used when autofanspeed=0
       temptarget     — uint16 35-66°C, target temp for auto-fan PID loop
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     fan_speed = data.get("fan_speed", 0)
     auto_fan = data.get("auto_fan", None)
@@ -14496,7 +15300,7 @@ def luxos_set_pool():
 @admin_required
 def axeos_set_wifi():
     """ Update WiFi configuration on AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     ssid = data.get("ssid", "")
     wifi_password = data.get("password", "")
@@ -14532,7 +15336,7 @@ def axeos_set_wifi():
 @admin_required
 def axeos_set_hostname():
     """ Update hostname on AxeOS/NerdQAxe++ miner"""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     hostname = data.get("hostname", "")
 
@@ -14575,7 +15379,7 @@ def vnish_set_fan():
 
     Reference: pyasic vnish backend | http://[miner]/docs/
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     fan_speed = data.get("fan_speed", 0)
     auto_fan = data.get("auto_fan", False)
@@ -14623,7 +15427,7 @@ def vnish_set_overclock():
 
     Reference: pyasic vnish backend | GET /api/v1/autotune/presets for available presets
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     preset = data.get("preset", "")
     frequency = data.get("frequency", None)
@@ -14678,7 +15482,7 @@ def vnish_set_overclock():
 @api_key_or_login_required
 def vnish_get_presets():
     """Get available autotune presets from Vnish miner."""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     password = data.get("password", "admin")
 
@@ -14750,7 +15554,7 @@ def epic_set_fan():
 
     Reference: https://github.com/epicblockchain/epic-dashboard/blob/main/docs/APIv2.md
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     fan_speed = data.get("fan_speed", 50)
     auto_fan = data.get("auto_fan", False)
@@ -14800,7 +15604,7 @@ def epic_set_overclock():
 
     Reference: https://github.com/epicblockchain/epic-dashboard/blob/main/docs/APIv3.md
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     preset = data.get("preset", "")
     power_target = data.get("power_target", None)
@@ -14865,7 +15669,7 @@ def epic_set_overclock():
 @admin_required
 def epic_restart():
     """Reboot ePIC BlockMiner via HTTP REST API."""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     password = data.get("password", "letmein")
     port = data.get("port", 4028)
@@ -14943,7 +15747,7 @@ def luxos_set_fan():
 
     Reference: pyasic luxminer backend | docs.luxor.tech/firmware/api
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     fan_speed = data.get("fan_speed", 0)
@@ -14985,7 +15789,7 @@ def luxos_set_frequency():
 
     Reference: pyasic luxminer backend
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     frequency = data.get("frequency", 0)
@@ -15024,7 +15828,7 @@ def luxos_set_profile():
     changing profiles manually. This endpoint disables ATM, sets the profile,
     then re-enables ATM.
     """
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
     profile = data.get("profile", "")
@@ -15055,7 +15859,7 @@ def luxos_set_profile():
 @api_key_or_login_required
 def luxos_get_profiles():
     """Get available performance profiles from LuxOS miner."""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
 
@@ -15076,7 +15880,7 @@ def luxos_get_profiles():
 @admin_required
 def luxos_restart():
     """Reboot LuxOS miner via CGMiner rebootdevice command."""
-    data = request.json
+    data = request.json or {}
     ip = data.get("ip", "")
     port = data.get("port", 4028)
 
@@ -16050,7 +16854,7 @@ def apply_profile_now(ip):
     if not validate_miner_ip(ip):
         return jsonify({"success": False, "error": "Invalid IP - only private network IPs allowed"})
 
-    data = request.json
+    data = request.json or {}
     profile_name = data.get("profile", "balanced")
 
     # Model priority: request body > saved schedule > generic
@@ -16064,7 +16868,7 @@ def apply_profile_now(ip):
 @admin_required
 def batch_restart_miners():
     """ Restart multiple miners at once"""
-    data = request.json
+    data = request.json or {}
     targets = data.get("targets", [])  # List of {ip, type} or group name
     group_name = data.get("group", "")
 
@@ -16141,7 +16945,7 @@ def batch_update_pool():
         "group": "all-miners"              // OR specify a group name instead of targets
     }
     """
-    data = request.json
+    data = request.json or {}
     targets = data.get("targets", [])
     group_name = data.get("group", "")
     pool_url = data.get("pool_url", "")
@@ -16388,7 +17192,7 @@ def get_maintenance_mode():
 def set_maintenance_mode():
     """ Enable/disable maintenance mode"""
     global maintenance_mode
-    data = request.json
+    data = request.json or {}
     enabled = bool(data.get("enabled", False))
     reason = str(data.get("reason", "Scheduled maintenance"))[:256].strip()
 
@@ -17996,7 +18800,7 @@ def broadcast_block_found(block_data):
     # Record to activity feed
     coin = block_data.get("coin", "")
     height = block_data.get("height", "?")
-    finder = block_data.get("worker") or block_data.get("miner") or block_data.get("source") or "unknown"
+    finder = block_data.get("worker") or block_data.get("source") or block_data.get("miner") or "unknown"
     record_activity("block", f"Block found by {finder} ({coin} #{height})", block_data)
 
     # Persist block finder attribution
@@ -19180,9 +19984,8 @@ def cli_reset_devices():
     # Replace devices with clean defaults
     config["devices"] = copy.deepcopy(DEFAULT_CONFIG["devices"])
 
-    # Save
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=2)
+    # Save (atomic write to prevent corruption on crash)
+    _atomic_json_save(str(CONFIG_FILE), config, indent=2)
 
     print(f"[RESET] Cleared {total} device(s) across {len(old_devices)} type(s).")
     if orphaned_keys:
@@ -19239,6 +20042,11 @@ load_miner_tags()
 load_historical_data()
 load_activity_feed()
 load_share_audit_log()
+load_avalon_schedules()
+
+# Start Avalon schedule worker if any schedules are enabled (gunicorn path)
+if any(s.get("enabled") for s in avalon_schedules.values()):
+    start_schedule_worker()
 
 # CRITICAL FIX: Start background data collection at module level so it runs
 # under gunicorn (where __name__ == "dashboard", NOT "__main__").

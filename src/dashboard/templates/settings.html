@@ -118,7 +118,7 @@
                 <div class="mode-option" id="mode-multi" onclick="selectPoolMode('multi')">
                     <div class="mode-icon">🌐</div>
                     <div class="mode-info">
-                        <div class="mode-title">Multi-Coin Mode</div>
+                        <div class="mode-title">Multi Coin Mode</div>
                         <div class="mode-desc">Mine 2+ coins simultaneously</div>
                     </div>
                     <div class="mode-check">✓</div>
@@ -336,11 +336,11 @@
             </div>
         </div>
 
-        <!-- Multi-Coin Smart Port -->
+        <!-- Multi Coin Smart Port -->
         <div class="config-section cyber-card" style="border-color: var(--neon-purple);">
             <h3 class="section-title" style="color: var(--neon-purple);">
                 <span class="title-icon">🔀</span>
-                Multi-Coin Smart Port
+                Multi Coin Smart Port
             </h3>
             <p class="section-desc">
                 Single stratum port (16180) that rotates miners between SHA-256d coins on a 24-hour schedule.
@@ -360,45 +360,82 @@
                 </div>
 
                 <div id="multiport-config" style="display: none;">
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
-                        Assign hours per day to each SHA-256d coin. <strong>Hours must sum to exactly 24.</strong>
-                        Use the install/remove buttons to manage coin nodes.
-                    </p>
+                    <!-- Two-column layout: Coin Management (left) | Smart Port Schedule (right) -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;">
 
-                    <div id="multiport-coins" style="display: grid; gap: 0.5rem; margin-bottom: 1rem;">
-                        <!-- Coin rows populated by JS -->
-                    </div>
+                        <!-- LEFT: Coin Management -->
+                        <div>
+                            <h4 style="color: var(--neon-cyan); font-size: 0.9rem; font-weight: 600; margin: 0 0 0.5rem 0;
+                                       border-bottom: 1px solid rgba(0, 212, 255, 0.2); padding-bottom: 0.4rem;">
+                                Coin Nodes
+                            </h4>
+                            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem;">
+                                Install or remove SHA-256d coin nodes.
+                            </p>
+                            <div id="multiport-coins" style="display: grid; gap: 0.4rem;">
+                                <!-- Coin rows populated by JS -->
+                            </div>
 
-                    <div id="multiport-total" style="font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 0.75rem;">
-                        Total: <span id="multiport-total-value">0</span>/24 hours
-                    </div>
-
-                    <div id="multiport-schedule" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3);
-                                                         border-radius: var(--border-radius); padding: 0.75rem; margin-bottom: 1rem;
-                                                         font-family: var(--font-mono); font-size: 0.85rem;">
-                        <!-- Schedule preview populated by JS -->
-                    </div>
-
-                    <div id="multiport-live" style="display: none; background: rgba(34, 197, 94, 0.08);
-                                                     border: 1px solid rgba(34, 197, 94, 0.3); border-radius: var(--border-radius);
-                                                     padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
-                        <!-- Live stats populated by JS -->
-                    </div>
-
-                    <div id="multiport-sync" style="display: none; background: rgba(0, 212, 255, 0.06);
-                                                      border: 1px solid rgba(0, 212, 255, 0.3); border-radius: var(--border-radius);
-                                                      padding: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem;">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-                            <span style="color: var(--neon-cyan); font-weight: 600;">Blockchain Sync Status</span>
-                            <span id="multiport-sync-refresh" style="color: var(--text-muted); font-size: 0.75rem;">Auto-refreshing...</span>
+                            <div id="multiport-sync" style="display: none; background: rgba(0, 212, 255, 0.06);
+                                                              border: 1px solid rgba(0, 212, 255, 0.3); border-radius: var(--border-radius);
+                                                              padding: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span style="color: var(--neon-cyan); font-weight: 600;">Blockchain Sync</span>
+                                    <span id="multiport-sync-refresh" style="color: var(--text-muted); font-size: 0.75rem;">Auto-refreshing...</span>
+                                </div>
+                                <div id="multiport-sync-coins"></div>
+                            </div>
                         </div>
-                        <div id="multiport-sync-coins"></div>
+
+                        <!-- RIGHT: Smart Port Schedule -->
+                        <div>
+                            <h4 style="color: var(--neon-purple); font-size: 0.9rem; font-weight: 600; margin: 0 0 0.5rem 0;
+                                       border-bottom: 1px solid rgba(168, 85, 247, 0.2); padding-bottom: 0.4rem;">
+                                24h Schedule
+                            </h4>
+                            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem;">
+                                Assign hours per coin. Set a start time for the first coin — remaining coins are auto-sequenced after it. <strong style="color: var(--text-secondary);">Hours must sum to 24.</strong>
+                            </p>
+
+                            <div id="multiport-hours" style="display: grid; gap: 0.4rem; margin-bottom: 0.75rem;">
+                                <!-- Hours inputs populated by JS (installed coins only) -->
+                            </div>
+
+                            <div id="multiport-total" style="font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 0.75rem;">
+                                Total: <span id="multiport-total-value">0</span>/24 hours
+                            </div>
+
+                            <div id="multiport-schedule" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3);
+                                                                 border-radius: var(--border-radius); padding: 0.75rem; margin-bottom: 0.75rem;
+                                                                 font-family: var(--font-mono); font-size: 0.85rem;">
+                                <!-- Schedule preview populated by JS -->
+                            </div>
+
+                            <div id="multiport-live" style="display: none; background: rgba(34, 197, 94, 0.08);
+                                                             border: 1px solid rgba(34, 197, 94, 0.3); border-radius: var(--border-radius);
+                                                             padding: 0.75rem; margin-bottom: 0.75rem; font-size: 0.85rem;">
+                                <!-- Live stats populated by JS -->
+                            </div>
+
+                            <button type="button" class="cyber-btn" onclick="saveMultiPort()"
+                                    style="background: var(--neon-purple); color: #000; font-weight: 600; width: 100%;">
+                                Save & Restart Stratum
+                            </button>
+
+                        </div>
+
                     </div>
 
-                    <button type="button" class="cyber-btn" onclick="saveMultiPort()"
-                            style="background: var(--neon-purple); color: #000; font-weight: 600;">
-                        Save & Restart Stratum
-                    </button>
+                    <div style="margin-top: 0.75rem; padding: 0.6rem; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 6px;">
+                        <div style="font-size: 0.8rem; color: var(--neon-green, #22c55e); font-weight: 600; margin-bottom: 0.25rem;">Wallet Addresses</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            Payouts are handled automatically. When Smart Port switches coins, the pool uses each coin's
+                            configured payout address from your pool config. Miners connect once with any worker name —
+                            no per-worker wallet setup needed.
+                        </div>
+                    </div>
+
+
                 </div>
             </div>
         </div>
@@ -979,7 +1016,7 @@
             } catch (e) {
                 console.error('Failed to load server mode:', e);
                 // Unable to load config - show error instead of defaulting
-                showError("Unable to load pool configuration. Please check server connection.");
+                showGlobalStatus('error', "Unable to load pool configuration. Please check server connection.");
                 console.error('Failed to fetch pool mode configuration');
             }
         }
@@ -993,7 +1030,7 @@
             const hasMerge = Object.keys(MERGE_CHAINS).some(parent =>
                 selectedCoins.includes(parent) && MERGE_CHAINS[parent].some(aux => selectedCoins.includes(aux))
             );
-            const displayMode = hasMerge ? 'Merge Mining' : currentPoolMode === 'multi' ? 'Multi-Coin' : 'Solo';
+            const displayMode = hasMerge ? 'Merge Mining' : currentPoolMode === 'multi' ? 'Multi Coin' : 'Solo';
             badge.textContent = displayMode;
             badge.className = 'mode-badge ' + currentPoolMode;
 
@@ -1052,6 +1089,7 @@
             }
 
             updateModeSelector();
+            updateMergeGroups();
             updateCoinSelection();
         }
 
@@ -1069,24 +1107,28 @@
                     });
                 }
             } else {
-                // Multi mode: toggle coin
+                // Multi mode: toggle coin independently
                 const idx = selectedCoins.indexOf(coin);
                 if (idx >= 0) {
-                    // If removing a parent chain, also remove its aux chains
+                    selectedCoins.splice(idx, 1);
+                    // If removing a parent, also remove its merge-only aux chains
+                    // (SYS/XMY can't solo mine), but keep solo-mineable aux (NMC, FBTC, DOGE, PEP)
                     if (MERGE_CHAINS[coin]) {
+                        const mergeOnlyCoins = ['SYS', 'XMY'];
                         MERGE_CHAINS[coin].forEach(aux => {
-                            const auxIdx = selectedCoins.indexOf(aux);
-                            if (auxIdx >= 0) selectedCoins.splice(auxIdx, 1);
+                            if (mergeOnlyCoins.includes(aux)) {
+                                const auxIdx = selectedCoins.indexOf(aux);
+                                if (auxIdx >= 0) selectedCoins.splice(auxIdx, 1);
+                            }
                         });
-                        // Re-find index after splices
-                        const newIdx = selectedCoins.indexOf(coin);
-                        if (newIdx >= 0) selectedCoins.splice(newIdx, 1);
-                    } else {
-                        // Prevent removing parent chain's last aux if... just remove it
-                        selectedCoins.splice(idx, 1);
                     }
                 } else {
                     selectedCoins.push(coin);
+                    // If selecting a merge-only coin, auto-select its parent
+                    const info = COIN_INFO[coin];
+                    if (info && info.mergeOnly && info.mergeParent && !selectedCoins.includes(info.mergeParent)) {
+                        selectedCoins.push(info.mergeParent);
+                    }
                 }
             }
 
@@ -1099,7 +1141,30 @@
             Object.keys(MERGE_CHAINS).forEach(parent => {
                 const group = document.getElementById('merge-group-' + parent);
                 if (group) {
-                    group.style.display = selectedCoins.includes(parent) ? '' : 'none';
+                    // Multi-coin mode: show all coins so they can be selected independently
+                    // (smart port rotates between coins — they don't need their parent).
+                    // Solo mode: only show merge group when parent is selected.
+                    if (currentPoolMode === 'multi') {
+                        group.style.display = '';
+                        // Update label for multi-coin context
+                        const label = group.querySelector('.merge-label');
+                        if (label) {
+                            label.textContent = selectedCoins.includes(parent)
+                                ? `🔗 Merge-mine with ${parent}`
+                                : `Also available (solo-mineable)`;
+                        }
+                        // Hide merge-only coins (SYS, XMY) when parent not selected
+                        // — they can't solo mine, only merge-mine
+                        MERGE_CHAINS[parent].forEach(aux => {
+                            const auxInfo = COIN_INFO[aux];
+                            const auxEl = document.getElementById('coin-' + aux);
+                            if (auxEl && auxInfo && auxInfo.mergeOnly) {
+                                auxEl.style.display = selectedCoins.includes(parent) ? '' : 'none';
+                            }
+                        });
+                    } else {
+                        group.style.display = selectedCoins.includes(parent) ? '' : 'none';
+                    }
                 }
             });
         }
@@ -1117,7 +1182,7 @@
                 }
             } else {
                 if (selectedCoins.length < 2) {
-                    validation.textContent = 'Multi-Coin Mode requires at least 2 coins.';
+                    validation.textContent = 'Multi Coin Mode requires at least 2 coins.';
                     validation.className = 'coin-validation error';
                     validation.style.display = 'block';
                     return false;
@@ -1202,7 +1267,7 @@
             const walletSection = document.getElementById('modal-wallet-section');
 
             title.textContent = 'Switch to Solo Mode';
-            desc.textContent = 'You are switching from Multi-Coin to Solo Mode. Please select which coin to keep mining:';
+            desc.textContent = 'You are switching from Multi Coin to Solo Mode. Please select which coin to keep mining:';
             walletSection.style.display = 'none';
 
             coinList.innerHTML = '';
@@ -1235,8 +1300,8 @@
             const walletSection = document.getElementById('modal-wallet-section');
             const walletInputs = document.getElementById('modal-wallet-inputs');
 
-            title.textContent = 'Switch to Multi-Coin Mode';
-            desc.textContent = `You are currently mining ${selectedCoins[0] || 'Unknown'}. Select additional coins to enable Multi-Coin Mode:`;
+            title.textContent = 'Switch to Multi Coin Mode';
+            desc.textContent = `You are currently mining ${selectedCoins[0] || 'Unknown'}. Select additional coins to enable Multi Coin Mode:`;
 
             coinList.innerHTML = '';
             const availableCoins = Object.keys(COIN_INFO).filter(c => !selectedCoins.includes(c));
@@ -1350,7 +1415,9 @@
                 currentPoolMode = 'multi';
             }
 
-            closeModeModal();
+            // Close modal without reverting mode (closeModeModal reverts to originalMode)
+            document.getElementById('mode-switch-modal').classList.remove('open');
+            pendingModeSwitch = null;
             updateModeDisplay();
             updateModeSelector();
             updateCoinSelection();
@@ -2129,7 +2196,7 @@
             }
         }
 
-        // ── Multi-Coin Smart Port UI ──────────────────────────────────
+        // ── Multi Coin Smart Port UI ──────────────────────────────────
 
         let multiportData = null; // cached GET /api/multiport response
 
@@ -2154,6 +2221,11 @@
                 if (multiportData.enabled && multiportData.live) {
                     renderMultiPortLive(multiportData.live);
                 }
+
+                // Load wallet mappings if multi-port is enabled
+                if (multiportData.enabled) {
+                    loadWalletMap();
+                }
             } catch (e) {
                 statusText.textContent = 'Error loading';
                 statusText.style.color = 'var(--neon-red, #ff4444)';
@@ -2168,15 +2240,17 @@
             statusText.textContent = checked ? 'Enabled' : 'Disabled';
             statusText.style.color = checked ? 'var(--neon-green)' : 'var(--text-muted)';
 
-            if (checked && !document.getElementById('multiport-coins').hasChildNodes()) {
+            if (checked && !document.getElementById('multiport-hours').hasChildNodes()) {
                 renderMultiPortCoins();
                 updateMultiPortTotal();
             }
         }
 
         function renderMultiPortCoins() {
-            const container = document.getElementById('multiport-coins');
-            container.innerHTML = '';
+            const coinContainer = document.getElementById('multiport-coins');
+            const hoursContainer = document.getElementById('multiport-hours');
+            coinContainer.innerHTML = '';
+            hoursContainer.innerHTML = '';
 
             const available = (multiportData && multiportData.available_coins) || [];
             const currentCoins = (multiportData && multiportData.coins) || {};
@@ -2199,61 +2273,29 @@
             // Count installed coins (for remove guard)
             const installedCount = available.filter(c => c.enabled).length;
 
+            // LEFT COLUMN: All coins with install/remove buttons
             coins.forEach(sym => {
                 const info = COIN_INFO[sym] || { name: sym, icon: '?' };
                 const serverCoin = available.find(c => c.symbol === sym);
                 const installed = serverCoin ? serverCoin.enabled : false;
-                // Convert stored weight (percentage) to hours for display
-                const currentWeight = currentCoins[sym] ? (currentCoins[sym].weight || 0) : 0;
-                const currentHours = currentWeight > 0 ? (currentWeight / 100 * 24) : 0;
 
                 const row = document.createElement('div');
                 row.dataset.coin = sym;
-                row.dataset.installed = installed ? 'true' : 'false';
-                row.style.cssText = 'display: grid; grid-template-columns: 140px 1fr auto auto; gap: 0.75rem; align-items: center; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.03); border-radius: 6px;';
+                row.style.cssText = 'display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.03); border-radius: 6px;';
 
-                // Coin label
+                // Coin label + status
                 const label = document.createElement('div');
-                label.style.cssText = 'font-family: var(--font-mono); font-weight: 600;';
-                label.innerHTML = `${info.icon} ${sym}`;
-
-                // Name + status
-                const nameDiv = document.createElement('div');
-                nameDiv.style.cssText = 'font-size: 0.85rem;';
+                label.style.cssText = 'font-family: var(--font-mono); font-size: 0.85rem;';
                 if (installed) {
-                    nameDiv.innerHTML = `<span style="color: var(--text-secondary);">${info.name}</span> <span style="color: var(--neon-green); font-size: 0.75rem;">installed</span>`;
+                    label.innerHTML = `${info.icon} <strong>${sym}</strong> <span style="color: var(--neon-green); font-size: 0.7rem;">●</span>`;
                 } else {
-                    nameDiv.innerHTML = `<span style="color: var(--text-muted);">${info.name}</span>`;
-                }
-
-                // Hours input (only for installed coins)
-                const inputWrap = document.createElement('div');
-                inputWrap.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
-                if (installed) {
-                    const input = document.createElement('input');
-                    input.type = 'number';
-                    input.min = '0';
-                    input.max = '24';
-                    input.step = '0.5';
-                    input.value = currentHours > 0 ? currentHours : '';
-                    input.dataset.coin = sym;
-                    input.className = 'cyber-input multiport-hours-input';
-                    input.style.cssText = 'width: 70px; text-align: center; padding: 0.4rem;';
-                    input.placeholder = '0';
-                    input.addEventListener('input', updateMultiPortTotal);
-                    inputWrap.appendChild(input);
-                    const suffix = document.createElement('span');
-                    suffix.style.cssText = 'color: var(--text-muted); font-size: 0.8rem;';
-                    suffix.textContent = 'hrs';
-                    inputWrap.appendChild(suffix);
-                } else {
-                    inputWrap.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">—</span>';
+                    label.innerHTML = `<span style="color: var(--text-muted);">${info.icon} ${sym}</span>`;
                 }
 
                 // Install / Remove button
                 const actionBtn = document.createElement('button');
                 actionBtn.className = 'cyber-btn';
-                actionBtn.style.cssText = 'padding: 0.3rem 0.6rem; font-size: 0.75rem; min-width: 70px;';
+                actionBtn.style.cssText = 'padding: 0.25rem 0.5rem; font-size: 0.7rem; min-width: 60px;';
                 if (installed) {
                     actionBtn.textContent = 'Remove';
                     actionBtn.style.background = 'rgba(255,68,68,0.15)';
@@ -2275,11 +2317,84 @@
                 }
 
                 row.appendChild(label);
-                row.appendChild(nameDiv);
-                row.appendChild(inputWrap);
                 row.appendChild(actionBtn);
-                container.appendChild(row);
+                coinContainer.appendChild(row);
             });
+
+            // RIGHT COLUMN: Hours + start time inputs for installed coins only
+            // Sort by start_hour (chronological) so inputs match the schedule
+            const installedCoins = coins.filter(sym => {
+                const sc = available.find(c => c.symbol === sym);
+                return sc ? sc.enabled : false;
+            }).sort((a, b) => {
+                const sa = currentCoins[a] ? (currentCoins[a].start_hour ?? 999) : 999;
+                const sb = currentCoins[b] ? (currentCoins[b].start_hour ?? 999) : 999;
+                if (sa !== sb) return sa - sb;
+                return a.localeCompare(b);
+            });
+            installedCoins.forEach(sym => {
+                const info = COIN_INFO[sym] || { name: sym, icon: '?' };
+
+                const currentWeight = currentCoins[sym] ? (currentCoins[sym].weight || 0) : 0;
+                const currentHours = currentWeight > 0 ? Math.round(currentWeight / 100 * 24 * 10) / 10 : 0;
+                const currentStart = currentCoins[sym] ? (currentCoins[sym].start_hour ?? '') : '';
+
+                const row = document.createElement('div');
+                row.style.cssText = 'display: grid; grid-template-columns: 1fr auto auto; gap: 0.4rem; align-items: center; padding: 0.4rem 0.6rem; background: rgba(255,255,255,0.03); border-radius: 6px;';
+
+                const label = document.createElement('div');
+                label.style.cssText = 'font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600;';
+                label.innerHTML = `${info.icon} ${sym}`;
+
+                // Hours input
+                const hoursWrap = document.createElement('div');
+                hoursWrap.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '0';
+                input.max = '24';
+                input.step = '0.5';
+                input.value = currentHours > 0 ? currentHours : '';
+                input.dataset.coin = sym;
+                input.className = 'cyber-input multiport-hours-input';
+                input.style.cssText = 'width: 60px; text-align: center; padding: 0.3rem;';
+                input.placeholder = '0';
+                input.addEventListener('input', updateMultiPortTotal);
+                hoursWrap.appendChild(input);
+                const suffix = document.createElement('span');
+                suffix.style.cssText = 'color: var(--text-muted); font-size: 0.75rem;';
+                suffix.textContent = 'hrs';
+                hoursWrap.appendChild(suffix);
+
+                // Start time input
+                const startWrap = document.createElement('div');
+                startWrap.style.cssText = 'display: flex; align-items: center; gap: 0.25rem;';
+                const startLabel = document.createElement('span');
+                startLabel.style.cssText = 'color: var(--text-muted); font-size: 0.7rem;';
+                startLabel.textContent = 'at';
+                startWrap.appendChild(startLabel);
+                const startInput = document.createElement('input');
+                startInput.type = 'time';
+                startInput.dataset.coin = sym;
+                startInput.className = 'cyber-input multiport-start-input';
+                startInput.style.cssText = 'width: 85px; text-align: center; padding: 0.3rem; font-size: 0.8rem;';
+                if (currentStart !== '' && currentStart !== undefined) {
+                    const sh = Math.floor(currentStart);
+                    const sm = Math.round((currentStart - sh) * 60);
+                    startInput.value = `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
+                }
+                startInput.addEventListener('input', updateMultiPortTotal);
+                startWrap.appendChild(startInput);
+
+                row.appendChild(label);
+                row.appendChild(hoursWrap);
+                row.appendChild(startWrap);
+                hoursContainer.appendChild(row);
+            });
+
+            if (hoursContainer.childElementCount === 0) {
+                hoursContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">Install at least 2 coins to configure the schedule.</p>';
+            }
         }
 
         async function installCoinNode(sym) {
@@ -2311,7 +2426,21 @@
         }
 
         async function removeCoinNode(sym) {
-            if (!confirm(`Remove ${sym} node? This will stop the service and remove the coin from the pool.`)) return;
+            // Check if coin is in the active smart port schedule
+            const inSchedule = multiportData && multiportData.enabled &&
+                multiportData.coins && multiportData.coins[sym] &&
+                (multiportData.coins[sym].weight || 0) > 0;
+            let msg = `Remove ${sym} node? This will stop the service and remove the coin from the pool.`;
+            if (inSchedule) {
+                const w = multiportData.coins[sym].weight;
+                msg += `\n\nWARNING: ${sym} is in the active Smart Port schedule (${w}% weight). ` +
+                       `Its weight will be redistributed to the remaining coins automatically.`;
+                const remaining = Object.keys(multiportData.coins).filter(s => s !== sym && (multiportData.coins[s].weight || 0) > 0);
+                if (remaining.length < 2) {
+                    msg += `\n\nSmart Port will be DISABLED because fewer than 2 coins will remain.`;
+                }
+            }
+            if (!confirm(msg)) return;
             try {
                 const resp = await fetch(`/api/nodes/${sym}/remove`, {
                     method: 'POST',
@@ -2330,14 +2459,23 @@
         }
 
         function updateMultiPortTotal() {
-            const inputs = document.querySelectorAll('.multiport-hours-input');
+            const hInputs = document.querySelectorAll('.multiport-hours-input');
+            const sInputs = document.querySelectorAll('.multiport-start-input');
             let totalHours = 0;
             const hours = {};
+            const starts = {};
 
-            inputs.forEach(inp => {
+            hInputs.forEach(inp => {
                 const v = parseFloat(inp.value) || 0;
                 totalHours += v;
                 if (v > 0) hours[inp.dataset.coin] = v;
+            });
+
+            sInputs.forEach(inp => {
+                if (inp.value && hours[inp.dataset.coin]) {
+                    const [hh, mm] = inp.value.split(':').map(Number);
+                    starts[inp.dataset.coin] = hh + (mm || 0) / 60;
+                }
             });
 
             // Round to avoid floating point display issues
@@ -2347,10 +2485,11 @@
             totalEl.textContent = totalHours;
             totalEl.style.color = totalHours === 24 ? 'var(--neon-green)' : (totalHours > 24 ? 'var(--neon-red, #ff4444)' : 'var(--neon-yellow)');
 
-            renderMultiPortSchedule(hours, totalHours);
+            renderMultiPortSchedule(hours, totalHours, starts);
         }
 
-        function renderMultiPortSchedule(hours, totalHours) {
+        function renderMultiPortSchedule(hours, totalHours, starts) {
+            starts = starts || {};
             const container = document.getElementById('multiport-schedule');
             const tz = (multiportData && multiportData.timezone) || 'UTC';
             if (totalHours === 0 || Object.keys(hours).length === 0) {
@@ -2358,38 +2497,73 @@
                 return;
             }
 
+            // Build contiguous schedule: anchor from first coin's start time,
+            // then sequence all coins using their hours for duration.
+            // Guarantees full 24h coverage with no gaps or collisions.
+            const slots = [];
+            const coinList = Object.entries(hours).map(([sym, h]) => ({
+                sym, h, start: starts[sym] !== undefined ? starts[sym] : null
+            }));
+            // Sort by start time (if set), then alphabetically
+            coinList.sort((a, b) => {
+                const sa = a.start !== null ? a.start : 999;
+                const sb = b.start !== null ? b.start : 999;
+                if (sa !== sb) return sa - sb;
+                return a.sym.localeCompare(b.sym);
+            });
+            const anchor = coinList[0].start !== null ? coinList[0].start : 0;
+            let cursor = anchor;
+            coinList.forEach(c => {
+                const h = Math.round(c.h * 10) / 10;
+                slots.push({ sym: c.sym, h, start: Math.round(cursor % 24 * 100) / 100, end: Math.round((cursor + c.h) % 24 * 100) / 100 });
+                cursor += c.h;
+            });
+
             let html = `<div style="margin-bottom: 0.5rem; color: var(--neon-purple); font-weight: 600;">24h ${tz} Schedule</div>`;
 
-            // Visual bar
-            html += '<div style="display: flex; height: 24px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem;">';
-            const colors = { DGB: '#0066cc', BTC: '#f7931a', BCH: '#0ac18e', BC2: '#4a90d9', QBX: '#9b59b6' };
+            // Visual bar (24h timeline)
+            html += '<div style="position: relative; height: 28px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05);">';
+            const colors = { DGB: '#0066cc', BTC: '#f7931a', BCH: '#0ac18e', BC2: '#4a90d9', QBX: '#9b59b6', LTC: '#bfbbbb', DOGE: '#c2a633', CAT: '#f0a030', NMC: '#186aa5', FBTC: '#e67e22' };
             const defaultColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
             let ci = 0;
-            for (const [sym, h] of Object.entries(hours)) {
-                const pct = (h / totalHours * 100).toFixed(1);
-                const color = colors[sym] || defaultColors[ci++ % defaultColors.length];
-                html += `<div style="width: ${pct}%; background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" title="${sym}: ${h}h">${sym}</div>`;
-            }
+            slots.forEach(s => {
+                const leftPct = (s.start / 24 * 100).toFixed(2);
+                const widthPct = (s.h / 24 * 100).toFixed(2);
+                const color = colors[s.sym] || defaultColors[ci++ % defaultColors.length];
+                html += `<div style="position: absolute; left: ${leftPct}%; width: ${widthPct}%; height: 100%; background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);" title="${s.sym}: ${s.h}h">${s.sym}</div>`;
+            });
             html += '</div>';
 
             // Table
             html += '<table style="width: 100%; border-collapse: collapse;">';
-            html += `<tr style="color: var(--text-muted); font-size: 0.75rem;"><td>Coin</td><td>Hours/Day</td><td>Percentage</td><td>${tz} Window</td></tr>`;
-            let cursor = 0;
-            for (const [sym, h] of Object.entries(hours)) {
-                const pct = (h / totalHours * 100);
-                const startH = cursor;
-                const endH = cursor + h;
-                cursor += h;
-                html += `<tr><td style="color: var(--text-primary); font-weight: 600;">${sym}</td><td>${h}h</td><td>${pct.toFixed(1)}%</td><td>${formatScheduleTime(startH)} – ${formatScheduleTime(endH)}</td></tr>`;
-            }
+            html += `<tr style="color: var(--text-muted); font-size: 0.75rem;"><td>Coin</td><td>Hours</td><td>%</td><td>${tz} Window</td></tr>`;
+            slots.forEach(s => {
+                const pct = (s.h / 24 * 100);
+                html += `<tr><td style="color: var(--text-primary); font-weight: 600;">${s.sym}</td><td>${s.h}h</td><td>${pct.toFixed(1)}%</td><td>${formatScheduleTime(s.start)} – ${formatScheduleTime(s.start + s.h)}</td></tr>`;
+            });
             html += '</table>';
 
-            if (totalHours !== 24) {
+            // Overlap detection
+            const hasCustomStarts = Object.keys(starts).length > 0;
+            if (hasCustomStarts && totalHours > 24) {
+                html += `<div style="color: var(--neon-red, #ff4444); margin-top: 0.5rem;">⚠ Schedule exceeds 24h — time slots overlap!</div>`;
+            } else if (totalHours !== 24) {
                 html += `<div style="color: var(--neon-yellow); margin-top: 0.5rem;">Total is ${totalHours}h — must be exactly 24h</div>`;
             }
 
             container.innerHTML = html;
+
+            // Sync start time inputs with computed schedule so they always
+            // match the displayed windows (setting .value programmatically
+            // does NOT fire the 'input' event, so no infinite loop).
+            slots.forEach(s => {
+                const inp = document.querySelector(`.multiport-start-input[data-coin="${s.sym}"]`);
+                if (inp) {
+                    const hh = Math.floor(s.start);
+                    const mm = Math.round((s.start - hh) * 60);
+                    inp.value = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+                }
+            });
         }
 
         function formatScheduleTime(hours) {
@@ -2422,20 +2596,29 @@
         async function saveMultiPort() {
             const toggle = document.getElementById('multiport-enabled');
             const enabled = toggle.checked;
-            const inputs = document.querySelectorAll('.multiport-hours-input');
+            const hInputs = document.querySelectorAll('.multiport-hours-input');
+            const sInputs = document.querySelectorAll('.multiport-start-input');
 
-            // Collect hours and convert to percentage weights (sum=100)
+            // Collect hours and start times, convert to percentage weights (sum=100)
             const hourEntries = {};
+            const startEntries = {};
             let totalHours = 0;
             let preferCoin = '';
             let maxHours = 0;
 
-            inputs.forEach(inp => {
+            hInputs.forEach(inp => {
                 const h = parseFloat(inp.value) || 0;
                 if (h > 0) {
                     hourEntries[inp.dataset.coin] = h;
                     totalHours += h;
                     if (h > maxHours) { maxHours = h; preferCoin = inp.dataset.coin; }
+                }
+            });
+
+            sInputs.forEach(inp => {
+                if (inp.value && hourEntries[inp.dataset.coin]) {
+                    const [hh, mm] = inp.value.split(':').map(Number);
+                    startEntries[inp.dataset.coin] = hh + (mm || 0) / 60;
                 }
             });
 
@@ -2457,14 +2640,19 @@
             let weightSum = 0;
             const entries = Object.entries(hourEntries);
             entries.forEach(([sym, h], i) => {
+                const coinCfg = {};
                 if (i === entries.length - 1) {
-                    // Last coin gets remainder to ensure exact 100
-                    coins[sym] = { weight: 100 - weightSum };
+                    coinCfg.weight = 100 - weightSum;
                 } else {
                     const w = Math.round(h / totalHours * 100);
-                    coins[sym] = { weight: w };
+                    coinCfg.weight = w;
                     weightSum += w;
                 }
+                // Include custom start time if set
+                if (startEntries[sym] !== undefined) {
+                    coinCfg.start_hour = Math.round(startEntries[sym] * 100) / 100;
+                }
+                coins[sym] = coinCfg;
             });
 
             // Sanity check: no negative weights and total = 100
@@ -2495,6 +2683,148 @@
             } catch (e) {
                 showGlobalStatus('error', `Error: ${e.message}`);
             }
+        }
+
+        // ── Worker Wallet Map ─────────────────────────────────────────
+        let _walletMapCoins = [];  // active multi-port coin symbols
+
+        function loadWalletMap() {
+            fetch('/api/multiport/wallets')
+                .then(r => r.json())
+                .then(data => {
+                    _walletMapCoins = (data.coins || []).map(c => c.toUpperCase());
+                    renderWalletMap(data.wallet_map || {});
+                })
+                .catch(() => {});
+        }
+
+        function renderWalletMap(walletMap) {
+            const container = document.getElementById('wallet-map-entries');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const workers = Object.keys(walletMap);
+            if (workers.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No wallet mappings configured. Add workers who mine on the smart port.</div>';
+                return;
+            }
+
+            workers.forEach(worker => {
+                const addrs = walletMap[worker] || {};
+                appendWalletRow(container, worker, addrs);
+            });
+        }
+
+        function appendWalletRow(container, worker, addrs) {
+            const row = document.createElement('div');
+            row.className = 'wallet-map-row';
+            row.style.cssText = 'background: rgba(255,255,255,0.03); border: 1px solid rgba(247,147,26,0.15); border-radius: 6px; padding: 0.6rem;';
+
+            // Worker name header with remove button
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;';
+            header.innerHTML = `
+                <span style="color: var(--text-muted); font-size: 0.75rem;">Worker:</span>
+                <input type="text" class="cyber-input wallet-worker-name" value="${escapeHtmlAttr(worker)}"
+                       style="flex: 1; padding: 0.25rem 0.4rem; font-size: 0.85rem; font-weight: 600;" placeholder="e.g. Heat2Sats">
+                <button onclick="this.closest('.wallet-map-row').remove()" style="background: none; border: none; color: var(--neon-red, #ff4444); cursor: pointer; font-size: 1rem; padding: 0 0.25rem;" title="Remove worker">✕</button>
+            `;
+            row.appendChild(header);
+
+            // Per-coin address inputs
+            const addrGrid = document.createElement('div');
+            addrGrid.style.cssText = 'display: grid; gap: 0.3rem;';
+            _walletMapCoins.forEach(coin => {
+                const addrRow = document.createElement('div');
+                addrRow.style.cssText = 'display: grid; grid-template-columns: 3.5rem 1fr; gap: 0.4rem; align-items: center;';
+                addrRow.innerHTML = `
+                    <span style="color: var(--neon-cyan, #00d4ff); font-size: 0.8rem; font-weight: 600; text-align: right;">${escapeHtmlAttr(coin)}</span>
+                    <input type="text" class="cyber-input wallet-addr-input" data-coin="${coin}"
+                           value="${escapeHtmlAttr(addrs[coin] || '')}"
+                           style="padding: 0.25rem 0.4rem; font-size: 0.8rem; font-family: var(--font-mono);"
+                           placeholder="${coin} wallet address">
+                `;
+                addrGrid.appendChild(addrRow);
+            });
+            row.appendChild(addrGrid);
+            container.appendChild(row);
+        }
+
+        function addWalletMapEntry() {
+            const container = document.getElementById('wallet-map-entries');
+            if (!container) return;
+            // Remove "no mappings" placeholder if present
+            const placeholder = container.querySelector('div[style*="font-style: italic"]');
+            if (placeholder) placeholder.remove();
+            appendWalletRow(container, '', {});
+            // Focus the worker name input
+            const inputs = container.querySelectorAll('.wallet-worker-name');
+            if (inputs.length) inputs[inputs.length - 1].focus();
+        }
+
+        async function saveWalletMap() {
+            const rows = document.querySelectorAll('.wallet-map-row');
+            const walletMap = {};
+            let errors = [];
+
+            rows.forEach(row => {
+                const workerInput = row.querySelector('.wallet-worker-name');
+                const worker = (workerInput ? workerInput.value.trim() : '');
+                if (!worker) { errors.push('Worker name cannot be empty'); return; }
+
+                const addrs = {};
+                row.querySelectorAll('.wallet-addr-input').forEach(inp => {
+                    const coin = inp.dataset.coin;
+                    const addr = inp.value.trim();
+                    if (addr) addrs[coin] = addr;
+                });
+
+                if (Object.keys(addrs).length === 0) {
+                    errors.push(`Worker "${worker}" has no wallet addresses`);
+                    return;
+                }
+                // Warn if not all coins have addresses
+                const missing = _walletMapCoins.filter(c => !addrs[c]);
+                if (missing.length > 0) {
+                    errors.push(`Worker "${worker}" missing address for: ${missing.join(', ')}`);
+                    return;
+                }
+                walletMap[worker] = addrs;
+            });
+
+            const statusEl = document.getElementById('wallet-map-status');
+            if (errors.length > 0) {
+                statusEl.style.display = '';
+                statusEl.style.color = 'var(--neon-red, #ff4444)';
+                statusEl.textContent = errors[0];
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/multiport/wallets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet_map: walletMap }),
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    statusEl.style.display = '';
+                    statusEl.style.color = 'var(--neon-green, #22c55e)';
+                    statusEl.textContent = result.message;
+                } else {
+                    statusEl.style.display = '';
+                    statusEl.style.color = 'var(--neon-red, #ff4444)';
+                    statusEl.textContent = result.error || 'Failed';
+                }
+            } catch (e) {
+                statusEl.style.display = '';
+                statusEl.style.color = 'var(--neon-red, #ff4444)';
+                statusEl.textContent = `Error: ${e.message}`;
+            }
+        }
+
+        function escapeHtmlAttr(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         // ── Blockchain Sync Watch ─────────────────────────────────────
@@ -3076,6 +3406,13 @@
         #multiport-schedule table td {
             padding: 0.25rem 0.5rem;
             border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* Responsive: stack multiport columns on narrow screens */
+        @media (max-width: 768px) {
+            #multiport-config > div:first-child {
+                grid-template-columns: 1fr !important;
+            }
         }
     </style>
 </body>

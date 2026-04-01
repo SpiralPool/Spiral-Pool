@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
-// Integration test harness for the multi-coin smart port (v2.1).
+// Integration test harness for the multi coin smart port (v2.1).
 //
 // This file simulates the full multi-port flow WITHOUT requiring live nodes:
 //   - Mock coin pools (DGB, BTC, BCH) with configurable availability
@@ -49,6 +49,9 @@ type mockCoinPool struct {
 	blockCount  atomic.Int64
 
 	nextShareResult *protocol.ShareResult
+
+	// Multi-port job listener (captured by SetMultiPortJobListener)
+	jobListener atomic.Value // stores func(*protocol.Job)
 }
 
 func newMockCoinPool(symbol, poolID string, port int, diff, blockTime float64) *mockCoinPool {
@@ -80,8 +83,22 @@ func (p *mockCoinPool) IsRunning() bool               { return p.running.Load() 
 func (p *mockCoinPool) GetNetworkDifficulty() float64 { return p.diff.Load().(float64) }
 
 // CoinPoolHandle interface
-func (p *mockCoinPool) GetStratumPort() int    { return p.port }
+func (p *mockCoinPool) GetStratumPort() int          { return p.port }
 func (p *mockCoinPool) GetCurrentJob() *protocol.Job { return p.currentJob.Load() }
+func (p *mockCoinPool) PayoutAddress() string         { return "mock_" + p.symbol + "_address" }
+func (p *mockCoinPool) SetMultiPortJobListener(cb func(*protocol.Job)) {
+	if cb != nil {
+		p.jobListener.Store(cb)
+	}
+}
+
+// fireJobUpdate simulates a new block job arriving (ZMQ/polling → job callback).
+func (p *mockCoinPool) fireJobUpdate(job *protocol.Job) {
+	p.currentJob.Store(job)
+	if cb, ok := p.jobListener.Load().(func(*protocol.Job)); ok && cb != nil {
+		cb(job)
+	}
+}
 
 func (p *mockCoinPool) HandleMultiPortShare(share *protocol.Share) *protocol.ShareResult {
 	p.mu.Lock()

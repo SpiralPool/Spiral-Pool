@@ -79,7 +79,10 @@ type Sentinel struct {
 	prevDropped        map[string]uint64 // coin -> previous share batch dropped count
 	paymentPending     map[string]int    // poolID -> previous pending blocks
 
-	// State tracking for multi-port (Multi-coin smart port) alerts
+	// State tracking for WAL recovery duration
+	walRecoveryStart map[string]time.Time // poolID -> when recovery was first observed
+
+	// State tracking for multi-port (Multi coin smart port) alerts
 	prevMultiPortDiff     map[string]float64 // coin -> previous network difficulty
 	prevMultiPortSwitches uint64             // previous total switch count
 	paymentStallCount  map[string]int    // poolID -> consecutive stall checks
@@ -119,6 +122,7 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:      make(map[string]int),
 		haRoleHistory:     make([]time.Time, 0, 16),
+		walRecoveryStart:  make(map[string]time.Time),
 		cooldowns:           make(map[string]time.Time),
 		prevMultiPortDiff:   make(map[string]float64),
 	}
@@ -227,7 +231,7 @@ func (s *Sentinel) check(ctx context.Context) {
 	s.checkGoroutineCount()
 	s.checkBlockMaturityStall()
 
-	// Multi-port (Multi-coin smart port) checks
+	// Multi-port (Multi coin smart port) checks
 	s.checkMultiPortDifficultySpike(ctx)
 	s.checkMultiPortCoinSwitch(ctx)
 
@@ -589,13 +593,34 @@ func (s *Sentinel) checkAllNodesDown(pool *CoinPool, poolID, coin string) {
 
 // checkWALRecoveryStuck fires when WAL recovery has been running too long.
 func (s *Sentinel) checkWALRecoveryStuck(pool *CoinPool, coin string) {
+	poolID := pool.PoolID()
+
 	if !pool.IsWALRecoveryRunning() {
+		// Recovery finished or not running — clear start time
+		s.mu.Lock()
+		delete(s.walRecoveryStart, poolID)
+		s.mu.Unlock()
 		return
 	}
 
+	s.mu.Lock()
+	startTime, tracked := s.walRecoveryStart[poolID]
+	if !tracked {
+		// First observation — record start time, don't alert yet
+		s.walRecoveryStart[poolID] = time.Now()
+		s.mu.Unlock()
+		return
+	}
+	elapsed := time.Since(startTime)
+	s.mu.Unlock()
+
 	// WAL recovery shouldn't take more than 5 minutes
-	s.fireAlert(context.Background(), "wal_recovery_stuck", severityCritical, coin, pool.PoolID(),
-		fmt.Sprintf("WAL recovery has been running for an extended period on %s — may be stuck", coin),
+	if elapsed < 5*time.Minute {
+		return
+	}
+
+	s.fireAlert(context.Background(), "wal_recovery_stuck", severityCritical, coin, poolID,
+		fmt.Sprintf("WAL recovery has been running for %s on %s — may be stuck", elapsed.Round(time.Second), coin),
 		nil,
 	)
 }

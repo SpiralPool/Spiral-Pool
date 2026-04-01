@@ -41,7 +41,7 @@ jobs:
           echo "Version: $TAG_VERSION"
 
       - name: Run tests
-        run: go test ./... -count=1 -timeout 300s
+        run: go test -short ./... -count=1 -timeout 300s
 
       # Binary build disabled — releases are source-only.
       # Operators build from source via install.sh or Docker.

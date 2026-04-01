@@ -188,6 +188,10 @@ func (s *Server) handleWorkerStats(w http.ResponseWriter, r *http.Request, poolI
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
+		if stats == nil {
+			http.Error(w, "Worker not found", http.StatusNotFound)
+			return
+		}
 
 		response := &WorkerStatsResponse{
 			Miner:           stats.Miner,

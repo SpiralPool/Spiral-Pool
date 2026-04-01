@@ -20,7 +20,7 @@ Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
 ExecStart={{NMC_DIR}}/bin/namecoind -daemon -conf={{INSTALL_DIR}}/nmc/namecoin.conf -datadir={{INSTALL_DIR}}/nmc
-ExecStop={{NMC_DIR}}/bin/namecoin-cli -conf={{INSTALL_DIR}}/nmc/namecoin.conf stop
+ExecStop={{NMC_DIR}}/bin/namecoin-cli -conf={{INSTALL_DIR}}/nmc/namecoin.conf -datadir={{INSTALL_DIR}}/nmc stop
 PIDFile={{INSTALL_DIR}}/nmc/namecoind.pid
 Restart=always
 RestartSec=30

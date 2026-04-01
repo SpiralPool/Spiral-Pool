@@ -62,15 +62,18 @@ func BuildMerkleTree(leaves [][]byte) [][]byte {
 //
 // Returns:
 //   - root: The 32-byte merkle root
-//   - branch: The merkle branch for the first aux block (for proof construction)
-func BuildAuxMerkleRoot(auxBlocks []AuxBlockData) (root []byte, branch [][]byte) {
+//   - branches: Per-chain merkle branches keyed by ChainIndex (for proof construction)
+func BuildAuxMerkleRoot(auxBlocks []AuxBlockData) (root []byte, branches map[int][][]byte) {
+	branches = make(map[int][][]byte)
+
 	if len(auxBlocks) == 0 {
-		return nil, nil
+		return nil, branches
 	}
 
 	// Single aux chain - root is the block hash, no branch needed
 	if len(auxBlocks) == 1 {
-		return auxBlocks[0].Hash, nil
+		branches[auxBlocks[0].ChainIndex] = nil
+		return auxBlocks[0].Hash, branches
 	}
 
 	// Multiple aux chains - build merkle tree
@@ -89,30 +92,37 @@ func BuildAuxMerkleRoot(auxBlocks []AuxBlockData) (root []byte, branch [][]byte)
 		}
 	}
 
-	// Build merkle tree and collect branches for first aux block
-	branch = make([][]byte, 0)
-	pos := auxBlocks[0].ChainIndex
+	// Track positions for all aux blocks through tree levels
+	positions := make(map[int]int) // chainIndex -> current position
+	for _, ab := range auxBlocks {
+		positions[ab.ChainIndex] = ab.ChainIndex
+		branches[ab.ChainIndex] = make([][]byte, 0)
+	}
 
-	for len(leaves) > 1 {
-		// Get sibling for branch
-		siblingPos := pos ^ 1
-		if siblingPos < len(leaves) {
-			branch = append(branch, leaves[siblingPos])
+	currentLeaves := leaves
+	for len(currentLeaves) > 1 {
+		// Collect sibling for each tracked chain
+		for chainIdx := range positions {
+			pos := positions[chainIdx]
+			siblingPos := pos ^ 1
+			if siblingPos < len(currentLeaves) {
+				branches[chainIdx] = append(branches[chainIdx], currentLeaves[siblingPos])
+			}
+			positions[chainIdx] = pos / 2
 		}
 
 		// Build next level
-		nextLevel := make([][]byte, len(leaves)/2)
-		for i := 0; i < len(leaves); i += 2 {
-			left := leaves[i]
-			right := leaves[i+1]
+		nextLevel := make([][]byte, len(currentLeaves)/2)
+		for i := 0; i < len(currentLeaves); i += 2 {
+			left := currentLeaves[i]
+			right := currentLeaves[i+1]
 			combined := append(left, right...)
 			nextLevel[i/2] = crypto.SHA256d(combined)
 		}
-		leaves = nextLevel
-		pos = pos / 2
+		currentLeaves = nextLevel
 	}
 
-	return leaves[0], branch
+	return currentLeaves[0], branches
 }
 
 // ComputeMerkleRootFromBranch computes the merkle root given a hash and branch.

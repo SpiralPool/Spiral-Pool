@@ -21,8 +21,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
-ExecStart={{FBTC_DIR}}/bin/fractald -daemon -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc
-ExecStop={{FBTC_DIR}}/bin/fractal-cli -conf={{INSTALL_DIR}}/fbtc/fractal.conf stop
+ExecStart={{FBTC_DIR}}/bin/bitcoind -daemon -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc
+ExecStop={{FBTC_DIR}}/bin/bitcoin-cli -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc stop
 PIDFile={{INSTALL_DIR}}/fbtc/fractald.pid
 Restart=always
 RestartSec=30

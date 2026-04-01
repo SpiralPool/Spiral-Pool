@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.1.0                                                         ║
+# ║   Version: 2.2.0                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.1.0"
+    VERSION="2.2.0"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -184,7 +184,7 @@ PRUNE_CONF_TXINDEX="txindex=1"
 PRUNE_CONF_PRUNE="prune=0"
 
 # Merge Mining Configuration
-MULTIPORT_ENABLED="false"       # Multi-coin smart port (weighted 24h UTC schedule)
+MULTIPORT_ENABLED="false"       # Multi coin smart port (weighted 24h UTC schedule)
 MULTIPORT_COINS=""              # Comma-separated: "DGB,BCH,BTC"
 MULTIPORT_WEIGHTS=""            # Comma-separated weights matching MULTIPORT_COINS: "80,15,5"
 MULTIPORT_PREFER_COIN=""        # Default coin on connect / tie-breaker
@@ -1158,6 +1158,15 @@ cleanup_on_failure() {
         sudo rm -f /etc/systemd/system/fractald.service 2>/dev/null || true
         sudo rm -rf "$_cmp/fbtc" 2>/dev/null || true
         sudo rm -rf "/home/$POOL_USER/.fractal" 2>/dev/null || true
+    fi
+
+    # Remove Q-BitX
+    if [[ "$INSTALL_PROGRESS" == *"qbx"* ]]; then
+        log "Removing Q-BitX..."
+        sudo systemctl stop qbitxd 2>/dev/null || true
+        sudo systemctl disable qbitxd 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/qbitxd.service 2>/dev/null || true
+        sudo rm -rf "$_cmp/qbx" 2>/dev/null || true
     fi
 
     # Remove dashboard
@@ -4666,6 +4675,20 @@ detect_existing_native_install() {
                 # DGB also uses the generic RPC_PASSWORD for single-coin mode
                 [[ -n "$DGB_RPC_PASSWORD" ]] && RPC_PASSWORD="$DGB_RPC_PASSWORD"
 
+                # Preserve pruning setting (global — applies to newly added coins)
+                PRUNE_ENABLED=$(grep -oP '^PRUNE_ENABLED=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+                if [[ "$PRUNE_ENABLED" == "true" ]]; then
+                    PRUNE_CONF_TXINDEX=""
+                    PRUNE_CONF_PRUNE="prune=5000"
+                    log "Inherited pruning from existing installation: prune=5000"
+                fi
+
+                # Preserve multi-port smart port settings
+                MULTIPORT_ENABLED=$(grep -oP '^MULTIPORT_ENABLED=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+                MULTIPORT_COINS=$(grep -oP '^MULTIPORT_COINS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                MULTIPORT_WEIGHTS=$(grep -oP '^MULTIPORT_WEIGHTS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+                MULTIPORT_PREFER_COIN=$(grep -oP '^MULTIPORT_PREFER_COIN=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
+
                 # Safety net: if coins.env was corrupted/truncated and a password came
                 # back empty, try to recover it from the daemon's own config file.
                 # Without this, reinstall generates a NEW password that doesn't match
@@ -5997,18 +6020,57 @@ $(if [[ "$MULTIPORT_ENABLED" == "true" ]] && [[ -n "$MULTIPORT_COINS" ]]; then
     _mp_coins=($MULTIPORT_COINS)
     _mp_weights=($MULTIPORT_WEIGHTS)
     IFS="$_OLD_IFS"
+
+    # Validate weights: if array is short or sums != 100, redistribute equally
+    _weight_sum=0
+    _weights_valid=true
+    if [[ ${#_mp_weights[@]} -ne ${#_mp_coins[@]} ]]; then
+        _weights_valid=false
+    else
+        for w in "${_mp_weights[@]}"; do
+            _weight_sum=$((_weight_sum + w))
+        done
+        if [[ $_weight_sum -ne 100 ]]; then
+            _weights_valid=false
+        fi
+    fi
+    if [[ "$_weights_valid" == "false" ]]; then
+        # Redistribute equally, last coin gets remainder
+        _n=${#_mp_coins[@]}
+        _base=$((100 / _n))
+        _mp_weights=()
+        for ((i=0; i<_n-1; i++)); do
+            _mp_weights+=("$_base")
+        done
+        _mp_weights+=("$((100 - _base * (_n - 1)))")
+    fi
+
+    # Determine prefer_coin: use saved value, or pick highest-weight coin
+    _prefer="${MULTIPORT_PREFER_COIN}"
+    if [[ -z "$_prefer" ]]; then
+        _max_w=0
+        _prefer="${_mp_coins[0]}"
+        for i in "${!_mp_coins[@]}"; do
+            if [[ ${_mp_weights[$i]} -gt $_max_w ]]; then
+                _max_w=${_mp_weights[$i]}
+                _prefer="${_mp_coins[$i]}"
+            fi
+        done
+    fi
+
     echo ""
-    echo "# Multi-coin smart port (weighted 24h UTC schedule)"
+    echo "# Multi coin smart port (weighted 24h UTC schedule)"
     echo "multi_port:"
     echo "  enabled: true"
     echo "  port: 16180"
     echo "  coins:"
     for i in "${!_mp_coins[@]}"; do
-        echo "    ${_mp_coins[$i]}: { weight: ${_mp_weights[$i]:-50} }"
+        echo "    ${_mp_coins[$i]}: { weight: ${_mp_weights[$i]} }"
     done
     echo "  check_interval: 30s"
-    echo "  prefer_coin: \"${MULTIPORT_PREFER_COIN:-${_mp_coins[0]}}\""
+    echo "  prefer_coin: \"${_prefer}\""
     echo "  min_time_on_coin: 60s"
+    echo "  timezone: \"${DISPLAY_TIMEZONE:-America/New_York}\""
 fi)
 database:
   host: "postgres"
@@ -8831,7 +8893,7 @@ select_multi_coins() {
     select_merge_mining_multicoin
 }
 
-# Multi-coin smart port prompt — offers weighted 24h UTC scheduling on port 16180
+# Multi coin smart port prompt — offers weighted 24h UTC scheduling on port 16180
 # Only available when 2+ SHA-256d coins are enabled (same algorithm required)
 prompt_multi_port() {
     # Count enabled SHA-256d coins (only these participate — same PoW algorithm)
@@ -8849,7 +8911,7 @@ prompt_multi_port() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${YELLOW}MULTI-COIN SMART PORT AVAILABLE${NC}"
+    echo -e "  ${YELLOW}MULTI COIN SMART PORT AVAILABLE${NC}"
     echo ""
     echo -e "  You have ${#sha256d_coins[@]} SHA-256d coins enabled. The smart port lets miners"
     echo -e "  connect once on port ${WHITE}16180${NC} and the pool rotates them between coins"
@@ -8860,7 +8922,7 @@ prompt_multi_port() {
     echo -e "  ${DIM}Miners can still connect to individual coin ports as usual.${NC}"
     echo ""
 
-    prompt_input "Enable multi-coin smart port? (y/n) [default: n]: "; read mp_choice
+    prompt_input "Enable multi coin smart port? (y/n) [default: n]: "; read mp_choice
     mp_choice=${mp_choice:-n}
 
     if [[ "${mp_choice,,}" != "y" ]] && [[ "${mp_choice,,}" != "yes" ]]; then
@@ -8962,7 +9024,7 @@ prompt_multi_port() {
     MULTIPORT_WEIGHTS="$weights_csv"
     MULTIPORT_PREFER_COIN="$first_coin"
 
-    echo -e "  ${GREEN}✓${NC} Multi-coin smart port enabled on port ${WHITE}16180${NC}"
+    echo -e "  ${GREEN}✓${NC} Multi coin smart port enabled on port ${WHITE}16180${NC}"
     echo ""
 
     log "Multi-port enabled: coins=$MULTIPORT_COINS weights=$MULTIPORT_WEIGHTS prefer=$MULTIPORT_PREFER_COIN"
@@ -9041,7 +9103,7 @@ select_merge_mining_multicoin() {
         fi
     fi
 
-    # Offer multi-coin smart port if 2+ SHA-256d coins are enabled
+    # Offer multi coin smart port if 2+ SHA-256d coins are enabled
     prompt_multi_port
     echo ""
 }
@@ -11476,6 +11538,13 @@ collect_configuration() {
     done
 
     log_success "Report timezone: $DISPLAY_TIMEZONE"
+
+    # Set the system timezone to match the user's selection so that all
+    # services (stratum, dashboard, sentinel) display consistent local times.
+    if command -v timedatectl &>/dev/null; then
+        sudo timedatectl set-timezone "$DISPLAY_TIMEZONE" 2>/dev/null || true
+        log_success "System timezone set to $DISPLAY_TIMEZONE"
+    fi
     echo ""
 
     # HA Backup: Try to sync wallet addresses from primary before prompting
@@ -13776,7 +13845,10 @@ collect_configuration() {
     echo ""
 
     # ── Pruned Node Option ──────────────────────────────────────────────
-    prompt_prune_option
+    # Skip in "add coins" mode — inherit PRUNE_ENABLED from existing coins.env
+    if [[ "$NATIVE_UPGRADE_MODE" != "add" ]]; then
+        prompt_prune_option
+    fi
 
     # Summary
     screen_clear
@@ -15252,10 +15324,10 @@ MINERDBEOF
         sudo ufw allow 8345/tcp > /dev/null 2>&1         # QBX P2P
         log "Q-BitX ports opened: 20335-20337/tcp (stratum V1/V2/TLS), 8345/tcp (P2P)"
     fi
-    # Multi-coin smart port (experimental — port 16180)
+    # Multi coin smart port (port 16180)
     if [[ "$MULTIPORT_ENABLED" == "true" ]]; then
-        sudo ufw allow 16180/tcp > /dev/null 2>&1        # Multi-coin smart port
-        log "Multi-coin smart port opened: 16180/tcp"
+        sudo ufw allow 16180/tcp > /dev/null 2>&1        # Multi coin smart port
+        log "Multi coin smart port opened: 16180/tcp"
     fi
 
     # HA Cluster ports (if HA enabled) — restricted to peer IPs only
@@ -15418,7 +15490,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.1.0 — PHI HASH REACTOR EDITION${NC}"
+echo -e "                                     ${DIM}V2.2.0 — PHI HASH REACTOR EDITION${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -15428,7 +15500,7 @@ echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 
 echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
 echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl scan')${NC}  Find miners"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  Smart port ${DIM}⚠ experimental${NC}"
+echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  $(D 'Smart port')"
 echo -e "  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  $(D 'Add coin')  ${YELLOW}$(C 'spiralctl coin disable <SYM>')${NC}  Remove coin"
 echo -e "  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  $(D 'Upgrade nodes')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart services"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -21344,7 +21416,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.1.0"
+    local BUILD_VERSION="2.2.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -25072,7 +25144,7 @@ check_stratum_health() {
             [[ "$ENABLE_XMY" == "true" ]] && ports_to_check+=(17335)
             [[ "$ENABLE_FBTC" == "true" ]] && ports_to_check+=(18335)
             [[ "$ENABLE_QBX" == "true" ]] && ports_to_check+=(20335)
-            # Multi-coin smart port
+            # Multi coin smart port
             [[ "$MULTIPORT_ENABLED" == "true" ]] && ports_to_check+=(16180)
         else
             # Single-coin mode: use configured port (no default)
@@ -29658,11 +29730,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.1.0-PHI_HASH_REACTOR: Create backup command
+    # V2.2.0-PHI_HASH_REACTOR: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.1.0-PHI_HASH_REACTOR
+# Spiral Pool Backup Utility - V2.2.0-PHI_HASH_REACTOR
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -29707,7 +29779,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.1.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.2.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -30056,7 +30128,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.1.0",
+    "version": "2.2.0",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -30323,7 +30395,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.1.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.2.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -30376,11 +30448,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.1.0-PHI_HASH_REACTOR: Create restore command
+    # V2.2.0-PHI_HASH_REACTOR: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.1.0-PHI_HASH_REACTOR
+# Spiral Pool Restore Utility - V2.2.0-PHI_HASH_REACTOR
 # Restores backups created by spiralpool-backup
 #
 
@@ -30427,7 +30499,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.1.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.2.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -30749,7 +30821,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.1.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.2.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -35747,6 +35819,8 @@ SYNCEOF
     sudo tee "$INSTALL_DIR/config/coins.env" > /dev/null << EOF
 # Enabled coins configuration (auto-generated by installer)
 COIN_MODE=$COIN_MODE
+# Pruned node configuration (global — applies to all future coin installs)
+PRUNE_ENABLED=$PRUNE_ENABLED
 # Multi-disk storage configuration
 MULTI_DISK_CONFIGURED=$MULTI_DISK_CONFIGURED
 CHAIN_MOUNT_POINT=$CHAIN_MOUNT_POINT
@@ -35803,7 +35877,7 @@ STRATUM_PORT=$STRATUM_PORT
 STRATUM_V2_PORT=$STRATUM_V2_PORT
 # Enhanced Stratum (V2) — enables encrypted binary protocol + TLS for V1
 ENABLE_V2_STRATUM=true
-# Multi-coin smart port (weighted 24h UTC schedule on port 16180)
+# Multi coin smart port (weighted 24h UTC schedule on port 16180)
 MULTIPORT_ENABLED=$MULTIPORT_ENABLED
 MULTIPORT_COINS=$MULTIPORT_COINS
 MULTIPORT_WEIGHTS=$MULTIPORT_WEIGHTS
@@ -36456,7 +36530,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.1.0 - PHI HASH REACTOR${NC}"
+    echo -e "                                     ${DIM}V2.2.0 - PHI HASH REACTOR${NC}"
     echo ""
 }
 

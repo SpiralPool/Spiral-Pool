@@ -227,6 +227,8 @@ func (s *realBlockStore) GetBlockStats(ctx context.Context) (*database.BlockStat
 			return nil, err
 		}
 		switch status {
+		case "submitting":
+			stats.Submitting = count
 		case "pending":
 			stats.Pending = count
 		case "confirmed":

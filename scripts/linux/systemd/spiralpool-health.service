@@ -20,6 +20,7 @@ StartLimitBurst=5
 Type=simple
 User={{POOL_USER}}
 Group={{POOL_USER}}
+WorkingDirectory={{INSTALL_DIR}}
 ExecStart={{INSTALL_DIR}}/bin/health-monitor.sh
 
 # === SELF-HEALING / AUTO-RESTART ===
