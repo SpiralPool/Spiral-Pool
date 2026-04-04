@@ -1801,7 +1801,11 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	for _, sym := range coinSymbols {
 		for _, pool := range c.pools {
 			if strings.EqualFold(pool.Symbol(), sym) {
-				coinImpl, _ := coin.Create(pool.Symbol())
+				coinImpl, err := coin.Create(pool.Symbol())
+				if err != nil {
+					c.poolsMu.RUnlock()
+					return fmt.Errorf("multi_port: failed to create coin %q: %w", sym, err)
+				}
 				blockTime := float64(coinImpl.BlockTime())
 				c.diffMonitor.RegisterCoin(pool, blockTime)
 				break

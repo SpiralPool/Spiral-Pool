@@ -91,7 +91,7 @@ class ThemeManager {
             "name": "Cyberpunk",
             "id": "cyberpunk",
             "author": "Spiral Pool",
-            "version": "2.2.0",
+            "version": "2.2.1",
             "description": "Neon-infused futuristic mining dashboard",
             "colors": {
                 "bg-primary": "#0f1419",

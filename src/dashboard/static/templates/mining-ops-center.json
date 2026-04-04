@@ -2,7 +2,7 @@
   "name": "Mining Operations Center",
   "id": "mining-ops-center",
   "author": "Spiral Pool",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Professional operations dashboard focused on system health, uptime, and miner management",
   "preview": "ops-center-preview.png",
   "layout": {

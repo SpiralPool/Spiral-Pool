@@ -269,7 +269,7 @@ func (m *mockDB) statusUpdateCount() int {
 	return len(m.statusUpdates)
 }
 
-func (m *mockDB) GetBlocksByStatus(ctx context.Context, status string) ([]*database.Block, error) {
+func (m *mockDB) GetBlocksByStatusForPool(ctx context.Context, poolID string, status string) ([]*database.Block, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.getBlocksByStatusErr != nil {
@@ -286,11 +286,8 @@ func (m *mockDB) GetPoolHashrateForPool(ctx context.Context, poolID string, wind
 func (m *mockDB) UpdatePoolStatsForPool(ctx context.Context, poolID string, stats *database.PoolStats) error {
 	panic("UpdatePoolStatsForPool not called in handleBlock tests")
 }
-func (m *mockDB) GetPoolHashrate(ctx context.Context, windowMinutes int) (float64, error) {
-	panic("GetPoolHashrate not called in handleBlock tests")
-}
-func (m *mockDB) CleanupStaleShares(ctx context.Context, retentionMinutes int) (int64, error) {
-	panic("CleanupStaleShares not called in handleBlock tests")
+func (m *mockDB) CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error) {
+	panic("CleanupStaleSharesForPool not called in handleBlock tests")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

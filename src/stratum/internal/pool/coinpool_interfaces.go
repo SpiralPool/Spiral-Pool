@@ -59,12 +59,17 @@ type coinPoolNodeManager interface {
 
 // coinPoolDB abstracts the database methods called by CoinPool.
 // Satisfied by *database.PostgresDB.
+//
+// Methods ending in "ForPool" accept an explicit poolID parameter and query the
+// correct per-coin table. These MUST be used instead of the non-ForPool variants
+// because all CoinPools share a single PostgresDB whose internal poolID is set
+// to the first coin registered (coordinator init). Using the non-ForPool methods
+// causes all coins to read/write the first coin's tables.
 type coinPoolDB interface {
 	InsertBlockForPool(ctx context.Context, poolID string, block *database.Block) error
 	UpdateBlockStatusForPool(ctx context.Context, poolID string, height uint64, hash string, status string, confirmationProgress float64) error
-	GetBlocksByStatus(ctx context.Context, status string) ([]*database.Block, error)
+	GetBlocksByStatusForPool(ctx context.Context, poolID string, status string) ([]*database.Block, error)
 	GetPoolHashrateForPool(ctx context.Context, poolID string, windowMinutes int, algorithm string) (float64, error)
 	UpdatePoolStatsForPool(ctx context.Context, poolID string, stats *database.PoolStats) error
-	GetPoolHashrate(ctx context.Context, windowMinutes int) (float64, error)
-	CleanupStaleShares(ctx context.Context, retentionMinutes int) (int64, error)
+	CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error)
 }

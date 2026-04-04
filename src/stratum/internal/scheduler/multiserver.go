@@ -287,6 +287,7 @@ func (ms *MultiServer) handleConnect(session *protocol.Session) {
 		ms.logger.Errorw("No coin pools available for multi-port session",
 			"sessionId", session.ID,
 		)
+		ms.activeSessions.Add(-1) // Undo increment — session is non-functional
 		return
 	}
 

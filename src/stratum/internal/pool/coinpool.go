@@ -1798,8 +1798,8 @@ func (cp *CoinPool) reconciliationLoop(ctx context.Context) {
 // and updates their status based on whether they exist in the daemon's blockchain.
 // CRITICAL: Designed to prevent block accounting loss after a crash during submission.
 func (cp *CoinPool) reconcileSubmittingBlocks(ctx context.Context) error {
-	// Get blocks stuck in "submitting" state
-	submittingBlocks, err := cp.db.GetBlocksByStatus(ctx, "submitting")
+	// Get blocks stuck in "submitting" state (query THIS coin's blocks table)
+	submittingBlocks, err := cp.db.GetBlocksByStatusForPool(ctx, cp.poolID, "submitting")
 	if err != nil {
 		return fmt.Errorf("failed to query submitting blocks: %w", err)
 	}
@@ -2519,6 +2519,8 @@ func (cp *CoinPool) GetActiveConnections() []api.WorkerConnection {
 
 // GetHashrate returns the pool's current hashrate.
 // This returns the hashrate calculated from the database (shares over time window).
+// Uses per-pool query to correctly partition hashrate in multi-coin setups where
+// a shared PostgresDB serves all CoinPools.
 func (cp *CoinPool) GetHashrate() float64 {
 	if cp.db == nil {
 		return 0
@@ -2528,9 +2530,11 @@ func (cp *CoinPool) GetHashrate() float64 {
 	defer cancel()
 
 	// Use 30-minute window for hashrate calculation (smoother, matches ~12 QBX blocks)
-	hashrate, err := cp.db.GetPoolHashrate(ctx, 30)
+	// GetPoolHashrateForPool queries shares_<poolID> for THIS coin specifically,
+	// unlike GetPoolHashrate which uses the shared DB's default poolID.
+	hashrate, err := cp.db.GetPoolHashrateForPool(ctx, cp.poolID, 30, cp.coin.Algorithm())
 	if err != nil {
-		cp.logger.Warnw("Failed to get pool hashrate from database", "error", err)
+		cp.logger.Warnw("Failed to get pool hashrate from database", "error", err, "poolId", cp.poolID)
 		return 0
 	}
 
@@ -2539,11 +2543,18 @@ func (cp *CoinPool) GetHashrate() float64 {
 
 // GetSharesPerSecond returns the current share submission rate.
 func (cp *CoinPool) GetSharesPerSecond() float64 {
-	// Calculate from validator stats - shares per time period
 	stats := cp.shareValidator.Stats()
-	// Return a rough estimate based on accepted shares
-	// Real-time calculation would require tracking timestamps
-	return float64(stats.Accepted) / 3600.0 // Rough hourly rate
+	if stats.Accepted == 0 {
+		return 0
+	}
+
+	// Calculate rate from accepted shares over actual elapsed time since pool start.
+	elapsed := time.Since(cp.startTime).Seconds()
+	if elapsed < 1 {
+		return 0
+	}
+
+	return float64(stats.Accepted) / elapsed
 }
 
 // GetBlockHeight returns the current block height from the node.
@@ -3403,7 +3414,7 @@ func (cp *CoinPool) cleanupStaleShares(ctx context.Context) error {
 	// Clean up shares older than 15 minutes (1.5x the hashrate window)
 	retentionMinutes := 15
 
-	deleted, err := cp.db.CleanupStaleShares(ctx, retentionMinutes)
+	deleted, err := cp.db.CleanupStaleSharesForPool(ctx, cp.poolID, retentionMinutes)
 	if err != nil {
 		return err
 	}

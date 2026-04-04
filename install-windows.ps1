@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 2.2.0
+    Version: 2.2.1
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "2.2.0"
+$Script:Version = "2.2.1"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.2.0" -ForegroundColor DarkGray
+    Write-Host "                           v2.2.1" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -1483,7 +1483,7 @@ function New-EnvironmentFile {
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.2.0 Docker Configuration
+# Spiral Pool v2.2.1 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 

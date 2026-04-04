@@ -337,6 +337,86 @@ func (db *PostgresDB) UpdatePoolStatsForPool(ctx context.Context, poolID string,
 	return err
 }
 
+// GetBlocksByStatusForPool returns blocks with a specific status for a specific pool.
+// Used for reconciliation of "submitting" blocks on startup in multi-coin setups
+// where multiple CoinPools share a single PostgresDB connection.
+func (db *PostgresDB) GetBlocksByStatusForPool(ctx context.Context, poolID string, status string) ([]*Block, error) {
+	// SECURITY: Validate poolID to prevent SQL injection via table name
+	if !validPoolID.MatchString(poolID) {
+		return nil, fmt.Errorf("invalid pool ID: %q", poolID)
+	}
+
+	tableName := fmt.Sprintf("blocks_%s", poolID)
+
+	query := fmt.Sprintf(`
+		SELECT id, blockheight, networkdifficulty, status, type,
+			   confirmationprogress, effort, transactionconfirmationdata,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
+			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
+			   COALESCE(stability_check_count, 0) as stability_check_count,
+			   COALESCE(last_verified_tip, '') as last_verified_tip
+		FROM %s
+		WHERE status = $1
+		ORDER BY blockheight ASC
+	`, tableName)
+
+	rows, err := db.pool.Query(ctx, query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var blocks []*Block
+	for rows.Next() {
+		b := &Block{}
+		err := rows.Scan(
+			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
+			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
+			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
+		)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating blocks by status: %w", err)
+	}
+
+	return blocks, nil
+}
+
+// CleanupStaleSharesForPool removes shares older than the specified retention period
+// for a specific pool. Used in multi-coin setups where multiple CoinPools share
+// a single PostgresDB connection.
+func (db *PostgresDB) CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error) {
+	// SECURITY: Validate poolID to prevent SQL injection via table name
+	if !validPoolID.MatchString(poolID) {
+		return 0, fmt.Errorf("invalid pool ID: %q", poolID)
+	}
+	// SECURITY: Validate retentionMinutes bounds (DB-01 fix)
+	if retentionMinutes < 1 || retentionMinutes > 43200 { // Max 30 days
+		return 0, fmt.Errorf("invalid retentionMinutes: must be 1-43200")
+	}
+
+	tableName := fmt.Sprintf("shares_%s", poolID)
+
+	// SECURITY: Use parameterized INTERVAL to prevent SQL injection (DB-01 fix)
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE created < NOW() - ($1 * INTERVAL '1 minute')
+	`, tableName)
+
+	result, err := db.pool.Exec(ctx, query, retentionMinutes)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected(), nil
+}
+
 // NewPoolShareWriter creates a new share writer for a specific pool.
 // This allows the shares package to write to pool-specific tables.
 func NewPoolShareWriter(poolID string, db *PostgresDB) *PoolShareWriterDB {

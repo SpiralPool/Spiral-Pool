@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spiralpool/stratum/internal/coin"
 	"github.com/spiralpool/stratum/internal/daemon"
 	"github.com/spiralpool/stratum/internal/database"
 	"github.com/spiralpool/stratum/internal/nodemanager"
@@ -104,7 +105,7 @@ func newCriticalMockDB() *criticalMockDB {
 	return &criticalMockDB{}
 }
 
-func (m *criticalMockDB) CleanupStaleShares(ctx context.Context, retentionMinutes int) (int64, error) {
+func (m *criticalMockDB) CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cleanupCalled = true
@@ -124,8 +125,8 @@ func (m *criticalMockDB) UpdatePoolStatsForPool(ctx context.Context, poolID stri
 	return m.updateStatsErr
 }
 
-func (m *criticalMockDB) GetPoolHashrate(ctx context.Context, windowMinutes int) (float64, error) {
-	return m.globalHashrate, m.globalHashrateErr
+func (m *criticalMockDB) GetBlocksByStatusForPool(ctx context.Context, poolID string, status string) ([]*database.Block, error) {
+	return m.blocksByStatus[status], nil
 }
 
 // newCriticalTestCoinPool constructs a minimal CoinPool for critical function testing.
@@ -729,6 +730,168 @@ func waitForWg(t *testing.T, wg *sync.WaitGroup, timeout time.Duration, loopName
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GetHashrate() per-pool isolation test — Smart Multi-Port bug fix
+// ═══════════════════════════════════════════════════════════════════════════════
+// Proves that GetHashrate() queries the correct per-coin share table when
+// multiple CoinPools share a single database connection (the coordinator pattern).
+//
+// BUG (pre-fix): GetHashrate() called db.GetPoolHashrate() which uses the DB's
+// internal poolID (set to firstPoolID during coordinator init). All CoinPools
+// returned the SAME hashrate regardless of coin — causing the dashboard to show
+// N× the actual hashrate when N coins were enabled in smart multi-port mode.
+//
+// FIX: GetHashrate() now calls db.GetPoolHashrateForPool(ctx, cp.poolID, ...)
+// which queries shares_<THIS_COIN's_poolID>, returning correct per-coin hashrate.
+
+// multiCoinMockDB simulates a shared PostgresDB where each coin has its own
+// share table with different hashrates. This is the real-world scenario: shares
+// are partitioned into shares_btc_sha256_1, shares_bch_sha256_1, etc.
+type multiCoinMockDB struct {
+	criticalMockDB
+
+	// Per-pool hashrates: poolID → hashrate (simulates different share tables)
+	perPoolHashrates map[string]float64
+
+	// Track which method was called and with what poolID
+	mu            sync.Mutex
+	forPoolCalled bool   // GetPoolHashrateForPool was called
+	lastForPoolID string // last poolID passed to GetPoolHashrateForPool
+}
+
+func (m *multiCoinMockDB) GetPoolHashrateForPool(ctx context.Context, poolID string, windowMinutes int, algorithm string) (float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.forPoolCalled = true
+	m.lastForPoolID = poolID
+	if hr, ok := m.perPoolHashrates[poolID]; ok {
+		return hr, nil
+	}
+	return 0, nil
+}
+
+func TestGetHashrate_PerPoolIsolation_SmartMultiPort(t *testing.T) {
+	t.Parallel()
+
+	// Simulate 3 coins sharing a single DB connection (coordinator pattern).
+	// The DB's internal poolID would be "btc_sha256_1" (first coin registered).
+	// Each coin's share table has a DIFFERENT hashrate because the smart port
+	// scheduler distributes mining time across coins based on difficulty.
+	sharedDB := &multiCoinMockDB{
+		perPoolHashrates: map[string]float64{
+			"btc_sha256_1": 50e12,  // BTC: 50 TH/s (mined 50% of the time)
+			"bch_sha256_1": 30e12,  // BCH: 30 TH/s (mined 30% of the time)
+			"qbx_sha256_1": 20e12,  // QBX: 20 TH/s (mined 20% of the time)
+		},
+	}
+	// The old GetPoolHashrate() always returned this (first coin's hashrate)
+	sharedDB.globalHashrate = 50e12
+
+	// Create 3 CoinPools sharing the SAME DB (exactly like the coordinator does)
+	coins := []struct {
+		symbol string
+		poolID string
+	}{
+		{"BTC", "btc_sha256_1"},
+		{"BCH", "bch_sha256_1"},
+		{"QBX", "qbx_sha256_1"},
+	}
+
+	for _, tc := range coins {
+		coinImpl, err := coin.Create(tc.symbol)
+		if err != nil {
+			t.Fatalf("coin.Create(%s): %v", tc.symbol, err)
+		}
+
+		cp := &CoinPool{
+			db:         sharedDB,
+			poolID:     tc.poolID,
+			coinSymbol: tc.symbol,
+			coin:       coinImpl,
+			logger:     zap.NewNop().Sugar(),
+		}
+
+		got := cp.GetHashrate()
+		expected := sharedDB.perPoolHashrates[tc.poolID]
+
+		if got != expected {
+			t.Errorf("%s (poolID=%s): GetHashrate() = %.0f H/s, want %.0f H/s (BUG: returning shared firstPoolID hashrate instead of per-coin)",
+				tc.symbol, tc.poolID, got, expected)
+		}
+	}
+
+	// Verify GetPoolHashrateForPool was called (the per-coin method).
+	// Note: GetPoolHashrate (shared firstPoolID) is no longer in the coinPoolDB
+	// interface, so the compiler enforces it cannot be called.
+	sharedDB.mu.Lock()
+	defer sharedDB.mu.Unlock()
+
+	if !sharedDB.forPoolCalled {
+		t.Error("FIX NOT APPLIED: GetHashrate() did not call GetPoolHashrateForPool()")
+	}
+}
+
+// TestGetHashrate_OldBehavior_WouldTripleCount demonstrates what the bug looked like:
+// if GetPoolHashrate() were still used, all 3 coins would return 50 TH/s (the first
+// coin's hashrate), and the dashboard would sum them to 150 TH/s — 3× the actual.
+func TestGetHashrate_OldBehavior_WouldTripleCount(t *testing.T) {
+	t.Parallel()
+
+	// With the old code, all coins would query shares_btc_sha256_1 and get 50 TH/s.
+	// Dashboard sums: 50 + 50 + 50 = 150 TH/s (actual pool hashrate is ~100 TH/s).
+	sharedDB := &multiCoinMockDB{
+		perPoolHashrates: map[string]float64{
+			"btc_sha256_1": 50e12,
+			"bch_sha256_1": 30e12,
+			"qbx_sha256_1": 20e12,
+		},
+	}
+	sharedDB.globalHashrate = 50e12 // What GetPoolHashrate() would return
+
+	// With the fix, summing per-coin gives the correct total
+	var totalHashrate float64
+	coins := []struct {
+		symbol string
+		poolID string
+	}{
+		{"BTC", "btc_sha256_1"},
+		{"BCH", "bch_sha256_1"},
+		{"QBX", "qbx_sha256_1"},
+	}
+
+	for _, tc := range coins {
+		coinImpl, err := coin.Create(tc.symbol)
+		if err != nil {
+			t.Fatalf("coin.Create(%s): %v", tc.symbol, err)
+		}
+
+		cp := &CoinPool{
+			db:         sharedDB,
+			poolID:     tc.poolID,
+			coinSymbol: tc.symbol,
+			coin:       coinImpl,
+			logger:     zap.NewNop().Sugar(),
+		}
+
+		totalHashrate += cp.GetHashrate()
+	}
+
+	// Correct total: 50 + 30 + 20 = 100 TH/s
+	expectedTotal := 100e12
+	if totalHashrate != expectedTotal {
+		t.Errorf("Total hashrate = %.0f H/s, want %.0f H/s", totalHashrate, expectedTotal)
+	}
+
+	// Old buggy total would have been: 50 + 50 + 50 = 150 TH/s
+	buggyTotal := sharedDB.globalHashrate * 3
+	if totalHashrate == buggyTotal {
+		t.Errorf("Total hashrate matches buggy 3× value (%.0f H/s) — fix not working", buggyTotal)
+	}
+
+	t.Logf("PASS: Total = %.0f TH/s (correct), old bug would show %.0f TH/s (3×)",
+		totalHashrate/1e12, buggyTotal/1e12)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Compile-time interface satisfaction checks
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -736,4 +899,5 @@ var (
 	_ coinPoolNodeManager = (*criticalMockNodeMgr)(nil)
 	_ coinPoolDB          = (*criticalMockDB)(nil)
 	_ coinPoolNodeManager = (*syncTestNodeMgr)(nil)
+	_ coinPoolDB          = (*multiCoinMockDB)(nil)
 )

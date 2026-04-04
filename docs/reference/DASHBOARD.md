@@ -533,4 +533,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Phi Hash Reactor 2.2.0*
+*Spiral Dash &mdash; Phi Hash Reactor 2.2.1*

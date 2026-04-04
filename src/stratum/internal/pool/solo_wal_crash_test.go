@@ -22,7 +22,7 @@ import (
 // =============================================================================
 //
 // Ensures no valid solved block is lost due to WAL crash/recovery scenarios
-// in SOLO mode. Every risk vector is exercised across all 15 supported coins
+// in SOLO mode. Every risk vector is exercised across all 14 supported coins
 // with realistic block parameters (height ranges, block intervals, algorithms).
 //
 // Risk vectors covered:
@@ -45,7 +45,7 @@ type coinTestConfig struct {
 	Reward        int64  // coinbase value in satoshis
 }
 
-// allTestCoins returns the full set of 15 supported coins with realistic configs.
+// allTestCoins returns the full set of 14 supported coins with realistic configs.
 func allTestCoins() []coinTestConfig {
 	return []coinTestConfig{
 		// === SHA-256d Coins ===
@@ -854,10 +854,10 @@ func TestSOLO_WALCrash_AllCoins_ConcurrentMixedOps(t *testing.T) {
 // COMBINED SCENARIO: Pre + Mid + Build-Failed Across All Coins in One WAL
 // =============================================================================
 // This is the master crash-recovery test: a single WAL contains blocks from
-// all 15 coins in all three crash states. Recovery must correctly classify each.
+// all 14 coins in all three crash states. Recovery must correctly classify each.
 
 func TestSOLO_WALCrash_AllCoins_MasterCrashRecovery(t *testing.T) {
-	// Combined scenario: all 15 coins, three crash states.
+	// Combined scenario: all 14 coins, three crash states.
 	// Tests that RecoverUnsubmittedBlocks correctly returns only
 	// "pending" and "submitting" entries, never "submitted" or "build_failed".
 	t.Parallel()
@@ -1028,7 +1028,7 @@ func TestSOLO_WALCrash_AllCoins_StatusSupersede(t *testing.T) {
 
 func TestSOLO_WALCrash_AllCoins_FsyncDurability(t *testing.T) {
 	// Verifies fsync durability: after each LogBlockFound, the data is
-	// immediately readable from disk. Covers all 15 coins.
+	// immediately readable from disk. Covers all 14 coins.
 	t.Parallel()
 
 	for _, coin := range allTestCoins() {

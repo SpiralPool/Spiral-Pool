@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.2.0-PHI_HASH_REACTOR"
+__version__ = "2.2.1-PHI_HASH_REACTOR"
 
 import os
 import json
@@ -458,6 +458,7 @@ _miner_cache_lock = threading.Lock()
 _pool_stats_lock = threading.Lock()
 _lifetime_stats_lock = threading.Lock()
 _share_heatmap_lock = threading.Lock()
+_announced_blocks = set()  # Track announced block hashes to prevent duplicate celebrations
 _node_operation_lock = threading.Lock()  # Serialize install/remove to prevent concurrent pool-mode.sh
 _config_file_lock = threading.RLock()   # Serialize all read-modify-write cycles on POOL_CONFIG_PATH (reentrant for nested calls)
 _node_operation_status = {}  # Track async install/remove status: {SYMBOL: {status, message, ...}}
@@ -1750,9 +1751,12 @@ def fetch_pool_stats():
                 total_miners = 0
                 total_hashrate = 0
                 total_shares = 0.0
-                # Use the primary (first) pool for network stats
-                primary_stats = pools[0].get("poolStats", {})
                 per_coin = {}
+                # Track which pool has the highest hashrate (= most actively mined coin).
+                # In smart multi-port mode, this is the coin currently being mined.
+                # Used for top-level network stats instead of hardcoding pools[0].
+                active_pool_stats = pools[0].get("poolStats", {})
+                active_pool_hashrate = active_pool_stats.get("poolHashrate", 0)
                 for p in pools:
                     stats = p.get("poolStats", {})
                     miners = stats.get("connectedMiners", 0)
@@ -1761,6 +1765,11 @@ def fetch_pool_stats():
                     total_miners += miners
                     total_hashrate += hashrate
                     total_shares += shares
+
+                    # Use the pool with the highest hashrate for network stats
+                    if hashrate > active_pool_hashrate:
+                        active_pool_stats = stats
+                        active_pool_hashrate = hashrate
 
                     # Extract coin symbol from pool's coin.type field
                     coin_info = p.get("coin", {})
@@ -1782,8 +1791,8 @@ def fetch_pool_stats():
                 pool_stats_cache["connected_miners"] = total_miners
                 pool_stats_cache["pool_hashrate"] = total_hashrate
                 pool_stats_cache["shares_per_second"] = total_shares
-                pool_stats_cache["network_difficulty"] = primary_stats.get("networkDifficulty", 0)
-                pool_stats_cache["block_height"] = primary_stats.get("blockHeight", 0)
+                pool_stats_cache["network_difficulty"] = active_pool_stats.get("networkDifficulty", 0)
+                pool_stats_cache["block_height"] = active_pool_stats.get("blockHeight", 0)
                 pool_stats_cache["per_coin"] = per_coin
                 pool_stats_cache["status"] = "online"
                 got_pool_data = True
@@ -1811,7 +1820,15 @@ def fetch_pool_stats():
                 if new_count > old_count and old_count >= 0:
                     # Announce the newest blocks (difference = new blocks found since last check)
                     num_new = new_count - old_count
-                    new_blocks_to_announce = blocks[:num_new]
+                    # Deduplicate: only announce blocks we haven't seen before
+                    for blk in blocks[:num_new]:
+                        blk_key = (blk.get("blockHeight", ""), blk.get("hash", ""))
+                        if blk_key not in _announced_blocks:
+                            _announced_blocks.add(blk_key)
+                            new_blocks_to_announce.append(blk)
+                    # Cap the set size to prevent unbounded growth
+                    if len(_announced_blocks) > 500:
+                        _announced_blocks.clear()
                 got_pool_data = True
 
             # Only update last_update if we got actual data — prevents caching
@@ -9929,10 +9946,16 @@ def get_miners():
                     result[symbol] = mm["aux_chains"]
             return result
 
+        # Snapshot miner_cache under lock to prevent race with writer thread
+        with _miner_cache_lock:
+            miners_snapshot = dict(miner_cache["miners"])
+            totals_snapshot = dict(miner_cache["totals"])
+            last_update_snapshot = miner_cache["last_update"]
+
         # Build device grouping metadata for frontend grouped view
         # Algorithm is detected per-miner from the stratum port they're connected to
         device_groups = {}
-        for miner_name, miner_data in miner_cache["miners"].items():
+        for miner_name, miner_data in miners_snapshot.items():
             algo_info = get_miner_algorithm(miner_data)
             group = get_device_group(miner_data.get("type", ""), algo_info=algo_info)
             if group not in device_groups:
@@ -9976,11 +9999,11 @@ def get_miners():
                     # Match by display name first, then by IP
                     matched_name = None
                     matched_data = None
-                    if miner_id in miner_cache["miners"]:
+                    if miner_id in miners_snapshot:
                         matched_name = miner_id
-                        matched_data = miner_cache["miners"][miner_id]
+                        matched_data = miners_snapshot[miner_id]
                     else:
-                        for mn, md in miner_cache["miners"].items():
+                        for mn, md in miners_snapshot.items():
                             if md.get("ip") == miner_id:
                                 matched_name = mn
                                 matched_data = md
@@ -10005,8 +10028,8 @@ def get_miners():
         _net_hashrate = _compute_network_hashrate(_net_diff)
 
         return jsonify({
-            "miners": miner_cache["miners"],
-            "totals": miner_cache["totals"],
+            "miners": miners_snapshot,
+            "totals": totals_snapshot,
             "lifetime": lifetime_stats,
             "block_reward": reward_info,
             "network_difficulty": _net_diff,
@@ -10015,7 +10038,7 @@ def get_miners():
             "last_block_height": pool_stats.get("last_block_height"),
             "last_block_time": pool_stats.get("last_block_time"),
             "last_block_coin": pool_stats.get("last_block_coin", ""),
-            "last_update": miner_cache["last_update"],
+            "last_update": last_update_snapshot,
             # Pool hashrate from stratum server (workers connected to THIS pool)
             "pool_hashrate": pool_stats.get("pool_hashrate", 0),
             "pool_connected_miners": pool_stats.get("connected_miners", 0),
@@ -11327,14 +11350,19 @@ def get_combined_stats():
     primary_coin = coins_info.get("primary")  # No default - use detected coin
     multi_coin_mode = coins_info.get("multi_coin_mode", False)
 
+    # Snapshot miner_cache under lock to prevent race with writer thread
+    with _miner_cache_lock:
+        miners_snapshot = dict(miner_cache["miners"])
+        totals_snapshot = dict(miner_cache["totals"])
+
     # Calculate efficiency
-    total_shares = miner_cache["totals"].get("accepted_shares", 0)
-    rejected = miner_cache["totals"].get("rejected_shares", 0)
+    total_shares = totals_snapshot.get("accepted_shares", 0)
+    rejected = totals_snapshot.get("rejected_shares", 0)
     efficiency = (total_shares / (total_shares + rejected) * 100) if (total_shares + rejected) > 0 else 100
 
     response = {
-        "miners": miner_cache["miners"],
-        "miner_totals": miner_cache["totals"],
+        "miners": miners_snapshot,
+        "miner_totals": totals_snapshot,
         "pool_stats": pool_stats,
         "block_reward": reward_info,
         "lifetime": lifetime_stats,
@@ -14579,7 +14607,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.2.0 PHI HASH REACTOR"},
+        "footer": {"text": f"Spiral Pool v2.2.1 PHI HASH REACTOR"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -19715,7 +19743,13 @@ def reset_session_stats():
 # ============================================
 
 def update_luck_tracker():
-    """Update luck calculation based on actual vs expected blocks"""
+    """Update luck calculation based on actual vs expected blocks.
+
+    Multi-coin aware: in multi-coin mode, calculates expected blocks per-coin
+    using each coin's own difficulty and algorithm, then sums.  This avoids the
+    bug where mixing BTC difficulty with QBX block counts gives wildly incorrect
+    luck percentages.
+    """
     global luck_tracker
 
     now = time.time()
@@ -19731,9 +19765,8 @@ def update_luck_tracker():
 
     # Calculate expected blocks based on hashrate and time
     farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
-    network_difficulty = pool_stats_cache.get("network_difficulty", 0)
 
-    if farm_hashrate_ths <= 0 or network_difficulty <= 0:
+    if farm_hashrate_ths <= 0:
         return
 
     # How long have we been mining? Use session start or lifetime start
@@ -19741,18 +19774,41 @@ def update_luck_tracker():
     if mining_duration < 3600:  # Need at least 1 hour of data
         return
 
-    # Expected blocks = (hashrate * time) / (difficulty * diff_multiplier)
     farm_hashrate_hs = farm_hashrate_ths * 1e12
-    coins = get_enabled_coins()
-    algo = get_algorithm_for_coin(coins.get("primary", "BTC"))
-    diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
-    expected_hashes_per_block = network_difficulty * diff_multiplier
+    per_coin = pool_stats_cache.get("per_coin", {})
 
-    if expected_hashes_per_block > 0:
-        # Expected blocks in our mining duration
-        blocks_expected = (farm_hashrate_hs * mining_duration) / expected_hashes_per_block
-    else:
+    if len(per_coin) >= 2:
+        # Multi-coin mode: calculate expected blocks per-coin to avoid
+        # mixing different coins' difficulties (e.g. BTC diff vs QBX blocks).
+        # Each coin's expected blocks = (coin_hashrate / total_hashrate) * farm_hashrate * time / (diff * multiplier)
+        total_pool_hashrate = pool_stats_cache.get("pool_hashrate", 0)
         blocks_expected = 0
+        for sym, coin_stats in per_coin.items():
+            coin_diff = coin_stats.get("difficulty", 0)
+            coin_hr = coin_stats.get("hashrate", 0)
+            if coin_diff <= 0 or coin_hr <= 0 or total_pool_hashrate <= 0:
+                continue
+            # Proportion of farm hashrate attributed to this coin
+            coin_fraction = coin_hr / total_pool_hashrate
+            coin_farm_hs = farm_hashrate_hs * coin_fraction
+            algo = get_algorithm_for_coin(sym)
+            diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
+            expected_hashes = coin_diff * diff_multiplier
+            if expected_hashes > 0:
+                blocks_expected += (coin_farm_hs * mining_duration) / expected_hashes
+    else:
+        # Single-coin mode: straightforward calculation
+        network_difficulty = pool_stats_cache.get("network_difficulty", 0)
+        if network_difficulty <= 0:
+            return
+        coins = get_enabled_coins()
+        algo = get_algorithm_for_coin(coins.get("primary", "BTC"))
+        diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
+        expected_hashes_per_block = network_difficulty * diff_multiplier
+        if expected_hashes_per_block > 0:
+            blocks_expected = (farm_hashrate_hs * mining_duration) / expected_hashes_per_block
+        else:
+            blocks_expected = 0
 
     luck_tracker["blocks_found"] = blocks_found
     luck_tracker["blocks_expected"] = round(blocks_expected, 4)

@@ -7,6 +7,43 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.2.1]  -  2026-04-04  -  Phi Hash Reactor
+
+> *Smart Port multi-coin audit — 10 fixes across Go, Python, JS.*
+
+### Fixed
+
+**Smart Multi-Port — Shared-DB bugs (all coins shared first coin's database queries)**
+
+- **Dashboard shows N× pool hashrate in Smart Multi-Port mode** -- `CoinPool.GetHashrate()` called `db.GetPoolHashrate()` which queries `shares_<firstPoolID>` (the shared DB's default pool ID set during coordinator init). All CoinPools returned the same hashrate from the first coin's share table. Dashboard summed N identical values → N× the actual hashrate on the overview card and "All Coins" statistics view. Fixed by switching to `db.GetPoolHashrateForPool(poolID, ...)` which queries the correct per-coin share table
+- **Block reconciliation queries wrong coin's blocks table** -- `GetBlocksByStatus()` used `db.poolID` (shared firstPoolID). After a crash, non-first coins reconciled the first coin's "submitting" blocks instead of their own, potentially missing stuck blocks or reconciling the wrong coin's data. Created `GetBlocksByStatusForPool(poolID, ...)` and updated `reconcileSubmittingBlocks()` to pass `cp.poolID`
+- **Stale share cleanup targets wrong coin's shares table** -- `CleanupStaleShares()` used `db.poolID` (shared firstPoolID). Every CoinPool cleaned `shares_<firstCoin>` on startup — first coin's shares got cleaned N times, other coins' shares never got cleaned, leading to unbounded table growth. Created `CleanupStaleSharesForPool(poolID, ...)` and updated `cleanupStaleShares()` to pass `cp.poolID`
+- **Removed stale shared-DB methods from CoinPool interface** -- `GetPoolHashrate()`, `GetBlocksByStatus()`, and `CleanupStaleShares()` removed from `coinPoolDB` interface. The compiler now enforces that only the per-pool variants can be called, preventing regression
+
+**Smart Multi-Port — Scheduler**
+
+- **Broken sessions when no coin pools available** -- `handleConnect()` incremented `activeSessions` counter then returned early when no coin pools were running, leaving the session in a non-functional state (no coin assigned, can't submit shares, can't receive jobs). Counter corrected only on disconnect. Now decrements the counter before the early return
+
+**Smart Multi-Port — Dashboard**
+
+- **Network difficulty always from first pool, not active coin** -- `fetch_pool_stats()` hardcoded `pools[0]` for network difficulty and block height. In multi-coin mode, this always showed the first coin's difficulty regardless of which coin was being mined. Now uses the pool with the highest hashrate (the most actively mined coin)
+- **Luck tracker produces wrong percentages in multi-coin mode** -- `update_luck_tracker()` mixed aggregate `blocks_found` from all coins with `network_difficulty` from primary pool only and `algorithm` from primary coin only. Finding a QBX block while using BTC difficulty gave wildly wrong luck. Now calculates expected blocks per-coin using each coin's own difficulty and algorithm, then sums
+
+**Dashboard — Thread Safety**
+
+- **`/api/miners` and `/api/combined` race condition on miner_cache** -- reader endpoints iterated `miner_cache["miners"]` dict without holding `_miner_cache_lock`, while the background poller could replace it mid-iteration. Under load (many miners, frequent polls), this causes `RuntimeError: dictionary changed size during iteration` crashing the API response. Both endpoints now snapshot the dict under the lock before iterating
+- **Duplicate block celebration announcements** -- `fetch_pool_stats()` detected new blocks by count comparison (`new_count > old_count`) but did not deduplicate by block identity. If the API returned a slightly different block list between polls (reordered, or a block changed status causing a re-count), the same block could be announced multiple times. Now tracks announced blocks by `(height, hash)` tuple and skips duplicates
+
+**Other**
+
+- **`GetSharesPerSecond()` returns meaningless lifetime average** -- divided total lifetime accepted shares by 3600 (a fixed constant), producing the same value regardless of actual current submission rate. Now divides by actual elapsed time since pool start
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.2.1
+
+---
+
 ## [2.2.0]  -  2026-03-31  -  Phi Hash Reactor
 
 > *Coin management hardening. Surgical operations.*

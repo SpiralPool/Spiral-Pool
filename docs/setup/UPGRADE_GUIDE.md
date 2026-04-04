@@ -1,14 +1,14 @@
-# Upgrading to Spiral Pool v2.2.0 (Phi Hash Reactor)
+# Upgrading to Spiral Pool v2.2.1 (Phi Hash Reactor)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x) and v2.2.0 for any coin.**
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x) and v2.2.1 for any coin.**
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
 ---
 
-## What's new in v2.2.0
+## What's new in v2.2.1
 
 See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 
@@ -18,7 +18,7 @@ See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 - **Dashboard statistics chart grid** — 2×2 charts for pool hashrate, network hashrate, difficulty, workers
 - **`_safe_num()` across all miner fetch functions** — prevents dashboard crash from firmware returning string-encoded numbers
 - **Spiral Router cleanup** — 47 verified patterns (down from ~280 dead-code patterns), all confirmed against firmware source
-- **Version string consistency** — all strings now semver `2.2.0`
+- **Version string consistency** — all strings now semver `2.2.1`
 
 ## What was new in v1.1.0
 
@@ -102,7 +102,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.2.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.2.1 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -341,13 +341,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.2.0`. If Sentinel is running:
+The version line should show `2.2.1`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Sentinel v2.2.0-PHI_HASH_REACTOR` followed by `PHI HASH REACTOR EDITION` in the startup log.
+Look for `Spiral Sentinel v2.2.1-PHI_HASH_REACTOR` followed by `PHI HASH REACTOR EDITION` in the startup log.
 
 ---
 
@@ -427,4 +427,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.2.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Phi Hash Reactor 2.2.1 — Built on what came before. Growing toward phi.*
