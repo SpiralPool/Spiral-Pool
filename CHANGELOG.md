@@ -9,7 +9,7 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ## [2.2.1]  -  2026-04-04  -  Phi Hash Reactor
 
-> *Smart Port multi-coin audit — 10 fixes across Go, Python, JS.*
+> *Smart Port multi-coin audit — 13 fixes across Go, Python, JS.*
 
 ### Fixed
 
@@ -23,6 +23,8 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 **Smart Multi-Port — Scheduler**
 
 - **Broken sessions when no coin pools available** -- `handleConnect()` incremented `activeSessions` counter then returned early when no coin pools were running, leaving the session in a non-functional state (no coin assigned, can't submit shares, can't receive jobs). Counter corrected only on disconnect. Now decrements the counter before the early return
+- **Cross-coin job invalidation on coin switch** -- `SendJobToSession(cleanJobs=true)` invalidated ALL jobs in the shared `s.jobs` map, including jobs belonging to sessions on other coins. When DGB found a new block, BTC/BCH session jobs were wiped from bookkeeping. Fixed by removing blanket invalidation in `SendJobToSession`; now stores the new job and evicts oldest when map exceeds 10 entries, matching `BroadcastJob`'s pruning pattern. `BroadcastJob` (single-coin path) left unchanged where full invalidation is correct
+- **Missing `mining.set_difficulty` on coin switch** -- `switchSessionCoin()` sent the new coin's job but never sent `mining.set_difficulty` beforehand. cgminer/bmminer firmware applies the last received `set_difficulty` to the next job — without re-sending it, miners used the previous coin's difficulty for the new coin's shares, causing rejection. `sendCoinJob()` now calls `SendDifficulty(session, currentDiff)` before sending the job when `cleanJobs=true`
 
 **Smart Multi-Port — Dashboard**
 

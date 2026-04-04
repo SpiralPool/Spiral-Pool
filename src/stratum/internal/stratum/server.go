@@ -1302,20 +1302,35 @@ func (s *Server) GetCurrentJob() *protocol.Job {
 
 // SendJobToSession sends a specific job to a single session.
 // Used by the multi-coin server to push coin-specific jobs to individual miners.
+//
+// Unlike BroadcastJob (single-coin path where all sessions share one coin),
+// this does NOT invalidate existing jobs on CleanJobs. In multi-port mode,
+// s.jobs is shared across sessions on DIFFERENT coins — invalidating all
+// jobs when one coin switches would corrupt other coins' job state.
+// Multi-port share validation uses each coin pool's own job manager, not s.jobs.
 func (s *Server) SendJobToSession(session *protocol.Session, job *protocol.Job) {
 	if session == nil || job == nil {
 		return
 	}
 
-	// Store in job history for share validation
+	// Store in job history (bookkeeping only — multiport share validation
+	// uses coin pool's own job manager, not s.jobs).
 	s.jobMu.Lock()
-	if job.CleanJobs {
-		for id, oldJob := range s.jobs {
-			oldJob.SetState(protocol.JobStateInvalidated, "multi-port coin switch")
-			delete(s.jobs, id)
+	s.jobs[job.ID] = job
+	// Cap job history to prevent unbounded growth (same limit as BroadcastJob).
+	if len(s.jobs) > 10 {
+		var oldest string
+		var oldestTime time.Time
+		for id, j := range s.jobs {
+			if oldest == "" || j.CreatedAt.Before(oldestTime) {
+				oldest = id
+				oldestTime = j.CreatedAt
+			}
+		}
+		if oldest != "" {
+			delete(s.jobs, oldest)
 		}
 	}
-	s.jobs[job.ID] = job
 	s.jobMu.Unlock()
 
 	s.sendJob(session, job)

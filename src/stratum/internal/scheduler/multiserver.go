@@ -473,6 +473,24 @@ func (ms *MultiServer) sendCoinJob(session *protocol.Session, coinSymbol string,
 		return
 	}
 
+	// Re-send difficulty before coin job on coin switches.
+	// cgminer/bmminer firmware applies set_difficulty only to the NEXT job
+	// it receives. Without this, firmware may use a stale difficulty value
+	// for the new coin's work. SendDifficulty's follow-up job send from
+	// s.currentJob is nil in multiport mode, so no spurious extra job.
+	if cleanJobs {
+		currentDiff := session.GetDifficulty()
+		if currentDiff > 0 {
+			if err := ms.server.SendDifficulty(session, currentDiff); err != nil {
+				ms.logger.Warnw("Failed to send difficulty on coin switch",
+					"sessionId", session.ID,
+					"coin", coinSymbol,
+					"error", err,
+				)
+			}
+		}
+	}
+
 	// Override clean_jobs flag for coin switches
 	if cleanJobs {
 		// Clone the job to avoid copying the embedded sync.RWMutex
