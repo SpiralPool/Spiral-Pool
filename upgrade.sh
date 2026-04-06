@@ -784,6 +784,7 @@ create_backup() {
     [[ -f "$(resolve_coin_dir sys)/syscoin.conf" ]] && cp "$(resolve_coin_dir sys)/syscoin.conf" "${BACKUP_PATH}/syscoin.conf" && log_info "  - syscoin.conf backed up"
     [[ -f "$(resolve_coin_dir xmy)/myriadcoin.conf" ]] && cp "$(resolve_coin_dir xmy)/myriadcoin.conf" "${BACKUP_PATH}/myriadcoin.conf" && log_info "  - myriadcoin.conf backed up"
     [[ -f "$(resolve_coin_dir fbtc)/fractal.conf" ]] && cp "$(resolve_coin_dir fbtc)/fractal.conf" "${BACKUP_PATH}/fractal.conf" && log_info "  - fractal.conf backed up"
+    [[ -f "$(resolve_coin_dir qbx)/qbitx.conf" ]] && cp "$(resolve_coin_dir qbx)/qbitx.conf" "${BACKUP_PATH}/qbitx.conf" && log_info "  - qbitx.conf backed up"
     # Legacy location (older installs may have config here)
     [[ -f "${INSTALL_DIR}/config/digibyte.conf" ]] && [[ ! -L "${INSTALL_DIR}/config/digibyte.conf" ]] && \
         cp "${INSTALL_DIR}/config/digibyte.conf" "${BACKUP_PATH}/digibyte-legacy.conf" && log_info "  - digibyte.conf (legacy) backed up"
