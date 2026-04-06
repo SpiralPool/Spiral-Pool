@@ -45,6 +45,10 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 - **False fleet hashrate drop alert on HA backup nodes** -- pool drop detection ran on all nodes regardless of HA role, relying solely on `send_alert()` suppression. If Sentinel accidentally started on a backup node (e.g., after upgrade restart), and the stratum briefly reported `localRole: MASTER` during cluster re-discovery, the backup's 0 TH/s triggered a 100% drop alert. Added `is_master_sentinel()` guard directly to the pool drop detection block so backup nodes skip it entirely
 - **HA node role int-to-string mapping** -- Go stratum serializes `ClusterNode.Role` as an integer (`RoleBackup=2`), but `ha_manager.py` only accepted string values (`"BACKUP"`). Every 30-second status poll logged `Unknown HA node role from API: 2, treating as UNKNOWN` for each node. Added `INT_ROLE_MAP` to translate Go's integer role codes to their string equivalents
 
+**Installer**
+
+- **QBX runtime dependencies skipped on HA replication** -- `libevent` and `libleveldb` were installed inside the download block, which is skipped when binaries are copied from the primary node via `copy_binaries_from_primary`. QBX daemon crash-looped with `libevent-2.1.so.7: cannot open shared object file` on HA backup nodes. Moved dependency install before the download check
+
 ### Changed
 
 - **Version bump** -- all version strings updated to 2.2.1
