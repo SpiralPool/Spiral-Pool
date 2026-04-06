@@ -47,7 +47,8 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 **Installer**
 
-- **QBX runtime dependencies skipped on HA replication** -- `libevent` and `libleveldb` were installed inside the download block, which is skipped when binaries are copied from the primary node via `copy_binaries_from_primary`. QBX daemon crash-looped with `libevent-2.1.so.7: cannot open shared object file` on HA backup nodes. Moved dependency install before the download check
+- **QBX runtime dependencies skipped on HA replication** -- `libevent` and `libleveldb` were installed inside the download block in `install.sh`, which is skipped when binaries are copied from the primary node via `copy_binaries_from_primary`. QBX daemon crash-looped with `libevent-2.1.so.7: cannot open shared object file` on HA backup nodes. Moved dependency install before the download check
+- **QBX runtime dependencies missing from pool-mode.sh** -- `pool-mode.sh --add QBX` (used by dashboard coin install and `spiralctl coin enable`) downloaded the binary but never installed `libevent`/`libleveldb` runtime libraries. QBX daemon failed to start with shared library errors. Added `apt-get install` for runtime deps
 
 ### Changed
 

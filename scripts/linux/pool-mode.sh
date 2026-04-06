@@ -3690,6 +3690,8 @@ install_node_if_needed() {
                 echo -e "${RED}Q-BitX does not provide ARM64 binaries — skipping${NC}"
                 return 1
             fi
+            echo "Installing Q-BitX runtime dependencies..."
+            apt-get install -y -qq libevent-2.1-7 libleveldb1d libevent-pthreads-2.1-7t64 2>/dev/null || true
             echo "Downloading Q-BitX..."
             cd /tmp
             QBX_VERSION="0.2.0"
