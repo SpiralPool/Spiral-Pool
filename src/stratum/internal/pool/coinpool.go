@@ -130,6 +130,11 @@ type CoinPool struct {
 	// Set via SetMultiPortJobListener; read inside the job callback closure.
 	multiPortJobListener atomic.Value // stores func(*protocol.Job) or nil
 
+	// Multi-port session provider: allows this CoinPool to include smart-port
+	// workers in its connection lists and counts. Set by the coordinator after
+	// the multi-port server starts.
+	multiPortSessions api.MultiPortSessionProvider
+
 	// V2 Stratum (optional, enabled when PortV2 > 0)
 	v2Server         *stratumv2.Server
 	v2JobAdapter     *stratumv2.JobManagerAdapter
@@ -2486,12 +2491,18 @@ func (cp *CoinPool) IsRunning() bool {
 // These methods expose pool stats for the REST API.
 
 // GetConnections returns the number of active miner connections.
+// Includes both direct connections and smart-port workers assigned to this coin.
 func (cp *CoinPool) GetConnections() int64 {
-	return cp.stratumServer.Stats().ActiveConnections
+	count := cp.stratumServer.Stats().ActiveConnections
+	if cp.multiPortSessions != nil {
+		count += cp.multiPortSessions.GetMultiPortConnectionCountForCoin(cp.coinSymbol)
+	}
+	return count
 }
 
 // GetActiveConnections implements api.CoinPoolProvider.
-// Returns real-time connection status for all active workers.
+// Returns real-time connection status for all active workers, including
+// smart-port workers currently assigned to this coin.
 // SECURITY: This endpoint is protected by adminAuthMiddlewareV2 (API key required).
 // Full IP addresses are returned since admin access is already authenticated —
 // masking would break Sentinel's ESP32 device matching (pool-based monitoring
@@ -2512,6 +2523,12 @@ func (cp *CoinPool) GetActiveConnections() []api.WorkerConnection {
 			Difficulty:   s.GetDifficulty(),
 			ShareCount:   s.GetShareCount(),
 		})
+	}
+
+	// Merge smart-port workers assigned to this coin
+	if cp.multiPortSessions != nil {
+		mpConns := cp.multiPortSessions.GetMultiPortConnectionsForCoin(cp.coinSymbol)
+		connections = append(connections, mpConns...)
 	}
 
 	return connections
@@ -2806,6 +2823,13 @@ func (cp *CoinPool) GetCurrentJob() *protocol.Job {
 // block template updates for miners assigned to this coin.
 func (cp *CoinPool) SetMultiPortJobListener(callback func(*protocol.Job)) {
 	cp.multiPortJobListener.Store(callback)
+}
+
+// SetMultiPortSessionProvider sets the provider that supplies smart-port
+// session data for this coin. Once set, GetConnections() and
+// GetActiveConnections() include multi-port workers assigned to this coin.
+func (cp *CoinPool) SetMultiPortSessionProvider(p api.MultiPortSessionProvider) {
+	cp.multiPortSessions = p
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

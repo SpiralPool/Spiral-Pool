@@ -7,6 +7,16 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.2.2]  -  2026-04-06  -  Phi Hash Reactor
+
+> *Smart Port per-coin connection visibility fix.*
+
+### Fixed
+
+- **Smart Port workers invisible to per-coin APIs** -- miners connected via the Smart Port (port 16180) were tracked only by the `MultiServer` coordinator, not by individual `CoinPool` instances. Per-coin API endpoints (`/api/pools/{id}/connections`, `connectedMiners`) showed 0–1 connections and `"connected": false` for workers, even though shares were processed correctly. Dashboard displayed "Connections 1" instead of the actual 7+ miners. Added `MultiPortSessionProvider` interface so each `CoinPool` merges smart-port sessions assigned to its coin into `GetConnections()` and `GetActiveConnections()`, giving the API and dashboard accurate worker counts regardless of connection port
+
+---
+
 ## [2.2.1]  -  2026-04-04  -  Phi Hash Reactor
 
 > *Smart Port multi-coin audit — 13 fixes across Go, Python, JS.*

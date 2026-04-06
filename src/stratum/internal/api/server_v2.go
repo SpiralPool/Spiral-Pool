@@ -67,6 +67,15 @@ type MultiPortStatsProvider interface {
 	GetMultiPortDifficultyStates() map[string]MultiPortDiffState
 }
 
+// MultiPortSessionProvider provides per-coin session data from the multi-port
+// coordinator. CoinPools use this to include smart-port workers in their
+// connection lists and counts, so the API accurately reflects all connected
+// miners regardless of which port they connected through.
+type MultiPortSessionProvider interface {
+	GetMultiPortConnectionsForCoin(coinSymbol string) []WorkerConnection
+	GetMultiPortConnectionCountForCoin(coinSymbol string) int64
+}
+
 // MultiPortStats represents the multi-port server status for the API.
 type MultiPortStats struct {
 	Enabled          bool                     `json:"enabled"`

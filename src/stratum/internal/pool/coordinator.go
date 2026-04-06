@@ -1909,6 +1909,15 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		c.apiServer.SetMultiPortProvider(&multiPortAdapter{coord: c})
 	}
 
+	// Wire multi-port session provider to each CoinPool so per-coin APIs
+	// include smart-port workers in their connection lists and counts.
+	sessionAdapter := &multiPortSessionAdapter{coord: c}
+	c.poolsMu.RLock()
+	for _, cp := range c.pools {
+		cp.SetMultiPortSessionProvider(sessionAdapter)
+	}
+	c.poolsMu.RUnlock()
+
 	c.logger.Infow("Multi coin smart port started",
 		"port", mpCfg.Port,
 		"coins", coinSymbols,
@@ -1989,4 +1998,42 @@ func (a *multiPortAdapter) GetMultiPortDifficultyStates() map[string]api.MultiPo
 		}
 	}
 	return result
+}
+
+// multiPortSessionAdapter implements api.MultiPortSessionProvider.
+// It bridges the coordinator's MultiServer session data into each CoinPool
+// so per-coin APIs include smart-port workers in their connection lists.
+type multiPortSessionAdapter struct {
+	coord *Coordinator
+}
+
+func (a *multiPortSessionAdapter) GetMultiPortConnectionsForCoin(coinSymbol string) []api.WorkerConnection {
+	ms := a.coord.multiServer
+	if ms == nil {
+		return nil
+	}
+	sessions := ms.GetActiveConnectionsForCoin(coinSymbol)
+	connections := make([]api.WorkerConnection, 0, len(sessions))
+	for _, s := range sessions {
+		connections = append(connections, api.WorkerConnection{
+			SessionID:    s.ID,
+			WorkerName:   s.WorkerName,
+			MinerAddress: s.MinerAddress,
+			UserAgent:    s.UserAgent,
+			RemoteAddr:   s.RemoteAddr,
+			ConnectedAt:  s.ConnectedAt,
+			LastActivity: s.GetLastActivity(),
+			Difficulty:   s.GetDifficulty(),
+			ShareCount:   s.GetShareCount(),
+		})
+	}
+	return connections
+}
+
+func (a *multiPortSessionAdapter) GetMultiPortConnectionCountForCoin(coinSymbol string) int64 {
+	ms := a.coord.multiServer
+	if ms == nil {
+		return 0
+	}
+	return ms.GetActiveConnectionCountForCoin(coinSymbol)
 }

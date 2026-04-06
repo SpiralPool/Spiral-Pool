@@ -639,3 +639,34 @@ func (ms *MultiServer) GetSwitchHistory(limit int) []SwitchEvent {
 func (ms *MultiServer) GetServer() *stratum.Server {
 	return ms.server
 }
+
+// GetActiveConnectionsForCoin returns all multi-port sessions currently
+// assigned to the given coin symbol. Used by CoinPools to include smart-port
+// workers in their per-coin connection lists.
+func (ms *MultiServer) GetActiveConnectionsForCoin(symbol string) []*protocol.Session {
+	var sessions []*protocol.Session
+	ms.sessionCoin.Range(func(key, value any) bool {
+		if value.(string) != symbol {
+			return true
+		}
+		if session, ok := ms.server.GetSession(key.(uint64)); ok {
+			sessions = append(sessions, session)
+		}
+		return true
+	})
+	return sessions
+}
+
+// GetActiveConnectionCountForCoin returns the number of multi-port sessions
+// currently assigned to the given coin. More efficient than
+// GetActiveConnectionsForCoin when only the count is needed.
+func (ms *MultiServer) GetActiveConnectionCountForCoin(symbol string) int64 {
+	var count int64
+	ms.sessionCoin.Range(func(key, value any) bool {
+		if value.(string) == symbol {
+			count++
+		}
+		return true
+	})
+	return count
+}
