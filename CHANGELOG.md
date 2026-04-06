@@ -15,6 +15,7 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 - **Smart Port workers invisible to per-coin APIs** -- miners connected via the Smart Port (port 16180) were tracked only by the `MultiServer` coordinator, not by individual `CoinPool` instances. Per-coin API endpoints (`/api/pools/{id}/connections`, `connectedMiners`) showed 0–1 connections and `"connected": false` for workers, even though shares were processed correctly. Dashboard displayed "Connections 1" instead of the actual 7+ miners. Added `MultiPortSessionProvider` interface so each `CoinPool` merges smart-port sessions assigned to its coin into `GetConnections()` and `GetActiveConnections()`, giving the API and dashboard accurate worker counts regardless of connection port
 - **QBX daemon config not backed up during upgrade** -- `upgrade.sh` backup section listed all 12 supported coins' daemon configs except QBX (`qbitx.conf`). Config file was never at risk (upgrades don't modify daemon configs), but restoring from backup would be missing it. Added `qbitx.conf` backup entry
+- **Sentinel crashes on startup in multi-coin mode** -- `get_enabled_coins()` called `detected.get("symbol")` on the result of `auto_detect_pool_coin()`, which returns a list (not a dict) in multi-coin V2 mode. Caused `AttributeError: 'list' object has no attribute 'get'` crash loop. Sentinel was down, preventing Discord block notifications. Added `isinstance(detected, list)` check to return the list directly
 
 ---
 
