@@ -27,6 +27,25 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 - **`upgrade.sh` skips hotfixes when version tag matches** -- version comparison (`sort -V`) treated same-version or hotfix-patched releases as "already on latest" and silently skipped the upgrade. Users had to know about `--force` to apply hotfixes. `--force` is now the default behavior; `--auto` mode still blocks downgrades
 - **`upgrade.sh` auto-fixes disabled payments in existing configs** -- `migrate_v2_config()` now patches `payments: enabled: false` → `enabled: true` for all coins during every upgrade. No manual config editing required
 
+**Sentinel — RPC & Monitoring**
+
+- **Silent RPC auth failure for all authenticated coin daemons** -- `_rpc_call()` never sent HTTP Basic Auth credentials. Any daemon requiring auth (QBX, and all coins with `user:`/`password:` in config.yaml) silently returned `None` on every RPC call. QBX `getmininginfo`, `getnetworkhashps`, `getblockchaininfo`, `getblockcount`, and `validateaddress` all failed every cycle, falling through to pool API fallbacks or returning zeros. Fixed by auto-resolving credentials from stratum `config.yaml` inside `_rpc_call()` — all 20+ call sites get auth for free with zero code changes
+- **Fragile RPC credential parser** -- `_get_rpc_auth_for_port()` used substring matching (`str(port) in line`) which could match wrong port lines (e.g., port 333 matching 3333). Rewrote with exact port value parsing, indentation-aware block detection, and mtime-based caching. Verified against all 13 supported coins with zero false positives
+- **`check_coin_node_synced()` bypassed `_rpc_call` entirely** -- used raw `urllib.request` with no auth. QBX always reported "unsynced". Rewrote to use `_rpc_call` which auto-resolves auth
+- **Hashrate divergence false positive in Smart Port mode (root cause)** -- `get_pool_share_stats()` only queried the primary `pool_id`. When Smart Port rotated miners to QBX, the DGB pool showed 0 hashrate, triggering false divergence alerts. Previous fix (v2.2.5 initial) only patched the aggregate branch, but code was going through the per-worker branch. Root fix: `get_pool_share_stats()` now merges miners from ALL enabled coin pools at the source, fixing both code paths
+- **QBX wallet balance missing from intel report** -- `fetch_wallet_balance_for_coin()` used pool API block summing which only showed pool-mined balance. Now uses `scantxoutset` RPC to scan the UTXO set directly, returning the full wallet balance without requiring a loaded daemon wallet
+- **Difficulty alert threshold too sensitive** -- DGB adjusts difficulty every block. Threshold raised from 25% to 50% to reduce noise
+
+**Payment Processor**
+
+- **False "payment processor stalled" alert during normal block confirmation** -- Go sentinel's `checkPaymentProcessors()` only tracked the count of pending blocks. A single block confirming from 0% → 100% stays at count=1 the entire time, triggering "stalled" after 5 checks even though the block is actively progressing. Fixed by tracking the full pipeline (`confirmed + paid` blocks) — stall only fires when NOTHING moves through the pipeline
+
+**Daemon Resource Limits**
+
+- **`dbcache=8192` causes swap thrashing and RPC timeouts on multi-coin setups** -- two daemons each with 8GB dbcache exceeded the 12GB memory limit, pushing into swap. RPC calls returned EOF, stalling block confirmations for 4+ hours. Reduced defaults: BTC=4096, DGB/BCH/LTC/NMC=2048, small coins=512-1024. `maxconnections` reduced from 256 to 64 across all coins
+- **Auto-sizing only ran on WSL2** -- RAM-based dbcache auto-sizing (25% of total RAM, capped) was gated behind a WSL2 detection check. Now runs on all platforms
+- **Existing configs not updated on upgrade** -- `upgrade.sh` now includes `rightsize_daemon_resources()` migration that detects and reduces oversized dbcache/maxconnections in existing daemon configs during every upgrade
+
 ### Changed
 
 - **Version bump** -- all version strings updated to 2.2.5

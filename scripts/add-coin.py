@@ -1510,7 +1510,7 @@ def generate_conf_template(params: CoinParams, dns_seeds: Optional[List[str]] = 
     """
     symbol_upper = params.symbol.upper()
     zmq_port = params.zmq_port if params.zmq_port else 28000 + (params.rpc_port % 1000)
-    dbcache = 8192 if params.algorithm == "sha256d" else 4096
+    dbcache = 2048 if params.algorithm == "sha256d" else 1024
 
     conf = f"""# ═══════════════════════════════════════════════════════════════════════════════
 # {symbol_upper} CORE - SPIRAL POOL CONFIGURATION
@@ -1802,7 +1802,7 @@ def generate_native_install_script(params: CoinParams, release_url: Optional[str
     coinlower = params.symbol.lower()
     symbol_upper = params.symbol.upper()
     zmq_port = params.zmq_port if params.zmq_port else 28000 + (params.rpc_port % 1000)
-    dbcache = 8192 if params.algorithm == "sha256d" else 4096
+    dbcache = 2048 if params.algorithm == "sha256d" else 1024
 
     auxpow_note = ""
     # Only emit AuxPoW guidance when the coin explicitly declares it AND the parent

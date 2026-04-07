@@ -387,13 +387,13 @@ zmqpubhashblock=tcp://127.0.0.1:$zmq_port
 zmqpubrawtx=tcp://127.0.0.1:$zmq_port
 
 # === PERFORMANCE OPTIMIZATION ===
-dbcache=8192
+dbcache=2048
 maxmempool=300
 par=4
 maxsigcachesize=250
 
 # === CLEARNET - FAST SYNC MODE ===
-maxconnections=256
+maxconnections=64
 maxreceivebuffer=25000
 maxsendbuffer=5000
 onlynet=ipv4
@@ -483,12 +483,12 @@ zmqpubhashblock=tcp://127.0.0.1:$zmq_port
 zmqpubrawtx=tcp://127.0.0.1:$zmq_port
 
 # === PERFORMANCE OPTIMIZATION ===
-dbcache=8192
+dbcache=4096
 maxmempool=300
 par=4
 
 # === CLEARNET - FAST SYNC MODE ===
-maxconnections=256
+maxconnections=64
 maxreceivebuffer=25000
 maxsendbuffer=5000
 listen=1
@@ -584,7 +584,7 @@ maxmempool=300
 par=4
 
 # === CLEARNET - FAST SYNC MODE ===
-maxconnections=256
+maxconnections=64
 maxreceivebuffer=25000
 maxsendbuffer=5000
 listen=1
@@ -681,7 +681,7 @@ maxmempool=300
 par=0
 
 # === CLEARNET - FAST SYNC MODE ===
-maxconnections=256
+maxconnections=64
 maxreceivebuffer=25000
 maxsendbuffer=5000
 listen=1

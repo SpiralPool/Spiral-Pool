@@ -45,9 +45,9 @@ zmqpubhashblockhwm=1000
 # PERFORMANCE TUNING - OPTIMIZED FOR FAST SYNC
 # ═══════════════════════════════════════════════════════════════════════════════
 # Database cache size in MB (higher = faster sync, more RAM)
-# Recommended: 8192 for initial sync, 2048 for steady state
-# Requires ~8GB RAM for initial sync
-dbcache=8192
+# Recommended: 8192 for initial sync, 4096 for steady state
+# BTC gets 4096 (largest UTXO set); requires ~6GB RAM
+dbcache=4096
 
 # Signature cache size (higher = faster validation)
 maxsigcachesize=250

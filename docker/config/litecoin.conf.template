@@ -41,7 +41,7 @@ zmqpubhashblockhwm=1000
 # PERFORMANCE TUNING
 # ═══════════════════════════════════════════════════════════════════════════════
 # Database cache size in MB (LTC chain is smaller than BTC)
-dbcache=4096
+dbcache=2048
 
 # Signature cache size
 maxsigcachesize=250

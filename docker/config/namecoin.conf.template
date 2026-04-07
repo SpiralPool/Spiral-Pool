@@ -40,7 +40,7 @@ zmqpubrawblock=tcp://0.0.0.0:28336
 # PERFORMANCE TUNING
 # ═══════════════════════════════════════════════════════════════════════════════
 # Database cache size in MB (Namecoin chain is similar size to BTC)
-dbcache=4096
+dbcache=2048
 
 # Signature cache size
 maxsigcachesize=250

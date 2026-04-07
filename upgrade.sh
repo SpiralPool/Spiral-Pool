@@ -389,11 +389,11 @@ wsl2_preflight_checks() {
     [[ "$drift_ok" == "true" ]] && log_info "  Clock drift: OK"
 
     # Memory check: WSL2 defaults to 50% host RAM (or .wslconfig override).
-    # dbcache=8192 in daemon configs can OOM the instance.
+    # dbcache=8192 (legacy) in daemon configs can OOM the instance.
     local total_mb
     total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]] && [[ "$total_mb" -lt 10240 ]]; then
-        log_warn "WSL2 has ${total_mb}MB RAM — coin daemons with dbcache=8192 may OOM"
+        log_warn "WSL2 has ${total_mb}MB RAM — coin daemons with high dbcache may OOM"
         log_warn "Consider reducing dbcache in your daemon configs or increasing WSL2 memory"
         log_warn "in %USERPROFILE%\\.wslconfig: [wsl2] memory=12GB"
     else
@@ -2258,6 +2258,88 @@ cleanup_daemon_configs() {
         log_success "Removed $TOTAL_REMOVED invalid option(s) from daemon configs"
     else
         log_info "  - All daemon configs clean"
+    fi
+}
+
+# ============================================================================
+# Right-size dbcache and maxconnections in existing daemon configs.
+#
+# v2.2.5 and earlier shipped dbcache=8192 for SHA-256d coins and dbcache=4096
+# for scrypt coins.  On multi-coin setups (Smart Port), multiple daemons with
+# oversized caches exhaust RAM, push into swap, and cause RPC timeouts that
+# stall block confirmation.
+#
+# This migration caps:
+#   - BTC: dbcache=4096  (largest UTXO set)
+#   - DGB/BCH/LTC/NMC/other: dbcache=2048
+#   - All coins: maxconnections=64 (was 256)
+#
+# Idempotent — skips configs already at or below the cap.
+# ============================================================================
+rightsize_daemon_resources() {
+    log_info "Checking daemon resource limits (dbcache, maxconnections)..."
+
+    local FIXES=0
+
+    # coin_dir:conf_name:max_dbcache
+    local COIN_LIMITS=(
+        "btc:bitcoin.conf:4096"
+        "dgb:digibyte.conf:2048"
+        "bch:bitcoin.conf:2048"
+        "ltc:litecoin.conf:2048"
+        "nmc:namecoin.conf:2048"
+        "bc2:bitcoinii.conf:2048"
+        "sys:syscoin.conf:2048"
+        "xmy:myriadcoin.conf:2048"
+        "fbtc:fractal.conf:2048"
+        "doge:dogecoin.conf:2048"
+        "qbx:qbitx.conf:1024"
+        "pep:pepecoin.conf:1024"
+        "cat:catcoin.conf:1024"
+    )
+
+    for entry in "${COIN_LIMITS[@]}"; do
+        local coin_dir="${entry%%:*}"
+        local rest="${entry#*:}"
+        local conf_name="${rest%%:*}"
+        local max_cache="${rest##*:}"
+
+        local conf_path
+        conf_path="$(resolve_coin_dir "$coin_dir" 2>/dev/null)/${conf_name}" || continue
+        [[ -f "$conf_path" ]] || continue
+
+        local changed=false
+
+        # Check dbcache
+        local current_cache
+        current_cache=$(grep -oP '^dbcache=\K\d+' "$conf_path" 2>/dev/null || echo "0")
+        if [[ "$current_cache" -gt "$max_cache" ]]; then
+            sed -i "s/^dbcache=${current_cache}/dbcache=${max_cache}/" "$conf_path"
+            log_info "  - ${conf_name} (${coin_dir}): dbcache ${current_cache} -> ${max_cache}"
+            FIXES=$((FIXES + 1))
+            changed=true
+        fi
+
+        # Check maxconnections
+        local current_conn
+        current_conn=$(grep -oP '^maxconnections=\K\d+' "$conf_path" 2>/dev/null || echo "0")
+        if [[ "$current_conn" -gt 64 ]]; then
+            sed -i "s/^maxconnections=${current_conn}/maxconnections=64/" "$conf_path"
+            log_info "  - ${conf_name} (${coin_dir}): maxconnections ${current_conn} -> 64"
+            FIXES=$((FIXES + 1))
+            changed=true
+        fi
+
+        if [[ "$changed" == "true" ]] && [[ -n "$POOL_USER" ]]; then
+            chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
+            chmod 0600 "$conf_path" 2>/dev/null
+        fi
+    done
+
+    if [[ $FIXES -gt 0 ]]; then
+        log_success "Right-sized $FIXES daemon resource setting(s) — restart daemons for changes to take effect"
+    else
+        log_info "  - All daemon resource limits OK"
     fi
 }
 
@@ -4879,6 +4961,11 @@ SSHDEOF
     # Remove invalid daemon config options shipped in v2.0.0 (maxoutconnections,
     # maxdebugfilesize, etc.) — idempotent, always safe to re-run.
     cleanup_daemon_configs
+
+    # v2.2.5: Reduce oversized dbcache/maxconnections in existing daemon configs.
+    # Multi-coin setups with dbcache=8192 per daemon exhaust RAM and cause RPC
+    # timeouts that stall block confirmation.
+    rightsize_daemon_resources
 
     # Ensure forcednsseed=1 and addnode= fallback peers exist in all deployed
     # daemon configs. v2.0.1 incorrectly removed forcednsseed; this restores it

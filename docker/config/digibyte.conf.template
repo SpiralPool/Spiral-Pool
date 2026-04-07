@@ -25,7 +25,7 @@ zmqpubrawtx=tcp://0.0.0.0:28532
 zmqpubrawblock=tcp://0.0.0.0:28532
 
 # Performance (optimized for fast sync)
-dbcache=8192
+dbcache=2048
 maxmempool=300
 par=0
 maxsigcachesize=250

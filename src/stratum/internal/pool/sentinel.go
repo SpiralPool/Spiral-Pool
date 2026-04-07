@@ -78,6 +78,7 @@ type Sentinel struct {
 	// State tracking for expanded alerts
 	prevDropped        map[string]uint64 // coin -> previous share batch dropped count
 	paymentPending     map[string]int    // poolID -> previous pending blocks
+	paymentConfirmed   map[string]int    // poolID -> previous confirmed+paid blocks
 
 	// State tracking for WAL recovery duration
 	walRecoveryStart map[string]time.Time // poolID -> when recovery was first observed
@@ -119,6 +120,7 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		heightChangedAt: make(map[string]time.Time),
 		prevDropped:       make(map[string]uint64),
 		paymentPending:    make(map[string]int),
+		paymentConfirmed:  make(map[string]int),
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:      make(map[string]int),
 		haRoleHistory:     make([]time.Time, 0, 16),
@@ -978,7 +980,10 @@ func (s *Sentinel) checkRetryStorm() {
 }
 
 // checkPaymentProcessors detects stalled payment processors.
-// If pending blocks aren't being confirmed/paid for multiple consecutive checks, something is wrong.
+// A stall is when pending blocks exist but nothing is moving through the pipeline:
+// no blocks confirmed, no blocks paid, and no pending blocks cleared.
+// Simply having pending blocks is NOT a stall — blocks take time to confirm
+// (e.g., DGB ~60 min for 240 confirmations).
 func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 	if s.cfg.PaymentStallChecks <= 0 {
 		return
@@ -997,17 +1002,27 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 			continue
 		}
 
+		// Track the full pipeline: pending + confirmed + paid.
+		// If ANY of these change, blocks are moving and the processor isn't stalled.
+		currentConfirmed := stats.ConfirmedBlocks + stats.PaidBlocks
+
 		s.mu.Lock()
 		prevPending, hasPrev := s.paymentPending[poolID]
+		prevConfirmed := s.paymentConfirmed[poolID]
 		s.paymentPending[poolID] = stats.PendingBlocks
+		s.paymentConfirmed[poolID] = currentConfirmed
 
 		if !hasPrev {
 			s.mu.Unlock()
 			continue
 		}
 
-		// If we have pending blocks and the count hasn't decreased (no blocks confirmed)
-		if stats.PendingBlocks > 0 && stats.PendingBlocks >= prevPending {
+		// Stall = pending blocks exist, count hasn't decreased, AND no new confirmations/payments
+		pipelineStalled := stats.PendingBlocks > 0 &&
+			stats.PendingBlocks >= prevPending &&
+			currentConfirmed == prevConfirmed
+
+		if pipelineStalled {
 			s.paymentStallCount[poolID]++
 		} else {
 			s.paymentStallCount[poolID] = 0
@@ -1024,12 +1039,14 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 			coin := s.poolIDToCoin(poolID)
 
 			s.fireAlert(ctx, "payment_processor_stalled", severity, coin, poolID,
-				fmt.Sprintf("Payment processor stalled for %s: %d pending blocks unchanged for %d checks",
+				fmt.Sprintf("Payment processor stalled for %s: %d pending blocks, no pipeline movement for %d checks",
 					poolID, stats.PendingBlocks, stallCount),
 				map[string]interface{}{
-					"pending_blocks": stats.PendingBlocks,
-					"stall_checks":  stallCount,
-					"threshold":     s.cfg.PaymentStallChecks,
+					"pending_blocks":   stats.PendingBlocks,
+					"confirmed_blocks": stats.ConfirmedBlocks,
+					"paid_blocks":      stats.PaidBlocks,
+					"stall_checks":     stallCount,
+					"threshold":        s.cfg.PaymentStallChecks,
 				},
 			)
 		}
