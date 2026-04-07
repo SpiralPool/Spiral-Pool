@@ -1357,12 +1357,19 @@ func readMetricValue(m interface{ Write(*dto.Metric) error }) float64 {
 // DIFFICULTY OVERFLOW ROUTER ALERTS (v2.1)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// checkMultiPortDifficultySpike fires an alert when a multi-port coin's network
-// difficulty spikes significantly, indicating miners may be rerouted.
+// checkMultiPortDifficultySpike fires an alert when the currently-mined coin's
+// network difficulty spikes significantly. Only alerts for coins that have
+// active miners — no point alerting about difficulty on a coin nobody is mining.
 func (s *Sentinel) checkMultiPortDifficultySpike(ctx context.Context) {
 	monitor := s.coordinator.diffMonitor
 	if monitor == nil {
 		return // Multi-port not enabled
+	}
+
+	// Get the current coin distribution so we only alert for actively-mined coins
+	var activeCoinDist map[string]int
+	if ms := s.coordinator.multiServer; ms != nil {
+		activeCoinDist = ms.Stats().CoinDistribution
 	}
 
 	states := monitor.GetAllStates()
@@ -1380,13 +1387,18 @@ func (s *Sentinel) checkMultiPortDifficultySpike(ctx context.Context) {
 			continue
 		}
 
+		// Skip coins with no active miners — irrelevant noise
+		if activeCoinDist != nil && activeCoinDist[symbol] == 0 {
+			continue
+		}
+
 		changePct := ((state.NetworkDiff - prev) / prev) * 100
-		if changePct > 15 { // >15% spike
+		if changePct > 25 { // >25% spike (matches Sentinel threshold)
 			s.fireAlert(ctx,
 				"multi_port_difficulty_spike",
 				severityWarning,
 				symbol, "",
-				fmt.Sprintf("Network difficulty spike: %s +%.1f%% — routing small miners to easier coins",
+				fmt.Sprintf("Network difficulty spike: %s +%.1f%%",
 					symbol, changePct),
 				map[string]interface{}{
 					"old_diff":    prev,
