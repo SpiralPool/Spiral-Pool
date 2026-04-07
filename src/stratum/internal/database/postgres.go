@@ -740,11 +740,12 @@ func (db *PostgresDB) GetConfirmedBlocks(ctx context.Context) ([]*Block, error) 
 
 // BlockStats contains aggregated block statistics by status.
 type BlockStats struct {
-	Submitting int
-	Pending    int
-	Confirmed  int
-	Orphaned   int
-	Paid       int
+	Submitting               int
+	Pending                  int
+	Confirmed                int
+	Orphaned                 int
+	Paid                     int
+	MaxConfirmationProgress  float64
 }
 
 // GetBlockStats returns block counts grouped by status.
@@ -786,6 +787,18 @@ func (db *PostgresDB) GetBlockStats(ctx context.Context) (*BlockStats, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating block stats: %w", err)
+	}
+
+	// Query max confirmation progress for pending blocks.
+	// Used by sentinel to detect pipeline movement during block maturity.
+	progressQuery := fmt.Sprintf(`
+		SELECT COALESCE(MAX(confirmationprogress), 0)
+		FROM %s
+		WHERE status = 'pending'
+	`, tableName)
+	if err := db.pool.QueryRow(ctx, progressQuery).Scan(&stats.MaxConfirmationProgress); err != nil {
+		// Non-fatal: stall detection degrades to count-only mode
+		stats.MaxConfirmationProgress = 0
 	}
 
 	return stats, nil

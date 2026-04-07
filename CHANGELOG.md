@@ -48,6 +48,10 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 - **Auto-sizing only ran on WSL2** -- RAM-based dbcache auto-sizing (25% of total RAM, capped) was gated behind a WSL2 detection check. Now runs on all platforms
 - **Existing configs not updated on upgrade** -- `upgrade.sh` now includes `rightsize_daemon_resources()` migration that detects and reduces oversized dbcache/maxconnections in existing daemon configs during every upgrade
 
+**Daemon Stability**
+
+- **SIGABRT on daemon shutdown corrupts data directory ownership** -- blockchain daemons (especially QBX) crash with SIGABRT on stop, leaving files owned by root. On next start, the daemon can't read its own config/data files and fails. Added `ExecStartPre=/bin/chown -R` to all 13 daemon systemd service files across all 3 deployment paths (templates, install.sh heredocs, pool-mode.sh heredocs). `upgrade.sh` now includes `fix_daemon_service_ownership_pre()` migration that patches existing deployed service files in `/etc/systemd/system/` and `rightsize_daemon_resources()` also fixes data directory ownership during upgrades
+
 ### Changed
 
 - **Version bump** -- all version strings updated to 2.2.5

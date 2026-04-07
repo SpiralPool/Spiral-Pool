@@ -21,6 +21,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/fbtc
 ExecStart={{FBTC_DIR}}/bin/bitcoind -daemon -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc
 ExecStop={{FBTC_DIR}}/bin/bitcoin-cli -conf={{INSTALL_DIR}}/fbtc/fractal.conf -datadir={{INSTALL_DIR}}/fbtc stop
 PIDFile={{INSTALL_DIR}}/fbtc/fractald.pid

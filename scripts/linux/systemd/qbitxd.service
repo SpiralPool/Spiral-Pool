@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# QBX daemon SIGABRT's on shutdown (known issue) — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/qbx
 ExecStart={{QBX_DIR}}/bin/qbitx -daemon -conf={{INSTALL_DIR}}/qbx/qbitx.conf -datadir={{INSTALL_DIR}}/qbx
 ExecStop={{QBX_DIR}}/bin/qbitx-cli -conf={{INSTALL_DIR}}/qbx/qbitx.conf -datadir={{INSTALL_DIR}}/qbx stop
 PIDFile={{INSTALL_DIR}}/qbx/qbitxd.pid

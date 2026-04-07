@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/sys
 ExecStart={{SYS_DIR}}/bin/syscoind -daemon -conf={{INSTALL_DIR}}/sys/syscoin.conf -datadir={{INSTALL_DIR}}/sys
 ExecStop={{SYS_DIR}}/bin/syscoin-cli -conf={{INSTALL_DIR}}/sys/syscoin.conf -datadir={{INSTALL_DIR}}/sys stop
 PIDFile={{INSTALL_DIR}}/sys/syscoind.pid

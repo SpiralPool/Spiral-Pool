@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/nmc
 ExecStart={{NMC_DIR}}/bin/namecoind -daemon -conf={{INSTALL_DIR}}/nmc/namecoin.conf -datadir={{INSTALL_DIR}}/nmc
 ExecStop={{NMC_DIR}}/bin/namecoin-cli -conf={{INSTALL_DIR}}/nmc/namecoin.conf -datadir={{INSTALL_DIR}}/nmc stop
 PIDFile={{INSTALL_DIR}}/nmc/namecoind.pid

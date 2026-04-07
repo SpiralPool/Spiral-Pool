@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{BCH_DATA}}
 ExecStart={{BCH_DIR}}/bin/bitcoind -daemon -conf={{BCH_DATA}}/bitcoin.conf -datadir={{BCH_DATA}} -pid={{BCH_DATA}}/bitcoind.pid
 ExecStop={{BCH_DIR}}/bin/bitcoin-cli -conf={{BCH_DATA}}/bitcoin.conf -datadir={{BCH_DATA}} stop
 PIDFile={{BCH_DATA}}/bitcoind.pid

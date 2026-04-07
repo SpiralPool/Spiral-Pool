@@ -2334,12 +2334,82 @@ rightsize_daemon_resources() {
             chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
             chmod 0600 "$conf_path" 2>/dev/null
         fi
+
+        # Fix data directory ownership — daemon crashes (SIGABRT) or manual SSH
+        # sessions as the wrong user can leave files owned by root/spiralpool,
+        # preventing the daemon from starting.
+        local data_dir
+        data_dir="$(resolve_coin_dir "$coin_dir" 2>/dev/null)" || continue
+        if [[ -d "$data_dir" ]] && [[ -n "$POOL_USER" ]]; then
+            local bad_files
+            bad_files=$(find "$data_dir" -maxdepth 1 ! -user "$POOL_USER" -type f 2>/dev/null | head -1)
+            if [[ -n "$bad_files" ]]; then
+                chown -R "${POOL_USER}:${POOL_USER}" "$data_dir" 2>/dev/null
+                log_info "  - ${coin_dir}: fixed data directory ownership"
+                FIXES=$((FIXES + 1))
+            fi
+        fi
     done
 
     if [[ $FIXES -gt 0 ]]; then
         log_success "Right-sized $FIXES daemon resource setting(s) — restart daemons for changes to take effect"
     else
         log_info "  - All daemon resource limits OK"
+    fi
+}
+
+# ============================================================================
+# Ensure all deployed daemon service files have ExecStartPre to fix data dir
+# ownership before every start.  Daemon SIGABRT on shutdown or manual SSH as
+# the wrong user can leave files owned by root, preventing the daemon from
+# starting.  This patches the DEPLOYED files in /etc/systemd/system/.
+# ============================================================================
+fix_daemon_service_ownership_pre() {
+    local DAEMON_SERVICES=(
+        "digibyted"
+        "bitcoind"
+        "bitcoind-bch"
+        "bitcoiniid"
+        "litecoind"
+        "dogecoind"
+        "namecoind"
+        "syscoind"
+        "myriadcoind"
+        "fractald"
+        "pepecoind"
+        "catcoind"
+        "qbitxd"
+    )
+
+    local FIXES=0
+    for svc in "${DAEMON_SERVICES[@]}"; do
+        local svc_file="/etc/systemd/system/${svc}.service"
+        [[ -f "$svc_file" ]] || continue
+
+        # Already has ExecStartPre with chown? Skip.
+        if grep -q 'ExecStartPre=.*chown' "$svc_file" 2>/dev/null; then
+            continue
+        fi
+
+        # Extract the datadir from the ExecStart line
+        local datadir
+        datadir=$(grep -oP '\-datadir=\K[^ ]+' "$svc_file" 2>/dev/null | head -1)
+        [[ -n "$datadir" ]] || continue
+
+        # Extract the User= from the service
+        local svc_user
+        svc_user=$(grep -oP '^User=\K.+' "$svc_file" 2>/dev/null | head -1)
+        [[ -n "$svc_user" ]] || svc_user="$POOL_USER"
+
+        # Insert ExecStartPre before ExecStart
+        sed -i "/^ExecStart=/i # Daemon may SIGABRT on shutdown — fix data dir ownership before start\nExecStartPre=/bin/chown -R ${svc_user}:${svc_user} ${datadir}" "$svc_file"
+        log_info "  - ${svc}: added ExecStartPre ownership fix"
+        FIXES=$((FIXES + 1))
+    done
+
+    if [[ $FIXES -gt 0 ]]; then
+        systemctl daemon-reload 2>/dev/null || true
+        log_success "Patched $FIXES daemon service file(s) with ownership fix"
     fi
 }
 
@@ -4966,6 +5036,10 @@ SSHDEOF
     # Multi-coin setups with dbcache=8192 per daemon exhaust RAM and cause RPC
     # timeouts that stall block confirmation.
     rightsize_daemon_resources
+
+    # v2.2.5: Patch daemon service files with ExecStartPre ownership fix.
+    # Daemon SIGABRT on shutdown can corrupt file ownership, preventing restart.
+    fix_daemon_service_ownership_pre
 
     # Ensure forcednsseed=1 and addnode= fallback peers exist in all deployed
     # daemon configs. v2.0.1 incorrectly removed forcednsseed; this restores it

@@ -77,8 +77,9 @@ type Sentinel struct {
 
 	// State tracking for expanded alerts
 	prevDropped        map[string]uint64 // coin -> previous share batch dropped count
-	paymentPending     map[string]int    // poolID -> previous pending blocks
-	paymentConfirmed   map[string]int    // poolID -> previous confirmed+paid blocks
+	paymentPending     map[string]int     // poolID -> previous pending blocks
+	paymentConfirmed   map[string]int     // poolID -> previous confirmed+paid blocks
+	paymentProgress    map[string]float64 // poolID -> previous max confirmation progress
 
 	// State tracking for WAL recovery duration
 	walRecoveryStart map[string]time.Time // poolID -> when recovery was first observed
@@ -121,6 +122,7 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		prevDropped:       make(map[string]uint64),
 		paymentPending:    make(map[string]int),
 		paymentConfirmed:  make(map[string]int),
+		paymentProgress:   make(map[string]float64),
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:      make(map[string]int),
 		haRoleHistory:     make([]time.Time, 0, 16),
@@ -1009,18 +1011,24 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 		s.mu.Lock()
 		prevPending, hasPrev := s.paymentPending[poolID]
 		prevConfirmed := s.paymentConfirmed[poolID]
+		prevProgress := s.paymentProgress[poolID]
 		s.paymentPending[poolID] = stats.PendingBlocks
 		s.paymentConfirmed[poolID] = currentConfirmed
+		s.paymentProgress[poolID] = stats.MaxConfirmationProgress
 
 		if !hasPrev {
 			s.mu.Unlock()
 			continue
 		}
 
-		// Stall = pending blocks exist, count hasn't decreased, AND no new confirmations/payments
+		// Stall = pending blocks exist, count hasn't decreased, no new confirmations/payments,
+		// AND confirmation progress hasn't increased (block maturing toward 100 confirmations
+		// should NOT trigger stall — the processor is working, just waiting for the chain).
+		progressIncreased := stats.MaxConfirmationProgress > prevProgress
 		pipelineStalled := stats.PendingBlocks > 0 &&
 			stats.PendingBlocks >= prevPending &&
-			currentConfirmed == prevConfirmed
+			currentConfirmed == prevConfirmed &&
+			!progressIncreased
 
 		if pipelineStalled {
 			s.paymentStallCount[poolID]++

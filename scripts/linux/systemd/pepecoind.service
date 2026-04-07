@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/pep
 ExecStart={{PEP_DIR}}/bin/pepecoind -daemon -conf={{INSTALL_DIR}}/pep/pepecoin.conf -datadir={{INSTALL_DIR}}/pep
 ExecStop={{PEP_DIR}}/bin/pepecoin-cli -conf={{INSTALL_DIR}}/pep/pepecoin.conf -datadir={{INSTALL_DIR}}/pep stop
 PIDFile={{INSTALL_DIR}}/pep/pepecoind.pid

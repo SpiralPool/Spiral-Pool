@@ -18,6 +18,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/cat
 ExecStart={{CAT_DIR}}/bin/catcoind -daemon -conf={{INSTALL_DIR}}/cat/catcoin.conf -datadir={{INSTALL_DIR}}/cat
 ExecStop={{CAT_DIR}}/bin/catcoin-cli -conf={{INSTALL_DIR}}/cat/catcoin.conf -datadir={{INSTALL_DIR}}/cat stop
 PIDFile={{INSTALL_DIR}}/cat/catcoind.pid

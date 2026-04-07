@@ -1998,22 +1998,28 @@ COINCONF
     cat > "/etc/systemd/system/$SERVICE_NAME.service" << SVCFILE
 [Unit]
 Description={params.name} daemon for Spiral Pool
-After=network.target
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=5
 
 [Service]
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $DATA_DIR
 ExecStart=/usr/local/bin/{coinlower}d -conf=$CONFIG_FILE -daemon
 ExecStop=/usr/local/bin/{coinlower}-cli -conf=$CONFIG_FILE stop
-Restart=on-failure
+Restart=always
 RestartSec=30
-TimeoutStartSec=120
-TimeoutStopSec=60
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=read-only
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+LimitNOFILE=65535
+
+# NOTE: Systemd security hardening intentionally omitted.
+# Some blockchain daemons crash with SIGABRT under modern systemd
+# hardening options (PrivateTmp, ProtectSystem, etc.)
 
 [Install]
 WantedBy=multi-user.target

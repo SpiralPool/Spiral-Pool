@@ -19,6 +19,8 @@ StartLimitBurst=5
 Type=forking
 User={{POOL_USER}}
 Group={{POOL_USER}}
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R {{POOL_USER}}:{{POOL_USER}} {{INSTALL_DIR}}/doge
 ExecStart={{DOGE_DIR}}/bin/dogecoind -daemon -conf={{INSTALL_DIR}}/doge/dogecoin.conf -datadir={{INSTALL_DIR}}/doge
 ExecStop={{DOGE_DIR}}/bin/dogecoin-cli -conf={{INSTALL_DIR}}/doge/dogecoin.conf -datadir={{INSTALL_DIR}}/doge stop
 PIDFile={{INSTALL_DIR}}/doge/dogecoind.pid

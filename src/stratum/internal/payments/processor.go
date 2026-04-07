@@ -1006,14 +1006,15 @@ func (p *Processor) executePendingPayments(ctx context.Context) error {
 
 // Stats returns payment processor statistics.
 type Stats struct {
-	SubmittingBlocks int       `json:"submittingBlocks"`
-	PendingBlocks    int       `json:"pendingBlocks"`
-	ConfirmedBlocks  int       `json:"confirmedBlocks"`
-	OrphanedBlocks   int       `json:"orphanedBlocks"`
-	PaidBlocks       int       `json:"paidBlocks"`
-	BlockMaturity   int       `json:"blockMaturity"`
-	TotalPaid       float64   `json:"totalPaid"`
-	LastPaymentTime time.Time `json:"lastPaymentTime,omitempty"`
+	SubmittingBlocks        int       `json:"submittingBlocks"`
+	PendingBlocks           int       `json:"pendingBlocks"`
+	ConfirmedBlocks         int       `json:"confirmedBlocks"`
+	OrphanedBlocks          int       `json:"orphanedBlocks"`
+	PaidBlocks              int       `json:"paidBlocks"`
+	BlockMaturity           int       `json:"blockMaturity"`
+	MaxConfirmationProgress float64   `json:"maxConfirmationProgress"`
+	TotalPaid               float64   `json:"totalPaid"`
+	LastPaymentTime         time.Time `json:"lastPaymentTime,omitempty"`
 }
 
 func (p *Processor) Stats(ctx context.Context) (*Stats, error) {
@@ -1023,14 +1024,15 @@ func (p *Processor) Stats(ctx context.Context) (*Stats, error) {
 	}
 
 	return &Stats{
-		SubmittingBlocks: blockStats.Submitting,
-		PendingBlocks:    blockStats.Pending,
-		ConfirmedBlocks:  blockStats.Confirmed,
-		OrphanedBlocks:   blockStats.Orphaned,
-		PaidBlocks:       blockStats.Paid,
-		BlockMaturity:   p.getBlockMaturity(),
-		TotalPaid:       0, // FUTURE: Sum from payments table
-		LastPaymentTime: time.Time{},
+		SubmittingBlocks:        blockStats.Submitting,
+		PendingBlocks:           blockStats.Pending,
+		ConfirmedBlocks:         blockStats.Confirmed,
+		OrphanedBlocks:          blockStats.Orphaned,
+		PaidBlocks:              blockStats.Paid,
+		BlockMaturity:           p.getBlockMaturity(),
+		MaxConfirmationProgress: blockStats.MaxConfirmationProgress,
+		TotalPaid:               0, // FUTURE: Sum from payments table
+		LastPaymentTime:         time.Time{},
 	}, nil
 }
 

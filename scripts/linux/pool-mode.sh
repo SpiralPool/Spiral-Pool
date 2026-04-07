@@ -3841,6 +3841,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/dgb
 ExecStart=/usr/local/bin/digibyted -daemon -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf -datadir=$SPIRALPOOL_DIR/dgb -pid=$SPIRALPOOL_DIR/dgb/digibyted.pid
 ExecStop=/usr/local/bin/digibyte-cli -conf=$SPIRALPOOL_DIR/dgb/digibyte.conf -datadir=$SPIRALPOOL_DIR/dgb stop
 PIDFile=$SPIRALPOOL_DIR/dgb/digibyted.pid
@@ -3924,6 +3926,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/btc
 ExecStart=/usr/local/bin/bitcoind -daemon -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf -datadir=$SPIRALPOOL_DIR/btc -pid=$SPIRALPOOL_DIR/btc/bitcoind.pid
 ExecStop=/usr/local/bin/bitcoin-cli -conf=$SPIRALPOOL_DIR/btc/bitcoin.conf -datadir=$SPIRALPOOL_DIR/btc stop
 PIDFile=$SPIRALPOOL_DIR/btc/bitcoind.pid
@@ -4010,6 +4014,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/bch
 ExecStart=/usr/local/bin/bitcoind-bch -daemon -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf -datadir=$SPIRALPOOL_DIR/bch -pid=$SPIRALPOOL_DIR/bch/bitcoind.pid
 ExecStop=/usr/local/bin/bitcoin-cli-bch -conf=$SPIRALPOOL_DIR/bch/bitcoin.conf -datadir=$SPIRALPOOL_DIR/bch stop
 PIDFile=$SPIRALPOOL_DIR/bch/bitcoind.pid
@@ -4089,6 +4095,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/bc2
 # Bitcoin II uses capital "II" in binary names: bitcoinIId, bitcoinII-cli
 ExecStart=$SPIRALPOOL_DIR/bc2/bin/bitcoinIId -daemon -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -datadir=$SPIRALPOOL_DIR/bc2 -pid=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 ExecStop=$SPIRALPOOL_DIR/bc2/bin/bitcoinII-cli -conf=$SPIRALPOOL_DIR/bc2/bitcoinii.conf -datadir=$SPIRALPOOL_DIR/bc2 stop
@@ -4167,6 +4175,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/ltc
 ExecStart=/usr/local/bin/litecoind -daemon -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf -datadir=$SPIRALPOOL_DIR/ltc -pid=$SPIRALPOOL_DIR/ltc/litecoind.pid
 ExecStop=/usr/local/bin/litecoin-cli -conf=$SPIRALPOOL_DIR/ltc/litecoin.conf -datadir=$SPIRALPOOL_DIR/ltc stop
 PIDFile=$SPIRALPOOL_DIR/ltc/litecoind.pid
@@ -4242,6 +4252,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/doge
 ExecStart=/usr/local/bin/dogecoind -daemon -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf -datadir=$SPIRALPOOL_DIR/doge -pid=$SPIRALPOOL_DIR/doge/dogecoind.pid
 ExecStop=/usr/local/bin/dogecoin-cli -conf=$SPIRALPOOL_DIR/doge/dogecoin.conf -datadir=$SPIRALPOOL_DIR/doge stop
 PIDFile=$SPIRALPOOL_DIR/doge/dogecoind.pid
@@ -4326,6 +4338,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/pep
 ExecStart=/usr/local/bin/pepecoind -daemon -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep -pid=$SPIRALPOOL_DIR/pep/pepecoind.pid
 ExecStop=/usr/local/bin/pepecoin-cli -conf=$SPIRALPOOL_DIR/pep/pepecoin.conf -datadir=$SPIRALPOOL_DIR/pep stop
 PIDFile=$SPIRALPOOL_DIR/pep/pepecoind.pid
@@ -4406,6 +4420,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/cat
 ExecStart=/usr/local/bin/catcoind -daemon -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat -pid=$SPIRALPOOL_DIR/cat/catcoind.pid
 ExecStop=/usr/local/bin/catcoin-cli -conf=$SPIRALPOOL_DIR/cat/catcoin.conf -datadir=$SPIRALPOOL_DIR/cat stop
 PIDFile=$SPIRALPOOL_DIR/cat/catcoind.pid
@@ -4484,6 +4500,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/nmc
 ExecStart=/usr/local/bin/namecoind -daemon -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc -pid=$SPIRALPOOL_DIR/nmc/namecoind.pid
 ExecStop=/usr/local/bin/namecoin-cli -conf=$SPIRALPOOL_DIR/nmc/namecoin.conf -datadir=$SPIRALPOOL_DIR/nmc stop
 PIDFile=$SPIRALPOOL_DIR/nmc/namecoind.pid
@@ -4561,6 +4579,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/sys
 ExecStart=/usr/local/bin/syscoind -daemon -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys -pid=$SPIRALPOOL_DIR/sys/syscoind.pid
 ExecStop=/usr/local/bin/syscoin-cli -conf=$SPIRALPOOL_DIR/sys/syscoin.conf -datadir=$SPIRALPOOL_DIR/sys stop
 PIDFile=$SPIRALPOOL_DIR/sys/syscoind.pid
@@ -4639,6 +4659,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/xmy
 ExecStart=/usr/local/bin/myriadcoind -daemon -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy -pid=$SPIRALPOOL_DIR/xmy/myriadcoind.pid
 ExecStop=/usr/local/bin/myriadcoin-cli -conf=$SPIRALPOOL_DIR/xmy/myriadcoin.conf -datadir=$SPIRALPOOL_DIR/xmy stop
 PIDFile=$SPIRALPOOL_DIR/xmy/myriadcoind.pid
@@ -4709,6 +4731,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/fbtc
 ExecStart=/usr/local/bin/fractald -daemon -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc -pid=$SPIRALPOOL_DIR/fbtc/fractald.pid
 ExecStop=/usr/local/bin/fractal-cli -conf=$SPIRALPOOL_DIR/fbtc/fractal.conf -datadir=$SPIRALPOOL_DIR/fbtc stop
 PIDFile=$SPIRALPOOL_DIR/fbtc/fractald.pid
@@ -4774,6 +4798,8 @@ StartLimitBurst=5
 Type=forking
 User=$POOL_USER
 Group=$POOL_USER
+# Daemon may SIGABRT on shutdown — fix data dir ownership before start
+ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $SPIRALPOOL_DIR/qbx
 ExecStart=/usr/local/bin/qbitx -daemon -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx -pid=$SPIRALPOOL_DIR/qbx/qbitxd.pid
 ExecStop=/usr/local/bin/qbitx-cli -conf=$SPIRALPOOL_DIR/qbx/qbitx.conf -datadir=$SPIRALPOOL_DIR/qbx stop
 PIDFile=$SPIRALPOOL_DIR/qbx/qbitxd.pid
