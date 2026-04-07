@@ -4711,6 +4711,20 @@ SSHDEOF
             FETCH_LATEST=false  # Switch to local mode so get_target_version reads VERSION file
             # Re-derive target version from local VERSION file to match the source being built
             get_target_version
+        else
+            # Self-update: if the downloaded version has a newer upgrade.sh, re-exec it.
+            # This ensures bug fixes to upgrade.sh itself are applied immediately
+            # without requiring a manual git pull first.
+            if [[ -f "${PROJECT_ROOT}/upgrade.sh" ]] && [[ -z "${_SP_SELF_UPDATED:-}" ]]; then
+                local new_hash old_hash
+                new_hash=$(sha256sum "${PROJECT_ROOT}/upgrade.sh" 2>/dev/null | cut -d' ' -f1)
+                old_hash=$(sha256sum "${BASH_SOURCE[0]}" 2>/dev/null | cut -d' ' -f1)
+                if [[ -n "$new_hash" ]] && [[ -n "$old_hash" ]] && [[ "$new_hash" != "$old_hash" ]]; then
+                    log_info "upgrade.sh has been updated — re-running with latest version..."
+                    export _SP_SELF_UPDATED=1
+                    exec bash "${PROJECT_ROOT}/upgrade.sh" "${_SP_ORIG_ARGS[@]}"
+                fi
+            fi
         fi
     fi
 
@@ -4929,4 +4943,5 @@ SSHDEOF
 }
 
 # Run main function
+_SP_ORIG_ARGS=("$@")
 main "$@"
