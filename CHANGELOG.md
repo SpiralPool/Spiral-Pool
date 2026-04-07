@@ -7,6 +7,26 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.2.3]  -  2026-04-06  -  Phi Hash Reactor
+
+> *HA election race condition fix, Sentinel crash fix, upgrade.sh self-update.*
+
+### Fixed
+
+- **HA election race condition — node stuck as BACKUP on startup** -- VIP manager ran election before coin pools reported sync status to the VIP subsystem. All coins showed `syncPct=0` during the election window, so the node stayed as BACKUP for ~60s until the masterless-cluster detector fired. Added pre-populate step in `coordinator.go` that queries each coin daemon's `getblockchaininfo` RPC and calls `UpdateCoinSyncStatus()` before `vipManager.Start()`, so election has accurate sync data immediately
+- **Sentinel TypeError crash in miner_online embed kills monitoring loop** -- `create_miner_online_embed()` compared `hashrate_ghs > 0` where `hashrate_ghs` was a string from the API, causing `TypeError: '>' not supported between instances of 'str' and 'int'`. This crashed EVERY monitoring loop iteration BEFORE block detection code ran — QBX blocks were never detected or announced. Added `float()` coercion with `try/except` for both `hashrate_ghs` and `temp_c`
+- **upgrade.sh does not self-update** -- users running `sudo ./upgrade.sh` without `git pull` first used the old local script even after the repo was updated. New features (like QBX backup) were present in the downloaded code but the running script was stale. Added self-update mechanism: after downloading the new version, compares SHA256 hashes of the running script vs the downloaded one and re-execs if different. Uses `_SP_SELF_UPDATED` env var to prevent infinite loops
+
+### Added
+
+- **upgrade.sh self-update mechanism** -- `upgrade.sh` now automatically re-launches itself from the downloaded version when the script has changed, so users never need to manually `git pull` before upgrading
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.2.3
+
+---
+
 ## [2.2.2]  -  2026-04-06  -  Phi Hash Reactor
 
 > *Smart Port per-coin connection visibility fix.*
