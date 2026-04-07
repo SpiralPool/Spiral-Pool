@@ -1035,6 +1035,7 @@ type Stats struct {
 	PaidBlocks              int       `json:"paidBlocks"`
 	BlockMaturity           int       `json:"blockMaturity"`
 	MaxConfirmationProgress float64   `json:"maxConfirmationProgress"`
+	MaxStabilityCheckCount  int       `json:"maxStabilityCheckCount"`
 	TotalPaid               float64   `json:"totalPaid"`
 	LastPaymentTime         time.Time `json:"lastPaymentTime,omitempty"`
 }
@@ -1053,6 +1054,7 @@ func (p *Processor) Stats(ctx context.Context) (*Stats, error) {
 		PaidBlocks:              blockStats.Paid,
 		BlockMaturity:           p.getBlockMaturity(),
 		MaxConfirmationProgress: blockStats.MaxConfirmationProgress,
+		MaxStabilityCheckCount:  blockStats.MaxStabilityCheckCount,
 		TotalPaid:               0, // FUTURE: Sum from payments table
 		LastPaymentTime:         time.Time{},
 	}, nil

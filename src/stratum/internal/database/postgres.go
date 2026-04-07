@@ -746,6 +746,7 @@ type BlockStats struct {
 	Orphaned                 int
 	Paid                     int
 	MaxConfirmationProgress  float64
+	MaxStabilityCheckCount   int
 }
 
 // GetBlockStats returns block counts grouped by status.
@@ -799,6 +800,19 @@ func (db *PostgresDB) GetBlockStats(ctx context.Context) (*BlockStats, error) {
 	if err := db.pool.QueryRow(ctx, progressQuery).Scan(&stats.MaxConfirmationProgress); err != nil {
 		// Non-fatal: stall detection degrades to count-only mode
 		stats.MaxConfirmationProgress = 0
+	}
+
+	// Query max stability check count for pending blocks.
+	// Used by sentinel to detect pipeline movement during the stability window
+	// (blocks at 100% confirmation progress waiting for consecutive stability checks).
+	stabilityQuery := fmt.Sprintf(`
+		SELECT COALESCE(MAX(stability_check_count), 0)
+		FROM %s
+		WHERE status = 'pending'
+	`, tableName)
+	if err := db.pool.QueryRow(ctx, stabilityQuery).Scan(&stats.MaxStabilityCheckCount); err != nil {
+		// Non-fatal: stall detection degrades to progress-only mode
+		stats.MaxStabilityCheckCount = 0
 	}
 
 	return stats, nil

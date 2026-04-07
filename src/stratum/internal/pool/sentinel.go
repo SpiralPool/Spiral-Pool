@@ -80,6 +80,7 @@ type Sentinel struct {
 	paymentPending     map[string]int     // poolID -> previous pending blocks
 	paymentConfirmed   map[string]int     // poolID -> previous confirmed+paid blocks
 	paymentProgress    map[string]float64 // poolID -> previous max confirmation progress
+	paymentStability   map[string]int     // poolID -> previous max stability check count
 
 	// State tracking for WAL recovery duration
 	walRecoveryStart map[string]time.Time // poolID -> when recovery was first observed
@@ -123,6 +124,7 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		paymentPending:    make(map[string]int),
 		paymentConfirmed:  make(map[string]int),
 		paymentProgress:   make(map[string]float64),
+		paymentStability:  make(map[string]int),
 		paymentStallCount: make(map[string]int),
 		prevOrphaned:      make(map[string]int),
 		haRoleHistory:     make([]time.Time, 0, 16),
@@ -1068,9 +1070,11 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 		prevPending, hasPrev := s.paymentPending[poolID]
 		prevConfirmed := s.paymentConfirmed[poolID]
 		prevProgress := s.paymentProgress[poolID]
+		prevStability := s.paymentStability[poolID]
 		s.paymentPending[poolID] = stats.PendingBlocks
 		s.paymentConfirmed[poolID] = currentConfirmed
 		s.paymentProgress[poolID] = stats.MaxConfirmationProgress
+		s.paymentStability[poolID] = stats.MaxStabilityCheckCount
 
 		if !hasPrev {
 			s.mu.Unlock()
@@ -1078,13 +1082,18 @@ func (s *Sentinel) checkPaymentProcessors(ctx context.Context) {
 		}
 
 		// Stall = pending blocks exist, count hasn't decreased, no new confirmations/payments,
-		// AND confirmation progress hasn't increased (block maturing toward 100 confirmations
-		// should NOT trigger stall — the processor is working, just waiting for the chain).
+		// AND neither confirmation progress nor stability checks have increased.
+		// Confirmation progress tracks block maturity (0→1.0 as confirmations accumulate).
+		// Stability checks track the post-maturity window (blocks at 1.0 progress awaiting
+		// N consecutive verification checks before becoming "confirmed"). Both indicate
+		// the processor is actively working, not stalled.
 		progressIncreased := stats.MaxConfirmationProgress > prevProgress
+		stabilityIncreased := stats.MaxStabilityCheckCount > prevStability
 		pipelineStalled := stats.PendingBlocks > 0 &&
 			stats.PendingBlocks >= prevPending &&
 			currentConfirmed == prevConfirmed &&
-			!progressIncreased
+			!progressIncreased &&
+			!stabilityIncreased
 
 		if pipelineStalled {
 			s.paymentStallCount[poolID]++
