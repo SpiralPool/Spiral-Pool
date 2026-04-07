@@ -1192,6 +1192,10 @@ func (s *Sentinel) checkOrphanRate(ctx context.Context) {
 // This is a cross-pool check that reads Prometheus metrics set by the payment processor.
 // A block stuck in pending for hours means it's not gaining confirmations — likely indicates
 // daemon desync, chain stall, or orphaned block that wasn't detected.
+//
+// IMPORTANT: This check is SUPPRESSED when payment processors report confirmation progress.
+// A block maturing from 0% → 100% over several hours is normal (e.g., QBX needs 100 confs
+// at 2.5 min blocks = ~4 hours). Only alert when progress is truly zero.
 func (s *Sentinel) checkBlockMaturityStall() {
 	if s.cfg.MaturityStallHours <= 0 || s.metrics == nil {
 		return // Disabled or no metrics
@@ -1205,17 +1209,35 @@ func (s *Sentinel) checkBlockMaturityStall() {
 	}
 
 	thresholdSec := float64(s.cfg.MaturityStallHours) * 3600.0
-	if oldestAgeSec > thresholdSec {
-		s.fireAlert(context.Background(), "block_maturity_stall", severityWarning, "", "",
-			fmt.Sprintf("Found block stuck in pending for %.1f hours (%.0f pending blocks, threshold: %dh) — not gaining confirmations",
-				oldestAgeSec/3600.0, pendingCount, s.cfg.MaturityStallHours),
-			map[string]interface{}{
-				"pending_count":      int(pendingCount),
-				"oldest_age_hours":   oldestAgeSec / 3600.0,
-				"threshold_hours":    s.cfg.MaturityStallHours,
-			},
-		)
+	if oldestAgeSec <= thresholdSec {
+		return // Not old enough to worry about
 	}
+
+	// Check if any payment processor has confirmation progress — if so, blocks
+	// are maturing normally and this is not a stall.
+	s.mu.Lock()
+	anyProgress := false
+	for _, progress := range s.paymentProgress {
+		if progress > 0 {
+			anyProgress = true
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if anyProgress {
+		return // Blocks are gaining confirmations — not stalled
+	}
+
+	s.fireAlert(context.Background(), "block_maturity_stall", severityWarning, "", "",
+		fmt.Sprintf("Found block stuck in pending for %.1f hours (%.0f pending blocks, threshold: %dh) — not gaining confirmations",
+			oldestAgeSec/3600.0, pendingCount, s.cfg.MaturityStallHours),
+		map[string]interface{}{
+			"pending_count":      int(pendingCount),
+			"oldest_age_hours":   oldestAgeSec / 3600.0,
+			"threshold_hours":    s.cfg.MaturityStallHours,
+		},
+	)
 }
 
 // checkGoroutineCount detects potential goroutine leaks by monitoring the runtime goroutine count.
