@@ -7,6 +7,27 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.2.5]  -  2026-04-07  -  Phi Hash Reactor
+
+> *Multiport coin-switch share rejection fix + upgrade.sh always applies.*
+
+### Fixed
+
+**Smart Multi-Port — Coin Switching**
+
+- **Cross-coin job invalidation on coin switch** -- `SendJobToSession(cleanJobs=true)` invalidated ALL jobs in the shared `s.jobs` map, including jobs belonging to sessions on other coins. When one coin found a new block, other coins' session jobs were wiped from bookkeeping. Fixed by removing blanket invalidation; now stores the new job and evicts oldest when map exceeds 10 entries
+- **Missing `mining.set_difficulty` on coin switch** -- `switchSessionCoin()` sent the new coin's job but never sent `mining.set_difficulty` beforehand. cgminer/bmminer firmware applies the last received `set_difficulty` to the next job — without re-sending it, miners used the previous coin's difficulty for the new coin's shares, causing rejection. `sendCoinJob()` now calls `SendDifficulty(session, currentDiff)` before sending the job when `cleanJobs=true`
+
+**Upgrade**
+
+- **`upgrade.sh` skips hotfixes when version tag matches** -- version comparison (`sort -V`) treated same-version or hotfix-patched releases as "already on latest" and silently skipped the upgrade. Users had to know about `--force` to apply hotfixes. `--force` is now the default behavior; `--auto` mode still blocks downgrades
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.2.5
+
+---
+
 ## [2.2.4]  -  2026-04-06  -  Phi Hash Reactor
 
 > *Block detection uses per-coin wallet address. False positive alert fixes.*

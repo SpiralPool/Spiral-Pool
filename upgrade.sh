@@ -28,7 +28,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 #   --no-sentinel     Skip sentinel update
 #
 # Options:
-#   --force             Force upgrade even if already on latest version
+#   --force             Force upgrade even if already on latest version (now default)
 #   --no-backup         Skip backup before upgrading
 #   --update-services   Also update systemd service files (off by default)
 #   --fix-config        Fix common config issues (coin names, durations)
@@ -271,7 +271,7 @@ TARGET_VERSION=""
 # Operation flags
 FETCH_LATEST=true   # Default: download from GitHub
 USE_LOCAL=false     # --local flag: use local source instead
-FORCE_UPGRADE=false
+FORCE_UPGRADE=true   # Default: always apply (hotfixes reuse version tags)
 SKIP_BACKUP=false
 CHECK_ONLY=false
 AUTO_MODE=false
@@ -3761,7 +3761,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.2.4 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.2.5 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4474,7 +4474,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.2.4 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.2.5 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

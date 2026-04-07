@@ -33,7 +33,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
-__version__ = "2.2.4-PHI_HASH_REACTOR"
+__version__ = "2.2.5-PHI_HASH_REACTOR"
 
 logger = logging.getLogger(__name__)
 

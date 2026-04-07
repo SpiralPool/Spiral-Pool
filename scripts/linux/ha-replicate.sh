@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.2.4"
+SCRIPT_VERSION="2.2.5"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

@@ -70,7 +70,7 @@ class TemplateManager {
             "name": "Spiral Pool Default",
             "id": "spiral-pool-default",
             "author": "Spiral Pool",
-            "version": "2.2.4",
+            "version": "2.2.5",
             "description": "Complete dashboard with all mining statistics and features",
             "layout": {
                 "statsRow": true,
