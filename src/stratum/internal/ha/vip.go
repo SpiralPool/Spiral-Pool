@@ -4096,9 +4096,26 @@ func (vm *VIPManager) runElection() {
 	// Use dynamic timeout from flap detector (may be increased if flapping)
 	electionTimeout := vm.flapDetector.GetCurrentTimeout()
 
+	// Single-node optimization: if no peers have ever been discovered,
+	// use a short timeout (3s) instead of the full election timeout (90s+).
+	// This avoids wasting 30-90s waiting for candidates that don't exist.
+	// Still broadcast and wait briefly in case a peer appears concurrently.
+	vm.mu.RLock()
+	peerCount := 0
+	for id := range vm.nodes {
+		if id != vm.config.NodeID {
+			peerCount++
+		}
+	}
+	vm.mu.RUnlock()
+	if peerCount == 0 && !isFlapping {
+		electionTimeout = 3 * time.Second
+	}
+
 	vm.logger.Infow("Starting master election...",
 		"timeout", electionTimeout,
 		"isFlapping", isFlapping,
+		"knownPeers", peerCount,
 	)
 
 	// Get our coin info for the election message
