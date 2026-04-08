@@ -1020,9 +1020,38 @@ func (p *Processor) processMatureBlocks(ctx context.Context) error {
 	return nil
 }
 
-// executePendingPayments sends pending payments to miners.
-// In SOLO mode, the coinbase transaction IS the payment — no further action needed.
+// executePendingPayments marks confirmed blocks as paid.
+// In SOLO mode, the coinbase transaction IS the payment — no separate TX needed.
+// But we still need to transition confirmed → paid so the sentinel and dashboard
+// can track completed payouts and fire payout alerts.
 func (p *Processor) executePendingPayments(ctx context.Context) error {
+	blocks, err := p.db.GetConfirmedBlocks(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get confirmed blocks: %w", err)
+	}
+
+	for _, block := range blocks {
+		if err := p.db.UpdateBlockStatus(ctx, block.Height, block.Hash, StatusPaid, 1.0); err != nil {
+			if errors.Is(err, database.ErrStatusGuardBlocked) {
+				p.logger.Warnw("Block paid status update blocked by guard (expected in HA mode)",
+					"height", block.Height,
+					"hash", block.Hash,
+				)
+			} else {
+				p.logger.Errorw("Failed to mark confirmed block as paid",
+					"height", block.Height,
+					"error", err,
+				)
+			}
+			continue
+		}
+		p.logger.Infow("Block marked as paid (SOLO — coinbase TX is the payment)",
+			"height", block.Height,
+			"hash", block.Hash,
+			"miner", block.Miner,
+		)
+	}
+
 	return nil
 }
 
