@@ -283,7 +283,7 @@ func newSOLOTestProcessor(store *soloBlockStore, rpc *soloDaemonRPC, maturity in
 		BlockMaturity: maturity,
 	}
 	logger := zap.NewNop()
-	return &Processor{
+	p := &Processor{
 		cfg:          cfg,
 		poolCfg:      &config.PoolConfig{},
 		logger:       logger.Sugar(),
@@ -291,6 +291,11 @@ func newSOLOTestProcessor(store *soloBlockStore, rpc *soloDaemonRPC, maturity in
 		daemonClient: rpc,
 		stopCh:       make(chan struct{}),
 	}
+	// Skip payment execution (step 4) in tests — executePendingPayments calls
+	// GetConfirmedBlocks which pollutes the getConfirmedCalled flag used to
+	// verify whether verifyConfirmedBlocks (step 2) ran.
+	p.haEnabled.Store(true)
+	return p
 }
 
 // =============================================================================

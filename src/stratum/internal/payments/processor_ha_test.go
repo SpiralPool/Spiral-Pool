@@ -229,6 +229,7 @@ func TestProcessor_HA_AdvisoryLock_AcquiredOnCycle(t *testing.T) {
 
 	locker := &mockAdvisoryLocker{}
 	proc := newTestProcessor(store, rpc, DefaultBlockMaturityConfirmations)
+	proc.isMaster.Store(true) // Must be master so step 4 (payment execution) runs.
 	proc.SetAdvisoryLocker(locker)
 
 	initialCycle := proc.cycleCount
@@ -306,6 +307,7 @@ func TestProcessor_HA_AdvisoryLock_Error(t *testing.T) {
 	lockErr := errors.New("connection refused: postgres unavailable")
 	locker := &mockAdvisoryLocker{lockErr: lockErr}
 	proc := newTestProcessor(store, rpc, DefaultBlockMaturityConfirmations)
+	proc.isMaster.Store(true) // Must be master so step 4 (payment execution) runs.
 	proc.SetAdvisoryLocker(locker)
 
 	initialCycle := proc.cycleCount
@@ -352,6 +354,7 @@ func TestProcessor_HA_AdvisoryLock_ReleasedAfterCycle(t *testing.T) {
 
 	locker := &mockAdvisoryLocker{}
 	proc := newTestProcessor(store, rpc, DefaultBlockMaturityConfirmations)
+	proc.isMaster.Store(true) // Must be master so step 4 (payment execution) runs.
 	proc.SetAdvisoryLocker(locker)
 
 	proc.processCycle(context.Background())
