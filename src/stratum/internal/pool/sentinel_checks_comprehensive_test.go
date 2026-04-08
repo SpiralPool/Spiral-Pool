@@ -1296,19 +1296,15 @@ func TestCheckPaymentProcessors_AlertOnStall(t *testing.T) {
 
 	s.coordinator = coord
 
-	// Call multiple times to build up stall count
-	// First call: records baseline (hasPrev=false), no alert
-	s.checkPaymentProcessors(context.Background())
-	// Second call: pending=5 >= prev=5, stall count → 1
-	s.checkPaymentProcessors(context.Background())
-	// Third call: stall count → 2
-	s.checkPaymentProcessors(context.Background())
-	// Fourth call: stall count → 3 (>= threshold)
-	s.checkPaymentProcessors(context.Background())
+	// effectiveThreshold = PaymentStallChecks (3) * checksPerInterval (60s/30s = 2) = 6
+	// Need 1 baseline call + 6 stall calls = 7 total to trigger alert
+	for i := 0; i < 8; i++ {
+		s.checkPaymentProcessors(context.Background())
+	}
 
 	// The alert key uses coin from poolIDToCoin which falls back to poolID
 	if !alertFired(s, "payment_processor_stalled", "dgb_main", "dgb_main") {
-		t.Error("Expected payment_processor_stalled alert after 3 consecutive stall checks")
+		t.Error("Expected payment_processor_stalled alert after reaching effective threshold")
 	}
 }
 

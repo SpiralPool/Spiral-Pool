@@ -7,7 +7,7 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
-## [2.3.0]  -  2026-04-07  -  Phi Hash Reactor
+## [2.3.1]  -  2026-04-08  -  Phi Hash Reactor
 
 > *Critical payment processor fix, Smart Port false positive suppression, production observability.*
 
@@ -54,6 +54,10 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 - **False "payment processor stalled" alert during normal block confirmation** -- Go sentinel's `checkPaymentProcessors()` only tracked the count of pending blocks. A single block confirming from 0% → 100% stays at count=1 the entire time, triggering "stalled" after 5 checks even though the block is actively progressing. Fixed by tracking the full pipeline (`confirmed + paid` blocks) — stall only fires when NOTHING moves through the pipeline
 
+**Tests**
+
+- **Nil map panic in `TestCheckPaymentProcessors_EscalatesToCritical`** -- test helper `testSentinel()` was missing `paymentStability` map initialization, causing panic when `checkPaymentProcessors()` accessed it. Also fixed `TestCheckPaymentProcessors_AlertOnStall` — test loop count was too low for the effective threshold (`PaymentStallChecks * checksPerInterval`)
+
 **Daemon Resource Limits**
 
 - **`dbcache=8192` causes swap thrashing and RPC timeouts on multi-coin setups** -- two daemons each with 8GB dbcache exceeded the 12GB memory limit, pushing into swap. RPC calls returned EOF, stalling block confirmations for 4+ hours. Reduced defaults: BTC/DGB/BCH/LTC/DOGE=4096, all other coins=2048 (minimum floor). `maxconnections` reduced from 256 to 64 across all coins
@@ -66,7 +70,7 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ### Changed
 
-- **Version bump** -- all version strings updated to 2.3.0
+- **Version bump** -- all version strings updated to 2.3.1
 
 ---
 
