@@ -9,9 +9,21 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ## [2.3.2]  -  2026-04-09  -  Phi Hash Reactor
 
-> *Block timestamp UTC fix, wallet balance reliability, upgrade service restart.*
+> *Partial startup after reboot, block timestamp UTC fix, wallet balance reliability, upgrade service restart.*
 
 ### Fixed
+
+**Stratum — Partial Startup After Reboot (Smart Port)**
+
+- **Smart Port refused to start if any coin daemon was still syncing** — after a server reboot, `wait-for-node.sh` (ExecStartPre) required ALL daemons to be online before starting stratum. One slow daemon (e.g., DGB in D-state, BTC re-syncing) blocked mining on ALL coins indefinitely. Fixed with a layered partial startup: (1) `wait-for-node.sh` accepts partial readiness after 60 seconds, (2) coordinator starts Smart Port with whatever coins are available instead of requiring all, (3) late coins join seamlessly via `RegisterCoinPool` as their daemons come online
+- **12 CLI calls in wallet setup could hang forever on unresponsive daemons** — `listwallets`, `loadwallet`, `createwallet`, and `getnewaddress` calls in `wait-for-node.sh` had no timeout. A daemon accepting connections but not responding (D-state) caused indefinite hang. All 12 CLI calls now wrapped with `timeout 10`
+- **Wallet processing in partial mode touched ALL coins including offline ones** — `process_v2_wallets` iterated every configured coin. On fresh installs with `PENDING_GENERATION` addresses, each offline coin added 30 seconds of timeout delay (3 CLI calls × 10s). New `filter_ready_nodes()` function re-checks RPC (3s timeout) and only processes wallets for online coins
+- **`initBlockStats` blocked `CoinPool.Start()` on slow database queries** — ran synchronously during startup; a slow or unavailable PostgreSQL connection stalled the entire coin pool. Now runs in a background goroutine with a 10-second timeout, tracked by the pool's WaitGroup for clean shutdown
+- **`initBlockStats` race condition with `handleBlock`** — used `=` assignment which overwrote any blocks already counted by `handleBlock` during the DB query window. Changed to `+=` so in-session block increments are preserved
+- **Selector routed miners to coins with no running pool** — `GetState()` returning `ok=false` (unregistered coin) caused the availability check to be skipped entirely, treating the coin as available. Miners were assigned to non-existent pools with silent share rejection. Fixed to treat unregistered coins as unavailable
+- **`switchSessionCoin` had no pool validation** — could switch a miner to a coin whose pool didn't exist or wasn't running, causing all shares to be silently rejected until the next evaluation cycle. Now validates pool existence and `IsRunning()` before switching
+- **`RegisterCoinPool` didn't trigger immediate miner re-evaluation** — when a recovered coin was registered with the MultiServer, miners stayed on their current coin until the next scheduled evaluation (up to 30s). Now calls `reevaluateAll()` immediately so miners can be routed to the new coin within seconds
+- **Deferred multi-port startup required ALL coins to recover** — the retry loop only started Smart Port when `len(stillFailed) == 0`. One permanently-down coin prevented Smart Port from ever starting. Now starts as soon as any coin recovers (`len(succeeded) > 0`)
 
 **Stratum — Block Timestamps**
 

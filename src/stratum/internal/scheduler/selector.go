@@ -231,8 +231,9 @@ func (s *Selector) SelectCoin(sessionID uint64) CoinSelection {
 
 	// Check if the chosen coin is available
 	if s.monitor != nil {
-		if st, ok := s.monitor.GetState(chosen); ok && (!st.Available || st.NetworkDiff <= 0) {
-			// Chosen coin is down — pick the next available coin in the slot list
+		st, ok := s.monitor.GetState(chosen)
+		if !ok || !st.Available || st.NetworkDiff <= 0 {
+			// Chosen coin is down or not yet registered — pick the next available coin in the slot list
 			found := false
 			for _, slot := range slots {
 				if slot.symbol == chosen {

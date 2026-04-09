@@ -22,6 +22,7 @@ set -e
 CONFIG_FILE="${1:-/spiralpool/config/config.yaml}"
 MAX_WAIT="${2:-1800}"  # Default: 30 minutes (1800 seconds)
 RETRY_INTERVAL=10      # Check every 10 seconds
+PARTIAL_READY_WAIT=60  # After 60s, accept "some_ready" (coordinator handles partial startup)
 LOCK_FILE="/run/spiralpool/spiralstratum-config.lock"
 LOCK_FD=200
 
@@ -521,7 +522,7 @@ ensure_auxchain_wallet_and_address() {
     local wallet_name="pool-${symbol,,}"
 
     local wallets
-    wallets=$("$cli_path" -conf="$conf_path" listwallets 2>&1) || wallets="[]"
+    wallets=$(timeout 10 "$cli_path" -conf="$conf_path" listwallets 2>&1) || wallets="[]"
     local wallets_clean
     wallets_clean=$(echo "$wallets" | tr -d '[:space:]')
 
@@ -530,7 +531,7 @@ ensure_auxchain_wallet_and_address() {
     else
         echo "    → Attempting to load wallet '$wallet_name'..."
         local load_result
-        load_result=$("$cli_path" -conf="$conf_path" loadwallet "$wallet_name" 2>&1) || true
+        load_result=$(timeout 10 "$cli_path" -conf="$conf_path" loadwallet "$wallet_name" 2>&1) || true
 
         if echo "$load_result" | grep -q '"name"'; then
             echo "    ✓ Wallet '$wallet_name' loaded"
@@ -539,7 +540,7 @@ ensure_auxchain_wallet_and_address() {
         elif echo "$load_result" | grep -qi "not found\|does not exist"; then
             echo "    → Creating wallet '$wallet_name'..."
             local create_result
-            create_result=$("$cli_path" -conf="$conf_path" createwallet "$wallet_name" 2>&1) || true
+            create_result=$(timeout 10 "$cli_path" -conf="$conf_path" createwallet "$wallet_name" 2>&1) || true
 
             if echo "$create_result" | grep -q '"name"'; then
                 echo "    ✓ Wallet '$wallet_name' created for aux chain $symbol"
@@ -567,20 +568,20 @@ ensure_auxchain_wallet_and_address() {
     case "$symbol" in
         NMC|SYS)
             # These support bech32
-            new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" "bech32" 2>&1) || true
+            new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" "bech32" 2>&1) || true
             ;;
         XMY|FBTC)
             # These use legacy addresses
             use_addr_type=false
-            new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
+            new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
             ;;
         QBX)
             # Q-BitX uses post-quantum "pq" address type
-            new_address=$("$cli_path" -conf="$conf_path" getnewaddress "" "pq" 2>&1) || true
+            new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "" "pq" 2>&1) || true
             ;;
         *)
             use_addr_type=false
-            new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
+            new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
             ;;
     esac
 
@@ -897,7 +898,7 @@ ensure_wallet_and_address() {
     local wallet_name="pool-${symbol,,}"
 
     local wallets
-    wallets=$("$cli_path" -conf="$conf_path" listwallets 2>&1) || wallets="[]"
+    wallets=$(timeout 10 "$cli_path" -conf="$conf_path" listwallets 2>&1) || wallets="[]"
     local wallets_clean
     wallets_clean=$(echo "$wallets" | tr -d '[:space:]')
 
@@ -908,7 +909,7 @@ ensure_wallet_and_address() {
         # Wallet not loaded - try to load it first (it may exist on disk from previous run)
         echo "  → Wallet not loaded, attempting to load '$wallet_name'..."
         local load_result
-        load_result=$("$cli_path" -conf="$conf_path" loadwallet "$wallet_name" 2>&1) || true
+        load_result=$(timeout 10 "$cli_path" -conf="$conf_path" loadwallet "$wallet_name" 2>&1) || true
 
         if echo "$load_result" | grep -q '"name"'; then
             echo "  ✓ Wallet '$wallet_name' loaded for $symbol"
@@ -918,7 +919,7 @@ ensure_wallet_and_address() {
             # Wallet doesn't exist - create it
             echo "  → Wallet does not exist, creating '$wallet_name'..."
             local create_result
-            create_result=$("$cli_path" -conf="$conf_path" createwallet "$wallet_name" 2>&1) || true
+            create_result=$(timeout 10 "$cli_path" -conf="$conf_path" createwallet "$wallet_name" 2>&1) || true
 
             if echo "$create_result" | grep -q '"name"'; then
                 echo "  ✓ Wallet '$wallet_name' created for $symbol"
@@ -1014,10 +1015,10 @@ ensure_wallet_and_address() {
     esac
 
     if [ "$use_addr_type" = true ] && [ -n "$addr_type" ]; then
-        new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" "$addr_type" 2>&1) || true
+        new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" "$addr_type" 2>&1) || true
     else
         # Daemons without address_type support: getnewaddress [label]
-        new_address=$("$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
+        new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
     fi
 
     if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9]{20,90}$ ]]; then
@@ -1070,6 +1071,27 @@ extract_v1_coin() {
     local config="$1"
     # Get coin from pool.coin field
     grep -A5 '^pool:' "$config" 2>/dev/null | grep 'coin:' | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'"
+}
+
+# Filter nodes to only those whose RPC is responding.
+# Used in partial ready mode so process_v2_wallets only touches online coins
+# (avoids 30s timeout per down coin on fresh installs with PENDING_GENERATION addresses).
+# Uses a short 3s timeout (vs check_rpc's 10s) since we just checked moments ago —
+# nodes that are up will respond fast, and we don't want to block on D-state daemons.
+filter_ready_nodes() {
+    while IFS=' ' read -r symbol host port user pass; do
+        [ -z "$symbol" ] && continue
+        local response
+        response=$(curl -sf --max-time 3 \
+            -u "$user:$pass" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"1.0","id":"filter","method":"getblockchaininfo","params":[]}' \
+            "http://${host}:${port}/" 2>/dev/null) || continue
+        if echo "$response" | grep -q '"result"'; then
+            echo "$symbol $host $port $user $pass"
+        fi
+    done
 }
 
 # Check all nodes and return status
@@ -1211,6 +1233,21 @@ if [ -n "$V2_NODES" ]; then
             echo "All nodes are ready! (waited ${elapsed}s)"
             echo ""
             process_v2_wallets "$CONFIG_FILE" "$V2_NODES"
+            exit 0
+        fi
+        # After PARTIAL_READY_WAIT seconds, accept partial readiness.
+        # The coordinator handles partial startup — it retries failed coins
+        # and starts Smart Port with whatever coins are available.
+        # This prevents one slow daemon from blocking ALL mining after reboot.
+        if [ $elapsed -ge $PARTIAL_READY_WAIT ] && [ "$result" = "some_ready" ]; then
+            echo "PARTIAL READY: Some nodes are online after ${elapsed}s — starting stratum with available coins."
+            echo "Remaining coins will be retried by the coordinator."
+            echo ""
+            # Only process wallets for coins whose daemons are actually online.
+            # On fresh installs, down coins have PENDING_GENERATION addresses and each
+            # hits 3 CLI calls × 10s timeout = 30s per coin. Skipping them avoids that delay.
+            READY_NODES=$(echo "$V2_NODES" | filter_ready_nodes)
+            process_v2_wallets "$CONFIG_FILE" "$READY_NODES"
             exit 0
         fi
         sleep $RETRY_INTERVAL

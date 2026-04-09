@@ -199,6 +199,12 @@ func (ms *MultiServer) RegisterCoinPool(pool CoinPoolHandle) {
 		"symbol", pool.Symbol(),
 		"poolId", pool.PoolID(),
 	)
+
+	// Trigger immediate re-evaluation so miners can be routed to this coin
+	// without waiting for the next evaluation interval (up to 30s delay).
+	if ms.server != nil {
+		ms.reevaluateAll()
+	}
 }
 
 // Start creates and starts the multi-port stratum server.
@@ -420,6 +426,21 @@ func (ms *MultiServer) switchSessionCoin(sessionID uint64, newCoin, reason strin
 	}
 	oldCoin := oldCoinVal.(string)
 	if oldCoin == newCoin {
+		return
+	}
+
+	// Validate target coin has a registered, running pool before switching.
+	// Without this, miners get silently assigned to a non-existent pool and
+	// all their shares are rejected until the next evaluation cycle.
+	ms.coinPoolsMu.RLock()
+	pool, exists := ms.coinPools[newCoin]
+	ms.coinPoolsMu.RUnlock()
+	if !exists || !pool.IsRunning() {
+		ms.logger.Warnw("Cannot switch session to coin without running pool",
+			"sessionId", sessionID,
+			"targetCoin", newCoin,
+			"currentCoin", oldCoin,
+		)
 		return
 	}
 

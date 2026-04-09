@@ -1906,8 +1906,15 @@ func (cp *CoinPool) Start(ctx context.Context) error {
 		return fmt.Errorf("sync gate failed: %w", err)
 	}
 
-	// Initialize block stats from database for API (blocksFound)
-	cp.initBlockStats(ctx)
+	// Initialize block stats from database for API (blocksFound).
+	// Run in a goroutine with a timeout so a slow/unavailable DB never blocks startup.
+	cp.wg.Add(1)
+	go func() {
+		defer cp.wg.Done()
+		statsCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cp.initBlockStats(statsCtx)
+	}()
 
 	// CLEANUP: Remove stale shares from previous sessions
 	if err := cp.cleanupStaleShares(ctx); err != nil {
@@ -2634,7 +2641,10 @@ func (cp *CoinPool) initBlockStats(ctx context.Context) {
 	}
 	total := int64(blockStats.Pending + blockStats.Confirmed + blockStats.Orphaned + blockStats.Paid)
 	cp.blockStatsMu.Lock()
-	cp.cachedBlocksFound = total
+	// Add DB total to any blocks already counted by handleBlock since Start().
+	// Using += instead of = prevents a race where handleBlock increments the
+	// counter before this goroutine finishes its DB query.
+	cp.cachedBlocksFound += total
 	cp.blockStatsMu.Unlock()
 	cp.logger.Infow("Loaded block stats from database", "total", total,
 		"pending", blockStats.Pending, "confirmed", blockStats.Confirmed,

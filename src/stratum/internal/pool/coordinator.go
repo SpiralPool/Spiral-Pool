@@ -948,17 +948,19 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	c.printStartupSummary()
 
 	// Start Multi coin smart port (multi-port) if configured.
-	// If some coins are still pending (nodes syncing after reboot), defer multi-port
-	// startup to the retry loop — it will start once all coins are online.
-	// Previously this was fatal, causing the entire process to crash on reboot
-	// before daemons finished syncing.
+	// Attempts to start immediately with whatever coins are online.
+	// If not enough coins are ready (e.g. daemons still syncing after reboot),
+	// defers to the retry loop which will start it as coins come online.
 	if c.cfg.MultiPort.Enabled {
-		if len(c.failedCoins) > 0 {
-			c.logger.Infow("Deferring multi-port startup until all coins are online",
-				"pendingCoins", len(c.failedCoins),
-			)
-		} else {
-			if err := c.startMultiPort(ctx); err != nil {
+		if err := c.startMultiPort(ctx); err != nil {
+			if len(c.failedCoins) > 0 {
+				// Some coins still starting — multi-port will start from the retry loop
+				// as soon as enough coins are online.
+				c.logger.Warnw("Deferring multi-port startup — not enough coins online yet",
+					"pendingCoins", len(c.failedCoins),
+					"error", err,
+				)
+			} else {
 				return fmt.Errorf("failed to start multi-port server: %w", err)
 			}
 		}
@@ -1308,18 +1310,18 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 			c.failedCoins = stillFailed
 			c.failedCoinsMu.Unlock()
 
+			// Start multi-port as soon as any coins are available (don't wait for all).
+			// Previously this waited for len(stillFailed)==0, meaning one slow daemon
+			// blocked Smart Port for ALL coins after a server restart.
+			if c.cfg.MultiPort.Enabled && c.multiServer == nil && len(succeeded) > 0 {
+				c.logger.Info("Coins recovered — attempting deferred multi-port startup")
+				if err := c.startMultiPort(ctx); err != nil {
+					c.logger.Warnw("Deferred multi-port startup not ready yet", "error", err)
+				}
+			}
+
 			if len(stillFailed) == 0 {
 				c.logger.Info("All coin pools now online!")
-
-				// Start multi-port if it was deferred during initial startup
-				// (coins were still syncing when the coordinator started).
-				if c.cfg.MultiPort.Enabled && c.multiServer == nil {
-					c.logger.Info("All coins ready — starting deferred multi-port server")
-					if err := c.startMultiPort(ctx); err != nil {
-						c.logger.Errorw("Failed to start deferred multi-port server", "error", err)
-					}
-				}
-
 				return
 			}
 		}
@@ -1802,13 +1804,14 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		return fmt.Errorf("multi_port requires at least 2 coins, got %d", len(coinSymbols))
 	}
 
-	// Validate: all configured coins must be enabled and SHA-256d
+	// Validate: configured coins that are online must be SHA-256d.
+	// Coins that aren't running yet are skipped — they'll be registered
+	// via RegisterCoinPool when they come online in the retry loop.
+	var availableCoins []string
 	c.poolsMu.RLock()
 	for _, sym := range coinSymbols {
-		found := false
 		for _, pool := range c.pools {
 			if strings.EqualFold(pool.Symbol(), sym) {
-				found = true
 				// Verify algorithm is SHA-256d (multi-port only works for same-algo coins)
 				coinImpl, err := coin.Create(pool.Symbol())
 				if err == nil && coinImpl.Algorithm() != "sha256d" {
@@ -1816,15 +1819,38 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 					return fmt.Errorf("multi_port coin %s uses algorithm %s, only sha256d is supported",
 						sym, coinImpl.Algorithm())
 				}
+				availableCoins = append(availableCoins, sym)
 				break
 			}
 		}
-		if !found {
-			c.poolsMu.RUnlock()
-			return fmt.Errorf("multi_port coin %s is not configured or not running", sym)
-		}
 	}
 	c.poolsMu.RUnlock()
+
+	// Need at least 1 coin to start (others join via RegisterCoinPool).
+	// Previously required ALL coins, which meant one slow daemon blocked
+	// the entire Smart Port after a server restart.
+	if len(availableCoins) == 0 {
+		return fmt.Errorf("multi_port: no configured coins are online yet")
+	}
+	if len(availableCoins) < len(coinSymbols) {
+		var missing []string
+		for _, sym := range coinSymbols {
+			found := false
+			for _, a := range availableCoins {
+				if strings.EqualFold(a, sym) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				missing = append(missing, sym)
+			}
+		}
+		c.logger.Warnw("Starting Smart Port with partial coins — missing coins will join when their daemons sync",
+			"available", availableCoins,
+			"missing", missing,
+		)
+	}
 
 	// Validate: weights must sum to exactly 100
 	totalWeight := 0
