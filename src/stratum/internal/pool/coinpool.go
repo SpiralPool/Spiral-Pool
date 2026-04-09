@@ -1159,7 +1159,7 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 			Source:            share.WorkerName,
 			Reward:            rewardCoins,
 			Hash:              result.BlockHash,
-			Created:           time.Now(),
+			Created:           time.Now().UTC(),
 		}
 
 		preSubmitCtx, preSubmitCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -3107,7 +3107,7 @@ func (cp *CoinPool) handleAuxBlocks(share *protocol.Share, auxResults []protocol
 					Source:            share.WorkerName,
 					Reward:            float64(auxResult.CoinbaseValue) / 1e8,
 					Hash:              auxResult.BlockHash,
-					Created:           time.Now(),
+					Created:           time.Now().UTC(),
 				}
 
 				dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)

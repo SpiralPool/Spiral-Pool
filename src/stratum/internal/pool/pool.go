@@ -2279,7 +2279,7 @@ blockLogging:
 		Source:            share.WorkerName,
 		Reward:            rewardCoins,
 		Hash:              result.BlockHash,
-		Created:           time.Now(),
+		Created:           time.Now().UTC(),
 	}
 
 	// Use a fresh context for DB insert - handleBlock is called synchronously from share handler
@@ -2802,7 +2802,7 @@ func (p *Pool) handleAuxBlocks(share *protocol.Share, auxResults []protocol.AuxB
 					Source:            share.WorkerName,
 					Reward:            float64(auxResult.CoinbaseValue) / 1e8,
 					Hash:              auxResult.BlockHash,
-					Created:           time.Now(),
+					Created:           time.Now().UTC(),
 				}
 
 				auxPoolID := p.cfg.Pool.ID + "_" + strings.ToLower(auxResult.Symbol)
