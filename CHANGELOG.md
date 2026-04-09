@@ -7,6 +7,47 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.3.2]  -  2026-04-09  -  Phi Hash Reactor
+
+> *Block timestamp UTC fix, wallet balance reliability, upgrade service restart.*
+
+### Fixed
+
+**Stratum — Block Timestamps**
+
+- **Dashboard "Last Block Found" showed 4-hour offset** — `time.Now()` stored local EDT time in PostgreSQL `TIMESTAMP` (no timezone) column. When pgx read it back, the bare timestamp was interpreted as UTC, creating a 4-hour discrepancy. Blocks found minutes ago showed as "4h 20m ago" on the dashboard. Fixed by using `time.Now().UTC()` in all 4 block insert paths (coinpool.go primary + auxpow, pool.go primary + auxpow)
+
+**Sentinel — Wallet Balance**
+
+- **DGB wallet balance showed 0.00 in intel report** — `fetch_wallet_balance_for_coin()` used chainz.cryptoid.info API for DGB, which intermittently returned 0. Now uses local node `scantxoutset` RPC as primary method for ALL coins (authoritative, no external dependency). External APIs demoted to fallback only
+- **Wallet address mismatch warning for multi-coin auto-detection** — when Sentinel auto-detected coins from the pool API, it inherited the pool's payout address as the wallet address. For multi-coin setups (DGB + QBX), the DGB address was applied to QBX, failing `validateaddress`. Now prefers per-coin wallet address from Sentinel config, and suppresses mismatch warnings for auto-detected addresses
+
+**Sentinel — Pool ID Patterns**
+
+- **`POOL_ID_PATTERNS` fallback had wrong IDs** — all pool IDs had incorrect `_1` suffix (e.g., `dgb_sha256_1` instead of `dgb_sha256`). QBX was missing entirely. Fixed IDs and added `QBX: qbx_mainnet`
+
+**Sentinel — Block Counter**
+
+- **QBX block count showed #30 instead of ~715** — block counter re-seed only queried the primary pool. Fixed to query ALL enabled coin pools when re-seeding
+
+**Sentinel — Network Hashrate**
+
+- **99.9% network hashrate crash false positive** — DGB showed a 54.39→0.08 PH/s drop that never happened on the network (garbage RPC reading during Smart Port switch). Added RPC cross-validation: for drops >95%, queries `getnetworkhashps` directly. If RPC shows <50% drop, rejects the garbage reading and skips crash detection + baseline EMA update
+
+**Sentinel — Log Noise**
+
+- **`get_primary_coin()` warning spammed every cycle** — with 2+ coins enabled, a WARNING-level message fired on every call (dozens per cycle). Now logs once at startup as INFO
+
+**Upgrade**
+
+- **`upgrade.sh` left Sentinel and Dashboard stopped after upgrade** — `systemctl stop` was called during upgrade but only stratum was restarted. Sentinel and Dashboard stayed dead until manual intervention. Now restarts all enabled services after stratum comes up
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.3.2
+
+---
+
 ## [2.3.1]  -  2026-04-08  -  Phi Hash Reactor
 
 > *Critical payment processor fix, Smart Port false positive suppression, production observability.*

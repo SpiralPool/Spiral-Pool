@@ -1558,12 +1558,17 @@ start_services() {
             fi
         fi
 
+        # Start any enabled service — not just ones that were running before upgrade.
+        # If a service was already down (prior crash, reboot, manual stop), the upgrade
+        # should bring it back to the correct state rather than preserving the broken state.
         local should_start=false
-        for was_running in "${SERVICES_WERE_RUNNING[@]}"; do
-            [[ "$was_running" == "$service" ]] && should_start=true && break
-        done
+        if [[ -f "/etc/systemd/system/${service}.service" ]]; then
+            if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+                should_start=true
+            fi
+        fi
 
-        if [[ "$should_start" == "true" ]] && [[ -f "/etc/systemd/system/${service}.service" ]]; then
+        if [[ "$should_start" == "true" ]]; then
             # Clean stale gunicorn socket before starting dashboard
             if [[ "$service" == "$DASHBOARD_SERVICE" ]]; then
                 local dash_dir
@@ -2121,7 +2126,7 @@ except Exception as e:
     fi
     unset final_api_key
 
-    # --- v2.3.1: Fix payments disabled for coins added via dashboard/pool-mode ---
+    # --- v2.3.2: Fix payments disabled for coins added via dashboard/pool-mode ---
     # Go bool zero-value is false; any coin without explicit "payments: enabled: true"
     # had its payment processor silently skipped — blocks found but never paid out.
     # Fix all "enabled: false" immediately following a "payments:" line.
@@ -2131,7 +2136,7 @@ except Exception as e:
         payment_fixes=$(awk '/^[[:space:]]*payments:/{getline; if($0 ~ /enabled: false/) print NR}' "$CONFIG_FILE" | wc -l)
         if [[ "$payment_fixes" -gt 0 ]]; then
             sed -i '/^[[:space:]]*payments:/{n;s/enabled: false/enabled: true/}' "$CONFIG_FILE"
-            log_info "  - Fixed $payment_fixes coin(s) with payments disabled (v2.3.1 bug fix)"
+            log_info "  - Fixed $payment_fixes coin(s) with payments disabled (v2.3.2 bug fix)"
             MIGRATIONS_APPLIED=$((MIGRATIONS_APPLIED + payment_fixes))
         fi
     fi
@@ -2264,7 +2269,7 @@ cleanup_daemon_configs() {
 # ============================================================================
 # Right-size dbcache and maxconnections in existing daemon configs.
 #
-# v2.3.1 and earlier shipped dbcache=8192 for SHA-256d coins and dbcache=4096
+# v2.3.2 and earlier shipped dbcache=8192 for SHA-256d coins and dbcache=4096
 # for scrypt coins.  On multi-coin setups (Smart Port), multiple daemons with
 # oversized caches exhaust RAM, push into swap, and cause RPC timeouts that
 # stall block confirmation.
@@ -3928,7 +3933,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.3.1 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.3.2 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4641,7 +4646,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.3.1 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.3.2 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -5032,12 +5037,12 @@ SSHDEOF
     # maxdebugfilesize, etc.) — idempotent, always safe to re-run.
     cleanup_daemon_configs
 
-    # v2.3.1: Reduce oversized dbcache/maxconnections in existing daemon configs.
+    # v2.3.2: Reduce oversized dbcache/maxconnections in existing daemon configs.
     # Multi-coin setups with dbcache=8192 per daemon exhaust RAM and cause RPC
     # timeouts that stall block confirmation.
     rightsize_daemon_resources
 
-    # v2.3.1: Patch daemon service files with ExecStartPre ownership fix.
+    # v2.3.2: Patch daemon service files with ExecStartPre ownership fix.
     # Daemon SIGABRT on shutdown can corrupt file ownership, preventing restart.
     fix_daemon_service_ownership_pre
 
