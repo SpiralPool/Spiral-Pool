@@ -15580,7 +15580,6 @@ install_digibyte() {
         if [[ -f "$DGB_DIR/bin/digibyted" ]]; then
             dgb_download_needed=false
             sudo ln -sf "$DGB_DIR/bin/digibyted" /usr/local/bin/digibyted
-            sudo ln -sf "$DGB_DIR/bin/digibyte-cli" /usr/local/bin/digibyte-cli
         else
             log_warn "Replicated files missing expected daemon binary — falling back to download"
         fi
@@ -15656,7 +15655,6 @@ install_digibyte() {
     sudo chown -R "$POOL_USER:$POOL_USER" "$DGB_DIR"
 
     sudo ln -sf "$DGB_DIR/bin/digibyted" /usr/local/bin/digibyted
-    sudo ln -sf "$DGB_DIR/bin/digibyte-cli" /usr/local/bin/digibyte-cli
 
     rm -rf /tmp/digibyte*
 
@@ -15721,18 +15719,20 @@ dnsseed=1
 blocksonly=0"
     fi
 
-    # Auto-sized resource sizing: default 4096MB dbcache but cap to 25% of total
-    # RAM to avoid OOM kills on memory-constrained systems.
-    local DGB_DBCACHE=4096
-    local DGB_MEM_MAX="6G"
-    local DGB_MEM_HIGH="5G"
+    # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
+    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # DGB's initial sync is heavily I/O-bound; larger dbcache dramatically reduces sync time.
+    # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
+    local DGB_DBCACHE=8192
+    local DGB_MEM_MAX="11G"
+    local DGB_MEM_HIGH="9G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
-        local wsl_cap=$((total_mb / 4))
-        [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
-        [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
-        DGB_DBCACHE=$wsl_cap
-        local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+        local db_cap=$((total_mb * 55 / 100))
+        [[ "$db_cap" -lt 1024 ]] && db_cap=1024
+        [[ "$db_cap" -gt 8192 ]] && db_cap=8192
+        DGB_DBCACHE=$db_cap
+        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         DGB_MEM_MAX="${mem_max_gb}G"
         DGB_MEM_HIGH="$(( mem_max_gb - 1 ))G"
@@ -15882,6 +15882,15 @@ EOF
 
     sudo systemctl daemon-reload || true
     sudo systemctl enable digibyted || true
+
+    # Create digibyte-cli wrapper (default config path is ~/.digibyte/ which is wrong)
+    local DGB_BLOCKCHAIN_DIR
+    DGB_BLOCKCHAIN_DIR=$(get_blockchain_dir dgb)
+    sudo tee /usr/local/bin/digibyte-cli > /dev/null << CLIWRAPPER
+#!/bin/bash
+exec "$DGB_DIR/bin/digibyte-cli" -conf="$DGB_BLOCKCHAIN_DIR/digibyte.conf" -datadir="$DGB_BLOCKCHAIN_DIR" "\$@"
+CLIWRAPPER
+    sudo chmod +x /usr/local/bin/digibyte-cli
 
     log_success "DigiByte Core installed"
     mark_progress "digibyte"
@@ -16159,19 +16168,20 @@ dnsseed=1
 peertimeout=60"
     fi
 
-    # Auto-sized resource sizing: default 4096MB dbcache but cap to 25% of total
-    # RAM to avoid OOM kills on memory-constrained systems.
-    # BTC gets 4096 (not 2048) because it has the largest UTXO set.
-    local BTC_DBCACHE=4096
-    local BTC_MEM_MAX="6G"
-    local BTC_MEM_HIGH="5G"
+    # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
+    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # BTC has the largest UTXO set so needs generous dbcache during sync.
+    # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
+    local BTC_DBCACHE=8192
+    local BTC_MEM_MAX="11G"
+    local BTC_MEM_HIGH="9G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
-        local wsl_cap=$((total_mb / 4))
-        [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
-        [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
-        BTC_DBCACHE=$wsl_cap
-        local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+        local db_cap=$((total_mb * 55 / 100))
+        [[ "$db_cap" -lt 1024 ]] && db_cap=1024
+        [[ "$db_cap" -gt 8192 ]] && db_cap=8192
+        BTC_DBCACHE=$db_cap
+        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         BTC_MEM_MAX="${mem_max_gb}G"
         BTC_MEM_HIGH="$(( mem_max_gb - 1 ))G"
@@ -16443,18 +16453,19 @@ install_bitcoincash() {
 
     fi  # end bch_download_needed
 
-    # Auto-sized resource sizing: default 4096MB dbcache but cap to 25% of total
-    # RAM to avoid OOM kills on memory-constrained systems.
-    local BCH_DBCACHE=4096
-    local BCH_MEM_MAX="6G"
-    local BCH_MEM_HIGH="5G"
+    # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
+    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
+    local BCH_DBCACHE=8192
+    local BCH_MEM_MAX="11G"
+    local BCH_MEM_HIGH="9G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
-        local wsl_cap=$((total_mb / 4))
-        [[ "$wsl_cap" -lt 1024 ]] && wsl_cap=1024
-        [[ "$wsl_cap" -gt 4096 ]] && wsl_cap=4096
-        BCH_DBCACHE=$wsl_cap
-        local mem_max_gb=$(( (wsl_cap + 2048) / 1024 ))
+        local db_cap=$((total_mb * 55 / 100))
+        [[ "$db_cap" -lt 1024 ]] && db_cap=1024
+        [[ "$db_cap" -gt 8192 ]] && db_cap=8192
+        BCH_DBCACHE=$db_cap
+        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         BCH_MEM_MAX="${mem_max_gb}G"
         BCH_MEM_HIGH="$(( mem_max_gb - 1 ))G"
@@ -17141,6 +17152,17 @@ seednode=dnsseed.litecoinpool.org
 seednode=dnsseed.koin-project.com"
     fi
 
+    # Auto-sized dbcache: use 55% of total RAM (capped at 8192MB)
+    # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
+    local LTC_DBCACHE=8192
+    local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+    if [[ "$total_mb" -gt 0 ]]; then
+        LTC_DBCACHE=$((total_mb * 55 / 100))
+        [[ "$LTC_DBCACHE" -lt 1024 ]] && LTC_DBCACHE=1024
+        [[ "$LTC_DBCACHE" -gt 8192 ]] && LTC_DBCACHE=8192
+        log "Auto-sized: LTC dbcache=${LTC_DBCACHE}MB (${total_mb}MB total RAM)"
+    fi
+
     # Create configuration
     log "Creating Litecoin configuration..."
     sudo -u "$POOL_USER" tee "$LTC_DIR/litecoin.conf" > /dev/null << EOF
@@ -17169,7 +17191,7 @@ zmqpubrawtx=tcp://127.0.0.1:$LTC_ZMQ_PORT
 $LTC_NETWORK_CONFIG
 
 # Performance
-dbcache=4096
+dbcache=$LTC_DBCACHE
 maxmempool=300
 
 # Logging
@@ -17365,6 +17387,17 @@ seednode=seed.multidoge.org
 seednode=seed2.multidoge.org"
     fi
 
+    # Auto-sized dbcache: use 55% of total RAM (capped at 8192MB)
+    # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
+    local DOGE_DBCACHE=8192
+    local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+    if [[ "$total_mb" -gt 0 ]]; then
+        DOGE_DBCACHE=$((total_mb * 55 / 100))
+        [[ "$DOGE_DBCACHE" -lt 1024 ]] && DOGE_DBCACHE=1024
+        [[ "$DOGE_DBCACHE" -gt 8192 ]] && DOGE_DBCACHE=8192
+        log "Auto-sized: DOGE dbcache=${DOGE_DBCACHE}MB (${total_mb}MB total RAM)"
+    fi
+
     # Create configuration
     log "Creating Dogecoin configuration..."
     sudo -u "$POOL_USER" tee "$DOGE_DIR/dogecoin.conf" > /dev/null << EOF
@@ -17396,7 +17429,7 @@ port=$DOGE_P2P_PORT
 $DOGE_NETWORK_CONFIG
 
 # Performance
-dbcache=4096
+dbcache=$DOGE_DBCACHE
 maxmempool=300
 
 # Logging
@@ -18946,9 +18979,8 @@ install_qbx() {
     sudo chown -R "$POOL_USER:$POOL_USER" "$QBX_BIN_DIR"
     rm -rf "$QBX_FILENAME" qbitx-extract
 
-    # Create symlinks for CLI access
+    # Create symlink for daemon binary
     sudo ln -sf "$QBX_BIN_DIR/qbitx" /usr/local/bin/qbitx
-    sudo ln -sf "$QBX_BIN_DIR/qbitx-cli" /usr/local/bin/qbitx-cli
 
     fi  # end qbx_download_needed
 
@@ -19053,6 +19085,13 @@ EOF
 
     sudo systemctl daemon-reload || true
     sudo systemctl enable qbitxd || true
+
+    # Create qbitx-cli wrapper (QBX is a Bitcoin fork, defaults to port 8332 without -conf=)
+    sudo tee /usr/local/bin/qbitx-cli > /dev/null << CLIWRAPPER
+#!/bin/bash
+exec "$QBX_BIN_DIR/qbitx-cli" -conf="$QBX_DIR/qbitx.conf" -datadir="$QBX_DIR" "\$@"
+CLIWRAPPER
+    sudo chmod +x /usr/local/bin/qbitx-cli
 
     log_success "Q-BitX installed"
     log "Data directory: $QBX_DIR"
@@ -26230,6 +26269,10 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
+            # Capture positional argument as coin if not already set
+            if [[ -z "$COIN" ]]; then
+                COIN="${1,,}"
+            fi
             shift
             ;;
     esac

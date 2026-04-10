@@ -7765,14 +7765,26 @@ def fetch_pool_stats():
             if pool_id:
                 for pool in pools:
                     if pool.get("id") == pool_id:
-                        return pool
+                        ps = pool.get("poolStats", {})
+                        if ps.get("blockHeight", 0) > 0 and ps.get("networkDifficulty", 0) > 0:
+                            return pool
+                        # Matched pool_id but it's unhealthy — fall through
+                        # to find any healthy pool (multi-coin resilience)
+                        break
 
-            # V2 multi-coin fallback: return first pool with valid blockHeight
-            # This ensures sync detection works even without explicit pool_id config
+            # Multi-coin fallback: return first pool with valid blockHeight and difficulty
+            # This ensures sync detection works when primary coin daemon is down
             for pool in pools:
-                block_height = pool.get("poolStats", {}).get("blockHeight", 0)
-                if block_height > 0:
+                ps = pool.get("poolStats", {})
+                if ps.get("blockHeight", 0) > 0 and ps.get("networkDifficulty", 0) > 0:
                     return pool
+
+            # No healthy pool found — return the pool_id match (if any) so caller
+            # gets the real status, or fall through to first-pool fallback
+            if pool_id:
+                for pool in pools:
+                    if pool.get("id") == pool_id:
+                        return pool
 
             # Last resort: return first pool if any exist
             if pools:

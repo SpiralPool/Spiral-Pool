@@ -472,8 +472,15 @@ func (s *Sentinel) checkChainTipStall(pool *CoinPool, poolID, coin string) {
 		return // Disabled
 	}
 
+	// Use the higher of node manager height (from health checks) and job
+	// height (from polling/ZMQ).  Polling updates the job even when the
+	// node manager's health-check RPC is timing out (e.g. during IBD with
+	// an overloaded daemon), so the job height prevents false stall alerts.
 	stats := pool.GetNodeStats()
 	height := stats.BlockHeight
+	if jobHeight := pool.GetBlockHeight(); jobHeight > height {
+		height = jobHeight
+	}
 
 	// Record metric regardless of alert state
 	if s.metrics != nil {

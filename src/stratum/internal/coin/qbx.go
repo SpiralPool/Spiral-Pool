@@ -324,6 +324,12 @@ func (c *QBXCoin) Algorithm() string {
 	return "sha256d"
 }
 
+// MultiAlgoGBTParam returns the algorithm parameter for getblocktemplate.
+// QBX is SHA-256d — this enables correct difficulty parsing via GetDifficulty().
+func (c *QBXCoin) MultiAlgoGBTParam() string {
+	return "sha256d"
+}
+
 // SupportsSegWit returns whether the coin supports SegWit.
 // Q-BitX does NOT support SegWit.
 func (c *QBXCoin) SupportsSegWit() bool {
