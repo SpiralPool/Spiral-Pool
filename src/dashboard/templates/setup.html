@@ -2956,12 +2956,20 @@
                         });
                     }
 
+                    // Build set of syncing coins from coins_config
+                    const syncingCoins = new Set();
+                    if (data.coins_config && Array.isArray(data.coins_config)) {
+                        data.coins_config.forEach(cfg => {
+                            if (cfg && cfg.syncing) syncingCoins.add(String(cfg.symbol || '').toUpperCase());
+                        });
+                    }
+
                     if (allActiveCoins.length > 0) {
                         // Clear default selection and use detected coins instead
                         selectedCoins = [];
 
-                        // Hide all coin options that are NOT running on the pool
-                        // Only show coins the stratum server is actually mining (parent + aux)
+                        // Show coins running on the pool + coins that are syncing
+                        // Hide coins that are neither running nor syncing
                         document.querySelectorAll('.coin-option[data-coin]').forEach(coinEl => {
                             const coinSymbol = coinEl.getAttribute('data-coin');
                             if (allActiveCoins.includes(coinSymbol)) {
@@ -2969,6 +2977,17 @@
                                 coinEl.classList.add('selected');
                                 if (!selectedCoins.includes(coinSymbol)) {
                                     selectedCoins.push(coinSymbol);
+                                }
+                                // Show syncing badge for coins whose node is still syncing
+                                if (syncingCoins.has(coinSymbol)) {
+                                    const nameEl = coinEl.querySelector('.coin-name');
+                                    if (nameEl && !nameEl.querySelector('.syncing-badge')) {
+                                        const badge = document.createElement('span');
+                                        badge.className = 'syncing-badge';
+                                        badge.textContent = ' (syncing)';
+                                        badge.style.cssText = 'color: #f0a030; font-size: 0.8em; font-weight: normal;';
+                                        nameEl.appendChild(badge);
+                                    }
                                 }
                             } else {
                                 coinEl.style.display = 'none';
@@ -2990,6 +3009,7 @@
 
                         updateCoinSelectionUI();
                         updateWalletInputs();
+                        validateCoinSelection();
 
                         // Pre-populate wallet addresses detected from stratum
                         // coins_config is [{symbol, wallet_address}, ...] for all active coins
@@ -3027,7 +3047,11 @@
                             );
                             coinsLabel = validCoins.join(', ') || 'Unknown';
                         }
-                        messageEl.textContent = `Detected: ${modeLabel} mode with ${coinsLabel}`;
+                        let statusText = `Detected: ${modeLabel} mode with ${coinsLabel}`;
+                        if (syncingCoins.size > 0) {
+                            statusText += ` (${Array.from(syncingCoins).join(', ')} syncing)`;
+                        }
+                        messageEl.textContent = statusText;
                         statusDiv.className = 'import-status info';
                         statusDiv.classList.remove('hidden');
                     }

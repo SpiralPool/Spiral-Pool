@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.3.5-PHI_HASH_REACTOR"
+__version__ = "2.4.0-PHI_HASH_REACTOR"
 
 import os
 import json
@@ -9441,6 +9441,21 @@ def get_server_mode():
                             "aux_chains": valid_aux
                         }
 
+        # Include coins that are configured and enabled but not yet in the
+        # stratum response (e.g., node still syncing).  This lets the setup
+        # wizard show them with a "syncing" status instead of hiding them.
+        load_multi_coin_config()
+        for symbol, node in MULTI_COIN_NODES.items():
+            if node.get('enabled', False) and symbol in COIN_WHITELIST and symbol not in detected_coins:
+                detected_coins.append(symbol)
+                coins_config.append({
+                    "symbol": symbol,
+                    "wallet_address": node.get('wallet_address', ''),
+                    "pool_id": "",
+                    "stratum_port": node.get('stratum_ports', {}).get('v1', 0),
+                    "syncing": True
+                })
+
         # Determine mode: merge > multi > solo
         if merge_mining_info:
             detected_mode = "merge"
@@ -14616,7 +14631,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.3.5 PHI HASH REACTOR"},
+        "footer": {"text": f"Spiral Pool v2.4.0 PHI HASH REACTOR"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

@@ -7,6 +7,28 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.4.0]  -  2026-04-10  -  Phi Hash Reactor
+
+> *QBX block detection fix, setup wizard multi-coin detection for syncing nodes.*
+
+### Fixed
+
+**Sentinel — QBX Block Detection Silent Failure**
+
+- **QBX blocks silently rejected as "not our block" after Smart Port coin switch** — when Smart Port rotated miners from DGB to QBX, the main monitoring loop updated `primary_coin` and `primary_pool_id` but never updated `primary_wallet`. The wallet address stayed as the DGB address. `check_pool_for_new_blocks()` compared the QBX block's miner address against the stale DGB wallet, failed the match, and silently skipped every QBX block with `continue`. Payouts arrived (wallet balance polling is coin-aware) but no "BLOCK CAPTURED" celebrations fired. Fixed by updating `primary_wallet` from `get_primary_coin_config()` alongside `primary_pool_id` in the coin change handler
+
+**Dashboard — Setup Wizard Showed Solo Mode With Two Coins**
+
+- **Setup wizard only detected coins with running stratum pools** — `get_server_mode()` queried stratum `/api/pools` to discover coins, which only returns coins whose daemons are fully synced. Coins with syncing nodes (e.g., DGB at 68%) were invisible to the wizard, causing it to show Solo mode with only the running coin (QBX). Fixed by also checking `MULTI_COIN_NODES` from `config.yaml` for enabled coins not in the stratum response, adding them with a `syncing: True` flag so the wizard shows Multi-Coin mode with both coins and their wallets pre-populated
+- **`syncingCoins` JavaScript scoping error crashed mode detection** — `const syncingCoins` was declared inside the `if (allActiveCoins.length > 0)` block but referenced outside it in the status text section. JavaScript `const` is block-scoped, so accessing it outside threw a `ReferenceError`. The `catch` handler caught this and called `selectPoolMode('solo')`, resetting the correctly-detected Multi-Coin mode back to Solo and truncating `selectedCoins` to one coin. Fixed by moving the `syncingCoins` declaration to the outer scope before the inner `if` block
+- **Validation error persisted after coins were populated** — `selectPoolMode()` was called before `selectedCoins` was populated, triggering `validateCoinSelection()` with an empty array. The "Multi-Coin Mode requires at least 2 coins" error was displayed and never cleared because `validateCoinSelection()` was not called again after the coin loop populated `selectedCoins`. Fixed by adding a `validateCoinSelection()` call after `updateCoinSelectionUI()` / `updateWalletInputs()`
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.4.0
+
+---
+
 ## [2.3.5]  -  2026-04-09  -  Phi Hash Reactor
 
 > *Native multi-port config fix, health monitor false restart, startup timeout for syncing daemons.*

@@ -14,7 +14,7 @@ FROM ubuntu:24.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Catcoin Core Node for Spiral Pool"
-LABEL version="2.3.5"
+LABEL version="2.4.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC

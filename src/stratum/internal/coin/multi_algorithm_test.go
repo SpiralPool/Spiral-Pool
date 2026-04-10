@@ -9,7 +9,7 @@
 // 3. Mixed algorithm configurations (SHA-256d + Scrypt)
 // 4. Algorithm isolation (cross-algorithm confusion prevention)
 //
-// V2.3.5-PHI_HASH_REACTOR: Multi-algorithm support (SHA-256d + Scrypt)
+// V2.4.0-PHI_HASH_REACTOR: Multi-algorithm support (SHA-256d + Scrypt)
 package coin
 
 import (

@@ -766,4 +766,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.3.5*
+*Spiral Pool — Phi Hash Reactor 2.4.0*
