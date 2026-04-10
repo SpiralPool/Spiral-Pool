@@ -58,66 +58,55 @@ get_coin_field() {
     local symbol="$2"
     local field="$3"
 
-    # Use a more robust multi-line AWK pattern that handles:
-    # - Quoted and unquoted values
-    # - Various indentation levels
-    # - Both 'symbol: "X"' and 'symbol: X' formats
-    awk -v sym="$symbol" -v fld="$field" '
-        BEGIN { in_coins=0; in_target_coin=0; indent=0 }
+    local awk_script
+    awk_script=$(mktemp /tmp/coin_field.XXXXXX) || return 1
+    cat > "$awk_script" <<'COIN_FIELD_AWK'
+BEGIN { in_coins=0; in_target_coin=0; indent=0 }
 
-        # Track when we enter coins: array
-        /^coins:/ { in_coins=1; next }
+/^coins:/ { in_coins=1; next }
+in_coins && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_coins=0 }
+!in_coins { next }
 
-        # Exit coins array on new top-level key
-        in_coins && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_coins=0 }
+/^[[:space:]]*-[[:space:]]/ {
+    if (match($0, /symbol:[[:space:]]*["']?([^"',]+)["']?/, arr) ||
+        match($0, /symbol:[[:space:]]*([^[:space:],]+)/, arr)) {
+        gsub(/["']/, "", arr[1])
+        in_target_coin = (toupper(arr[1]) == toupper(sym))
+    } else {
+        in_target_coin = 0
+    }
+    match($0, /^[[:space:]]*/)
+    indent = RLENGTH
+    next
+}
 
-        # Not in coins array, skip
-        !in_coins { next }
+in_coins && /^[[:space:]]+symbol:/ {
+    match($0, /symbol:[[:space:]]*["']?([^"']+)["']?/)
+    val = substr($0, RSTART)
+    gsub(/.*symbol:[[:space:]]*["']?/, "", val)
+    gsub(/["'].*/, "", val)
+    gsub(/[[:space:]]+$/, "", val)
+    in_target_coin = (toupper(val) == toupper(sym))
+    next
+}
 
-        # New coin entry (starts with -)
-        /^[[:space:]]*-[[:space:]]/ {
-            # Check if this line also has symbol
-            if (match($0, /symbol:[[:space:]]*["'"'"']?([^"'"'"',]+)["'"'"']?/, arr) ||
-                match($0, /symbol:[[:space:]]*([^[:space:],]+)/, arr)) {
-                gsub(/["'"'"']/, "", arr[1])
-                in_target_coin = (toupper(arr[1]) == toupper(sym))
-            } else {
-                in_target_coin = 0
-            }
-            # Remember indent level for this coin block
-            match($0, /^[[:space:]]*/)
-            indent = RLENGTH
-            next
-        }
+in_target_coin {
+    pattern = "^[[:space:]]+" fld ":"
+    if ($0 ~ pattern) {
+        val = $0
+        gsub(/.*:[[:space:]]*["']?/, "", val)
+        gsub(/["'][[:space:]]*$/, "", val)
+        gsub(/[[:space:]]+$/, "", val)
+        print val
+        exit
+    }
+}
 
-        # Symbol on its own line
-        in_coins && /^[[:space:]]+symbol:/ {
-            match($0, /symbol:[[:space:]]*["'"'"']?([^"'"'"']+)["'"'"']?/)
-            val = substr($0, RSTART)
-            gsub(/.*symbol:[[:space:]]*["'"'"']?/, "", val)
-            gsub(/["'"'"'].*/, "", val)
-            gsub(/[[:space:]]+$/, "", val)
-            in_target_coin = (toupper(val) == toupper(sym))
-            next
-        }
+in_target_coin && /^[[:space:]]*-[[:space:]]/ { in_target_coin=0 }
+COIN_FIELD_AWK
 
-        # Found target field in target coin
-        in_target_coin {
-            # Build regex for the field
-            pattern = "^[[:space:]]+" fld ":"
-            if ($0 ~ pattern) {
-                val = $0
-                gsub(/.*:[[:space:]]*["'"'"']?/, "", val)
-                gsub(/["'"'"'][[:space:]]*$/, "", val)
-                gsub(/[[:space:]]+$/, "", val)
-                print val
-                exit
-            }
-        }
-
-        # Check if we exited the coin block (less indentation or new coin)
-        in_target_coin && /^[[:space:]]*-[[:space:]]/ { in_target_coin=0 }
-    ' "$config_file" 2>/dev/null
+    awk -v sym="$symbol" -v fld="$field" -f "$awk_script" "$config_file" 2>/dev/null
+    rm -f "$awk_script"
 }
 
 # Safely update a coin field in the config file
@@ -137,43 +126,44 @@ update_coin_field() {
         return 1
     fi
 
-    # Use AWK to update the specific field for the specific coin
-    awk -v sym="$symbol" -v fld="$field" -v newval="$new_value" '
-        BEGIN { in_coins=0; in_target_coin=0 }
+    # Write awk to temp file to avoid quoting issues under systemd
+    local awk_script
+    awk_script=$(mktemp /tmp/update_coin.XXXXXX) || { release_config_lock; rm -f "$tmp_file"; return 1; }
+    cat > "$awk_script" <<'UPDATE_AWK'
+BEGIN { in_coins=0; in_target_coin=0 }
 
-        /^coins:/ { in_coins=1 }
-        in_coins && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_coins=0 }
+/^coins:/ { in_coins=1 }
+in_coins && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_coins=0 }
 
-        # New coin entry - check if its our target
-        in_coins && /^[[:space:]]*-[[:space:]]/ {
-            in_target_coin = 0
-        }
+in_coins && /^[[:space:]]*-[[:space:]]/ {
+    in_target_coin = 0
+}
 
-        # Check for symbol match
-        in_coins && /symbol:/ {
-            val = $0
-            gsub(/.*symbol:[[:space:]]*["'"'"']?/, "", val)
-            gsub(/["'"'"'].*/, "", val)
-            gsub(/[[:space:]]+$/, "", val)
-            if (toupper(val) == toupper(sym)) {
-                in_target_coin = 1
-            }
-        }
+in_coins && /symbol:/ {
+    val = $0
+    gsub(/.*symbol:[[:space:]]*["']?/, "", val)
+    gsub(/["'].*/, "", val)
+    gsub(/[[:space:]]+$/, "", val)
+    if (toupper(val) == toupper(sym)) {
+        in_target_coin = 1
+    }
+}
 
-        # Update the target field
-        in_target_coin {
-            pattern = fld ":"
-            if (index($0, pattern) > 0) {
-                # Preserve indentation
-                match($0, /^[[:space:]]*/)
-                indent = substr($0, 1, RLENGTH)
-                $0 = indent fld ": \"" newval "\""
-                in_target_coin = 0  # Only update first match
-            }
-        }
+in_target_coin {
+    pattern = fld ":"
+    if (index($0, pattern) > 0) {
+        match($0, /^[[:space:]]*/)
+        indent = substr($0, 1, RLENGTH)
+        $0 = indent fld ": \"" newval "\""
+        in_target_coin = 0
+    }
+}
 
-        { print }
-    ' "$config_file" > "$tmp_file" 2>/dev/null
+{ print }
+UPDATE_AWK
+
+    awk -v sym="$symbol" -v fld="$field" -v newval="$new_value" -f "$awk_script" "$config_file" > "$tmp_file" 2>/dev/null
+    rm -f "$awk_script"
 
     local result=1
     if [ -s "$tmp_file" ]; then
@@ -320,49 +310,46 @@ get_auxchain_field() {
     local symbol="$2"
     local field="$3"
 
-    awk -v sym="$symbol" -v fld="$field" '
-        BEGIN { in_mm=0; in_aux=0; in_target=0 }
+    local awk_script
+    awk_script=$(mktemp /tmp/aux_field.XXXXXX) || return 1
+    cat > "$awk_script" <<'AUX_FIELD_AWK'
+BEGIN { in_mm=0; in_aux=0; in_target=0 }
 
-        # Track when we enter mergeMining section
-        /^[[:space:]]*mergeMining:/ { in_mm=1; next }
+/^[[:space:]]*mergeMining:/ { in_mm=1; next }
+in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0 }
+!in_mm { next }
 
-        # Exit on new top-level section (no leading whitespace)
-        in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0 }
+/auxChains:/ { in_aux=1; next }
 
-        !in_mm { next }
+in_aux && /^[[:space:]]*-[[:space:]]/ {
+    in_target = 0
+}
 
-        # Track auxChains array
-        /auxChains:/ { in_aux=1; next }
+in_aux && /symbol:/ {
+    val = $0
+    gsub(/.*symbol:[[:space:]]*["']?/, "", val)
+    gsub(/["'].*/, "", val)
+    gsub(/[[:space:]]+$/, "", val)
+    if (toupper(val) == toupper(sym)) {
+        in_target = 1
+    }
+}
 
-        # New aux chain entry (starts with -)
-        in_aux && /^[[:space:]]*-[[:space:]]/ {
-            in_target = 0
-        }
+in_target {
+    pattern = fld ":"
+    if (index($0, pattern) > 0) {
+        val = $0
+        gsub(/.*:[[:space:]]*["']?/, "", val)
+        gsub(/["'][[:space:]]*$/, "", val)
+        gsub(/[[:space:]]+$/, "", val)
+        print val
+        exit
+    }
+}
+AUX_FIELD_AWK
 
-        # Check for symbol match in aux chain
-        in_aux && /symbol:/ {
-            val = $0
-            gsub(/.*symbol:[[:space:]]*["'"'"']?/, "", val)
-            gsub(/["'"'"'].*/, "", val)
-            gsub(/[[:space:]]+$/, "", val)
-            if (toupper(val) == toupper(sym)) {
-                in_target = 1
-            }
-        }
-
-        # Found target field in target aux chain
-        in_target {
-            pattern = fld ":"
-            if (index($0, pattern) > 0) {
-                val = $0
-                gsub(/.*:[[:space:]]*["'"'"']?/, "", val)
-                gsub(/["'"'"'][[:space:]]*$/, "", val)
-                gsub(/[[:space:]]+$/, "", val)
-                print val
-                exit
-            }
-        }
-    ' "$config_file" 2>/dev/null
+    awk -v sym="$symbol" -v fld="$field" -f "$awk_script" "$config_file" 2>/dev/null
+    rm -f "$awk_script"
 }
 
 # Update an aux chain field in the config file
@@ -380,37 +367,42 @@ update_auxchain_field() {
         return 1
     fi
 
-    awk -v sym="$symbol" -v fld="$field" -v newval="$new_value" '
-        BEGIN { in_mm=0; in_aux=0; in_target=0 }
+    local awk_script
+    awk_script=$(mktemp /tmp/update_aux.XXXXXX) || { release_config_lock; rm -f "$tmp_file"; return 1; }
+    cat > "$awk_script" <<'UPDATE_AUX_AWK'
+BEGIN { in_mm=0; in_aux=0; in_target=0 }
 
-        /^[[:space:]]*mergeMining:/ { in_mm=1 }
-        in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0 }
+/^[[:space:]]*mergeMining:/ { in_mm=1 }
+in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0 }
 
-        in_mm && /auxChains:/ { in_aux=1 }
-        in_aux && /^[[:space:]]*-[[:space:]]/ { in_target=0 }
+in_mm && /auxChains:/ { in_aux=1 }
+in_aux && /^[[:space:]]*-[[:space:]]/ { in_target=0 }
 
-        in_aux && /symbol:/ {
-            val = $0
-            gsub(/.*symbol:[[:space:]]*["'"'"']?/, "", val)
-            gsub(/["'"'"'].*/, "", val)
-            gsub(/[[:space:]]+$/, "", val)
-            if (toupper(val) == toupper(sym)) {
-                in_target = 1
-            }
-        }
+in_aux && /symbol:/ {
+    val = $0
+    gsub(/.*symbol:[[:space:]]*["']?/, "", val)
+    gsub(/["'].*/, "", val)
+    gsub(/[[:space:]]+$/, "", val)
+    if (toupper(val) == toupper(sym)) {
+        in_target = 1
+    }
+}
 
-        in_target {
-            pattern = fld ":"
-            if (index($0, pattern) > 0) {
-                match($0, /^[[:space:]]*/)
-                indent = substr($0, 1, RLENGTH)
-                $0 = indent fld ": \"" newval "\""
-                in_target = 0
-            }
-        }
+in_target {
+    pattern = fld ":"
+    if (index($0, pattern) > 0) {
+        match($0, /^[[:space:]]*/)
+        indent = substr($0, 1, RLENGTH)
+        $0 = indent fld ": \"" newval "\""
+        in_target = 0
+    }
+}
 
-        { print }
-    ' "$config_file" > "$tmp_file" 2>/dev/null
+{ print }
+UPDATE_AUX_AWK
+
+    awk -v sym="$symbol" -v fld="$field" -v newval="$new_value" -f "$awk_script" "$config_file" > "$tmp_file" 2>/dev/null
+    rm -f "$awk_script"
 
     local result=1
     if [ -s "$tmp_file" ]; then
@@ -432,46 +424,51 @@ extract_v2_auxchains() {
 
     # Parse with awk to get aux chains from mergeMining.auxChains
     local aux_raw
-    aux_raw=$(awk '
-    BEGIN { in_mm=0; in_aux=0; in_chain=0; in_daemon=0; symbol=""; enabled=0; port="" }
+    local awk_script
+    awk_script=$(mktemp /tmp/aux_extract.XXXXXX) || return 1
+    cat > "$awk_script" <<'AUX_EXTRACT_AWK'
+BEGIN { in_mm=0; in_aux=0; in_chain=0; in_daemon=0; symbol=""; enabled=0; port="" }
 
-    /^[[:space:]]*mergeMining:/ { in_mm=1; next }
-    in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0; in_aux=0 }
-    !in_mm { next }
+/^[[:space:]]*mergeMining:/ { in_mm=1; next }
+in_mm && /^[a-zA-Z]/ && !/^[[:space:]]/ { in_mm=0; in_aux=0 }
+!in_mm { next }
 
-    /auxChains:/ { in_aux=1; next }
+/auxChains:/ { in_aux=1; next }
 
-    in_aux && /^[[:space:]]*-[[:space:]]/ {
-        if (enabled && port != "") print symbol, port
-        symbol=""; enabled=0; port=""; in_chain=1; in_daemon=0
-        next
-    }
+in_aux && /^[[:space:]]*-[[:space:]]/ {
+    if (enabled && port != "") print symbol, port
+    symbol=""; enabled=0; port=""; in_chain=1; in_daemon=0
+    next
+}
 
-    in_chain && /symbol:/ {
-        gsub(/.*symbol:[[:space:]]*["'"'"']?/, "")
-        gsub(/["'"'"'].*/, "")
-        symbol = $0
-    }
+in_chain && /symbol:/ {
+    gsub(/.*symbol:[[:space:]]*["']?/, "")
+    gsub(/["'].*/, "")
+    symbol = $0
+}
 
-    in_chain && /enabled:[[:space:]]*true/ { enabled=1 }
-    in_chain && /daemon:/ { in_daemon=1 }
-    in_daemon && /port:/ {
-        gsub(/.*port:[[:space:]]*/, "")
-        gsub(/[[:space:]].*/, "")
-        port = $0
-    }
+in_chain && /enabled:[[:space:]]*true/ { enabled=1 }
+in_chain && /daemon:/ { in_daemon=1 }
+in_daemon && /port:/ {
+    gsub(/.*port:[[:space:]]*/, "")
+    gsub(/[[:space:]].*/, "")
+    port = $0
+}
 
-    END { if (enabled && port != "") print symbol, port }
-    ' "$config")
+END { if (enabled && port != "") print symbol, port }
+AUX_EXTRACT_AWK
+
+    aux_raw=$(awk -f "$awk_script" "$config")
+    rm -f "$awk_script"
 
     # For each aux chain, get RPC credentials from the node's config file
-    echo "$aux_raw" | while read -r symbol port; do
+    while read -r symbol port; do
         [ -z "$symbol" ] && continue
         local creds
-        creds=$(get_rpc_creds "$symbol")
+        creds=$(get_rpc_creds "$symbol" || true)
         read -r user pass <<< "$creds"
         echo "$symbol 127.0.0.1 $port $user $pass"
-    done
+    done <<< "$aux_raw"
 }
 
 # Ensure wallet and address for an aux chain
@@ -610,45 +607,49 @@ ensure_auxchain_wallet_and_address() {
 extract_v2_nodes() {
     local config="$1"
 
-    # Parse with awk to get symbol and daemon port for each enabled coin
+    # Write awk program to temp file to avoid all quoting issues.
+    # Process substitution <(...) fails under systemd; inline single-quote
+    # escaping silently corrupts the awk program inside bash functions.
+    local awk_script
+    awk_script=$(mktemp /tmp/extract_v2.XXXXXX) || return 1
+    cat > "$awk_script" <<'EXTRACT_AWK'
+BEGIN { in_coins=0; in_coin=0; in_daemon=0; in_stratum=0; in_nodes=0; in_node_entry=0; symbol=""; enabled=0; port="" }
+
+/^coins:/ { in_coins=1; next }
+/^[a-z]+:/ && !/^coins:/ && !/^-/ { in_coins=0; in_coin=0 }
+!in_coins { next }
+
+/^[[:space:]]*-[[:space:]]+symbol:/ {
+    if (enabled && port != "") print symbol, port
+    symbol=$NF; gsub(/["']/, "", symbol)
+    enabled=0; port=""; in_daemon=0; in_stratum=0; in_nodes=0; in_node_entry=0; in_coin=1
+    next
+}
+
+in_coin && /^[[:space:]]+enabled:[[:space:]]*true/ { enabled=1 }
+in_coin && /^[[:space:]]+daemon:/ { in_daemon=1; in_stratum=0; in_nodes=0; next }
+in_coin && /^[[:space:]]+nodes:/ { in_nodes=1; in_daemon=0; in_stratum=0; next }
+in_coin && /^[[:space:]]+stratum:/ { in_stratum=1; in_daemon=0; in_nodes=0; next }
+in_daemon && /^[[:space:]]+port:/ { port=$NF; gsub(/["']/, "", port) }
+in_nodes && /^[[:space:]]+-[[:space:]]/ { in_node_entry=1; next }
+in_nodes && in_node_entry && /^[[:space:]]+port:/ { if (port == "") { port=$NF; gsub(/["']/, "", port) } }
+in_nodes && /^[[:space:]]+[a-z_]+:/ && !/^[[:space:]]+port:/ && !/^[[:space:]]+host:/ && !/^[[:space:]]+id:/ && !/^[[:space:]]+user:/ && !/^[[:space:]]+password:/ && !/^[[:space:]]+weight:/ && !/^[[:space:]]+zmq:/ && !/^[[:space:]]+-/ { in_nodes=0; in_node_entry=0 }
+
+END { if (enabled && port != "") print symbol, port }
+EXTRACT_AWK
+
     local coins_raw
-    coins_raw=$(awk '
-    BEGIN { in_coins=0; in_coin=0; in_daemon=0; in_stratum=0; in_nodes=0; in_node_entry=0; symbol=""; enabled=0; port="" }
-
-    /^coins:/ { in_coins=1; next }
-    /^[a-z]+:/ && !/^coins:/ && !/^-/ { in_coins=0; in_coin=0 }
-    !in_coins { next }
-
-    /^-[[:space:]]+symbol:/ {
-        if (enabled && port != "") print symbol, port
-        symbol=$NF; gsub(/["'\'']/, "", symbol)
-        enabled=0; port=""; in_daemon=0; in_stratum=0; in_nodes=0; in_node_entry=0; in_coin=1
-        next
-    }
-
-    in_coin && /^[[:space:]]+enabled:[[:space:]]*true/ { enabled=1 }
-    in_coin && /^[[:space:]]+daemon:/ { in_daemon=1; in_stratum=0; in_nodes=0 }
-    in_coin && /^[[:space:]]+nodes:/ { in_nodes=1; in_daemon=0; in_stratum=0 }
-    in_coin && /^[[:space:]]+stratum:/ { in_stratum=1; in_daemon=0; in_nodes=0 }
-    # V1-compat: daemon: section has port directly
-    in_daemon && /^[[:space:]]+port:/ { port=$NF; gsub(/["'\'']/, "", port) }
-    # V2: nodes: array — extract port from first node entry (primary)
-    in_nodes && /^[[:space:]]+-[[:space:]]/ { in_node_entry=1 }
-    in_nodes && in_node_entry && /^[[:space:]]+port:/ { if (port == "") { port=$NF; gsub(/["'\'']/, "", port) } }
-    # Reset node entry tracking on next section
-    in_nodes && /^[[:space:]]+[a-z_]+:/ && !/^[[:space:]]+port:/ && !/^[[:space:]]+host:/ && !/^[[:space:]]+id:/ && !/^[[:space:]]+user:/ && !/^[[:space:]]+password:/ && !/^[[:space:]]+weight:/ && !/^[[:space:]]+zmq:/ && !/^[[:space:]]+-/ { in_nodes=0; in_node_entry=0 }
-
-    END { if (enabled && port != "") print symbol, port }
-    ' "$config")
+    coins_raw=$(awk -f "$awk_script" "$config")
+    rm -f "$awk_script"
 
     # For each coin, get RPC credentials from the node's config file
-    echo "$coins_raw" | while read -r symbol port; do
+    while read -r symbol port; do
         [ -z "$symbol" ] && continue
         local creds
-        creds=$(get_rpc_creds "$symbol")
+        creds=$(get_rpc_creds "$symbol" || true)
         read -r user pass <<< "$creds"
         echo "$symbol 127.0.0.1 $port $user $pass"
-    done
+    done <<< "$coins_raw"
 }
 
 # Extract daemon connection info from config (V1 single-coin format)

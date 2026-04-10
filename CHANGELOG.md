@@ -7,6 +7,36 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [2.3.3]  -  2026-04-09  -  Phi Hash Reactor
+
+> *Native multi-port config fix, health monitor false restart, startup timeout for syncing daemons.*
+
+### Fixed
+
+**Installer — Native Multi-Port Config Missing**
+
+- **Native V2 config writer omitted entire `multi_port` section** — `configure_stratum_multicoin()` never wrote the `multi_port:` YAML block even when the user enabled Smart Port during installation. The Docker config writer (`generate_docker_stratum_config_multicoin`) had the code, but the native path was missing it entirely. Users who said "yes" to Smart Port got no `multi_port` config, so Smart Port never started. Fixed by adding the same `multi_port` generation block to the native V2 config writer
+
+**Stratum — Health Monitor False Restart**
+
+- **`health-monitor.sh` killed stratum on every cycle in multi-coin mode** — health monitor checked `mining.subscribe` on port 3333 (the V1 single-coin default). In V2 multi-coin mode, stratum listens on per-coin ports (e.g., 20335 for QBX) and Smart Port (16180), not 3333. The health monitor saw "protocol failure" and force-restarted stratum every check cycle, preventing Smart Port from ever starting (killed before DGB sync timeout could expire)
+
+**Stratum — Startup Timeout**
+
+- **Pool startup blocked indefinitely on syncing daemons** — `CoinPool.Start()` was called with the coordinator's root context (no timeout). If a daemon was syncing (e.g., DGB at 18% after fresh install), `waitForSync()` blocked forever, preventing `startWg.Wait()` from completing. Smart Port and retry loop code was never reached. Fixed by wrapping each `pool.Start()` call with a 90-second `context.WithTimeout`, allowing syncing coins to fail fast and move to the retry list while online coins proceed
+
+**wait-for-node.sh — Awk Parsing**
+
+- **`extract_v2_nodes()` returned empty output for V2 YAML configs** — awk rules for section detection (e.g., `nodes:`, `daemon:`, `stratum:`) matched AND reset flags in the same pass. The `nodes:` line matched both the "set `in_nodes=1`" rule and the "reset on unknown key" rule, immediately clearing the flag. Fixed by adding `next` statements to all section-detection rules so they skip to the next line after setting flags
+- **All 6 awk functions vulnerable to quoting issues under systemd** — inline awk scripts with complex quoting broke under systemd's `PrivateTmp=yes` environment. Converted `extract_v2_nodes`, `get_coin_field`, `update_coin_field`, `get_auxchain_field`, `update_auxchain_field`, and `extract_v2_auxchains` to temp-file approach (`mktemp` + `cat > file <<'DELIM'` + `awk -f file`)
+- **Pipe subshell lost variables with `set -e`** — `echo "$coins_raw" | while read` ran in a subshell; `get_rpc_creds` failures triggered `set -e` exit in the subshell, silently discarding results. Converted to here-string (`while read ... done <<< "$coins_raw"`) with `|| true` on `get_rpc_creds`
+
+### Changed
+
+- **Version bump** -- all version strings updated to 2.3.3
+
+---
+
 ## [2.3.2]  -  2026-04-09  -  Phi Hash Reactor
 
 > *Partial startup after reboot, block timestamp UTC fix, wallet balance reliability, upgrade service restart.*

@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.3.2                                                         ║
+# ║   Version: 2.3.3                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.3.2"
+    VERSION="2.3.3"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -15490,7 +15490,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.3.2 — PHI HASH REACTOR EDITION${NC}"
+echo -e "                                     ${DIM}V2.3.3 — PHI HASH REACTOR EDITION${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -21435,7 +21435,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.3.2"
+    local BUILD_VERSION="2.3.3"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -23325,6 +23325,65 @@ fi)
 # Per-coin pool configurations
 coins:
 $COINS_CONFIG
+$(if [[ "$MULTIPORT_ENABLED" == "true" ]] && [[ -n "$MULTIPORT_COINS" ]]; then
+    # Build multi_port YAML from MULTIPORT_COINS and MULTIPORT_WEIGHTS
+    # Note: this runs in a $() subshell — do not use 'local'
+    _OLD_IFS="$IFS"
+    IFS=','
+    _mp_coins=($MULTIPORT_COINS)
+    _mp_weights=($MULTIPORT_WEIGHTS)
+    IFS="$_OLD_IFS"
+
+    # Validate weights: if array is short or sums != 100, redistribute equally
+    _weight_sum=0
+    _weights_valid=true
+    if [[ ${#_mp_weights[@]} -ne ${#_mp_coins[@]} ]]; then
+        _weights_valid=false
+    else
+        for w in "${_mp_weights[@]}"; do
+            _weight_sum=$((_weight_sum + w))
+        done
+        if [[ $_weight_sum -ne 100 ]]; then
+            _weights_valid=false
+        fi
+    fi
+    if [[ "$_weights_valid" == "false" ]]; then
+        _n=${#_mp_coins[@]}
+        _base=$((100 / _n))
+        _mp_weights=()
+        for ((i=0; i<_n-1; i++)); do
+            _mp_weights+=("$_base")
+        done
+        _mp_weights+=("$((100 - _base * (_n - 1)))")
+    fi
+
+    # Determine prefer_coin: use saved value, or pick highest-weight coin
+    _prefer="${MULTIPORT_PREFER_COIN}"
+    if [[ -z "$_prefer" ]]; then
+        _max_w=0
+        _prefer="${_mp_coins[0]}"
+        for i in "${!_mp_coins[@]}"; do
+            if [[ ${_mp_weights[$i]} -gt $_max_w ]]; then
+                _max_w=${_mp_weights[$i]}
+                _prefer="${_mp_coins[$i]}"
+            fi
+        done
+    fi
+
+    echo ""
+    echo "# Multi coin smart port (weighted 24h UTC schedule)"
+    echo "multi_port:"
+    echo "  enabled: true"
+    echo "  port: 16180"
+    echo "  coins:"
+    for i in "${!_mp_coins[@]}"; do
+        echo "    ${_mp_coins[$i]}: { weight: ${_mp_weights[$i]} }"
+    done
+    echo "  check_interval: 30s"
+    echo "  prefer_coin: \"${_prefer}\""
+    echo "  min_time_on_coin: 60s"
+    echo "  timezone: \"${DISPLAY_TIMEZONE:-America/New_York}\""
+fi)
 
 # Shared database for all coins
 database:
@@ -26729,7 +26788,14 @@ get_coin_sync_status() {
             local IBD=$(echo "$INFO" | grep -o '"initialblockdownload":[^,]*' | cut -d: -f2 | tr -d ' ')
             local BLOCKS=$(echo "$INFO" | grep -o '"blocks":[^,]*' | cut -d: -f2 | tr -d ' ')
             local HEADERS=$(echo "$INFO" | grep -o '"headers":[^,]*' | cut -d: -f2 | tr -d ' ')
-            local PCT=$(echo "$PROGRESS" | awk '{printf "%.2f", $1 * 100}')
+            # Prefer blocks/headers for sync percentage — verificationprogress can be
+            # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
+            local PCT
+            if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
+                PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
+            else
+                PCT=$(echo "$PROGRESS" | awk '{printf "%.2f", $1 * 100}')
+            fi
 
             # Check sync: initialblockdownload=false is authoritative (works for BC2 and all chains)
             if [[ "$IBD" == "false" ]] || echo "$PROGRESS" | awk '{exit ($1 >= 0.9999) ? 0 : 1}'; then
@@ -26880,9 +26946,10 @@ show_status() {
     local IBD=$(echo "$INFO" | grep -o '"initialblockdownload":[^,]*' | cut -d: -f2 | tr -d ' ')
     local CHAIN=$(echo "$INFO" | grep -o '"chain":"[^"]*' | cut -d'"' -f4)
 
-    # QBX has near-zero verificationprogress due to low chain work — use blocks/headers instead
+    # Prefer blocks/headers for sync percentage — verificationprogress can be
+    # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
     local PCT
-    if [[ "$COIN_SYMBOL" == "QBX" ]] && [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
+    if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
         PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
     else
         PCT=$(echo "$PROGRESS" | awk '{printf "%.2f", $1 * 100}')
@@ -27313,9 +27380,10 @@ watch_sync() {
             continue
         fi
 
-        # QBX has near-zero verificationprogress due to low chain work — use blocks/headers instead
+        # Prefer blocks/headers for sync percentage — verificationprogress can be
+        # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
         local PCT
-        if [[ "$COIN_SYMBOL" == "QBX" ]] && [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
+        if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
             PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
         else
             PCT=$(echo "$PROGRESS" | awk '{printf "%.2f", $1 * 100}')
@@ -29749,11 +29817,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.3.2-PHI_HASH_REACTOR: Create backup command
+    # V2.3.3-PHI_HASH_REACTOR: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.3.2-PHI_HASH_REACTOR
+# Spiral Pool Backup Utility - V2.3.3-PHI_HASH_REACTOR
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -29798,7 +29866,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.3.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.3.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -30147,7 +30215,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.3.2",
+    "version": "2.3.3",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -30414,7 +30482,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.3.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.3.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -30467,11 +30535,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.3.2-PHI_HASH_REACTOR: Create restore command
+    # V2.3.3-PHI_HASH_REACTOR: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.3.2-PHI_HASH_REACTOR
+# Spiral Pool Restore Utility - V2.3.3-PHI_HASH_REACTOR
 # Restores backups created by spiralpool-backup
 #
 
@@ -30518,7 +30586,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.3.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.3.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -30840,7 +30908,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.3.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.3.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -36562,7 +36630,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.3.2 - PHI HASH REACTOR${NC}"
+    echo -e "                                     ${DIM}V2.3.3 - PHI HASH REACTOR${NC}"
     echo ""
 }
 
