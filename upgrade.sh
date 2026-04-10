@@ -491,6 +491,7 @@ detect_services() {
     echo -e "  Dashboard: ${GREEN}$DASHBOARD_SERVICE${NC}"
     echo -e "  Sentinel:  ${GREEN}$SENTINEL_SERVICE${NC}"
     [[ -n "$HEALTH_SERVICE" ]] && echo -e "  Health:    ${GREEN}$HEALTH_SERVICE${NC}"
+    return 0
 }
 
 # =============================================================================
