@@ -818,14 +818,24 @@ func (c *Coordinator) Run(ctx context.Context) error {
 			go func(id string, p *CoinPool) {
 				defer startWg.Done()
 				c.logger.Infow("Starting coin pool", "poolId", id, "coin", p.Symbol())
-				// Give each pool 90 seconds to start. If the daemon is still syncing
-				// (e.g. DGB at 3% after a fresh install), the sync gate will block
-				// indefinitely. A timeout lets the pool fail fast and move to the
-				// retry list so other coins (and Smart Port) aren't held hostage.
-				startCtx, startCancel := context.WithTimeout(ctx, 90*time.Second)
-				defer startCancel()
-				if err := p.Start(startCtx); err != nil {
-					failedStarts <- startFailure{poolID: id, err: err}
+				// V43 FIX: Pass the coordinator's long-lived ctx to Start(), not a
+				// timeout context. The timeout only gates how long we WAIT — the pool's
+				// internal goroutines (stratum accept loop, message loops) need the
+				// parent context to stay alive for the process lifetime. Previously,
+				// defer startCancel() fired when this goroutine returned, killing the
+				// stratum server's accept loop immediately after successful startup.
+				startDone := make(chan error, 1)
+				go func() { startDone <- p.Start(ctx) }()
+				select {
+				case err := <-startDone:
+					if err != nil {
+						failedStarts <- startFailure{poolID: id, err: err}
+					}
+				case <-time.After(90 * time.Second):
+					// Sync gate blocked too long — move to retry list.
+					// Stop the pool to clean up any partially started resources.
+					p.Stop()
+					failedStarts <- startFailure{poolID: id, err: fmt.Errorf("startup timeout (90s) — daemon likely syncing")}
 				}
 			}(poolID, pool)
 		}
@@ -1102,14 +1112,22 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 				}
 
 				// Pool created, now start it.
-				// Timeout prevents a syncing daemon's sync gate from blocking
-				// the entire retry loop (other coins need retries too).
-				retryStartCtx, retryStartCancel := context.WithTimeout(ctx, 90*time.Second)
-				if err := pool.Start(retryStartCtx); err != nil {
-					retryStartCancel()
+				// V43 FIX: Use time.After for timeout instead of context.WithTimeout.
+				// The pool needs the coordinator's long-lived ctx for its goroutines.
+				// A timeout context killed the stratum accept loop on cancel.
+				retryDone := make(chan error, 1)
+				go func() { retryDone <- pool.Start(ctx) }()
+				var startErr error
+				select {
+				case startErr = <-retryDone:
+				case <-time.After(90 * time.Second):
+					startErr = fmt.Errorf("startup timeout (90s) — daemon likely syncing")
+					pool.Stop()
+				}
+				if startErr != nil {
 					c.logger.Warnw("Coin pool start failed",
 						"coin", coinCfg.Symbol,
-						"error", err,
+						"error", startErr,
 					)
 					if stopErr := pool.Stop(); stopErr != nil {
 						c.logger.Errorw("Error stopping failed coin pool", "coin", coinCfg.Symbol, "error", stopErr)
@@ -1117,8 +1135,6 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 					stillFailed = append(stillFailed, coinCfg)
 					continue
 				}
-
-				retryStartCancel()
 
 				// AUDIT FIX (ISSUE-3): Wire Redis dedup tracker to late-created pools
 				if c.redisDedupTracker != nil {
