@@ -5506,6 +5506,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"digibyte\"
@@ -5541,6 +5542,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"bitcoin\"
@@ -5575,6 +5577,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"bitcoincash\"
@@ -5609,6 +5612,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"bitcoinii\"
@@ -5643,6 +5647,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"namecoin\"
@@ -5677,6 +5682,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 6
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"syscoin\"
@@ -5711,6 +5717,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 6
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"myriadcoin\"
@@ -5745,6 +5752,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 4
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"fractalbitcoin\"
@@ -5779,6 +5787,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 8
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"qbitx\"
@@ -5817,6 +5826,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 8
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"litecoin\"
@@ -5851,6 +5861,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"dogecoin\"
@@ -5885,6 +5896,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 3
           retargetTime: 45
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"digibyte\"
@@ -5919,6 +5931,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"pepecoin\"
@@ -5953,6 +5966,7 @@ generate_docker_stratum_config_multicoin() {
           targetTime: 8
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
     nodes:
       - id: \"primary\"
         host: \"catcoin\"
@@ -22354,6 +22368,7 @@ stratum:
       targetTime: $target_time
       retargetTime: 60    # Adjust every 60 seconds
       variancePercent: 30
+      # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
   banning:
     enabled: true
     banDuration: 600s
@@ -22671,6 +22686,7 @@ configure_stratum_multicoin() {
           targetTime: 4        # 4 seconds (~3-4 shares per 15s block)
           retargetTime: 60     # Adjust every 60 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22717,6 +22733,7 @@ configure_stratum_multicoin() {
           targetTime: 10       # 10 seconds (plenty of shares per 10 min block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22763,6 +22780,7 @@ configure_stratum_multicoin() {
           targetTime: 10       # 10 seconds (plenty of shares per 10 min block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22809,6 +22827,7 @@ configure_stratum_multicoin() {
           targetTime: 10       # 10 seconds (plenty of shares per 10 min block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22855,6 +22874,7 @@ configure_stratum_multicoin() {
           targetTime: 10       # 10 seconds (plenty of shares per 10 min block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22901,6 +22921,7 @@ configure_stratum_multicoin() {
           targetTime: 6        # 6 seconds (~10 shares per 1 min block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22947,6 +22968,7 @@ configure_stratum_multicoin() {
           targetTime: 6        # 6 seconds for multi-algo blocks
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -22993,6 +23015,7 @@ configure_stratum_multicoin() {
           targetTime: 4        # 4 seconds (~7 shares per 30 sec block)
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23039,6 +23062,7 @@ configure_stratum_multicoin() {
           targetTime: 4        # 4 seconds
           retargetTime: 90     # Adjust every 90 seconds
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23089,6 +23113,7 @@ configure_stratum_multicoin() {
           targetTime: 8        # 8 seconds (~18 shares per 2.5 min block)
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23135,6 +23160,7 @@ configure_stratum_multicoin() {
           targetTime: 4        # 4 seconds (~15 shares per 1 min block)
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23183,6 +23209,7 @@ configure_stratum_multicoin() {
           targetTime: 3        # 3 seconds (~5 shares per 15s block)
           retargetTime: 45
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23236,6 +23263,7 @@ configure_stratum_multicoin() {
           targetTime: 4        # 4 seconds (~15 shares per 1 min block)
           retargetTime: 60
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720
@@ -23289,6 +23317,7 @@ configure_stratum_multicoin() {
           targetTime: 8        # 8 seconds (~75 shares per 10 min block)
           retargetTime: 90
           variancePercent: 30
+          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
       version_rolling:
         enabled: true
         mask: 536862720

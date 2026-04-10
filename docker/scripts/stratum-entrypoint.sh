@@ -46,6 +46,7 @@ export STRATUM_DIFF_INITIAL="${STRATUM_DIFF_INITIAL:-5000}"
 export STRATUM_DIFF_MIN="${STRATUM_DIFF_MIN:-0.001}"
 export STRATUM_DIFF_MAX="${STRATUM_DIFF_MAX:-1000000000000}"
 export STRATUM_VARDIFF_TARGET_TIME="${STRATUM_VARDIFF_TARGET_TIME:-4}"
+export STRATUM_USE_CONFIG_DIFFICULTY="${STRATUM_USE_CONFIG_DIFFICULTY:-false}"
 
 # AsicBoost / Version Rolling (required for S19/Vnish firmware)
 export STRATUM_VERSION_ROLLING="${STRATUM_VERSION_ROLLING:-true}"
@@ -401,6 +402,7 @@ generate_v2_config() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"digibyte\"
@@ -438,6 +440,7 @@ generate_v2_config() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"bitcoin\"
@@ -475,6 +478,7 @@ generate_v2_config() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"bitcoincash\"
@@ -512,6 +516,7 @@ generate_v2_config() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"bitcoinii\"
@@ -549,6 +554,7 @@ generate_v2_config() {
           targetTime: 10
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"namecoin\"
@@ -586,6 +592,7 @@ generate_v2_config() {
           targetTime: 6
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"syscoin\"
@@ -623,6 +630,7 @@ generate_v2_config() {
           targetTime: 6
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"myriadcoin\"
@@ -660,6 +668,7 @@ generate_v2_config() {
           targetTime: 4
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"fractalbitcoin\"
@@ -697,6 +706,7 @@ generate_v2_config() {
           targetTime: 8
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"qbitx\"
@@ -736,6 +746,7 @@ generate_v2_config() {
           targetTime: 8
           retargetTime: 60
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"litecoin\"
@@ -773,6 +784,7 @@ generate_v2_config() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"dogecoin\"
@@ -810,6 +822,7 @@ generate_v2_config() {
           targetTime: 3
           retargetTime: 45
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"digibyte\"
@@ -847,6 +860,7 @@ generate_v2_config() {
           targetTime: 4
           retargetTime: 60
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"pepecoin\"
@@ -884,6 +898,7 @@ generate_v2_config() {
           targetTime: 8
           retargetTime: 90
           variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
     nodes:
       - id: \"primary\"
         host: \"catcoin\"

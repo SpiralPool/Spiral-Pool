@@ -636,9 +636,52 @@ func (cp *CoinPool) setupCallbacks() {
 	// CRITICAL: Create per-miner vardiff state when Spiral Router classifies the miner
 	// This provides per-session TargetShareTime, MinDiff, MaxDiff based on miner class
 	cp.stratumServer.SetMinerClassifiedHandler(func(sessionID uint64, profile stratum.MinerProfile) {
+		initialDiff := profile.InitialDiff
+		minDiff := profile.MinDiff
+		maxDiff := profile.MaxDiff
+		targetShareTime := float64(profile.TargetShareTime)
+
+		// UseConfigDifficulty: when enabled, the operator's YAML config values
+		// override auto-detected miner profiles for ALL miner classes.
+		// When disabled (default), config values only apply to MinerClassUnknown.
+		// This gives operators full control over difficulty when auto-detection
+		// assigns incorrect profiles (e.g., stuck at 500 on multi-port).
+		cfgDiff := cp.cfg.Stratum.Difficulty
+		useConfig := cfgDiff.VarDiff.UseConfigDifficulty || profile.Class == stratum.MinerClassUnknown
+		if useConfig {
+			if cfgDiff.Initial > 0 {
+				initialDiff = cfgDiff.Initial
+			}
+			if cfgDiff.VarDiff.MinDiff > 0 {
+				minDiff = cfgDiff.VarDiff.MinDiff
+			}
+			if cfgDiff.VarDiff.MaxDiff > 0 {
+				maxDiff = cfgDiff.VarDiff.MaxDiff
+			}
+			if cfgDiff.VarDiff.TargetTime > 0 {
+				targetShareTime = cfgDiff.VarDiff.TargetTime
+			}
+			if cfgDiff.VarDiff.UseConfigDifficulty {
+				cp.logger.Infow("Using operator config difficulty (useConfigDifficulty=true)",
+					"sessionId", sessionID,
+					"detectedClass", profile.Class.String(),
+					"configInitialDiff", initialDiff,
+					"configMinDiff", minDiff,
+					"configMaxDiff", maxDiff,
+					"configTargetTime", targetShareTime,
+				)
+			} else {
+				cp.logger.Warnw("Miner class unknown — using operator config for vardiff (user-agent may be empty)",
+					"sessionId", sessionID,
+					"configInitialDiff", initialDiff,
+					"configMinDiff", minDiff,
+					"configMaxDiff", maxDiff,
+				)
+			}
+		}
+
 		// DEFENSIVE: Ensure MaxDiff is valid - if 0, something is wrong with profile lookup
 		// This prevents falling back to engine default (1 trillion) which causes runaway difficulty
-		maxDiff := profile.MaxDiff
 		if maxDiff <= 0 {
 			cp.logger.Errorw("SAFEGUARD: Profile MaxDiff is zero or negative, using class default",
 				"sessionId", sessionID,
@@ -679,19 +722,19 @@ func (cp *CoinPool) setupCallbacks() {
 		}
 
 		state := cp.vardiffEngine.NewSessionStateWithProfile(
-			profile.InitialDiff,
-			profile.MinDiff,
+			initialDiff,
+			minDiff,
 			maxDiff,
-			float64(profile.TargetShareTime),
+			targetShareTime,
 		)
 		cp.sessionStates.Store(sessionID, state)
 		cp.logger.Infow("VARDIFF configured with miner profile",
 			"sessionId", sessionID,
 			"class", profile.Class.String(),
-			"initialDiff", profile.InitialDiff,
-			"minDiff", profile.MinDiff,
+			"initialDiff", initialDiff,
+			"minDiff", minDiff,
 			"maxDiff", maxDiff,
-			"targetShareTime", profile.TargetShareTime,
+			"targetShareTime", targetShareTime,
 		)
 		// Update metrics for worker connection (miner is now fully authorized and classified)
 		if session, ok := cp.stratumServer.GetSession(sessionID); ok {

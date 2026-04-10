@@ -95,6 +95,7 @@ coins:
           retargetTime: 60    # Adjust every 60 seconds
           variancePercent: 30
           # blockTime: 15     # Optional: Override block time (auto-detected from coin)
+          # useConfigDifficulty: false  # Set true to use these values instead of auto-detected miner profiles
       banning:
         enabled: true
         banDuration: 600s

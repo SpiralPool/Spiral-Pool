@@ -788,11 +788,11 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 			// Use SetDiffSent() as atomic lock to prevent duplicate sends
 			if session.SetDiffSent() {
 				initialDiff := s.cfg.Difficulty.Initial
-				if s.spiralRouter != nil {
+				if s.spiralRouter != nil && !s.cfg.Difficulty.VarDiff.UseConfigDifficulty {
 					profile := s.spiralRouter.GetProfileWithIP(session.UserAgent, session.RemoteAddr)
 					initialDiff = profile.InitialDiff
-					session.SetDifficulty(initialDiff)
 				}
+				session.SetDifficulty(initialDiff)
 				if err := s.SendDifficulty(session, initialDiff); err != nil {
 					s.logger.Warnw("Failed to send early difficulty after subscribe",
 						"sessionId", session.ID,

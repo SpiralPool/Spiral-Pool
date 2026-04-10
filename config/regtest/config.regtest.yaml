@@ -51,6 +51,7 @@ coins:
           targetTime: 4
           retargetTime: 30
           variancePercent: 30
+          useConfigDifficulty: true  # Regtest: use config values, skip auto-detection
       banning:
         enabled: false          # Disable banning for testing
       connection:

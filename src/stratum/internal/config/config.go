@@ -151,6 +151,15 @@ type VarDiffConfig struct {
 	// they don't apply new difficulty to work-in-progress.
 	// Default: ["cgminer"] if not specified.
 	SlowDiffPatterns []string `yaml:"slowDiffPatterns,omitempty"`
+
+	// UseConfigDifficulty overrides Spiral Router's auto-detected miner profiles
+	// with the operator's config values (initial, minDiff, maxDiff, targetTime).
+	// When true, ALL miners use the config.yaml VarDiff settings regardless of
+	// detected miner class. When false (default), auto-detection assigns optimal
+	// per-device difficulty profiles and config values only apply to unrecognized miners.
+	// Set to true if your miners are getting incorrect auto-detected difficulty
+	// (e.g., stuck at 500 for ASICs on multi-port).
+	UseConfigDifficulty bool `yaml:"useConfigDifficulty,omitempty"`
 }
 
 // BanningConfig defines miner banning behavior

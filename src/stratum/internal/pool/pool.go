@@ -1138,13 +1138,14 @@ func (p *Pool) setupCallbacks() {
 		maxDiff := profile.MaxDiff
 		targetShareTime := float64(profile.TargetShareTime)
 
-		// When the Spiral Router cannot identify the miner (empty or unrecognized
-		// user-agent), fall back to the operator's YAML/env config values instead
-		// of overriding with the restrictive "unknown" profile (500/500/50000).
-		// This ensures ASICs that don't send a user-agent (e.g. some Antminer S19
-		// stock firmware) still get proper difficulty from the operator's config.
-		if profile.Class == stratum.MinerClassUnknown {
-			cfgDiff := p.cfg.Stratum.Difficulty
+		// UseConfigDifficulty: when enabled, the operator's YAML config values
+		// override auto-detected miner profiles for ALL miner classes.
+		// When disabled (default), config values only apply to MinerClassUnknown.
+		// This gives operators full control over difficulty when auto-detection
+		// assigns incorrect profiles (e.g., stuck at 500 on multi-port).
+		cfgDiff := p.cfg.Stratum.Difficulty
+		useConfig := cfgDiff.VarDiff.UseConfigDifficulty || profile.Class == stratum.MinerClassUnknown
+		if useConfig {
 			if cfgDiff.Initial > 0 {
 				initialDiff = cfgDiff.Initial
 			}
@@ -1157,12 +1158,23 @@ func (p *Pool) setupCallbacks() {
 			if cfgDiff.VarDiff.TargetTime > 0 {
 				targetShareTime = cfgDiff.VarDiff.TargetTime
 			}
-			p.logger.Warnw("Miner class unknown — using operator config for vardiff (user-agent may be empty)",
-				"sessionId", sessionID,
-				"configInitialDiff", initialDiff,
-				"configMinDiff", minDiff,
-				"configMaxDiff", maxDiff,
-			)
+			if cfgDiff.VarDiff.UseConfigDifficulty {
+				p.logger.Infow("Using operator config difficulty (useConfigDifficulty=true)",
+					"sessionId", sessionID,
+					"detectedClass", profile.Class.String(),
+					"configInitialDiff", initialDiff,
+					"configMinDiff", minDiff,
+					"configMaxDiff", maxDiff,
+					"configTargetTime", targetShareTime,
+				)
+			} else {
+				p.logger.Warnw("Miner class unknown — using operator config for vardiff (user-agent may be empty)",
+					"sessionId", sessionID,
+					"configInitialDiff", initialDiff,
+					"configMinDiff", minDiff,
+					"configMaxDiff", maxDiff,
+				)
+			}
 		}
 
 		// DEFENSIVE: Ensure MaxDiff is valid - if 0, something is wrong with profile lookup

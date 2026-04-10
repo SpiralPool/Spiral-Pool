@@ -39,6 +39,7 @@ stratum:
       targetTime: ${STRATUM_VARDIFF_TARGET_TIME}
       retargetTime: 60
       variancePercent: 30
+      useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
   versionRolling:
     enabled: ${STRATUM_VERSION_ROLLING}
     mask: ${STRATUM_VERSION_ROLLING_MASK}
