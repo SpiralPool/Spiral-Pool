@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.3.3 - PHI HASH REACTOR EDITION                                 ║
+║  Spiral Sentinel v2.3.4 - PHI HASH REACTOR EDITION                                 ║
 ║  Autonomous SHA-256 Solo Mining Monitor (DGB/BTC/BCH/BC2)                   ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.3.3-PHI_HASH_REACTOR"
+__version__ = "2.3.4-PHI_HASH_REACTOR"
 __codename__ = "PHI_HASH_REACTOR"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -5773,7 +5773,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.3.3-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.3.4-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -5792,7 +5792,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.3.3-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.3.4-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):

@@ -313,7 +313,7 @@ func (s *ServerV2) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "2.3.3-PHI_HASH_REACTOR-V2",
+		Version:  "2.3.4-PHI_HASH_REACTOR-V2",
 		Pools:    pools,
 	}
 
