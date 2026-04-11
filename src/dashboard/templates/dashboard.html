@@ -7816,6 +7816,18 @@
                 updateStatsCoinSelector(data.per_coin_stats);
                 // Record per-coin history for chart switching
                 updatePerCoinStatsHistory(data.per_coin_stats);
+
+                // Auto-select highest-hashrate coin on first load (no user selection yet)
+                const pcsKeys = Object.keys(data.per_coin_stats);
+                if (!_userSelectedCoin && pcsKeys.length >= 2) {
+                    let topCoin = pcsKeys[0], topHr = 0;
+                    pcsKeys.forEach(sym => {
+                        const hr = data.per_coin_stats[sym].hashrate || 0;
+                        if (hr > topHr) { topHr = hr; topCoin = sym; }
+                    });
+                    switchDashboardCoin(topCoin);
+                }
+
                 // Sync stats dropdown with header coin selector
                 if (_userSelectedCoin) {
                     const statsSel = document.getElementById('stats-coin-selector');

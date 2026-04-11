@@ -5475,12 +5475,12 @@ def identify_miner(ip, timeout=5):
                 headers={"User-Agent": "SpiralPool-Scanner/1.0"}
             )
             if response.status_code == 200:
-                data = response.json()
+                data = _normalize_nmaxe_v3(response.json())
 
                 # Determine miner type from response
                 # Use boardVersion as primary identifier (more reliable than hostname)
-                hostname = data.get('hostname', '').lower()
-                version = data.get('version', '').lower()
+                hostname = data.get('hostname', data.get('hostName', '')).lower()
+                version = data.get('version', data.get('fwVersion', '')).lower()
                 board_version = data.get('boardVersion', data.get('board', '')).lower()
                 asic_model = data.get('ASICModel', '').lower()
                 # Check if stratum URL format gives us a hint - NerdQAxe uses hostname-only
@@ -7156,6 +7156,59 @@ def fetch_epic_http(ip, port=4028, username="root", password="letmein", timeout=
         }
 
 
+def _normalize_nmaxe_v3(data):
+    """Flatten NMAxe v3.x nested API response to v2.x flat format.
+
+    v3.0.10+ restructured the /api/system/info response into sub-objects:
+      identity.{hwModel,fwVersion,hostName}, miner.{hashRate,sAccepted,...},
+      temps.{asic,vcore}, power.{power,...}, asic.{freqReq,vcoreReal,...}
+    This normalizer hoists those nested fields back to the top level so all
+    existing NMaxe code (fetch, detect, overclock, status) keeps working.
+    Returns original data unchanged if already flat (v2.x) or not NMaxe.
+    """
+    identity = data.get('identity')
+    if not isinstance(identity, dict):
+        return data  # Not v3 format — return as-is
+
+    # Only normalize if this is actually an NMaxe device
+    hw = str(identity.get('hwModel', '')).upper()
+    if hw != 'NMAXE':
+        return data
+
+    miner = data.get('miner', {})
+    temps = data.get('temps', {})
+    power_obj = data.get('power', {})
+    asic = data.get('asic', {})
+    stratum = data.get('stratum', {})
+    fans = data.get('fans', [])
+
+    flat = dict(data)  # Keep original keys (fans, stratum remain as-is)
+    # Identity
+    flat['hwModel'] = identity.get('hwModel', '')
+    flat['fwVersion'] = identity.get('fwVersion', '')
+    flat['hostName'] = identity.get('hostName', '')
+    # Miner stats
+    flat['hashRate'] = miner.get('hashRate', 0)
+    flat['sharesAccepted'] = miner.get('sAccepted', 0)
+    flat['sharesRejected'] = miner.get('sRejected', 0)
+    flat['uptimeSeconds'] = miner.get('uptimeSeconds', 0)
+    flat['bestDiffEver'] = miner.get('bestDiffEver', '0')
+    # Temps
+    flat['asicTemp'] = temps.get('asic', 0)
+    flat['vcoreTemp'] = temps.get('vcore', 0)
+    flat['mcuTemp'] = temps.get('vcore', 0)  # v2 had mcuTemp, closest v3 equivalent
+    # Power (v2 had flat 'power' as number, v3 nests it)
+    flat['power'] = power_obj.get('power', 0) if isinstance(power_obj, dict) else power_obj
+    # ASIC settings
+    flat['freqReq'] = asic.get('freqReq', 0)
+    flat['vcoreActual'] = asic.get('vcoreReal', 0)
+    flat['vcoreReq'] = asic.get('vcoreReq', 0)
+    # Stratum — v2 had stratum.used.url, v3 has stratum.url directly
+    if isinstance(stratum, dict) and 'url' in stratum and 'used' not in stratum:
+        flat['stratum'] = {'used': {'url': stratum.get('url', '')}}
+    return flat
+
+
 def fetch_axeos(ip, timeout=5):
     """Fetch data from AxeOS/NMAXE device via HTTP API"""
     # SECURITY: Validate IP to prevent SSRF attacks
@@ -7168,9 +7221,9 @@ def fetch_axeos(ip, timeout=5):
         url = f"http://{ip}/api/system/info"
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()
-        data = response.json()
+        data = _normalize_nmaxe_v3(response.json())
 
-        # NMAxe firmware (v2.9.x+) uses a completely different field schema from standard AxeOS.
+        # NMAxe firmware uses a completely different field schema from standard AxeOS.
         # Detect by: hwModel == "NMAxe", OR has NMAxe-specific fields (asicTemp, fans array).
         # NOTE: Cannot use isinstance(stratum, dict) alone — NerdQAxe++ v1.0.36+ also has a
         # nested stratum object but uses standard AxeOS field names (temp, not asicTemp).
@@ -15126,13 +15179,13 @@ def get_axeos_stats():
     if not validate_miner_ip(ip):
         return jsonify({"success": False, "error": "Invalid IP address - only private network IPs allowed"})
 
-    # Get system info from AxeOS API
-    system_info = axeos_api_call(ip, "/api/system/info")
+    # Get system info from AxeOS API (normalize v3 nested format to flat)
+    system_info = _normalize_nmaxe_v3(axeos_api_call(ip, "/api/system/info"))
 
     # Get current status (standard AxeOS only — NMAxe doesn't have /api/system)
     is_nmaxe_device = (
         str(system_info.get('hwModel', '')).upper() == 'NMAXE' or
-        isinstance(system_info.get('stratum'), dict)
+        (isinstance(system_info.get('stratum'), dict) and 'asicTemp' in system_info)
     )
     status = system_info if is_nmaxe_device else axeos_api_call(ip, "/api/system")
 
@@ -17144,10 +17197,10 @@ def batch_update_pool():
                 # Auto-detect NerdQAxe if not already identified (handles misconfig)
                 if not is_nerdqaxe:
                     try:
-                        system_info = axeos_api_call(ip, "/api/system/info")
+                        system_info = _normalize_nmaxe_v3(axeos_api_call(ip, "/api/system/info"))
                         if not system_info.get("error"):
-                            hostname = (system_info.get("hostname") or "").lower()
-                            version = (system_info.get("version") or "").lower()
+                            hostname = (system_info.get("hostname") or system_info.get("hostName") or "").lower()
+                            version = (system_info.get("version") or system_info.get("fwVersion") or "").lower()
                             board_version = (system_info.get("boardVersion") or system_info.get("board") or "").lower()
                             asic_model = (system_info.get("ASICModel") or "").lower()
                             stratum_url_check = (system_info.get("stratumURL") or "").lower()
