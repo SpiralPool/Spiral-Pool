@@ -506,7 +506,7 @@ func (ms *MultiServer) handleShare(share *protocol.Share) *protocol.ShareResult 
 	ms.coinPoolsMu.RUnlock()
 
 	// Track accepted share count on session (used by connections API for dashboard)
-	if result.Accepted {
+	if result.Accepted && ms.server != nil {
 		if session, ok := ms.server.GetSession(sessionID); ok {
 			session.IncrementShareCount()
 		}
@@ -547,7 +547,7 @@ func (ms *MultiServer) runVardiff(sessionID uint64, share *protocol.Share) {
 		// Miner-specific cooldown: cgminer-based miners need longer cooldown
 		// because cgminer doesn't apply new difficulty to work-in-progress
 		minRetargetInterval := 5.0
-		if ms.server.IsSlowDiffApplier(share.UserAgent) {
+		if ms.server != nil && ms.server.IsSlowDiffApplier(share.UserAgent) {
 			minRetargetInterval = 30.0
 		}
 
@@ -590,7 +590,7 @@ func (ms *MultiServer) runVardiff(sessionID uint64, share *protocol.Share) {
 	}
 
 	// Send new difficulty to the miner
-	if changed {
+	if changed && ms.server != nil {
 		if session, ok := ms.server.GetSession(sessionID); ok {
 			if err := ms.server.SendDifficulty(session, newDiff); err != nil {
 				ms.logger.Warnw("Failed to send vardiff update (multi-port)",
