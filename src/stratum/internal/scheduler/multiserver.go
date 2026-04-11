@@ -14,6 +14,7 @@ import (
 
 	"github.com/spiralpool/stratum/internal/config"
 	"github.com/spiralpool/stratum/internal/stratum"
+	"github.com/spiralpool/stratum/internal/vardiff"
 	"github.com/spiralpool/stratum/pkg/protocol"
 	"go.uber.org/zap"
 )
@@ -85,6 +86,10 @@ type MultiServer struct {
 	// Difficulty monitoring and coin selection
 	monitor  *Monitor
 	selector *Selector
+
+	// VARDIFF engine and per-session state
+	vardiffEngine *vardiff.Engine
+	sessionStates sync.Map // map[uint64]*vardiff.SessionState
 
 	// Per-session coin tracking
 	// Maps session ID -> symbol of the coin currently assigned
@@ -226,6 +231,16 @@ func (ms *MultiServer) Start(ctx context.Context) error {
 		stratumCfg.RateLimiting.PreAuthMessageLimit = 20
 	}
 
+	// Initialize VARDIFF engine from config (shared across all multi-port sessions)
+	if stratumCfg.Difficulty.VarDiff.Enabled {
+		ms.vardiffEngine = vardiff.NewEngine(stratumCfg.Difficulty.VarDiff)
+		ms.logger.Infow("VARDIFF engine initialized for multi-port",
+			"minDiff", stratumCfg.Difficulty.VarDiff.MinDiff,
+			"maxDiff", stratumCfg.Difficulty.VarDiff.MaxDiff,
+			"targetTime", stratumCfg.Difficulty.VarDiff.TargetTime,
+		)
+	}
+
 	// Create the stratum server
 	ms.server = stratum.NewServer(stratumCfg, ms.cfg.Logger)
 
@@ -315,6 +330,7 @@ func (ms *MultiServer) handleDisconnect(session *protocol.Session) {
 	ms.activeSessions.Add(-1)
 	ms.sessionCoin.Delete(session.ID)
 	ms.sessionClass.Delete(session.ID)
+	ms.sessionStates.Delete(session.ID)
 	ms.switchGrace.Delete(session.ID)
 	ms.selector.RemoveSession(session.ID)
 }
@@ -357,6 +373,48 @@ func (ms *MultiServer) handleMinerClassified(sessionID uint64, profile stratum.M
 				)
 			}
 		}
+	}
+
+	// Create VARDIFF session state for this miner
+	if ms.vardiffEngine != nil {
+		cfgDiff := ms.cfg.Stratum.Difficulty
+		initialDiff := profile.InitialDiff
+		minDiff := profile.MinDiff
+		maxDiff := profile.MaxDiff
+		targetShareTime := float64(profile.TargetShareTime)
+
+		useConfig := cfgDiff.VarDiff.UseConfigDifficulty || profile.Class == stratum.MinerClassUnknown
+		if useConfig {
+			if cfgDiff.Initial > 0 {
+				initialDiff = cfgDiff.Initial
+			}
+			if cfgDiff.VarDiff.MinDiff > 0 {
+				minDiff = cfgDiff.VarDiff.MinDiff
+			}
+			if cfgDiff.VarDiff.MaxDiff > 0 {
+				maxDiff = cfgDiff.VarDiff.MaxDiff
+			}
+			if cfgDiff.VarDiff.TargetTime > 0 {
+				targetShareTime = cfgDiff.VarDiff.TargetTime
+			}
+		}
+
+		// Safeguard: ensure maxDiff is valid to prevent runaway difficulty
+		if maxDiff <= 0 {
+			maxDiff = 50000
+		}
+
+		state := ms.vardiffEngine.NewSessionStateWithProfile(initialDiff, minDiff, maxDiff, targetShareTime)
+		ms.sessionStates.Store(sessionID, state)
+		ms.logger.Infow("VARDIFF state created for multi-port session",
+			"sessionId", sessionID,
+			"class", profile.Class.String(),
+			"initialDiff", initialDiff,
+			"minDiff", minDiff,
+			"maxDiff", maxDiff,
+			"targetShareTime", targetShareTime,
+			"useConfigDifficulty", cfgDiff.VarDiff.UseConfigDifficulty,
+		)
 	}
 
 	// Re-evaluate coin assignment now that we know the miner class
@@ -447,7 +505,102 @@ func (ms *MultiServer) handleShare(share *protocol.Share) *protocol.ShareResult 
 	result := pool.HandleMultiPortShare(share)
 	ms.coinPoolsMu.RUnlock()
 
+	// Track accepted share count on session (used by connections API for dashboard)
+	if result.Accepted {
+		if session, ok := ms.server.GetSession(sessionID); ok {
+			session.IncrementShareCount()
+		}
+	}
+
+	// VARDIFF: Adjust difficulty based on share timing (mirrors coinpool.handleShare logic)
+	if result.Accepted && ms.vardiffEngine != nil {
+		ms.runVardiff(sessionID, share)
+	}
+
 	return result
+}
+
+// runVardiff performs difficulty adjustment for a multi-port session after an accepted share.
+// This mirrors the vardiff logic in coinpool.handleShare() — aggressive retarget during ramp-up
+// and when share rate deviates significantly, plus normal retarget for steady-state.
+func (ms *MultiServer) runVardiff(sessionID uint64, share *protocol.Share) {
+	stateVal, ok := ms.sessionStates.Load(sessionID)
+	if !ok {
+		return
+	}
+	state := stateVal.(*vardiff.SessionState)
+
+	stats := ms.vardiffEngine.GetStats(state)
+	var newDiff float64
+	var changed bool
+
+	// Get shares since last retarget for accurate rate calculation
+	sharesSinceRetarget := state.SharesSinceRetarget()
+
+	// Aggressive retargeting during ramp-up (first 10 shares) or when share rate
+	// is significantly off target (asymmetric: 2x fast, 3x slow)
+	needsAggressive := stats.TotalShares <= 10 || ms.vardiffEngine.ShouldAggressiveRetarget(state)
+
+	if needsAggressive && sharesSinceRetarget >= 2 {
+		elapsedSec := time.Since(stats.LastRetargetTime).Seconds()
+
+		// Miner-specific cooldown: cgminer-based miners need longer cooldown
+		// because cgminer doesn't apply new difficulty to work-in-progress
+		minRetargetInterval := 5.0
+		if ms.server.IsSlowDiffApplier(share.UserAgent) {
+			minRetargetInterval = 30.0
+		}
+
+		// Exponential backoff when difficulty is already optimal
+		backoffCount := state.ConsecutiveNoChange()
+		if backoffCount > 0 {
+			backoffMultiplier := float64(backoffCount + 1)
+			if backoffMultiplier > 4.0 {
+				backoffMultiplier = 4.0
+			}
+			minRetargetInterval *= backoffMultiplier
+		}
+
+		if elapsedSec > minRetargetInterval {
+			oldDiff := stats.CurrentDifficulty
+			newDiff, changed = ms.vardiffEngine.AggressiveRetarget(state, sharesSinceRetarget, elapsedSec)
+			if changed {
+				ms.logger.Infow("VARDIFF retarget (multi-port)",
+					"sessionId", sessionID,
+					"totalShares", stats.TotalShares,
+					"sharesSinceRetarget", sharesSinceRetarget,
+					"elapsedSec", elapsedSec,
+					"oldDiff", oldDiff,
+					"newDiff", newDiff,
+					"factor", newDiff/oldDiff,
+				)
+			}
+		}
+	}
+
+	// Normal vardiff after ramp-up period
+	if !changed {
+		newDiff, changed = ms.vardiffEngine.RecordShare(state)
+		if changed {
+			ms.logger.Debugw("VARDIFF adjusted (multi-port)",
+				"sessionId", sessionID,
+				"newDiff", newDiff,
+			)
+		}
+	}
+
+	// Send new difficulty to the miner
+	if changed {
+		if session, ok := ms.server.GetSession(sessionID); ok {
+			if err := ms.server.SendDifficulty(session, newDiff); err != nil {
+				ms.logger.Warnw("Failed to send vardiff update (multi-port)",
+					"sessionId", sessionID,
+					"newDiff", newDiff,
+					"error", err,
+				)
+			}
+		}
+	}
 }
 
 // switchSessionCoin hot-swaps a session from one coin to another.
