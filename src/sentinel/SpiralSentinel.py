@@ -19694,6 +19694,12 @@ def monitor_loop(state):
                     # behavior (cgminer/Avalon counts stale as subset of rejected, inflating %)
                     # Threshold raised from 15% to 20% — Avalon chips have transient spikes during
                     # job transitions that are normal hardware behavior, not real pool-side issues.
+                    #
+                    # CROSS-REFERENCE: Miner-reported rejection counters (cgminer API) include
+                    # internal hardware rejects that never reach the pool. This inflates the rate
+                    # far beyond actual pool-side rejections (e.g., miner reports 20% but pool sees 1%).
+                    # Before alerting, verify the pool's own rejection rate from Prometheus metrics.
+                    # Only fire if pool-side rate also exceeds 5% — otherwise it's HW-only noise.
                     if name in state.miner_stale_history and len(state.miner_stale_history[name]) >= 15:
                         recent = [s for s in state.miner_stale_history[name][-15:] if not s.get("is_baseline")]
                         total_acc = sum(s.get("accepted", 0) for s in recent)
@@ -19705,24 +19711,48 @@ def monitor_loop(state):
                         if total_shares >= 100 and true_rej > 0:
                             reject_pct = (true_rej / total_shares) * 100
                             if reject_pct > 20:
-                                rej_alert_key = f"share_rejection_spike:{name}"
-                                last_rej_alert = state.last_alerts.get(rej_alert_key, 0)
-                                rej_cooldown = ALERT_COOLDOWNS.get("share_rejection_spike", 3600)
-                                if (current_time - last_rej_alert) >= rej_cooldown:
-                                    stale_pct = (total_stale / total_shares) * 100 if total_shares > 0 else 0
-                                    send_alert("share_rejection_spike", create_rejection_spike_embed(name, reject_pct, total_acc, true_rej, total_stale, stale_pct), state, miner_name=name)
-                                    state.last_alerts[rej_alert_key] = current_time
-                                    logger.warning(f"REJECTION SPIKE: {sanitize_log_input(name)} {reject_pct:.1f}% reject + {stale_pct:.1f}% stale ({true_rej}+{total_stale}/{total_shares})")
-                                    # Kick the stratum session — forces a clean reconnect and difficulty
-                                    # re-negotiation, which resolves most rejection spikes without a reboot
-                                    rej_miner_ip = next(
-                                        (m.get("ip") for mt in ALL_MINER_TYPES for m in MINERS.get(mt, []) if m["name"] == name),
-                                        None
-                                    )
-                                    if rej_miner_ip:
-                                        kicked = kick_stratum_session(rej_miner_ip)
-                                        if kicked:
-                                            logger.info(f"REJECTION SPIKE: kicked {kicked} stratum session(s) for {sanitize_log_input(name)} @ {rej_miner_ip}")
+                                # Cross-reference with pool-side Prometheus metrics before alerting.
+                                # Miner-reported "Rejected" includes internal HW rejects that never
+                                # reach the pool (Avalon cgminer API inflates this significantly).
+                                # Only alert if the pool itself confirms elevated rejection rate.
+                                _pool_side_confirmed = False
+                                _pool_rej_pct = 0.0
+                                try:
+                                    _prom = fetch_prometheus_metrics()
+                                    if _prom:
+                                        _pool_acc = _prom.get("stratum_shares_accepted_total", 0)
+                                        _pool_rej = _prom.get("stratum_shares_rejected_total", 0)
+                                        _pool_total = _pool_acc + _pool_rej
+                                        if _pool_total > 0:
+                                            _pool_rej_pct = (_pool_rej / _pool_total) * 100
+                                            _pool_side_confirmed = _pool_rej_pct > 5
+                                    else:
+                                        # Metrics unavailable — fall back to trusting miner data
+                                        _pool_side_confirmed = True
+                                except Exception:
+                                    _pool_side_confirmed = True  # Metrics fetch failed, don't suppress
+
+                                if not _pool_side_confirmed:
+                                    logger.debug(f"REJECTION SPIKE suppressed: {sanitize_log_input(name)} miner reports {reject_pct:.1f}% but pool-side is only {_pool_rej_pct:.1f}% — miner HW rejects inflating count")
+                                else:
+                                    rej_alert_key = f"share_rejection_spike:{name}"
+                                    last_rej_alert = state.last_alerts.get(rej_alert_key, 0)
+                                    rej_cooldown = ALERT_COOLDOWNS.get("share_rejection_spike", 3600)
+                                    if (current_time - last_rej_alert) >= rej_cooldown:
+                                        stale_pct = (total_stale / total_shares) * 100 if total_shares > 0 else 0
+                                        send_alert("share_rejection_spike", create_rejection_spike_embed(name, reject_pct, total_acc, true_rej, total_stale, stale_pct), state, miner_name=name)
+                                        state.last_alerts[rej_alert_key] = current_time
+                                        logger.warning(f"REJECTION SPIKE: {sanitize_log_input(name)} {reject_pct:.1f}% reject + {stale_pct:.1f}% stale ({true_rej}+{total_stale}/{total_shares}) [pool-side: {_pool_rej_pct:.1f}%]")
+                                        # Kick the stratum session — forces a clean reconnect and difficulty
+                                        # re-negotiation, which resolves most rejection spikes without a reboot
+                                        rej_miner_ip = next(
+                                            (m.get("ip") for mt in ALL_MINER_TYPES for m in MINERS.get(mt, []) if m["name"] == name),
+                                            None
+                                        )
+                                        if rej_miner_ip:
+                                            kicked = kick_stratum_session(rej_miner_ip)
+                                            if kicked:
+                                                logger.info(f"REJECTION SPIKE: kicked {kicked} stratum session(s) for {sanitize_log_input(name)} @ {rej_miner_ip}")
 
                     # Track pool-side share verification (if enabled)
                     if CONFIG.get("pool_share_validation", True):
