@@ -1378,13 +1378,23 @@ def detect_dns_seeds(chainparams_content: str) -> List[str]:
 # DOCKER FILE GENERATORS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def generate_node_dockerfile(params: CoinParams, release_url: Optional[str] = None) -> str:
+def generate_node_dockerfile(
+    params: CoinParams,
+    release_url: Optional[str] = None,
+    github_url: Optional[str] = None,
+) -> str:
     """
     Generate Dockerfile for the coin's full node.
 
     Uses pre-built binary from release_url if provided; otherwise compiles
-    from source using the standard Bitcoin Core build system.
+    from source using github_url. Raises ValueError if neither is provided.
     """
+    if not release_url and not github_url:
+        raise ValueError(
+            f"generate_node_dockerfile({params.symbol}): need either release_url "
+            f"(pre-built binary) or github_url (source compile). Pass --github or "
+            f"--binary-url on the CLI."
+        )
     coinlower = params.symbol.lower()
     symbol_upper = params.symbol.upper()
     algo_desc = "Scrypt" if params.algorithm == "scrypt" else "SHA-256d"
@@ -1440,7 +1450,6 @@ RUN ARCHIVE="$(basename "{release_url}")" \\
     else:
         install_section = f"""
 # Install build dependencies (compile from source — no pre-built binary detected)
-# TODO: Set GITHUB_REPO_URL below to the actual repository before building
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     curl wget ca-certificates libzmq3-dev libzmq5-dev gosu gettext-base \\
     build-essential autoconf libtool pkg-config git \\
@@ -1452,9 +1461,8 @@ RUN useradd -r -m -s /bin/bash {coinlower} \\
     && mkdir -p /home/{coinlower}/.{coinlower} \\
     && chown -R {coinlower}:{coinlower} /home/{coinlower}
 
-# TODO: Replace GITHUB_REPO_URL with the actual repository URL before building
 WORKDIR /tmp
-RUN git clone --depth=1 GITHUB_REPO_URL /tmp/{coinlower}-src \\
+RUN git clone --depth=1 {github_url} /tmp/{coinlower}-src \\
     && cd /tmp/{coinlower}-src \\
     && ./autogen.sh \\
     && ./configure --without-gui --disable-tests \\
@@ -2288,7 +2296,7 @@ Examples:
     conf_content = ""
     if not getattr(args, 'skip_docker', False):
         dns_seeds = detect_dns_seeds(chainparams_content) if chainparams_content else []
-        dockerfile_content = generate_node_dockerfile(params, release_url)
+        dockerfile_content = generate_node_dockerfile(params, release_url, args.github)
         conf_content = generate_conf_template(params, dns_seeds)
 
     # Step D: Native install script
