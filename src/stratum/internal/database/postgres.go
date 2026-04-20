@@ -660,7 +660,7 @@ func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context) ([]*Block, error
 			   COALESCE(last_verified_tip, '') as last_verified_tip
 		FROM %s
 		ORDER BY blockheight DESC
-		LIMIT 200
+		LIMIT 5000
 	`, tableName)
 
 	rows, err := db.pool.Query(ctx, query)
