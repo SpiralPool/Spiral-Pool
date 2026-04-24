@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <strong>Contact:</strong> spiralpool@proton.me &bull; Discord: Fibonacci#1618
+  <strong>Written By: Fibonacci#1618</strong>
 </p>
 
 <p align="center">
