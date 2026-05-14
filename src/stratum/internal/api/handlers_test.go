@@ -47,6 +47,14 @@ func TestValidAddressPattern(t *testing.T) {
 		{"BCH CashAddr short", "qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a", true},
 		{"BCH CashAddr full", "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a", true},
 
+		// Bitcoin Cash II (BCH2) addresses — same payload format, different prefix
+		{"BCH2 CashAddr short", "qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a", true},
+		{"BCH2 CashAddr full", "bitcoincashii:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a", true},
+
+		// Bitcoin Silver (BTCS) addresses
+		{"BTCS bech32 SegWit bs1q", "bs1qw508d6qejxtdg4y5r3zarvary0c5xw7kvydt7sh", true},
+		{"BTCS bech32 Taproot bs1p", "bs1pw508d6qejxtdg4y5r3zarvary0c5xw7kzqhq6k", true},
+
 		// Invalid addresses
 		{"empty", "", false},
 		{"too short", "abc", false},
@@ -148,6 +156,9 @@ func (m *mockStatsProvider) GetNetworkHashrate() float64     { return 7.69e15 }
 func (m *mockStatsProvider) GetBlocksFound() int64           { return 2 }
 func (m *mockStatsProvider) GetBlockReward() float64         { return 726.0 }
 func (m *mockStatsProvider) GetPoolEffort() float64          { return 42.5 }
+func (m *mockStatsProvider) GetAcceptedShares() int64        { return 0 }
+func (m *mockStatsProvider) GetRejectedShares() int64        { return 0 }
+func (m *mockStatsProvider) GetBestShareDiff() float64       { return 0 }
 
 // TestRouterProfile verifies profile structure.
 func TestRouterProfile(t *testing.T) {

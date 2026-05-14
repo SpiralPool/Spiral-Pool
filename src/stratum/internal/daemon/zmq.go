@@ -488,6 +488,7 @@ func (z *ZMQListener) receiveLoop(ctx context.Context) {
 			}
 			z.logger.Infow("Received block notification via ZMQ",
 				"hashLen", len(body),
+				"endpoint", z.cfg.Endpoint,
 			)
 			if z.onBlock != nil {
 				z.onBlock(body)

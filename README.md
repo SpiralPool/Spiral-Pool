@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Hash Reactor V2.4.2 </em>
+  <em>Phi Hash Reactor V2.5.0</em>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@ Block rewards are embedded directly in the coinbase transaction paying the **min
 
 At its core is the **Spiral Router** &mdash; a miner classification engine that identifies miners via 47 verified user-agent patterns at connection time and maps each to one of 15 SHA-256d or 8 Scrypt difficulty profiles before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4&times; up / 0.75&times; down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
 
-14 coins. 2 algorithms. 6 merge-mining pairs. One binary.
+17 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
 ### No Tiers. No Licensing. No Strings.
 
@@ -69,7 +69,7 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, DGB 60 GB&rarr;5 GB |
 | **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 25 themes (port 1618) |
 | **Spiral Sentinel** | Device discovery, auto-scan (BraiinsOS/Vnish), stratum &amp; wallet mismatch detection, health/temp/hashrate alerts, block notifications, dry streak &amp; difficulty detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, webhooks |
-| **Multi coin smart port** | Single port (16180) rotating SHA-256d coins on a 24h weighted schedule with failover |
+| **Multi coin smart port** | Single port (16180) rotating SHA-256d coins by either a 24h weighted schedule (TIME mode) or live lowest-network-difficulty selection (DIFFICULTY mode), with failover |
 | **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link (operator-initiated, no auto-swaps). See [TERMS.md 5D](TERMS.md) |
 | **Runtime tuning** | Live operator control via `spiralctl` CLI |
 | **Prometheus metrics** | Per-session observability with worker-level labels |
@@ -99,12 +99,15 @@ Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spir
 |------|--------|------------|------------------|
 | Bitcoin | BTC | 10 min | Parent chain |
 | Bitcoin Cash | BCH | 10 min | &mdash; |
+| Bitcoin Cash II | BCH2 | 10 min | &mdash; |
 | DigiByte | DGB | 15 sec | &mdash; |
 | Bitcoin II | BC2 | 10 min | &mdash; |
+| Bitcoin Silver | BTCS | 5 min | &mdash; |
 | Namecoin | NMC | 10 min | BTC (AuxPoW, chain ID 1) |
 | Syscoin | SYS | 2.5 min | BTC (AuxPoW, chain ID 16) &mdash; merge-mining only |
 | Myriad | XMY | 1 min | BTC (AuxPoW, chain ID 90) |
 | Fractal Bitcoin | FBTC | 30 sec | BTC (AuxPoW, chain ID 8228) |
+| eCash | XEC | 10 min | &mdash; |
 | Q-BitX | QBX | 2.5 min | &mdash; |
 
 ### Scrypt
@@ -127,7 +130,7 @@ BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
       ├── XMY  (Myriad)
       └── FBTC (Fractal Bitcoin)
 
-QBX (standalone — no merge mining)
+QBX, XEC (standalone — no merge mining)
 ```
 
 ---
@@ -169,20 +172,21 @@ QBX (standalone — no merge mining)
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Ubuntu 24.04.x LTS** | **Primary** | Native install. Docker available. **x86_64 only.** |
+| **Ubuntu 24.04.x LTS** | **Supported** | Native install. Docker available. **x86_64 only.** |
+| **Ubuntu 26.04.x LTS** | **Supported** | Native install. Docker available. **x86_64 only.** |
+| **Debian 13 "Trixie"** | **Supported** | Native install. **x86_64 only.** Docker images use Ubuntu base. |
 | **Windows 11 &mdash; Docker Desktop** | **Experimental** | Automated single-coin setup via `install-windows.ps1`. See [Windows Guide](docs/setup/WINDOWS_GUIDE.md). |
 | **Windows 11 &mdash; WSL2 Native** | **Experimental** | Full feature set via `install.sh` inside WSL2. Requires [port forwarding](scripts/windows/start-wsl2-proxy.bat) and [shutdown hook](scripts/windows/wsl2-shutdown-hook.ps1). See [Windows Guide](docs/setup/WINDOWS_GUIDE.md). |
-| **ARM / Raspberry Pi** | **Not Tested** | All binaries target x86_64. ARM may not work. See [WARNINGS.md](WARNINGS.md). |
 
 ---
 
 ## Quick Start
 
-> **New to servers?** See the [Server Preparation Guide](docs/setup/OPERATIONS.md#0-server-preparation--ubuntu-2404x-lts-noble-numbat) first.
+> **New to servers?** See the [Server Preparation Guide](docs/setup/OPERATIONS.md#0-server-preparation--ubuntu-2404x-lts-or-2604x-lts) first.
 
 ### Prerequisites
 
-- Ubuntu Server 24.04.x LTS (minimized), x86_64
+- Ubuntu Server 24.04.x LTS or 26.04.x LTS (minimized) **or Debian 13 "Trixie"**, x86_64
 - 10 GB RAM minimum (16 GB recommended)
 - 150 GB SSD minimum (Bitcoin: ~600 GB &mdash; see [Storage Requirements](docs/setup/OPERATIONS.md#2-storage-requirements))
 - IPv4 network (IPv6 not supported)
@@ -220,7 +224,7 @@ cd docker && cp .env.example .env
 docker compose --profile dgb up -d
 ```
 
-Docker supports V1 + V2 Stratum (plain, TLS, Noise), all 14 coins, multi-coin mode, and merge mining. For HA with VIP failover, use native installation. See [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md).
+Docker supports V1 + V2 Stratum (plain, TLS, Noise), all 17 coins, multi-coin mode, and merge mining. For HA with VIP failover, use native installation. See [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md).
 
 ### Connect Your Miners
 
@@ -243,7 +247,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.4.2 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.5.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -316,4 +320,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Phi Hash Reactor 2.4.2 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.5.0 &mdash; Convergent difficulty. Minimal oscillation.*

@@ -116,6 +116,8 @@ func runConfigValidate(args []string) error {
 		// Alphabetically ordered (no coin preference)
 		{"Bitcoin II", DefaultBC2Config, "bc2"},
 		{"Bitcoin Cash", DefaultBCHConfig, "bch"},
+		{"Bitcoin Cash II", DefaultBCH2Config, "bch2"},
+		{"Bitcoin Silver", DefaultBTCSConfig, "btcs"},
 		{"Bitcoin Knots", DefaultBTCConfig, "btc"},
 		{"Catcoin", DefaultCATConfig, "cat"},
 		{"DigiByte", DefaultDGBConfig, "dgb"},
@@ -127,6 +129,7 @@ func runConfigValidate(args []string) error {
 		{"PepeCoin", DefaultPEPConfig, "pep"},
 		{"Q-BitX", DefaultQBXConfig, "qbx"},
 		{"Syscoin", DefaultSYSConfig, "sys"},
+		{"eCash", DefaultXECConfig, "xec"},
 		{"Myriad", DefaultXMYConfig, "xmy"},
 	}
 

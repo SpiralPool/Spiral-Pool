@@ -2,11 +2,22 @@
 
 Single stratum port that mines multiple SHA-256d coins. Miners connect once — the pool handles everything.
 
+The smart port supports two routing modes:
+
+- **TIME** (default) — distributes mining time across configured coins on a weighted 24-hour schedule.
+- **DIFFICULTY** — always routes miners to the coin with the lowest current network difficulty.
+
+Mode is selected via the `mode` field in the `multi_port:` config block (or `MULTIPORT_MODE` env var for Docker / `SMARTPORT_MODE` in the docker entrypoint).
+
 ---
 
 ## How It Works
 
-The multi-coin port runs a standard stratum server on a dedicated port (default: **16180**). When a miner connects, the pool assigns it to whichever coin's time slot is active. At regular intervals (`check_interval`), the pool checks the current time (in the configured timezone) against the 24-hour schedule and may rotate miners to a different coin by sending a new `mining.notify` with `clean_jobs=true`. The miner doesn't know or care which coin it's hashing — it just works on whatever job template the pool sends.
+The multi-coin port runs a standard stratum server on a dedicated port (default: **16180**). When a miner connects, the pool assigns it to a coin according to the active routing mode and rotates them at regular intervals (`check_interval`) by sending a new `mining.notify` with `clean_jobs=true`. The miner doesn't know or care which coin it's hashing — it just works on whatever job template the pool sends.
+
+**TIME mode:** the pool checks the current time (in the configured timezone) against the 24-hour schedule and switches at slot boundaries.
+
+**DIFFICULTY mode:** the pool ranks all available coins by current network difficulty (polled by the Monitor every `check_interval`, default 30s) and selects the lowest. Switches are guarded by `min_time_on_coin` to prevent thrashing.
 
 ### The Rotation Cycle
 
@@ -37,7 +48,7 @@ Each miner session is tracked with its current coin assignment. When shares arri
 
 ---
 
-## Scheduling
+## Scheduling (TIME mode)
 
 Coin weights map directly to wall-clock time on a **24-hour cycle** in your configured timezone (set during install, stored in `multi_port.timezone`). Weights become contiguous time slots — deterministic, not random.
 
@@ -55,9 +66,33 @@ With a 50/50 split between DGB and BTC:
 - DGB: 00:00 – 12:00 (12 hours)
 - BTC: 12:00 – 24:00 (12 hours)
 
-Difficulty comparison is meaningless across coins of vastly different magnitudes (e.g., DGB ~1,000 vs BCH ~500,000 vs BTC ~80 trillion). What matters is how much time you want to allocate to each coin.
+In TIME mode, coin weights determine time allocation directly — raw network difficulty values are not compared. What matters here is how much time you want to allocate to each coin.
 
 **Use case:** "Mine DGB 19 hours a day for steady shares, but throw 1.2 hours at BTC as a lottery shot."
+
+---
+
+## Difficulty Routing (DIFFICULTY mode)
+
+In DIFFICULTY mode, the pool ignores weights and the 24-hour schedule entirely. Every `check_interval` (default 30s) the Monitor polls each configured coin's `getdifficulty` (or equivalent) RPC. The selector then picks the coin with the **lowest current network difficulty** that is `available && network_diff > 0`.
+
+```
+1. Monitor polls every coin's network difficulty (every check_interval)
+2. Selector filters to available coins with valid difficulty data
+3. Sorts ascending by network_diff — lowest wins
+4. min_time_on_coin guard prevents switches more frequent than 60s (default)
+5. If no candidates have data, falls back to prefer_coin
+```
+
+**Tradeoff vs TIME mode:** raw network difficulty values are not directly comparable as "expected hashes per block" across different chains, but treating them as a relative ranking signal is useful when the operator wants to opportunistically mine whichever chain is currently easiest. DIFFICULTY mode is the right choice when you don't care about deterministic time allocation and want maximum block-find probability for the moment.
+
+**When weights are still set in DIFFICULTY mode** (e.g., you switched modes via the dashboard), they are stored but ignored. If you switch back to TIME, those weights become active again.
+
+**Reasons logged on each decision:**
+- `initial_assignment_difficulty` — first assignment for a session
+- `difficulty_same` — re-evaluated; current coin is still lowest
+- `difficulty_rotation` — switched to a now-easier coin
+- `no_coins_available` — no candidates with valid difficulty data; fell back to `prefer_coin`
 
 ---
 
@@ -67,17 +102,18 @@ Difficulty comparison is meaningless across coins of vastly different magnitudes
 multi_port:
   enabled: true
   port: 16180                # Dedicated stratum port for multi-coin mining
+  mode: TIME                 # Routing strategy: TIME | DIFFICULTY (default: TIME)
   coins:
     QBX:
-      weight: 96             # 96% of mining time on Q-BitX (~23 hours)
+      weight: 96             # 96% of mining time on Q-BitX (~23 hours)  [TIME mode only]
       start_hour: 0          # Start at midnight (optional — omit to auto-sequence)
     BC2:
-      weight: 4              # 4% on Bitcoin II (~1 hour)
+      weight: 4              # 4% on Bitcoin II (~1 hour)  [TIME mode only]
       start_hour: 23         # Start at 11 PM (optional)
   check_interval: 5m         # Re-evaluate every 5 minutes
-  prefer_coin: QBX           # Default coin on connect / tie-breaker
-  min_time_on_coin: 60s      # Minimum time before allowing a switch
-  timezone: America/New_York # IANA timezone for 24h schedule (auto-set from install)
+  prefer_coin: QBX           # Default coin on connect / tie-breaker / DIFFICULTY-mode fallback
+  min_time_on_coin: 60s      # Minimum time before allowing a switch (both modes)
+  timezone: America/New_York # IANA timezone for 24h schedule (TIME mode; auto-set from install)
 ```
 
 ### Field Reference
@@ -86,8 +122,9 @@ multi_port:
 |-------|------|---------|-------------|
 | `enabled` | bool | `false` | Enable/disable the multi-coin port |
 | `port` | int | `16180` | Stratum port for multi-coin mining |
-| `coins` | map | required | Coin symbol to routing config. Each coin needs `weight` (0-100). All weights must sum to exactly 100 |
-| `coins.*.weight` | int | required | Percentage of daily mining time (0-100) |
+| `mode` | string | `TIME` | Routing strategy: `TIME` (weighted 24h schedule) or `DIFFICULTY` (lowest network diff wins). Omit for default TIME |
+| `coins` | map | required | Coin symbol to routing config. In TIME mode each coin needs `weight` (0-100) summing to 100; in DIFFICULTY mode coins are just a list, weights are ignored |
+| `coins.*.weight` | int | required (TIME) | Percentage of daily mining time (0-100). Ignored in DIFFICULTY mode |
 | `coins.*.start_hour` | float | auto | Optional custom start hour (0-23.99) in the configured timezone. If omitted, coins are sequenced from midnight in alphabetical order |
 | `check_interval` | duration | `30s` | How often to re-evaluate coin assignments |
 | `prefer_coin` | string | first coin | Default coin for new connections and tie-breaking |
@@ -180,7 +217,9 @@ The multi-coin port must not conflict with any per-coin stratum port. The defaul
 | DigiByte (Scrypt) | 3336 | 3337 | 3338 |
 | Bitcoin | 4333 | 4334 | 4335 |
 | Bitcoin Cash | 5333 | 5334 | 5335 |
+| Bitcoin Cash II | 5336 | 5337 | 5338 |
 | Bitcoin II | 6333 | 6334 | 6335 |
+| Bitcoin Silver | 11335 | 11336 | 11337 |
 | Litecoin | 7333 | 7334 | 7335 |
 | Dogecoin | 8335 | 8337 | 8342 |
 | PepeCoin | 10335 | 10336 | 10337 |
@@ -189,6 +228,7 @@ The multi-coin port must not conflict with any per-coin stratum port. The defaul
 | Syscoin | 15335 | 15336 | 15337 |
 | Myriadcoin | 17335 | 17336 | 17337 |
 | Fractal Bitcoin | 18335 | 18336 | 18337 |
+| eCash (XEC) | 18338 | 18339 | 18340 |
 | Q-BitX | 20335 | 20336 | 20337 |
 | **Multi-Coin Port** | **16180** | — | — |
 
@@ -243,6 +283,8 @@ Returns current multi-port configuration, computed schedule, and live stats.
 {
   "enabled": true,
   "port": 16180,
+  "mode": "TIME",
+  "routing_mode": "TIME",
   "coins": { "QBX": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
   "prefer_coin": "QBX",
   "timezone": "America/New_York",
@@ -255,6 +297,8 @@ Returns current multi-port configuration, computed schedule, and live stats.
   "available_coins": [{ "symbol": "QBX", "name": "Q-BitX", "enabled": true }]
 }
 ```
+
+The `mode` field reflects the configured value (what the operator wrote in YAML / set via dashboard); `routing_mode` reflects the live mode the running stratum is using. They normally match, but `routing_mode` is the source of truth for what the server is actually doing right now.
 
 ### `POST /api/multiport`
 

@@ -1,24 +1,36 @@
-# Upgrading to Spiral Pool v2.4.2 (Phi Hash Reactor)
+# Upgrading to Spiral Pool v2.5.0 (Phi Hash Reactor)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x) and v2.4.2 for any coin.**
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x) and v2.5.0 for any coin.**
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
 ---
 
-## What's new in v2.4.2
+## What's new in v2.5.0
 
 See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 
-- **Docker multi-coin support** — `POOL_MODE=multi` runs all 14 coins in one deployment
+- **BCH2 (Bitcoin Cash II) and BTCS (Bitcoin Silver)** — two new SHA-256d coins; pool now supports 17 coins total (including XEC added in this release)
+- **Smart Port DIFFICULTY routing mode** — multi-coin smart port can now route to the coin with the lowest live network difficulty
+- **Debian 13 "Trixie" support** — bare metal installs now supported on Debian 13 alongside Ubuntu 24.04/26.04 LTS
+- **Ubuntu 26.04 LTS (Resolute Raccoon) support** — all Dockerfiles updated to `ubuntu:26.04`
+- **Block history table** — last 5,000 blocks shown in a collapsible table on the Blocks tab with effort %, status badges, and explorer links
+- **True pool effort calculation** — effort computed at block-find time as `(roundDiff / networkDiff) × 100` and stored in the DB
+- **Per-coin accepted/rejected shares** — dashboard displays accept/reject rate per coin
+- **Per-coin best share difficulty** — session and all-time best share diff tracked per coin
+- **Multi-Coin Rotation widget** — visual 24h timeline bar with live status, next switch, and schedule table
+- **Network difficulty in Est. Time to Block** — ETB card now shows current network difficulty
+
+## What was new in v2.4.3
+
+- **Docker multi-coin support** — `POOL_MODE=multi` runs all coins in one deployment
 - **Docker merge mining** — SHA-256d and Scrypt AuxPoW pairs in Docker
 - **Docker Stratum V2** — Noise Protocol encryption via `STRATUM_V2_ENABLED=true`
 - **Dashboard statistics chart grid** — 2×2 charts for pool hashrate, network hashrate, difficulty, workers
 - **`_safe_num()` across all miner fetch functions** — prevents dashboard crash from firmware returning string-encoded numbers
 - **Spiral Router cleanup** — 47 verified patterns (down from ~280 dead-code patterns), all confirmed against firmware source
-- **Version string consistency** — all strings now semver `2.4.0`
 
 ## What was new in v1.1.0
 
@@ -102,7 +114,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.4.2 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.5.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -198,7 +210,7 @@ After enabling, visit the Dashboard at `http://<server>:1618/setup` to verify wa
 
 If you prefer manual control, you can add coins by editing config files directly.
 
-#### Standalone SHA-256d coins (BTC, BCH, BC2, DGB, QBX)
+#### Standalone SHA-256d coins (BTC, BCH, BCH2, BC2, BTCS, DGB, XEC, QBX)
 
 These run independently with no parent chain.
 
@@ -206,7 +218,7 @@ These run independently with no parent chain.
 
 ```yaml
 coins:
-  - symbol: QBX                         # or BTC, BCH, BC2, DGB
+  - symbol: QBX                         # or BTC, BCH, BCH2, BC2, BTCS, DGB
     name: "Q-BitX"
     algorithm: "sha256d"
     address: ""                          # fill in step 2
@@ -226,7 +238,7 @@ coins:
 **2. Create a wallet address** (for coins with CLI support):
 
 ```bash
-spiralpool-wallet --coin QBX   # also works for BTC, BCH, BC2, DGB, NMC, SYS, XMY, FBTC, LTC, DOGE, PEP, CAT
+spiralpool-wallet --coin QBX   # also works for BTC, BCH, BCH2, BC2, BTCS, DGB, NMC, SYS, XMY, FBTC, LTC, DOGE, PEP, CAT
 ```
 
 Copy the address into the `address:` field above, or enter it via the Dashboard at `http://<server>:1618/setup`.
@@ -341,13 +353,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.4.0`. If Sentinel is running:
+The version line should show `2.5.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Sentinel v2.4.2-PHI_HASH_REACTOR` followed by `PHI HASH REACTOR EDITION` in the startup log.
+Look for `Spiral Pool v2.5.0` followed by `Phi Hash Reactor` in the startup log.
 
 ---
 
@@ -427,4 +439,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Phi Hash Reactor 2.5.0 — Built on what came before. Growing toward phi.*

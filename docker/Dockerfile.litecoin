@@ -10,16 +10,16 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Litecoin Core Node for Spiral Pool"
-LABEL version="0.21.4"
+LABEL version="0.21.5.4"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG LITECOIN_VERSION=0.21.4
+ARG LITECOIN_VERSION=0.21.5.4
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,15 +37,14 @@ RUN useradd -r -m -s /bin/bash litecoin \
     && chown -R litecoin:litecoin /home/litecoin
 
 # Download and install Litecoin Core
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
-# Upstream binaries exist but have not been verified in this Docker environment.
+# NOTE: Only x86_64 (amd64) is supported.
 WORKDIR /tmp
-RUN ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "amd64" ]; then LTC_ARCH="x86_64-linux-gnu"; \
-       elif [ "$ARCH" = "arm64" ]; then LTC_ARCH="aarch64-linux-gnu"; \
-       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
-    && wget -q --max-redirect=5 "https://download.litecoin.org/litecoin-${LITECOIN_VERSION}/linux/litecoin-${LITECOIN_VERSION}-${LTC_ARCH}.tar.gz" \
-    && tar -xzf "litecoin-${LITECOIN_VERSION}-${LTC_ARCH}.tar.gz" \
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && wget -q --max-redirect=5 "https://download.litecoin.org/litecoin-${LITECOIN_VERSION}/linux/litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && tar -tzf "litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
+    && tar -xzf "litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "litecoin-${LITECOIN_VERSION}/bin/"* /usr/local/bin/ \
     && rm -rf /tmp/*
 

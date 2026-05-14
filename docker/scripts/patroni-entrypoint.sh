@@ -25,6 +25,7 @@ export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 export REWIND_PASSWORD="${REWIND_PASSWORD:?REWIND_PASSWORD is required}"
 export DB_USER="${DB_USER:-spiralstratum}"
 export DB_NAME="${DB_NAME:-spiralstratum}"
+export DB_PASSWORD="${DB_PASSWORD:?DB_PASSWORD is required}"
 
 # Generate Patroni configuration from template with environment variables
 # Skip if user-provided config already exists
@@ -34,6 +35,8 @@ else
     # SECURITY: Set umask before writing to prevent passwords being briefly world-readable
     umask 077
     envsubst < /etc/patroni/patroni.yml.template > /etc/patroni/patroni.yml
+    [ -s /etc/patroni/patroni.yml ] || { echo "ERROR: envsubst produced empty patroni.yml — aborting"; rm -f /etc/patroni/patroni.yml; exit 1; }
+    chmod 600 /etc/patroni/patroni.yml
     umask 022
 fi
 

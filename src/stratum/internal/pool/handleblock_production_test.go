@@ -289,6 +289,9 @@ func (m *mockDB) UpdatePoolStatsForPool(ctx context.Context, poolID string, stat
 func (m *mockDB) CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error) {
 	panic("CleanupStaleSharesForPool not called in handleBlock tests")
 }
+func (m *mockDB) GetLastBlockFoundTimeForPool(ctx context.Context, poolID string) (time.Time, error) {
+	panic("GetLastBlockFoundTimeForPool not called in handleBlock tests")
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Test helper

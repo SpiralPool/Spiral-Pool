@@ -122,6 +122,47 @@ type BlockTemplate struct {
 	Bits                     string      `json:"bits"`
 	Height                   uint64      `json:"height"`
 	DefaultWitnessCommitment string      `json:"default_witness_commitment,omitempty"`
+
+	// eCash (XEC) specific fields
+	CoinbaseTxn   *XECCoinbaseTxn `json:"coinbasetxn,omitempty"`
+	RTT           *XECRTTData     `json:"rtt,omitempty"`
+	SigCheckLimit int             `json:"sigchecklimit,omitempty"`
+}
+
+// XECCoinbaseTxn holds the mandatory coinbase output requirements from eCash's
+// getblocktemplate response. These outputs must be included verbatim in the
+// coinbase transaction or the block will be rejected by the network.
+type XECCoinbaseTxn struct {
+	MinerFund      *XECMinerFund      `json:"minerfund,omitempty"`
+	StakingRewards *XECStakingRewards `json:"stakingrewards,omitempty"`
+}
+
+// XECMinerFund describes the Infrastructure Funding Plan (IFP) output.
+// Miners must pay at least MinimumValue satoshis to Addresses[0].
+type XECMinerFund struct {
+	Addresses    []string `json:"addresses"`
+	MinimumValue int64    `json:"minimumvalue"`
+}
+
+// XECStakingRewards describes the mandatory staking rewards output.
+// The payout script is provided directly by the node.
+type XECStakingRewards struct {
+	PayoutScript XECStakingScript `json:"payoutscript"`
+	MinimumValue int64            `json:"minimumvalue"`
+}
+
+// XECStakingScript holds the hex-encoded staking rewards output script.
+type XECStakingScript struct {
+	Hex string `json:"hex"`
+}
+
+// XECRTTData contains Real Time Target data from the eCash node.
+// Used for RTT difficulty validation (post-November 2025 upgrade).
+type XECRTTData struct {
+	PrevHeaderTime []int64 `json:"prevheadertime"`
+	PrevBits       string  `json:"prevbits"`
+	NodeTime       int64   `json:"nodetime"`
+	NextTarget     string  `json:"nexttarget"`
 }
 
 // TxData represents transaction data in a block template.

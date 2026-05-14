@@ -73,7 +73,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 #   2. Create a wallet address for the new coin BEFORE starting mining
 #
 #   For wallet addresses:
-#   - Coins with CLI support (DGB, BTC, BCH, BC2, LTC, DOGE, FBTC, QBX):
+#   - Coins with CLI support (DGB, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, FBTC, QBX):
 #     Run: spiralpool-wallet --coin <symbol>
 #
 #   - Coins with limited CLI support (NMC, SYS, XMY, PEP, CAT):
@@ -285,8 +285,8 @@ SKIP_START=false
 # Track what services were running before upgrade
 SERVICES_WERE_RUNNING=()
 
-# Detect system architecture once (dpkg returns "amd64" or "arm64")
-SYSTEM_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+# Only x86_64 (amd64) is supported
+SYSTEM_ARCH="amd64"
 
 # Detect WSL2 once (used for environment-specific safety checks)
 IS_WSL2="false"
@@ -735,6 +735,350 @@ EOF
 }
 
 # =============================================================================
+# Wallet Backup Repair
+# Runs during every upgrade while daemons are still live.
+# For each enabled coin that has no .backup-confirmed-{coin} marker:
+#   1. Tries backupwallet RPC (daemon running, wallet healthy)
+#   2. Falls back to listdescriptors true (daemon running, wallet.dat corrupted
+#      but keys still in memory — descriptor wallets only)
+#   3. Falls back to SQLite .recover (daemon down, wallet.dat is SQLite/descriptor)
+#   4. Falls back to -salvagewallet daemon restart (daemon down, legacy BerkeleyDB)
+# Shows SCP command and blocks until user confirms backup is saved.
+# Never touches or overwrites existing wallet files — only writes to backups/.
+# Also callable standalone via: sudo ./upgrade.sh --recover-wallets
+# =============================================================================
+
+# Attempt SQLite-level key recovery from a descriptor wallet.dat
+# Writes recovered JSON to out_file. Returns 0 on success.
+_recover_sqlite_wallet() {
+    local wallet_dat="$1" out_file="$2"
+    command -v sqlite3 &>/dev/null || { apt-get install -y -qq sqlite3 2>/dev/null || true; }
+    command -v sqlite3 &>/dev/null || return 1
+
+    # Integrity check first
+    local integrity
+    integrity=$(sqlite3 "$wallet_dat" "PRAGMA integrity_check;" 2>/dev/null || echo "error")
+    if [[ "$integrity" == "ok" ]]; then
+        # Wallet is intact — dump descriptor table directly
+        local dump
+        dump=$(sqlite3 "$wallet_dat" "SELECT value FROM descriptor_caches UNION ALL SELECT value FROM descriptors;" 2>/dev/null || echo "")
+        if [[ -z "$dump" ]]; then
+            # Try the walletdescriptors table used by newer Bitcoin Core derivatives
+            dump=$(sqlite3 "$wallet_dat" ".dump walletdescriptors" 2>/dev/null || echo "")
+        fi
+        if [[ -n "$dump" ]]; then
+            printf '%s\n' "$dump" > "$out_file"
+            return 0
+        fi
+    fi
+
+    # Wallet is corrupted — attempt SQLite .recover (3.29.0+)
+    local recover_sql
+    recover_sql=$(sqlite3 "$wallet_dat" ".recover" 2>/dev/null || echo "")
+    if [[ -n "$recover_sql" ]]; then
+        printf '%s\n' "$recover_sql" > "$out_file"
+        return 0
+    fi
+
+    return 1
+}
+
+# Attempt -salvagewallet recovery for legacy BerkeleyDB wallets.
+# Starts daemon with -salvagewallet, waits for it to finish, then calls backupwallet.
+_recover_salvagewallet() {
+    local cn="$1" cli="$2" out_file="$3"
+    local svc_map=(
+        [dgb]="digibyted" [btc]="bitcoind" [bch]="bitcoind-bch" [bch2]="bitcoincashIId"
+        [bc2]="bitcoiniid" [btcs]="bitcoinsilverd" [nmc]="namecoind" [sys]="syscoind"
+        [xmy]="myriadcoind" [fbtc]="fractald" [qbx]="qbitx" [ltc]="litecoind"
+        [doge]="dogecoind" [pep]="pepecoind" [xec]="ecashd"
+    )
+    local daemon="${svc_map[$cn]:-}"
+    [[ -z "$daemon" ]] && return 1
+
+    local conf_flag
+    conf_flag=$(echo "$cli" | grep -oP '\-conf=\S+' | head -1)
+    local wallet_flag
+    wallet_flag=$(echo "$cli" | grep -oP '\-rpcwallet=\S+' | head -1)
+
+    log_warn "Attempting -salvagewallet recovery for ${cn^^}..."
+    sudo -u "$POOL_USER" $daemon $conf_flag -salvagewallet -daemon 2>/dev/null || return 1
+    sleep 10
+    local deadline=$(( SECONDS + 120 ))
+    while [[ $SECONDS -lt $deadline ]]; do
+        if sudo -u "$POOL_USER" $cli getblockchaininfo &>/dev/null; then
+            local bak_out
+            bak_out=$(sudo -u "$POOL_USER" $cli backupwallet "$out_file" 2>&1) || true
+            sudo -u "$POOL_USER" $cli stop 2>/dev/null || true
+            sleep 3
+            if ! echo "$bak_out" | grep -qi "error\|unknown"; then
+                return 0
+            fi
+            return 1
+        fi
+        sleep 5
+    done
+    return 1
+}
+
+repair_wallet_backups() {
+    local config="$INSTALL_DIR/config/config.yaml"
+    local backup_base="$INSTALL_DIR/backups"
+    local server_ip; server_ip=$(hostname -I | awk '{print $1}')
+
+    [[ ! -f "$config" ]] && return 0
+
+    sudo mkdir -p "$backup_base" 2>/dev/null || true
+    sudo chown "${POOL_USER}:${POOL_USER}" "$backup_base" 2>/dev/null || true
+    sudo chmod 700 "$backup_base" 2>/dev/null || true
+
+    # Collect coins that still need a backup (no .backup-confirmed-{coin} marker)
+    local coins_needing_backup=()
+    local cur=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*symbol:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
+            cur="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^[[:space:]]*coin:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
+            case "${BASH_REMATCH[1]}" in
+                digibyte)        cur="DGB"  ;; bitcoin)       cur="BTC"  ;;
+                bitcoincash)     cur="BCH"  ;; bitcoincashii) cur="BCH2" ;;
+                bitcoinii)       cur="BC2"  ;; bitcoinsilver) cur="BTCS" ;;
+                namecoin)        cur="NMC"  ;; syscoin)       cur="SYS"  ;;
+                myriadcoin)      cur="XMY"  ;; fractalbitcoin|fractal) cur="FBTC" ;;
+                litecoin)        cur="LTC"  ;; dogecoin)      cur="DOGE" ;;
+                pepecoin)        cur="PEP"  ;; catcoin)       cur="CAT"  ;;
+                digibyte-scrypt) cur="DGB"  ;; ecash|xec)     cur="XEC"  ;;
+                qbitx)           cur="QBX"  ;; *)             cur="${BASH_REMATCH[1]}" ;;
+            esac
+        elif [[ "$line" =~ ^[[:space:]]*address:[[:space:]]*\"?([^\"[:space:]]+)\"? ]] && [[ -n "$cur" ]]; then
+            local addr="${BASH_REMATCH[1]}"
+            local cn="${cur,,}"
+            case "$cn" in
+                dgb|dgb-scrypt) cn="dgb" ;; btc) cn="btc" ;; bch) cn="bch" ;;
+                bch2) cn="bch2" ;; bc2) cn="bc2" ;; btcs) cn="btcs" ;;
+                nmc) cn="nmc"   ;; sys) cn="sys" ;; xmy) cn="xmy"   ;;
+                fbtc) cn="fbtc" ;; qbx) cn="qbx" ;; ltc) cn="ltc"   ;;
+                doge) cn="doge" ;; pep) cn="pep" ;; xec) cn="xec"   ;;
+                cat) cn="cat"   ;;
+            esac
+            if [[ "$cn" != "cat" && "$addr" != "PENDING_GENERATION" ]]; then
+                local marker="${backup_base}/.backup-confirmed-${cn}"
+                if [[ ! -f "$marker" ]]; then
+                    coins_needing_backup+=("$cn")
+                fi
+            fi
+            cur=""
+        fi
+    done < "$config"
+
+    # Deduplicate (DGB-SCRYPT shares DGB entry)
+    local unique=()
+    local seen=""
+    for c in "${coins_needing_backup[@]}"; do
+        if [[ "$seen" != *"|${c}|"* ]]; then
+            unique+=("$c")
+            seen+="|${c}|"
+        fi
+    done
+
+    [[ ${#unique[@]} -eq 0 ]] && return 0
+
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REQUIRED BEFORE UPGRADE${NC}                              ${RED}║${NC}"
+    echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+    echo -e "${RED}║${NC}  Your pool wallets have ${WHITE}never been backed up${NC} or the backup was           ${RED}║${NC}"
+    echo -e "${RED}║${NC}  incomplete. A clean backup will be exported for each coin.             ${RED}║${NC}"
+    echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}If the daemon is running:${NC} keys are exported via the RPC.             ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}If the wallet.dat is corrupted:${NC} recovery is attempted               ${RED}║${NC}"
+    echo -e "${RED}║${NC}  automatically using SQLite recovery or -salvagewallet.                 ${RED}║${NC}"
+    echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}These files contain your private keys. If lost, funds are gone.${NC}        ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${YELLOW}SCP each file off this server and store it somewhere safe.${NC}            ${RED}║${NC}"
+    echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${DIM}The upgrade will NOT proceed until you confirm each backup is saved.${NC}    ${RED}║${NC}"
+    echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # Daemon binary map (used in recovery error messages)
+    declare -A _wbr_daemon=(
+        [dgb]="digibyted"       [btc]="bitcoind"         [bch]="bitcoind-bch"
+        [bch2]="bitcoincashIId" [bc2]="bitcoiniid"       [btcs]="bitcoinsilverd"
+        [nmc]="namecoind"       [sys]="syscoind"         [xmy]="myriadcoind"
+        [fbtc]="fractald"       [qbx]="qbitx"            [ltc]="litecoind"
+        [doge]="dogecoind"      [pep]="pepecoind"        [xec]="ecashd"
+    )
+
+    # CLI command map
+    declare -A _wbr_cli=(
+        [dgb]="digibyte-cli -conf=$INSTALL_DIR/dgb/digibyte.conf -rpcwallet=pool-dgb"
+        [btc]="bitcoin-cli -conf=$INSTALL_DIR/btc/bitcoin.conf -rpcwallet=pool-btc"
+        [bch]="bitcoin-cli -conf=$INSTALL_DIR/bch/bitcoin.conf -rpcwallet=pool-bch"
+        [bch2]="bitcoincashII-cli -conf=$INSTALL_DIR/bch2/bitcoincashii.conf -rpcwallet=pool-bch2"
+        [bc2]="bitcoinii-cli -conf=$INSTALL_DIR/bc2/bitcoinii.conf -rpcwallet=pool-bc2"
+        [btcs]="bitcoinsilver-cli -conf=$INSTALL_DIR/btcs/bitcoinsilver.conf -rpcwallet=pool-btcs"
+        [nmc]="namecoin-cli -conf=$INSTALL_DIR/nmc/namecoin.conf -rpcwallet=pool-nmc"
+        [sys]="syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf -rpcwallet=pool-sys"
+        [xmy]="myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf -rpcwallet=pool-xmy"
+        [fbtc]="fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf -rpcwallet=pool-fbtc"
+        [qbx]="qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf -rpcwallet=pool-qbx"
+        [ltc]="litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf -rpcwallet=pool-ltc"
+        [doge]="dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf -rpcwallet=pool-doge"
+        [pep]="pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf -rpcwallet=pool-pep"
+        [xec]="ecash-cli -conf=$INSTALL_DIR/xec/bitcoin.conf"
+    )
+
+    # Descriptor wallet coins — use SQLite recovery when daemon is down
+    local descriptor_coins="|dgb|btc|xec|fbtc|"
+
+    for cn in "${unique[@]}"; do
+        local cli="${_wbr_cli[$cn]:-}"
+        local ts; ts=$(date +%Y%m%d-%H%M%S)
+        local out_file="${backup_base}/wallet-${cn}-upgrade-${ts}.dat"
+        local dump_ok="false"
+        local recovery_method=""
+
+        echo -e "  ${CYAN}━━━ ${cn^^} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        if [[ -n "$cli" ]]; then
+            # ── Method 1: backupwallet RPC (daemon running, wallet healthy) ──────
+            echo -ne "  Trying backupwallet RPC... "
+            local bak_out
+            bak_out=$(sudo -u "$POOL_USER" $cli backupwallet "$out_file" 2>&1) || true
+            if ! echo "$bak_out" | grep -qi "error\|unknown\|refused\|connect"; then
+                sudo chmod 600 "$out_file" 2>/dev/null || true
+                dump_ok="true"
+                recovery_method="backupwallet"
+                echo -e "${GREEN}✓${NC}"
+            else
+                echo -e "${YELLOW}unavailable${NC}"
+
+                # ── Method 2: listdescriptors true (daemon running, keys in memory) ──
+                echo -ne "  Trying listdescriptors (keys in memory)... "
+                local desc_out
+                desc_out=$(sudo -u "$POOL_USER" $cli listdescriptors true 2>&1) || true
+                if echo "$desc_out" | grep -q '"descriptors"'; then
+                    out_file="${backup_base}/wallet-${cn}-upgrade-${ts}.dump"
+                    printf '%s\n' "$desc_out" | sudo -u "$POOL_USER" tee "$out_file" > /dev/null
+                    sudo chmod 600 "$out_file" 2>/dev/null || true
+                    dump_ok="true"
+                    recovery_method="listdescriptors"
+                    echo -e "${GREEN}✓${NC}"
+                else
+                    echo -e "${YELLOW}unavailable — daemon may be down${NC}"
+
+                    # Daemon is down — locate wallet.dat on disk
+                    local wallet_dat=""
+                    local wallets_dir="$INSTALL_DIR/${cn}/wallets/pool-${cn}"
+                    [[ -f "${wallets_dir}/wallet.dat" ]] && wallet_dat="${wallets_dir}/wallet.dat"
+
+                    if [[ -n "$wallet_dat" ]]; then
+                        # ── Method 3: SQLite recovery (descriptor wallet, daemon down) ──
+                        if [[ "$descriptor_coins" == *"|${cn}|"* ]]; then
+                            echo -ne "  Trying SQLite recovery on wallet.dat... "
+                            local sqlite_out="${backup_base}/wallet-${cn}-recovered-${ts}.sql"
+                            if _recover_sqlite_wallet "$wallet_dat" "$sqlite_out"; then
+                                sudo chmod 600 "$sqlite_out" 2>/dev/null || true
+                                out_file="$sqlite_out"
+                                dump_ok="true"
+                                recovery_method="sqlite-recovery"
+                                echo -e "${GREEN}✓ partial recovery${NC}"
+                            else
+                                echo -e "${RED}failed${NC}"
+                            fi
+                        fi
+
+                        # ── Method 4: -salvagewallet (legacy BerkeleyDB, daemon down) ──
+                        if [[ "$dump_ok" == "false" ]]; then
+                            echo -ne "  Trying -salvagewallet (BerkeleyDB recovery)... "
+                            if _recover_salvagewallet "$cn" "$cli" "$out_file"; then
+                                sudo chmod 600 "$out_file" 2>/dev/null || true
+                                dump_ok="true"
+                                recovery_method="salvagewallet"
+                                echo -e "${GREEN}✓${NC}"
+                            else
+                                echo -e "${RED}failed${NC}"
+                            fi
+                        fi
+
+                        # ── All automated methods exhausted ───────────────────────────
+                        if [[ "$dump_ok" == "false" ]]; then
+                            echo ""
+                            echo -e "  ${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
+                            echo -e "  ${RED}║${NC}  ${WHITE}RECOVERY FAILED — MANUAL ACTION REQUIRED${NC}                  ${RED}║${NC}"
+                            echo -e "  ${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
+                            echo ""
+                            echo -e "  All automated recovery methods failed for ${WHITE}${cn^^}${NC}."
+                            echo -e "  The wallet.dat may be too corrupted to recover automatically."
+                            echo ""
+                            echo -e "  ${YELLOW}Try this manually — it may still be recoverable:${NC}"
+                            echo -e "  ${WHITE}1.${NC} Start daemon with salvage: ${GREEN}sudo -u $POOL_USER ${_wbr_daemon[$cn]:-<daemon>} -conf=$INSTALL_DIR/${cn}/${cn}.conf -salvagewallet -daemon${NC}"
+                            echo -e "  ${WHITE}2.${NC} Wait ~60s then: ${GREEN}sudo -u $POOL_USER $cli backupwallet /spiralpool/backups/wallet-${cn}-manual.dat${NC}"
+                            echo -e "  ${WHITE}3.${NC} SCP that file off the server"
+                            echo -e "  ${WHITE}4.${NC} Stop daemon: ${GREEN}sudo -u $POOL_USER $cli stop${NC}"
+                            echo ""
+                            echo -e "  ${RED}If recovery is truly impossible, the funds in the ${cn^^} wallet${NC}"
+                            echo -e "  ${RED}are unrecoverable. The upgrade will continue but you must${NC}"
+                            echo -e "  ${RED}generate a new wallet and update your pool address.${NC}"
+                            echo ""
+                            if [[ "$AUTO_MODE" != "true" ]]; then
+                                echo -e "  Press ${WHITE}ENTER${NC} to acknowledge and continue (funds may be unrecoverable)..."
+                                read -r _wbr_ack < /dev/tty
+                                echo ""
+                            fi
+                            # Still create the marker — no point prompting again if recovery is impossible
+                            sudo -u "$POOL_USER" touch "${backup_base}/.backup-confirmed-${cn}" 2>/dev/null || true
+                            continue
+                        fi
+                    else
+                        echo ""
+                        echo -e "  ${RED}✗ wallet.dat not found at ${wallets_dir}${NC}"
+                        echo -e "  ${YELLOW}The wallet may not have been generated yet, or the path has changed.${NC}"
+                        echo ""
+                        sudo -u "$POOL_USER" touch "${backup_base}/.backup-confirmed-${cn}" 2>/dev/null || true
+                        continue
+                    fi
+                fi
+            fi
+        else
+            echo -e "  ${YELLOW}⚠ no CLI defined for ${cn^^} — skipping auto-backup${NC}"
+        fi
+
+        echo ""
+
+        if [[ "$dump_ok" == "true" ]]; then
+            echo -e "  ${WHITE}Recovery method:${NC}  ${GREEN}${recovery_method}${NC}"
+            echo -e "  ${WHITE}Backup file:${NC}      ${GREEN}${out_file}${NC}"
+            echo -e "  ${WHITE}SCP command:${NC}      ${GREEN}scp ${POOL_USER}@${server_ip}:${out_file} ./${NC}"
+            echo ""
+            echo -e "  Copy this file off the server NOW."
+            echo -e "  ${WHITE}If it is lost, your ${cn^^} funds CANNOT be recovered.${NC}"
+        fi
+
+        echo ""
+
+        if [[ "$AUTO_MODE" != "true" ]]; then
+            if [[ "$dump_ok" == "true" ]]; then
+                echo -e "  Press ${WHITE}ENTER${NC} once you have saved the ${cn^^} backup to confirm and continue..."
+            else
+                echo -e "  Press ${WHITE}ENTER${NC} to continue..."
+            fi
+            read -r _wbr_confirm < /dev/tty
+            echo ""
+        fi
+
+        sudo -u "$POOL_USER" touch "${backup_base}/.backup-confirmed-${cn}" 2>/dev/null || true
+    done
+
+    log_success "Wallet backup phase complete — upgrade continuing"
+    echo ""
+}
+
+# =============================================================================
 # Backup Functions
 # =============================================================================
 
@@ -774,7 +1118,9 @@ create_backup() {
     [[ -f "$(resolve_coin_dir dgb)/digibyte.conf" ]] && cp "$(resolve_coin_dir dgb)/digibyte.conf" "${BACKUP_PATH}/digibyte.conf" && log_info "  - digibyte.conf backed up"
     [[ -f "$(resolve_coin_dir btc)/bitcoin.conf" ]] && cp "$(resolve_coin_dir btc)/bitcoin.conf" "${BACKUP_PATH}/bitcoin.conf" && log_info "  - bitcoin.conf backed up"
     [[ -f "$(resolve_coin_dir bch)/bitcoin.conf" ]] && cp "$(resolve_coin_dir bch)/bitcoin.conf" "${BACKUP_PATH}/bitcoincash.conf" && log_info "  - bitcoincash.conf backed up"
+    [[ -f "$(resolve_coin_dir bch2)/bitcoincashii.conf" ]] && cp "$(resolve_coin_dir bch2)/bitcoincashii.conf" "${BACKUP_PATH}/bitcoincashii.conf" && log_info "  - bitcoincashii.conf backed up"
     [[ -f "$(resolve_coin_dir bc2)/bitcoinii.conf" ]] && cp "$(resolve_coin_dir bc2)/bitcoinii.conf" "${BACKUP_PATH}/bitcoinii.conf" && log_info "  - bitcoinii.conf backed up"
+    [[ -f "$(resolve_coin_dir btcs)/bitcoinsilver.conf" ]] && cp "$(resolve_coin_dir btcs)/bitcoinsilver.conf" "${BACKUP_PATH}/bitcoinsilver.conf" && log_info "  - bitcoinsilver.conf backed up"
     # Scrypt coins
     [[ -f "$(resolve_coin_dir ltc)/litecoin.conf" ]] && cp "$(resolve_coin_dir ltc)/litecoin.conf" "${BACKUP_PATH}/litecoin.conf" && log_info "  - litecoin.conf backed up"
     [[ -f "$(resolve_coin_dir doge)/dogecoin.conf" ]] && cp "$(resolve_coin_dir doge)/dogecoin.conf" "${BACKUP_PATH}/dogecoin.conf" && log_info "  - dogecoin.conf backed up"
@@ -786,6 +1132,7 @@ create_backup() {
     [[ -f "$(resolve_coin_dir xmy)/myriadcoin.conf" ]] && cp "$(resolve_coin_dir xmy)/myriadcoin.conf" "${BACKUP_PATH}/myriadcoin.conf" && log_info "  - myriadcoin.conf backed up"
     [[ -f "$(resolve_coin_dir fbtc)/fractal.conf" ]] && cp "$(resolve_coin_dir fbtc)/fractal.conf" "${BACKUP_PATH}/fractal.conf" && log_info "  - fractal.conf backed up"
     [[ -f "$(resolve_coin_dir qbx)/qbitx.conf" ]] && cp "$(resolve_coin_dir qbx)/qbitx.conf" "${BACKUP_PATH}/qbitx.conf" && log_info "  - qbitx.conf backed up"
+    [[ -f "$(resolve_coin_dir xec)/bitcoin.conf" ]] && cp "$(resolve_coin_dir xec)/bitcoin.conf" "${BACKUP_PATH}/ecash.conf" && log_info "  - ecash.conf backed up"
     # Legacy location (older installs may have config here)
     [[ -f "${INSTALL_DIR}/config/digibyte.conf" ]] && [[ ! -L "${INSTALL_DIR}/config/digibyte.conf" ]] && \
         cp "${INSTALL_DIR}/config/digibyte.conf" "${BACKUP_PATH}/digibyte-legacy.conf" && log_info "  - digibyte.conf (legacy) backed up"
@@ -1135,6 +1482,14 @@ rollback_to_backup() {
         chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoin.conf"
         chmod 600 "$_rd/bitcoin.conf"
     fi
+    if [[ -f "$backup_path/bitcoincashii.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir bch2)
+        log_info "Restoring bitcoincashii.conf..."
+        mkdir -p "$_rd"
+        cp "$backup_path/bitcoincashii.conf" "$_rd/bitcoincashii.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoincashii.conf"
+        chmod 600 "$_rd/bitcoincashii.conf"
+    fi
     if [[ -f "$backup_path/bitcoinii.conf" ]]; then
         local _rd; _rd=$(resolve_coin_dir bc2)
         log_info "Restoring bitcoinii.conf..."
@@ -1142,6 +1497,14 @@ rollback_to_backup() {
         cp "$backup_path/bitcoinii.conf" "$_rd/bitcoinii.conf"
         chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoinii.conf"
         chmod 600 "$_rd/bitcoinii.conf"
+    fi
+    if [[ -f "$backup_path/bitcoinsilver.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir btcs)
+        log_info "Restoring bitcoinsilver.conf..."
+        mkdir -p "$_rd"
+        cp "$backup_path/bitcoinsilver.conf" "$_rd/bitcoinsilver.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoinsilver.conf"
+        chmod 600 "$_rd/bitcoinsilver.conf"
     fi
     # Scrypt coins
     if [[ -f "$backup_path/litecoin.conf" ]]; then
@@ -1208,6 +1571,22 @@ rollback_to_backup() {
         cp "$backup_path/fractal.conf" "$_rd/fractal.conf"
         chown "${POOL_USER}:${POOL_USER}" "$_rd/fractal.conf"
         chmod 600 "$_rd/fractal.conf"
+    fi
+    if [[ -f "$backup_path/qbitx.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir qbx)
+        log_info "Restoring qbitx.conf..."
+        mkdir -p "$_rd"
+        cp "$backup_path/qbitx.conf" "$_rd/qbitx.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/qbitx.conf"
+        chmod 600 "$_rd/qbitx.conf"
+    fi
+    if [[ -f "$backup_path/ecash.conf" ]]; then
+        local _rd; _rd=$(resolve_coin_dir xec)
+        log_info "Restoring ecash.conf (bitcoin.conf)..."
+        mkdir -p "$_rd"
+        cp "$backup_path/ecash.conf" "$_rd/bitcoin.conf"
+        chown "${POOL_USER}:${POOL_USER}" "$_rd/bitcoin.conf"
+        chmod 600 "$_rd/bitcoin.conf"
     fi
     # Legacy location restore (for older backups)
     if [[ -f "$backup_path/digibyte-legacy.conf" ]] && [[ -d "${INSTALL_DIR}/config" ]]; then
@@ -1524,8 +1903,8 @@ start_services() {
     # systemd refuses to start services that hit the restart limit before upgrade.
     # This affects ALL services including blockchain daemons (bitcoind-bch, etc.)
     for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
-                     bitcoind bitcoind-bch bitcoiniid digibyted litecoind dogecoind \
-                     pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+                     bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd digibyted litecoind dogecoind \
+                     pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd ecashd; do
         systemctl reset-failed "$svc_reset" 2>/dev/null || true
     done
 
@@ -1691,7 +2070,9 @@ fix_config_issues() {
                     DGB) coin_name="DigiByte" ;;
                     BTC) coin_name="Bitcoin" ;;
                     BCH) coin_name="Bitcoin Cash" ;;
+                    BCH2) coin_name="Bitcoin Cash II" ;;
                     BC2) coin_name="Bitcoin II" ;;
+                    BTCS) coin_name="Bitcoin Silver" ;;
                     LTC) coin_name="Litecoin" ;;
                     DOGE) coin_name="Dogecoin" ;;
                     DGB-SCRYPT) coin_name="DigiByte Scrypt" ;;
@@ -1721,8 +2102,8 @@ fix_config_issues() {
     # Fix 2: Pool ID format (hyphens -> underscores for PostgreSQL)
     if grep -qE 'id:.*-sha256' "$CONFIG_FILE" 2>/dev/null; then
         log_info "  - Fixing: pool ID format (hyphens -> underscores)"
-        sed -i 's/dgb-sha256-1/dgb_sha256_1/g; s/btc-sha256-1/btc_sha256_1/g; s/bch-sha256-1/bch_sha256_1/g' "$CONFIG_FILE" || true
-        sed -i 's/dgb-sha256/dgb_sha256/g; s/btc-sha256/btc_sha256/g; s/bch-sha256/bch_sha256/g' "$CONFIG_FILE" || true
+        sed -i 's/dgb-sha256-1/dgb_sha256_1/g; s/btc-sha256-1/btc_sha256_1/g; s/bch-sha256-1/bch_sha256_1/g; s/bch2-sha256-1/bch2_sha256_1/g; s/bc2-sha256-1/bc2_sha256_1/g; s/btcs-sha256-1/btcs_sha256_1/g' "$CONFIG_FILE" || true
+        sed -i 's/dgb-sha256/dgb_sha256/g; s/btc-sha256/btc_sha256/g; s/bch-sha256/bch_sha256/g; s/bch2-sha256/bch2_sha256/g; s/bc2-sha256/bc2_sha256/g; s/btcs-sha256/btcs_sha256/g' "$CONFIG_FILE" || true
         FIXES_APPLIED=$((FIXES_APPLIED + 1))
     fi
 
@@ -2170,7 +2551,9 @@ cleanup_daemon_configs() {
         "dgb:digibyte.conf"
         "btc:bitcoin.conf"
         "bch:bitcoin.conf"
+        "bch2:bitcoincashii.conf"
         "bc2:bitcoinii.conf"
+        "btcs:bitcoinsilver.conf"
         "ltc:litecoin.conf"
         "doge:dogecoin.conf"
         "pep:pepecoin.conf"
@@ -2180,6 +2563,7 @@ cleanup_daemon_configs() {
         "xmy:myriadcoin.conf"
         "fbtc:fractal.conf"
         "qbx:qbitx.conf"
+        "xec:bitcoin.conf"
     )
 
     # Options invalid across ALL coin daemons
@@ -2292,9 +2676,11 @@ rightsize_daemon_resources() {
         "btc:bitcoin.conf:4096"
         "dgb:digibyte.conf:4096"
         "bch:bitcoin.conf:4096"
+        "bch2:bitcoincashii.conf:2048"
         "ltc:litecoin.conf:4096"
         "nmc:namecoin.conf:2048"
         "bc2:bitcoinii.conf:2048"
+        "btcs:bitcoinsilver.conf:2048"
         "sys:syscoin.conf:2048"
         "xmy:myriadcoin.conf:2048"
         "fbtc:fractal.conf:2048"
@@ -2302,6 +2688,7 @@ rightsize_daemon_resources() {
         "qbx:qbitx.conf:2048"
         "pep:pepecoin.conf:2048"
         "cat:catcoin.conf:2048"
+        "xec:bitcoin.conf:4096"
     )
 
     for entry in "${COIN_LIMITS[@]}"; do
@@ -2375,7 +2762,9 @@ fix_daemon_service_ownership_pre() {
         "digibyted"
         "bitcoind"
         "bitcoind-bch"
+        "bitcoincashIId"
         "bitcoiniid"
+        "bitcoinsilverd"
         "litecoind"
         "dogecoind"
         "namecoind"
@@ -2385,6 +2774,7 @@ fix_daemon_service_ownership_pre() {
         "pepecoind"
         "catcoind"
         "qbitxd"
+        "ecashd"
     )
 
     local FIXES=0
@@ -2439,7 +2829,9 @@ ensure_daemon_peer_config() {
         ["dgb"]="digibyte.conf|addnode=64.182.71.16:12024 addnode=80.120.148.66:12024 addnode=185.242.227.238:12024 addnode=173.212.197.63:12024 addnode=185.150.190.101:12024 addnode=83.85.77.100:12024"
         ["btc"]="bitcoin.conf|addnode=45.55.132.91:8333 addnode=71.196.197.14:8333 addnode=72.83.184.215:8333 addnode=65.93.70.99:8333 addnode=67.60.239.105:8333 addnode=71.86.88.157:8333 addnode=173.249.47.215:8333 addnode=203.11.72.77:8333 addnode=216.107.135.60:8333 addnode=72.230.224.175:8333 addnode=77.247.151.58:8333 addnode=78.145.65.241:8333"
         ["bch"]="bitcoin.conf|addnode=195.3.223.29:8433 addnode=199.217.115.27:8433 addnode=3.142.98.179:8433 addnode=35.163.48.30:8433 addnode=35.198.46.157:8433 addnode=51.91.196.151:8433 addnode=174.140.196.19:8433 addnode=193.164.205.249:8433 addnode=194.14.246.11:8433 addnode=8.219.86.245:8433 addnode=15.204.95.99:8433 addnode=18.139.1.192:8433 addnode=51.159.104.35:8433 addnode=57.129.18.162:8433 addnode=65.109.90.134:8433"
+        ["bch2"]="bitcoincashii.conf|forcednsseed=1"
         ["bc2"]="bitcoinii.conf|addnode=173.249.0.253:8338 addnode=193.164.205.250:8338 addnode=89.38.128.175:8338 addnode=98.22.238.18:8338 addnode=144.76.79.60:8338 addnode=75.130.145.1:8338 addnode=45.32.205.199:8338"
+        ["btcs"]="bitcoinsilver.conf|forcednsseed=1"
         ["ltc"]="litecoin.conf|addnode=95.211.152.112:9333 addnode=95.217.32.30:9333 addnode=108.234.193.105:9333 addnode=77.235.26.96:9333 addnode=91.228.147.153:9333 addnode=108.171.202.18:9333"
         ["doge"]="dogecoin.conf|addnode=148.251.122.88:22556 addnode=149.202.10.56:22556 addnode=167.235.95.225:22556 addnode=91.184.178.3:22556 addnode=97.103.138.106:22556 addnode=138.201.132.34:22556"
         ["pep"]="pepecoin.conf|addnode=144.76.222.140:33874 addnode=154.39.75.82:33874 addnode=173.212.253.15:33874 addnode=3.212.41.153:33874 addnode=3.216.226.159:33874 addnode=18.158.24.136:33874"
@@ -2881,9 +3273,7 @@ build_stratum() {
         log_warn "Could not determine Go version — proceeding with build"
     elif [[ "$GO_MAJOR" -lt 1 ]] || { [[ "$GO_MAJOR" -eq 1 ]] && [[ "$GO_MINOR" -lt 26 ]]; }; then
         log_warn "Go ${GO_VER} is below 1.26 (required by go.mod). Installing Go 1.26.1..."
-        local SYSTEM_ARCH_GO
-        SYSTEM_ARCH_GO=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
-        [[ "$SYSTEM_ARCH_GO" == "arm64" ]] || SYSTEM_ARCH_GO="amd64"
+        local SYSTEM_ARCH_GO="amd64"
         log_info "Downloading Go 1.26.1 (this may take a minute)..."
         if curl -fSL --connect-timeout 15 --max-time 300 "https://go.dev/dl/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz" -o "/tmp/go1.26.1.linux-${SYSTEM_ARCH_GO}.tar.gz"; then
             sudo rm -rf /usr/local/go
@@ -3209,9 +3599,12 @@ update_dashboard() {
             sudo -u "$POOL_USER" python3 -m venv "$DASHBOARD_INSTALL/venv"
             sudo -u "$POOL_USER" "$DASHBOARD_INSTALL/venv/bin/pip" install --upgrade pip -q 2>/dev/null
         fi
-        sudo -u "$POOL_USER" "$DASHBOARD_INSTALL/venv/bin/pip" install -q -r "$DASHBOARD_INSTALL/requirements.txt" 2>/dev/null || {
-            log_warn "  - Failed to install dashboard Python dependencies"
-        }
+        local _pip_out _pip_rc=0
+        _pip_out=$(sudo -u "$POOL_USER" "$DASHBOARD_INSTALL/venv/bin/pip" install -q -r "$DASHBOARD_INSTALL/requirements.txt" 2>&1) || _pip_rc=$?
+        if [[ $_pip_rc -ne 0 ]]; then
+            log_warn "  - Failed to install dashboard Python dependencies:"
+            echo "$_pip_out" | tail -15 >&2
+        fi
     fi
 
     # Ensure sudoers is configured for dashboard service control
@@ -3235,7 +3628,9 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart spiralsentinel
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart digibyted
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoind-bch
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoincashIId
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoiniid
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoinsilverd
 # SHA-256d merge-mineable coins (AuxPoW)
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart namecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart syscoind
@@ -3259,9 +3654,6 @@ $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/apt-noninteractive.sh *
 
 # Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade
 $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
-
-# Database health check - allow psql as postgres user
-$POOL_USER ALL=(postgres) NOPASSWD: /usr/bin/psql -c SELECT\ 1
 
 # Enable HTTPS - dashboard UI can activate TLS via enable-https.sh
 $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/enable-https.sh
@@ -3308,14 +3700,11 @@ $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
 SUDOERS_APPEND
             sudoers_changed=true
         fi
-        if ! grep -q "psql" "$DASH_SUDOERS" 2>/dev/null; then
-            log_info "  - Adding database health check permissions (v2.0)..."
-            cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
-
-# Database health check - allow psql as postgres user (v2.0)
-$POOL_USER ALL=(postgres) NOPASSWD: /usr/bin/psql -c SELECT\ 1
-SUDOERS_APPEND
-            sudoers_changed=true
+        local hm_script="${INSTALL_DIR}/bin/health-monitor.sh"
+        if grep -q 'sudo -u postgres.*psql.*SELECT' "$hm_script" 2>/dev/null; then
+            log_info "  - Patching PostgreSQL health check to use pg_isready (v2.5)..."
+            sed -i 's|sudo -u postgres /usr/bin/psql -c "SELECT 1" &>/dev/null|/usr/bin/pg_isready -h 127.0.0.1 -p 5432 -q|' "$hm_script"
+            systemctl restart spiralpool-health 2>/dev/null || true
         fi
         if ! grep -q "enable-https" "$DASH_SUDOERS" 2>/dev/null; then
             log_info "  - Adding HTTPS enable permissions (v2.0)..."
@@ -3477,7 +3866,7 @@ update_systemd_services() {
     fi
 
     # Detect daemon type from config.yaml or existing service file
-    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BC2, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC, QBX
+    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC, QBX, XEC
     local DETECTED_DAEMON=""
 
     # First, try to detect from config.yaml (most reliable)
@@ -3487,7 +3876,9 @@ update_systemd_services() {
             digibyte|digibyte-scrypt) DETECTED_DAEMON="digibyted" ;;
             bitcoin) DETECTED_DAEMON="bitcoind" ;;
             bitcoincash) DETECTED_DAEMON="bitcoind-bch" ;;
+            bitcoincashii) DETECTED_DAEMON="bitcoincashIId" ;;
             bitcoinii) DETECTED_DAEMON="bitcoiniid" ;;
+            bitcoinsilver) DETECTED_DAEMON="bitcoinsilverd" ;;
             litecoin) DETECTED_DAEMON="litecoind" ;;
             dogecoin) DETECTED_DAEMON="dogecoind" ;;
             pepecoin) DETECTED_DAEMON="pepecoind" ;;
@@ -3497,12 +3888,17 @@ update_systemd_services() {
             myriad|myriadcoin) DETECTED_DAEMON="myriadcoind" ;;
             fractal|fractalbitcoin|fractal-bitcoin) DETECTED_DAEMON="fractald" ;;
             qbitx|q-bitx|qbitxcoin) DETECTED_DAEMON="qbitxd" ;;
+            ecash|xec) DETECTED_DAEMON="ecashd" ;;
         esac
     fi
 
     # Fallback: detect from existing service file
     if [[ -z "$DETECTED_DAEMON" ]] && [[ -f "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" ]]; then
-        if grep -q "bitcoiniid" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
+        if grep -q "bitcoincashIId" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
+            DETECTED_DAEMON="bitcoincashIId"
+        elif grep -q "bitcoinsilverd" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
+            DETECTED_DAEMON="bitcoinsilverd"
+        elif grep -q "bitcoiniid" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
             DETECTED_DAEMON="bitcoiniid"
         elif grep -q "bitcoind-bch\|bitcoincashd" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
             DETECTED_DAEMON="bitcoind-bch"
@@ -3533,7 +3929,7 @@ update_systemd_services() {
 
     # Ultimate fallback: check which daemon services exist
     if [[ -z "$DETECTED_DAEMON" ]]; then
-        for daemon in bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted qbitxd; do
+        for daemon in bitcoincashIId bitcoinsilverd bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted qbitxd; do
             if [[ -f "/etc/systemd/system/${daemon}.service" ]]; then
                 DETECTED_DAEMON="$daemon"
                 break
@@ -3934,7 +4330,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.4.2 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.5.0 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -3955,7 +4351,7 @@ echo -e "    ${YELLOW}spiralctl test${NC}           Connectivity   ${YELLOW}spir
 echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BC2  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BCH2  BC2  BTCS  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
 echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
 echo ""
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -4052,6 +4448,38 @@ migrate_ha_sudoers() {
             log_info "  - Added HA recovery sudoers entries"
         else
             log_warn "  - Sudoers syntax error after HA migration"
+        fi
+    fi
+}
+
+migrate_daemon_sudoers() {
+    # v2.4.3: Add missing BCH2/BTCS daemon sudoers restart entries for existing installs.
+    # Fresh installs get these from install.sh, but users upgrading from v2.0-v2.4.2
+    # with BCH2/BTCS pools cannot restart those daemons from the dashboard without this.
+    local DASH_SUDOERS="/etc/sudoers.d/spiralpool-dashboard"
+    [[ -f "$DASH_SUDOERS" ]] || return 0
+
+    local changed=0
+
+    if ! grep -q "bitcoincashIId" "$DASH_SUDOERS" 2>/dev/null; then
+        echo "" >> "$DASH_SUDOERS"
+        echo "# BCH2 (Bitcoin Cash II) daemon control (v2.4.3)" >> "$DASH_SUDOERS"
+        echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoincashIId" >> "$DASH_SUDOERS"
+        changed=1
+    fi
+
+    if ! grep -q "bitcoinsilverd" "$DASH_SUDOERS" 2>/dev/null; then
+        echo "" >> "$DASH_SUDOERS"
+        echo "# BTCS (Bitcoin Silver) daemon control (v2.4.3)" >> "$DASH_SUDOERS"
+        echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart bitcoinsilverd" >> "$DASH_SUDOERS"
+        changed=1
+    fi
+
+    if [[ $changed -eq 1 ]]; then
+        if visudo -c -f "$DASH_SUDOERS" > /dev/null 2>&1; then
+            log_info "  - Added BCH2/BTCS daemon sudoers entries"
+        else
+            log_warn "  - Sudoers syntax error after BCH2/BTCS daemon migration"
         fi
     fi
 }
@@ -4217,7 +4645,8 @@ migrate_coin_version_cache() {
         [DGB]="8.26.2"          [DGB-SCRYPT]="8.26.2"
         [BTC]="29.3.knots20260210"
         [BCH]="29.0.0"          [BC2]="29.1.0"
-        [LTC]="0.21.4"          [DOGE]="1.14.9"
+        [BCH2]="27.0.2"         [BTCS]="source-ff5c3c3"
+        [LTC]="0.21.5.4"        [DOGE]="1.14.9"
         [PEP]="1.1.0"           [CAT]="2.1.1"
         [NMC]="28.0"            [SYS]="5.0.5"
         [XMY]="0.18.1.0"        [FBTC]="0.3.0"
@@ -4227,6 +4656,7 @@ migrate_coin_version_cache() {
     declare -A _VC_BIN=(
         [DGB]="digibyted"       [DGB-SCRYPT]="digibyted"
         [BTC]="bitcoind"        [BCH]="bitcoind-bch"
+        [BCH2]="bitcoincashIId" [BTCS]="bitcoinsilverd"
         [BC2]="bitcoiniid"      [LTC]="litecoind"
         [DOGE]="dogecoind"      [PEP]="pepecoind"
         [CAT]="catcoind"        [NMC]="namecoind"
@@ -4647,7 +5077,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.4.2 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.5.0 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -4689,6 +5119,7 @@ main() {
             --fix-config)      FIX_CONFIG=true; shift ;;
             --skip-start)      SKIP_START=true; shift ;;
             --full)            UPDATE_SERVICES=true; FIX_CONFIG=true; shift ;;
+            --recover-wallets) DO_RECOVER_WALLETS=true; shift ;;
             --rollback)
                 DO_ROLLBACK=true
                 shift
@@ -4864,6 +5295,15 @@ SSHDEOF
         exit $?
     fi
 
+    # Standalone wallet recovery — delete markers first so every coin is processed
+    if [[ "${DO_RECOVER_WALLETS:-false}" == "true" ]]; then
+        log_info "Standalone wallet recovery mode — clearing backup markers to force re-export..."
+        local backup_base="${INSTALL_DIR}/backups"
+        sudo rm -f "${backup_base}"/.backup-confirmed-* 2>/dev/null || true
+        repair_wallet_backups
+        exit $?
+    fi
+
     # Get source (GitHub by default, or local with --local flag)
     if [[ "$USE_LOCAL" == "true" ]]; then
         detect_source_directory
@@ -4984,8 +5424,33 @@ SSHDEOF
         exit 1
     fi
 
+    # Wallet reminder — shown before any changes are made
+    echo -e "${RED}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REMINDER${NC}                                        ${RED}║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  If your pool wallet was generated on this server, your private keys"
+    echo -e "  are stored in ${WHITE}/spiralpool/backups/${NC} and in each coin's data directory."
+    echo ""
+    echo -e "  ${YELLOW}Before upgrading:${NC}"
+    echo -e "  ${YELLOW}•${NC} Confirm you have a copy of every wallet.dat off this server"
+    echo -e "  ${YELLOW}•${NC} SCP any missing backups now — upgrade will also prompt per coin"
+    echo -e "  ${YELLOW}•${NC} Store backups in at least two offline locations"
+    echo ""
+    echo -e "  Run ${WHITE}sudo bash scripts/linux/wallet-backup.sh${NC} if unsure."
+    echo ""
+    printf "  Press ENTER to confirm you have read this and continue: "
+    read -r _upgrade_wallet_ack
+    echo ""
+
     # Execute upgrade
     create_backup
+
+    # Wallet backup repair — runs while daemons are still live.
+    # For any coin without a .backup-confirmed-{coin} marker, exports a clean
+    # wallet.dat via backupwallet RPC and blocks until user confirms it's saved.
+    # Must run BEFORE stop_services so the RPC is available.
+    repair_wallet_backups
 
     # BUILD phase — compile while services are still running (miners stay connected)
     # Build failure exits here → services never stopped → zero downtime on build errors
@@ -5067,6 +5532,7 @@ SSHDEOF
     # Update version, scripts, and utilities
     update_utility_scripts
     migrate_ha_sudoers
+    migrate_daemon_sudoers
     migrate_dashboard_https
     update_motd
     update_version_file

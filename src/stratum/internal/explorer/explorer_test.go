@@ -485,6 +485,14 @@ func TestCoinFromString(t *testing.T) {
 		{"bitcoincash", CoinBitcoinCash},
 		{"BCH", CoinBitcoinCash},
 		{"bch", CoinBitcoinCash},
+		{"bitcoincashii", CoinBitcoinCashII},
+		{"BCH2", CoinBitcoinCashII},
+		{"bch2", CoinBitcoinCashII},
+		{"BITCOINCASHII", CoinBitcoinCashII},
+		{"bitcoinsilver", CoinBitcoinSilver},
+		{"BTCS", CoinBitcoinSilver},
+		{"btcs", CoinBitcoinSilver},
+		{"BITCOINSILVER", CoinBitcoinSilver},
 		{"unknown", CoinType("unknown")},
 	}
 
@@ -522,6 +530,18 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if len(btcExplorers) < 2 {
 		t.Errorf("Expected at least 2 BTC explorers, got %d", len(btcExplorers))
+	}
+
+	// Check Bitcoin Cash II is configured
+	_, ok = cfg.Coins[CoinBitcoinCashII]
+	if !ok {
+		t.Error("Bitcoin Cash II not in default config")
+	}
+
+	// Check Bitcoin Silver is configured
+	_, ok = cfg.Coins[CoinBitcoinSilver]
+	if !ok {
+		t.Error("Bitcoin Silver not in default config")
 	}
 }
 

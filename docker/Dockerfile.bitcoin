@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+#
+# Upgrade approach based on work by bkhuraijam:
+# https://github.com/bkhuraijam/Spiral-Pool/commit/35fc61f585e30dc2562a4ca31cb773ff65d1c9cb
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║                                                                            ║
@@ -11,34 +14,46 @@
 # ║   Bitcoin Knots is an enhanced Bitcoin client with additional features     ║
 # ║   and bug fixes. It's fully compatible with the Bitcoin network.           ║
 # ║                                                                            ║
-# ║   Official image: bitcoinknots/bitcoin                                     ║
-# ║   https://hub.docker.com/r/bitcoinknots/bitcoin                            ║
+# ║   Built from official GitHub release tarball — no third-party images.     ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-# Use the official Bitcoin Knots image (multi-arch: supports amd64 and arm64)
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
-FROM bitcoinknots/bitcoin:29.3.knots20260210
+# NOTE: Only x86_64 (amd64) is supported.
+FROM --platform=linux/amd64 debian:bookworm-slim
+
+ARG VERSION=29.3.knots20260508
+ARG ARCH=x86_64-linux-gnu
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Knots Node for Spiral Pool"
-LABEL version="29.3.knots20260210"
+LABEL version="${VERSION}"
 
-# Expose ports
-# P2P (mainnet)
-EXPOSE 8333
-# RPC
-EXPOSE 8332
-# ZMQ
-EXPOSE 28332
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gosu \
+        gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Bitcoin Knots binaries from official GitHub release
+RUN set -eux; \
+    MAJOR=$(echo "$VERSION" | grep -oP '^\d+'); \
+    curl -fsSL "https://github.com/bitcoinknots/bitcoin/releases/download/v${VERSION}/bitcoin-${VERSION}-${ARCH}.tar.gz" \
+        -o /tmp/bitcoin.tar.gz; \
+    tar -xzf /tmp/bitcoin.tar.gz -C /tmp; \
+    install -m 0755 /tmp/bitcoin-${VERSION}/bin/bitcoind /usr/local/bin/; \
+    install -m 0755 /tmp/bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/; \
+    install -m 0755 /tmp/bitcoin-${VERSION}/bin/bitcoin-tx /usr/local/bin/; \
+    rm -rf /tmp/bitcoin.tar.gz /tmp/bitcoin-${VERSION}
+
+# Create dedicated bitcoin user with restricted privileges
+RUN groupadd -r bitcoin && useradd -r -g bitcoin -m -d /home/bitcoin bitcoin
 
 # Data volume
 VOLUME ["/home/bitcoin/.bitcoin"]
 
-# Add envsubst for config template processing
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends gosu gettext-base \
-    && rm -rf /var/lib/apt/lists/*
+# P2P (mainnet), RPC, ZMQ
+EXPOSE 8333 8332 28332
 
 # Create entrypoint script that processes config template
 RUN echo '#!/bin/bash\n\

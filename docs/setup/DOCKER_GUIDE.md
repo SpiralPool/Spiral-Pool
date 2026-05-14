@@ -12,7 +12,7 @@ Docker supports **V1 + V2 Stratum** in both single-coin and multi-coin mode:
 - **Multi-coin mode:** All enabled coins in one deployment via `POOL_MODE=multi` + `--profile multi`
 - **Stratum V1** (plain + TLS encrypted connections)
 - **Stratum V2** (SV2 binary protocol with Noise NX encryption) — opt-in via `STRATUM_V2_ENABLED=true`
-- All 14 coins: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT
+- All 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT
 - Merge mining in multi-coin mode: SHA-256d (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, or DGB as parent) and Scrypt (LTC+DOGE, LTC+PEP)
 - Dashboard, Sentinel monitoring, Prometheus, and Grafana included
 - Self-signed TLS certificates auto-generated (V1 TLS); Noise keys generated in memory (V2)
@@ -39,21 +39,6 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 # Log out and back in for group changes to take effect
 ```
-
-### ARM64 / aarch64 (Raspberry Pi, Apple Silicon, ARM bare-metal servers)
-
-> **EXPERIMENTAL / UNTESTED** — ARM64 Docker support is provided on a best-effort
-> basis. Upstream coin projects publish arm64 binaries and Docker will automatically
-> pull the correct architecture, but this has **not been tested** by the Spiral Pool
-> team. Known limitations:
->
-> - **Fractal Bitcoin (FBTC)** and **Q-BitX (QBX)** have no arm64 binaries and will fail to build on ARM.
-> - Go compilation and stratum binary compatibility are unverified on ARM.
-> - Performance characteristics are unknown on ARM hardware.
-> - 12 of 14 coin images include arm64 conditionals; FBTC and QBX are x86_64-only.
->
-> If you encounter issues on ARM64, please report them with your architecture
-> (`dpkg --print-architecture`) and full error output.
 
 ### Windows (WSL2) *(Experimental — not recommended for production)*
 
@@ -109,7 +94,7 @@ POOL_COIN=digibyte
 POOL_ADDRESS=YOUR_WALLET_ADDRESS_HERE
 ```
 
-Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`, `qbitx`
+Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoincashii`, `bitcoinsilver`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`, `ecash`, `qbitx`
 
 Also set your Pool ID to match your coin:
 
@@ -119,11 +104,14 @@ Also set your Pool ID to match your coin:
 | DigiByte-Scrypt | `dgb_scrypt_1` |
 | Bitcoin | `btc_sha256_1` |
 | Bitcoin Cash | `bch_sha256_1` |
+| Bitcoin Cash II | `bch2_sha256_1` |
 | Bitcoin II | `bc2_sha256_1` |
+| Bitcoin Silver | `btcs_sha256_1` |
 | Namecoin | `nmc_sha256_1` |
 | Syscoin | `sys_sha256_1` |
 | Myriadcoin | `xmy_sha256_1` |
 | Fractal BTC | `fbtc_sha256_1` |
+| eCash | `xec_sha256_1` |
 | Q-BitX | `qbx_sha256_1` |
 | Litecoin | `ltc_scrypt_1` |
 | Dogecoin | `doge_scrypt_1` |
@@ -137,7 +125,7 @@ Also set your Pool ID to match your coin:
 ```
 
 This auto-generates unique random passwords for:
-- All coin daemon RPC credentials (14 daemons; DGB-SCRYPT shares the DGB daemon)
+- All coin daemon RPC credentials (15 daemons; DGB-SCRYPT shares the DGB daemon)
 - PostgreSQL database
 - Grafana admin
 - Admin API key
@@ -159,11 +147,14 @@ Available single-coin profiles:
 | `dgb` | DigiByte | SHA-256d |
 | `btc` | Bitcoin | SHA-256d |
 | `bch` | Bitcoin Cash | SHA-256d |
+| `bch2` | Bitcoin Cash II | SHA-256d |
 | `bc2` | Bitcoin II | SHA-256d |
+| `btcs` | Bitcoin Silver | SHA-256d |
 | `nmc` | Namecoin | SHA-256d |
 | `sys` | Syscoin (merge-mining only — use multi-coin mode, see below) | SHA-256d |
 | `xmy` | Myriadcoin | SHA-256d |
 | `fbtc` | Fractal Bitcoin | SHA-256d |
+| `xec` | eCash | SHA-256d |
 | `qbx` | Q-BitX | SHA-256d |
 | `ltc` | Litecoin | Scrypt |
 | `doge` | Dogecoin | Scrypt |
@@ -402,7 +393,9 @@ After the pool starts (allow 5-10 minutes for blockchain daemon initialization):
 | DigiByte-Scrypt | 3336 | 3337 | 3338 |
 | Bitcoin | 4333 | 4334 | 4335 |
 | Bitcoin Cash | 5333 | 5334 | 5335 |
+| Bitcoin Cash II | 5336 | 5337 | 5338 |
 | Bitcoin II | 6333 | 6334 | 6335 |
+| Bitcoin Silver | 11335 | 11336 | 11337 |
 | Litecoin | 7333 | 7334 | 7335 |
 | Dogecoin | 8335 | 8337 | 8342 |
 | PepeCoin | 10335 | 10336 | 10337 |
@@ -411,6 +404,7 @@ After the pool starts (allow 5-10 minutes for blockchain daemon initialization):
 | Syscoin | 15335 | 15336 | 15337 |
 | Myriadcoin | 17335 | 17336 | 17337 |
 | Fractal BTC | 18335 | 18336 | 18337 |
+| eCash | 18338 | 18339 | 18340 |
 | Q-BitX | 20335 | 20336 | 20337 |
 
 > V2 ports are only active when `STRATUM_V2_ENABLED=true` is set in `.env`. V2 uses the Noise NX protocol (`secp256k1 + ChaCha20-Poly1305 + SHA-256`) — encryption keys are generated in memory at startup, no certificate files needed.
@@ -782,7 +776,7 @@ What it does:
 - Detects all installed WSL2 distros; lets you pick one if multiple exist
 - Auto-detects your Windows LAN IP and WSL2 IP (with manual override)
 - Warns and exits cleanly if WSL2 mirrored networking is active (portproxy not needed)
-- Shows a coin selection menu (all 14 Spiral Pool coins, ALL, or custom port)
+- Shows a coin selection menu (all 17 Spiral Pool coins, ALL, or custom port)
 - Adds `netsh portproxy` rules: `0.0.0.0:PORT → WSL2_IP:PORT`
 - Adds Windows Firewall inbound rules for the selected ports
 - Checks whether systemd is enabled in WSL2; offers to enable it if not

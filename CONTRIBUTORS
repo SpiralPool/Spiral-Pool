@@ -1,0 +1,57 @@
+# Spiral Pool Contributors
+
+This file lists contributors whose work has been ported into this codebase
+from upstream forks. Attribution is maintained in full per the BSD-3-Clause
+license and the project's commitment to traceability.
+
+---
+
+## Upstream Fork Contributors
+
+Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
+  - Per-coin session best share difficulty (CAS-loop atomic.Uint64)
+  - GetBestShareDiff() interface and implementation
+  - Per-coin accepted/rejected shares API and dashboard display
+  - True pool effort calculation (cumulative round difficulty tracking)
+  - FBTC indexing provider cycle fix (getdifficulty=1 fallback)
+  - Network difficulty display in Est. Time to Block widget
+  - Block alert retry queue (persist failed Discord notifications to disk)
+  - Sync check interval fix (60s → 30s)
+  - Block dedup hash-only fix (removed worker-name dedup)
+  - Per-coin all-time best share difficulty (lifetime_stats persistence)
+  - GetBlocksWithOrphans dynamic limit (pageSize query parameter)
+  - Docker ZMQ port exposures, extra_hosts, PROMETHEUS_URL additions
+  - Full stack fixes: stratum API, Sentinel reliability, dashboard math
+  - XEC (eCash / Bitcoin ABC) full coin integration:
+    - ECashCoin Go type: CashAddr validation (ecash:q/p), RTT difficulty,
+      MinerFund and StakingRewards mandatory coinbase outputs
+    - Dockerfile.ecash (Bitcoin ABC v0.31.12, x86_64)
+    - docker-compose.yml xec profile (ports 18338/18339/18340, P2P 8343)
+    - docker/config/ecash.conf.template (RPC 9004, ZMQ 28335)
+    - install.sh: CashAddr regex validation, UFW rules, coin menu option 17,
+      multi-coin toggle, Docker profile injection, upgrade-path preservation
+    - coin-upgrade.sh: COIN_TARGET[XEC]="0.31.12", download_XEC()
+    - spiralctl.sh: ecashd service, conf-name mapping, status/enable coverage
+    - dashboard.py: VALID_COINS, WALLET_PATTERNS, COIN_CONFIGS (RPC 9004),
+      COINGECKO_IDS ("ecash"), normalize_coin (ECASH/BITCOIN-ABC → XEC)
+    - config/coins.manifest.yaml: XEC entry (sha256d, ports, CashAddr flag)
+
+MESKONE0722 — https://github.com/MESKONE0722/Spiral-Pool
+  - BCH2 (Bitcoin Cash II) coin implementation and Docker support
+  - BTCS (Bitcoin Silver) coin implementation and Docker support
+  - BCH2/BTCS install.sh integration (ports, RPC users, enable flags)
+  - config/coins.manifest.yaml entries for BCH2 and BTCS
+
+---
+
+## Security Notes
+
+All ported commits were reviewed for:
+- Hardcoded credentials (none found after sanitization)
+- Personal wallet addresses (sanitized in dashboard_config.json)
+- Personal LAN IP addresses (sanitized in dashboard_config.json)
+- Personal operational settings (port remaps, Werkzeug flag, Grafana
+  exposure, difficulty config — all reverted to maintain compatibility)
+- Supply chain risks (BTCS Dockerfile pinned to commit ff5c3c3d via
+  targeted git fetch; BCH2 Dockerfile updated to v27.0.2 with correct
+  release URL format)

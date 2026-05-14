@@ -35,7 +35,7 @@ For lookup tables (ports, miner classes, CLI), see [REFERENCE.md](../reference/R
 
 ## 1. System Overview
 
-Spiral Pool is a mining pool server written in Go that supports 14 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
+Spiral Pool is a mining pool server written in Go that supports 17 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
 
 ### Core Design Principles
 
@@ -972,18 +972,21 @@ Source: `src/sentinel/SpiralSentinel.py`, `src/dashboard/dashboard.py`
 
 ## 18. Multi-Coin and Merge Mining
 
-### Supported Coins (14 total)
+### Supported Coins (17 total)
 
 | Coin | Symbol | Algorithm | Solo-Minable | Merge-Mined With |
 |------|--------|-----------|--------------|------------------|
 | Bitcoin | BTC | SHA-256d | Yes | Parent chain |
 | Bitcoin Cash | BCH | SHA-256d | Yes | -- |
+| Bitcoin Cash II | BCH2 | SHA-256d | Yes | -- |
 | DigiByte | DGB | SHA-256d | Yes | -- |
 | Bitcoin II | BC2 | SHA-256d | Yes | -- |
+| Bitcoin Silver | BTCS | SHA-256d | Yes | -- |
 | Namecoin | NMC | SHA-256d | Yes | BTC (chain ID 1) |
 | Syscoin | SYS | SHA-256d | No | BTC (chain ID 16) |
 | Myriad | XMY | SHA-256d | Yes | BTC (chain ID 90) |
 | Fractal Bitcoin | FBTC | SHA-256d | Yes | BTC (chain ID 8228) |
+| eCash | XEC | SHA-256d | Yes | -- |
 | Q-BitX | QBX | SHA-256d | Yes | -- |
 | Litecoin | LTC | Scrypt | Yes | Parent chain |
 | Dogecoin | DOGE | Scrypt | Yes | LTC (chain ID 98) |
@@ -1088,4 +1091,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2*
+*Spiral Pool — Phi Hash Reactor 2.5.0*

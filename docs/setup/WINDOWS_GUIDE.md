@@ -1,6 +1,6 @@
 # Spiral Pool Windows Installation Guide
 
-Two installation paths exist for running Spiral Pool on Windows 11. Both are **experimental** and intended for development, testing, and pool evaluation. For production mining, use Ubuntu 24.04 LTS with the native `install.sh` installer.
+Two installation paths exist for running Spiral Pool on Windows 11. Both are **experimental** and intended for development, testing, and pool evaluation. For production mining, use Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, or Debian 13 "Trixie" with the native `install.sh` installer.
 
 ---
 
@@ -11,7 +11,7 @@ Two installation paths exist for running Spiral Pool on Windows 11. Both are **e
 | **What it does** | Runs everything in Docker containers on Windows | Installs the full Linux stack inside a WSL2 Ubuntu VM |
 | **Installer** | `install-windows.ps1` (PowerShell) | `install.sh` (runs inside WSL2 Ubuntu) |
 | **Windows editions** | Home, Pro, Enterprise, Education | Home, Pro, Enterprise, Education |
-| **Coins** | Single coin only (14 choices, see note) | All 14 coins, multi-coin, merge mining |
+| **Coins** | Single coin only (17 choices, see note) | All 17 coins, multi-coin, merge mining |
 | **Stratum** | V1 + TLS | V1 + V2 + TLS |
 | **Merge mining** | Not supported | Supported (BTC+NMC+SYS+XMY+FBTC, LTC+DOGE+PEP) |
 | **High availability** | Not supported | Not supported (requires bare metal Linux) |
@@ -26,7 +26,7 @@ Two installation paths exist for running Spiral Pool on Windows 11. Both are **e
 1. **Just want to try it out?** &rarr; **Path A (Docker Desktop)**. One command, fully automated.
 2. **Need multi-coin or merge mining?** &rarr; **Path B (WSL2 Native)**. Docker is single-coin only.
 3. **Need V2 Stratum?** &rarr; **Path B (WSL2 Native)**.
-4. **Planning to go to production?** &rarr; Skip Windows entirely. Install Ubuntu 24.04 LTS on bare metal or a dedicated VM.
+4. **Planning to go to production?** &rarr; Skip Windows entirely. Install Ubuntu 24.04 LTS or 26.04 LTS on bare metal or a dedicated VM.
 
 ---
 
@@ -58,7 +58,7 @@ The installer will:
 2. Detect and install WSL2 or enable Hyper-V (reboot may be required)
 3. Check RAM requirements
 4. Download and install Docker Desktop (if not installed)
-5. Present a coin selection menu (14 coins)
+5. Present a coin selection menu (17 coins)
 6. Prompt for wallet address, storage path, and coinbase text
 7. Configure Windows Firewall rules
 8. Generate `.env` and start Docker containers
@@ -80,19 +80,24 @@ The installer will:
 | 1 | DGB | DigiByte | SHA256d | ~60 GB | 3333 |
 | 2 | BTC | Bitcoin | SHA256d | ~600 GB | 4333 |
 | 3 | BCH | Bitcoin Cash | SHA256d | ~250 GB | 5333 |
-| 4 | BC2 | Bitcoin II | SHA256d | ~10 GB | 6333 |
-| 5 | NMC | Namecoin | SHA256d | ~15 GB | 14335 |
-| 6 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
-| 7 | FBTC | Fractal Bitcoin | SHA256d | ~10 GB | 18335 |
-| 8 | QBX | Q-BitX | SHA256d | ~5 GB | 20335 |
-| 9 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
-| 10 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
-| 11 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
-| 12 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
-| 13 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
-| 14 | SYS | Syscoin | SHA256d | ~80 GB | 16335 |
+| 4 | BCH2 | Bitcoin Cash II | SHA256d | ~15 GB | 5336 |
+| 5 | BC2 | Bitcoin II | SHA256d | ~10 GB | 6333 |
+| 6 | BTCS | Bitcoin Silver | SHA256d | ~8 GB | 11335 |
+| 7 | NMC | Namecoin | SHA256d | ~15 GB | 14335 |
+| 8 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
+| 9 | FBTC | Fractal Bitcoin | SHA256d | ~10 GB | 18335 |
+| 10 | XEC | eCash | SHA256d | ~20 GB | 18338 |
+| 11 | QBX | Q-BitX | SHA256d | ~5 GB | 20335 |
+| 12 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
+| 13 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
+| 14 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
+| 15 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
+| 16 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
+| 17 | SYS | Syscoin | SHA256d | ~80 GB | 15335 |
 
 > Syscoin (SYS) appears in the menu but cannot be mined standalone. It requires merge mining with BTC, which is only available via native Linux installation.
+
+> **Multi-coin mode:** If `install.sh` was run with multiple coins enabled, miners can use the Smart Multi-Coin Stratum entry-point on port **16180** instead of a coin-specific port. Run `start-wsl2-proxy.bat` and select entry **17 (MULTI)** to forward this port through Windows.
 
 ### Post-Installation
 
@@ -148,7 +153,7 @@ This path runs `install.sh` directly inside a WSL2 Ubuntu distribution. It provi
 ### Prerequisites
 
 - Windows 11 (build 22000+)
-- WSL2 with Ubuntu 24.04 LTS installed
+- WSL2 with Ubuntu 24.04 LTS or 26.04 LTS installed
 - 16 GB RAM recommended (10 GB minimum)
 - Storage varies by coin configuration
 
@@ -157,6 +162,7 @@ This path runs `install.sh` directly inside a WSL2 Ubuntu distribution. It provi
 ```powershell
 # Open PowerShell as Administrator
 wsl --install -d Ubuntu-24.04
+# or for 26.04: wsl --install -d Ubuntu-26.04
 # Follow the prompts to create a Linux username and password
 # Restart if prompted
 ```
@@ -164,7 +170,7 @@ wsl --install -d Ubuntu-24.04
 ### Step 2: Run the Installer Inside WSL2
 
 ```bash
-# Open the Ubuntu terminal (Start menu > Ubuntu 24.04)
+# Open the Ubuntu terminal (Start menu > Ubuntu 24.04 or Ubuntu 26.04)
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git
 
@@ -172,7 +178,7 @@ git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool && sudo ./install.sh
 ```
 
-The installer is the same one used on native Linux. It supports the full interactive menu with back navigation (`b`), checkpoint resume, multi-coin selection, merge mining configuration, and all 14 coins.
+The installer is the same one used on native Linux. It supports the full interactive menu with back navigation (`b`), checkpoint resume, multi-coin selection, merge mining configuration, and all 17 coins.
 
 ### Step 3: Install the Shutdown Hook
 
@@ -201,7 +207,7 @@ This sets up `netsh portproxy` rules so that connections to your Windows IP are 
 - **Read-only sysctl**: WSL2 shares the Windows kernel, so `kernel.dmesg_restrict`, `kernel.kptr_restrict`, `kernel.randomize_va_space`, and `fs.suid_dumpable` cannot be set. The installer handles this automatically.
 - **IPv6 sysctl**: IPv6 disablement via sysctl is skipped on WSL2 (shared kernel limitation).
 - **No `systemd-tmpfiles`**: On WSL2 distributions without full systemd, the installer falls back to `mkdir -p`.
-- **Reboot**: `systemctl reboot` inside WSL2 shuts down the entire VM. To restart, run `wsl -d Ubuntu-24.04` from PowerShell.
+- **Reboot**: `systemctl reboot` inside WSL2 shuts down the entire VM. To restart, run `wsl -d Ubuntu-24.04` (or `wsl -d Ubuntu-26.04`) from PowerShell.
 - **Filesystem performance**: Store blockchain data on the Linux filesystem (`/spiralpool/data/`), not on Windows mounts (`/mnt/c/`). Cross-filesystem access through 9P is extremely slow.
 
 ---
@@ -263,7 +269,7 @@ sudo hwclock -s
 
 When you're ready to move from Windows testing to production:
 
-1. Set up a dedicated Ubuntu 24.04 LTS server (bare metal or self-hosted VM)
+1. Set up a dedicated Ubuntu 24.04 LTS or 26.04 LTS server (bare metal or self-hosted VM)
 2. Run `sudo ./install.sh` on the Linux server
 3. Point your miners to the new server's IP
 4. The Linux installer supports everything: multi-coin, merge mining, V2 Stratum, HA, and full `spiralctl` management

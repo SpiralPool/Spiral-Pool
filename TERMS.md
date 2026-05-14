@@ -41,7 +41,7 @@ You are solely responsible for:
 - Backing up all data and maintaining disaster recovery procedures
 - Any tax obligations arising from cryptocurrency mining
 - Conducting your own security assessment before deployment
-- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v2.4.2 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
+- Determining whether your pool operation triggers any financial regulatory obligations in your jurisdiction. Spiral Pool v2.5.0 operates as a non-custodial solo pool where block rewards pay the miner's wallet directly via the coinbase transaction, but regulatory interpretations vary (see WARNINGS.md for details)
 
 ## 5A. Tor Network Functionality
 
@@ -72,11 +72,7 @@ By using this Software, you acknowledge that:
 3. Cloud deployments receive **NO SUPPORT** — bug reports, feature requests, and support inquiries related to cloud-hosted installations may be closed without investigation
 4. Circumventing the cloud detection mechanism does not create a support obligation or alter this exclusion
 
-## 5C. ARM Architecture
-
-This Software has **NOT** been tested on ARM architecture (including Raspberry Pi, ARM64/aarch64, and ARMv7). All packages, build references, and binary dependencies target **x86_64 (amd64)** on Ubuntu 24.04 LTS. ARM deployments are **NOT supported** and issues arising from ARM-based installations may not be investigated.
-
-## 5D. SimpleSwap.io Integration
+## 5C. SimpleSwap.io Integration
 
 This Software includes an optional integration with [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service. This feature is **disabled by default** and must be explicitly enabled by the operator during installation.
 
@@ -249,7 +245,7 @@ The failure of the authors to enforce any right or provision of these Terms shal
 
 ## 13. Survival
 
-The following provisions shall survive any termination or expiration of these Terms: Sections 3 (No Warranty), 4 (Limitation of Liability), 5 (User Responsibilities), 5A (Tor Network Functionality), 5B (Cloud Deployment Exclusion), 5C (ARM Architecture), 5D (SimpleSwap.io Integration), 5E (Single-Operator Architecture), 6 (Data Loss Acknowledgment), 8 (Indemnification), 8A (No Indemnification to Downstream Parties), 10 (Governing Law and Jurisdiction), 14 (European Union Product Liability), and this Section 13 (Survival).
+The following provisions shall survive any termination or expiration of these Terms: Sections 3 (No Warranty), 4 (Limitation of Liability), 5 (User Responsibilities), 5A (Tor Network Functionality), 5B (Cloud Deployment Exclusion), 5C (SimpleSwap.io Integration), 5D (Single-Operator Architecture), 6 (Data Loss Acknowledgment), 8 (Indemnification), 8A (No Indemnification to Downstream Parties), 10 (Governing Law and Jurisdiction), 14 (European Union Product Liability), and this Section 13 (Survival).
 
 ## 14. European Union Product Liability
 
@@ -276,5 +272,5 @@ These Terms, together with the BSD-3-Clause License and the following supplement
 
 *By using Spiral Pool, you acknowledge that you have read, understood, and agree to be bound by these Terms of Use.*
 
-*Spiral Pool v2.4.2 - Terms of Use*
+*Spiral Pool v2.5.0 - Terms of Use*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

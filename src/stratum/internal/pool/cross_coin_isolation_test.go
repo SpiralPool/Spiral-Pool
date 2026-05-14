@@ -99,7 +99,7 @@ func TestConcurrentCoinOperations(t *testing.T) {
 	t.Parallel()
 
 	// Create isolated state maps for each coin
-	coins := []string{"BTC", "DGB", "LTC", "DOGE"}
+	coins := []string{"BTC", "BCH", "BCH2", "BC2", "BTCS", "DGB", "LTC", "DOGE"}
 	coinStates := make(map[string]*sync.Map)
 	for _, coin := range coins {
 		coinStates[coin] = &sync.Map{}
@@ -335,7 +335,7 @@ func TestDifficultyBleedOver(t *testing.T) {
 	}
 
 	// Check for unexpected equality (potential bleed-over)
-	coins := []string{"BTC", "DGB", "LTC"}
+	coins := []string{"BTC", "BCH", "BCH2", "BC2", "BTCS", "DGB", "LTC"}
 	for i := 0; i < len(coins); i++ {
 		for j := i + 1; j < len(coins); j++ {
 			if diffs[coins[i]] == diffs[coins[j]] {
@@ -718,7 +718,7 @@ func TestMultiCoinConcurrentStress(t *testing.T) {
 
 	t.Parallel()
 
-	coins := []string{"BTC", "DGB", "LTC", "DOGE", "BCH"}
+	coins := []string{"BTC", "BCH", "BCH2", "BC2", "BTCS", "DGB", "LTC", "DOGE"}
 
 	// Create isolated state for each coin
 	type CoinState struct {

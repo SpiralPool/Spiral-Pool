@@ -249,7 +249,7 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `multi_coin_enabled` | bool | `false` | Explicit multi-coin mode |
-| `coins` | list | 14 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
+| `coins` | list | 17 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
 
 ### Historical Data
 
@@ -480,7 +480,8 @@ If all configured channels fail (Discord, Telegram, ntfy, email, XMPP): retries 
 | QBX | 60s | Block time (150s) |
 | DOGE / SYS / XMY | 45s | |
 | LTC / PEP / CAT | 60s | |
-| BTC / BCH / BC2 / NMC | 120s | Slow block time (10 min) |
+| BTC / BCH / BCH2 / BC2 / NMC / XEC | 120s | Slow block time (10 min) |
+| BTCS | 90s | 5-minute blocks |
 | Blockchain sync check | 60s | |
 | HA role check | 30s | Cached |
 | HA/VIP state check | 60s | |
@@ -581,6 +582,8 @@ New achievements are announced via Discord embed when unlocked.
 | DGB | `digibyte` |
 | BTC | `bitcoin` |
 | BCH | `bitcoin-cash` |
+| BCH2 | Not listed — young chain (Dec 2024) |
+| BTCS | Not listed — young chain (Jul 2024) |
 | LTC | `litecoin` |
 | DOGE | `dogecoin` |
 | NMC | `namecoin` |
@@ -588,6 +591,7 @@ New achievements are announced via Discord embed when unlocked.
 | XMY | `myriadcoin` |
 | FBTC | `fractal-bitcoin` |
 | QBX | `q-bitx` |
+| XEC | `ecash` |
 | PEP | `pepecoin` |
 | CAT | `catcoin` |
 
@@ -598,6 +602,8 @@ New achievements are announced via Discord embed when unlocked.
 | DGB | `chainz.cryptoid.info` |
 | BTC | `blockchain.info` |
 | BCH | `api.blockchair.com` |
+| BCH2 | Not tracked — no public explorer API available |
+| BTCS | Not tracked — no public explorer API available |
 
 Checked every 1 hour. Detects payouts received, wallet drops, and missing payouts.
 
@@ -797,4 +803,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Phi Hash Reactor 2.4.2*
+*Spiral Sentinel &mdash; Phi Hash Reactor 2.5.0*

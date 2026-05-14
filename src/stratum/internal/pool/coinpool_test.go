@@ -283,13 +283,13 @@ func TestBlockRewardConversion(t *testing.T) {
 			precision: 0.00000001,
 		},
 		{
-			name:      "6.25 BTC (current reward)",
+			name:      "6.25 BTC (3rd era, height 630000-839999)",
 			satoshis:  625_000_000,
 			wantCoins: 6.25,
 			precision: 0.00000001,
 		},
 		{
-			name:      "3.125 BTC (next halving)",
+			name:      "3.125 BTC (current reward, 4th era, height 840000+)",
 			satoshis:  312_500_000,
 			wantCoins: 3.125,
 			precision: 0.00000001,
@@ -429,7 +429,7 @@ func TestCoinPoolRunningState(t *testing.T) {
 
 // TestSymbolAccessor verifies Symbol() method behavior.
 func TestSymbolAccessor(t *testing.T) {
-	symbols := []string{"DGB", "BTC", "BCH", "BC2"}
+	symbols := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS"}
 
 	for _, symbol := range symbols {
 		if symbol == "" {

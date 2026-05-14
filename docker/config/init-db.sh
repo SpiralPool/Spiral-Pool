@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 # Spiral Pool Database Initialization
 # This script runs automatically when the PostgreSQL container starts for the first time.
-# V2.4.2-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
+# V2.5.0-PHI_HASH_REACTOR with Merge Mining (AuxPoW) Support
 #
 # NOTE: The Go pool application creates pool-specific tables via migrations
 # (e.g., shares_btc_regtest, blocks_btc_regtest). This file provides base
@@ -22,7 +22,7 @@ GRANT_USER="${GRANT_USER:-${POSTGRES_USER}}"
 # SECURITY: Heredoc marker is quoted ('EOSQL') to prevent shell expansion inside the SQL.
 # GRANT_USER is passed via psql's -v mechanism and referenced as :"grant_user" (identifier-quoted)
 # to prevent SQL injection if the username contains special characters.
-psql -v ON_ERROR_STOP=1 -v grant_user="$GRANT_USER" --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'EOSQL'
+psql -v ON_ERROR_STOP=1 -v "grant_user=${GRANT_USER}" --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'EOSQL'
     -- Create extensions
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -81,7 +81,7 @@ psql -v ON_ERROR_STOP=1 -v grant_user="$GRANT_USER" --username "$POSTGRES_USER" 
         confirmationprogress DOUBLE PRECISION DEFAULT 0 CHECK (confirmationprogress >= 0 AND confirmationprogress <= 1),
         hash VARCHAR(256) NOT NULL,
         parenthash VARCHAR(256),
-        reward DOUBLE PRECISION CHECK (reward >= 0),
+        reward NUMERIC(28,12) CHECK (reward >= 0),
         miner VARCHAR(256),
         auxpowdata TEXT,
         submitted BOOLEAN DEFAULT FALSE,
@@ -123,7 +123,7 @@ psql -v ON_ERROR_STOP=1 -v grant_user="$GRANT_USER" --username "$POSTGRES_USER" 
         poolid VARCHAR(64) NOT NULL,
         coin VARCHAR(32) NOT NULL,
         address VARCHAR(256) NOT NULL,
-        amount DOUBLE PRECISION NOT NULL,
+        amount NUMERIC(28,12) NOT NULL CHECK (amount >= 0),
         transactionconfirmationdata TEXT,
         created TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -136,6 +136,11 @@ psql -v ON_ERROR_STOP=1 -v grant_user="$GRANT_USER" --username "$POSTGRES_USER" 
     CREATE INDEX IF NOT EXISTS idx_blocks_coin ON blocks(coin);
     CREATE INDEX IF NOT EXISTS idx_miner_stats_pool ON miner_stats(poolid, miner, created DESC);
     CREATE INDEX IF NOT EXISTS idx_pool_stats_created ON poolstats(poolid, created DESC);
+
+    -- Indexes for payments table
+    CREATE INDEX IF NOT EXISTS idx_payments_pool_created ON payments(poolid, created DESC);
+    CREATE INDEX IF NOT EXISTS idx_payments_address ON payments(address, created DESC);
+    CREATE INDEX IF NOT EXISTS idx_payments_coin ON payments(coin);
 
     -- Indexes for aux_blocks table (merge mining)
     CREATE INDEX IF NOT EXISTS idx_aux_blocks_pool_created ON aux_blocks(poolid, created DESC);

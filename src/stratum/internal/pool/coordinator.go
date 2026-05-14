@@ -1666,6 +1666,9 @@ func (a *auxPoolProvider) GetNetworkHashrate() float64   { return 0 }
 func (a *auxPoolProvider) GetBlocksFound() int64         { return 0 }
 func (a *auxPoolProvider) GetBlockReward() float64       { return 0 }
 func (a *auxPoolProvider) GetPoolEffort() float64        { return 0 }
+func (a *auxPoolProvider) GetAcceptedShares() int64      { return 0 }
+func (a *auxPoolProvider) GetRejectedShares() int64      { return 0 }
+func (a *auxPoolProvider) GetBestShareDiff() float64     { return 0 }
 func (a *auxPoolProvider) GetStratumPort() int           { return 0 }
 func (a *auxPoolProvider) GetActiveConnections() []api.WorkerConnection {
 	return a.parent.GetActiveConnections()
@@ -1879,7 +1882,17 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		)
 	}
 
-	// Validate: weights must sum to exactly 100
+	// Resolve routing mode — defaults to TIME for backward compatibility.
+	routingMode := scheduler.RoutingModeTime
+	if strings.EqualFold(mpCfg.Mode, string(scheduler.RoutingModeDifficulty)) {
+		routingMode = scheduler.RoutingModeDifficulty
+	} else if mpCfg.Mode != "" && !strings.EqualFold(mpCfg.Mode, string(scheduler.RoutingModeTime)) {
+		c.logger.Warnf("Unknown multi_port mode %q, defaulting to TIME", mpCfg.Mode)
+	}
+
+	// Validate coin weights.
+	// In TIME mode they must sum to 100 (they map directly to 24h time slots).
+	// In DIFFICULTY mode they are unused for routing; only reject negative values.
 	totalWeight := 0
 	for _, coinCfg := range mpCfg.Coins {
 		if coinCfg.Weight < 0 {
@@ -1887,8 +1900,13 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		}
 		totalWeight += coinCfg.Weight
 	}
-	if totalWeight != 100 {
-		return fmt.Errorf("multi_port coin weights must sum to 100, got %d", totalWeight)
+	if routingMode == scheduler.RoutingModeTime && totalWeight != 100 {
+		return fmt.Errorf("multi_port coin weights must sum to 100, got %d (required in TIME mode)", totalWeight)
+	}
+	if routingMode == scheduler.RoutingModeDifficulty && totalWeight != 0 && totalWeight != 100 {
+		c.logger.Warnw("multi_port coin weights do not sum to 100; weights are ignored in DIFFICULTY mode",
+			"totalWeight", totalWeight,
+		)
 	}
 
 	// 1. Create DifficultyMonitor (monitors coin availability for failover)
@@ -1943,10 +1961,12 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	c.coinSelector = scheduler.NewSelector(scheduler.SelectorConfig{
 		Monitor:       c.diffMonitor,
 		AllowedCoins:  coinSymbols,
+		ExcludeCoins:  mpCfg.ExcludeCoins,
 		CoinWeights:   coinWeights,
 		PreferCoin:    mpCfg.PreferCoin,
 		MinTimeOnCoin: mpCfg.MinTimeOnCoin,
 		Location:      scheduleLoc,
+		Mode:          routingMode,
 		Logger:        c.logger.Desugar(),
 	})
 
@@ -1981,11 +2001,13 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 		TLSPort:       mpCfg.TLSPort,
 		CheckInterval: mpCfg.CheckInterval,
 		AllowedCoins:  coinSymbols,
+		ExcludeCoins:  mpCfg.ExcludeCoins,
 		CoinWeights:   coinWeights,
 		PreferCoin:    mpCfg.PreferCoin,
 		MinTimeOnCoin: mpCfg.MinTimeOnCoin,
 		WalletMap:     mpCfg.WalletMap,
 		Stratum:       stratumCfg,
+		RoutingMode:   routingMode,
 		Logger:        c.logger.Desugar(),
 	}, c.diffMonitor, c.coinSelector)
 
@@ -2023,6 +2045,7 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	c.logger.Infow("Multi coin smart port started",
 		"port", mpCfg.Port,
 		"coins", coinSymbols,
+		"routing_mode", routingMode,
 	)
 	return nil
 }
@@ -2055,6 +2078,8 @@ func (a *multiPortAdapter) GetMultiPortStats() *api.MultiPortStats {
 		TotalSwitches:    stats.TotalSwitches,
 		CoinDistribution: stats.CoinDistribution,
 		AllowedCoins:     stats.AllowedCoins,
+		ExcludeCoins:     stats.ExcludeCoins,
+		RoutingMode:      string(stats.RoutingMode),
 	}
 	if len(stats.CoinWeights) > 0 {
 		apiStats.CoinWeights = stats.CoinWeights

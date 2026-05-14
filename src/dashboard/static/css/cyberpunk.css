@@ -2159,3 +2159,23 @@ body {
         padding: 0 1rem;
     }
 }
+
+/* Status Badges for Block History — contributed by bkhuraijam */
+.status-badge-confirmed {
+    color: #00ff00;
+    border-color: #00ff00;
+    background: rgba(0, 255, 0, 0.1);
+}
+
+.status-badge-pending {
+    color: #ffff00;
+    border-color: #ffff00;
+    background: rgba(255, 255, 0, 0.1);
+}
+
+.status-badge-orphaned {
+    color: #ff0000;
+    border-color: #ff0000;
+    background: rgba(255, 0, 0, 0.1);
+    text-decoration: line-through;
+}

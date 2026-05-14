@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/spiralpool/stratum/internal/coin"
 	"github.com/spiralpool/stratum/internal/config"
 	"github.com/spiralpool/stratum/internal/daemon"
 	"github.com/spiralpool/stratum/internal/database"
@@ -252,10 +253,22 @@ func (p *Processor) Start(ctx context.Context) error {
 	return nil
 }
 
-// getBlockMaturity returns the configured block maturity or the default.
+// getBlockMaturity returns the configured block maturity, the coin's CoinbaseMaturity,
+// or the default (100). Explicit config always wins; otherwise the coin implementation
+// is consulted so that coins like BTCS (200-block maturity) are handled correctly
+// without requiring operators to set blockMaturity in every config file.
 func (p *Processor) getBlockMaturity() int {
 	if p.cfg.BlockMaturity > 0 {
 		return p.cfg.BlockMaturity
+	}
+	// Use the coin's declared CoinbaseMaturity so BTCS (200), DGB (100), etc.
+	// are handled correctly even when the operator hasn't set an explicit override.
+	if p.poolCfg != nil {
+		if c, err := coin.Create(p.poolCfg.Coin); err == nil {
+			if m := c.CoinbaseMaturity(); m > 0 {
+				return m
+			}
+		}
 	}
 	return DefaultBlockMaturityConfirmations
 }

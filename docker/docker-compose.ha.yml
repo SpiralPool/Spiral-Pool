@@ -53,15 +53,26 @@ services:
       - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd1:2380
       - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      # IMPORTANT: ETCD_INITIAL_CLUSTER_STATE=new is correct for first bootstrap only.
+      # After a node failure and rejoin (via etcd-cluster-rejoin.sh), the recovered
+      # node sets its own state to "existing" — do NOT change this line to "existing"
+      # for the healthy nodes, as that would prevent them from recognising a new bootstrap.
       - ETCD_INITIAL_CLUSTER_STATE=new
       - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
     volumes:
       - etcd1-data:/etcd-data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD-SHELL", "ETCDCTL_API=3 etcdctl endpoint health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   etcd2:
     profiles: ["ha"]
@@ -83,11 +94,18 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
     volumes:
       - etcd2-data:/etcd-data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD-SHELL", "ETCDCTL_API=3 etcdctl endpoint health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   etcd3:
     profiles: ["ha"]
@@ -109,11 +127,18 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=spiralpool-etcd-cluster
     volumes:
       - etcd3-data:/etcd-data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD-SHELL", "ETCDCTL_API=3 etcdctl endpoint health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ═══════════════════════════════════════════════════════════════════════════
   # PATRONI POSTGRESQL NODES (Primary + Replica with automatic failover)
@@ -142,6 +167,7 @@ services:
       - DB_USER=${DB_USER:-spiralstratum}
       - DB_NAME=${DB_NAME:-spiralstratum}
       - DB_PASSWORD=${DB_PASSWORD}
+      - GRANT_USER=${DB_USER:-spiralstratum}
     volumes:
       - patroni1-data:/var/lib/postgresql/data
       - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
@@ -184,6 +210,7 @@ services:
       - DB_USER=${DB_USER:-spiralstratum}
       - DB_NAME=${DB_NAME:-spiralstratum}
       - DB_PASSWORD=${DB_PASSWORD}
+      - GRANT_USER=${DB_USER:-spiralstratum}
     volumes:
       - patroni2-data:/var/lib/postgresql/data
       - ./config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
@@ -223,6 +250,12 @@ services:
       # This prevents unauthenticated stats access from external networks.
     volumes:
       - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
     depends_on:
       patroni1:
         condition: service_healthy
@@ -300,8 +333,7 @@ services:
     image: alpine:3.20
     entrypoint: ["echo", "Disabled in HA mode - using Patroni instead"]
     command: []
-    ports:
-      - "54399:5432"
+    ports: []
     volumes: []
     healthcheck:
       disable: true
@@ -343,7 +375,13 @@ services:
       bitcoincash:
         condition: service_healthy
         required: false
+      bitcoincashii:
+        condition: service_healthy
+        required: false
       bitcoinii:
+        condition: service_healthy
+        required: false
+      bitcoinsilver:
         condition: service_healthy
         required: false
       namecoin:
@@ -359,6 +397,9 @@ services:
         condition: service_healthy
         required: false
       qbitx:
+        condition: service_healthy
+        required: false
+      ecash:
         condition: service_healthy
         required: false
       litecoin:

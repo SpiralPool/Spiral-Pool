@@ -29,20 +29,30 @@ $HELPER_SCRIPT = "$HELPER_DIR\spiralpool-wsl2-shutdown.ps1"
 
 # ─── Run mode: called by Task Scheduler at shutdown/sleep ──────────────────
 if ($Run) {
+    if (-not (Test-Path $HELPER_DIR)) { New-Item -ItemType Directory -Path $HELPER_DIR -Force | Out-Null }
     $logFile = "$HELPER_DIR\shutdown-hook.log"
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 
-    # Find the WSL2 distro that has Spiral Pool installed
+    # Find the WSL2 distro that has Spiral Pool installed.
+    # Prefer the distro saved by start-wsl2-proxy.bat / wsl2-stratum-proxy.ps1.
+    # Fall back to the default (starred) distro only if no saved selection exists.
     $distro = $null
-    try {
-        $origEncoding = [Console]::OutputEncoding
-        [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
-        $wslList = & wsl -l -q 2>&1
-        [Console]::OutputEncoding = $origEncoding
-        $distros = @($wslList | Where-Object { $_ -match '\S' -and $_ -notmatch 'Windows Subsystem' } |
-                     ForEach-Object { $_.Trim().TrimEnd('*') })
-        if ($distros.Count -ge 1) { $distro = $distros[0] }
-    } catch {}
+    $savedDistroFile = "$HELPER_DIR\distro.conf"
+    if (Test-Path $savedDistroFile) {
+        $saved = (Get-Content $savedDistroFile -Raw).Trim()
+        if ($saved) { $distro = $saved }
+    }
+    if (-not $distro) {
+        try {
+            $origEncoding = [Console]::OutputEncoding
+            [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
+            $wslList = & wsl -l -q 2>&1
+            [Console]::OutputEncoding = $origEncoding
+            $distros = @($wslList | Where-Object { $_ -match '\S' -and $_ -notmatch 'Windows Subsystem' } |
+                         ForEach-Object { $_.Trim().TrimEnd('*') })
+            if ($distros.Count -ge 1) { $distro = $distros[0] }
+        } catch {}
+    }
 
     if (-not $distro) {
         Add-Content -Path $logFile -Value "$ts  No WSL2 distro found. Skipping."
@@ -55,7 +65,7 @@ if ($Run) {
         [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
         $state = & wsl -l --running 2>&1
         [Console]::OutputEncoding = $origEncoding2
-        if ($state -notmatch $distro) {
+        if ($state -notmatch [regex]::Escape($distro)) {
             Add-Content -Path $logFile -Value "$ts  WSL2 distro '$distro' not running. Skipping."
             exit 0
         }
@@ -81,10 +91,17 @@ if ($Run) {
 
     try {
         $wslArgs = @('-d', $distro, '--user', 'root', '--exec', 'bash', '-c', $stopCmd)
-        $result = & wsl @wslArgs 2>&1
-        $exitCode = $LASTEXITCODE
-        Add-Content -Path $logFile -Value "$ts  Stop command exit code: $exitCode"
-        if ($result) { Add-Content -Path $logFile -Value "$ts  Output: $result" }
+        # Use Start-Process + WaitForExit so we can impose a hard 150-second cap.
+        # If WSL2 itself hangs (already dead / kernel bug), a plain & wsl ... call blocks
+        # Windows shutdown indefinitely. 150s covers worst-case graceful service stops.
+        $proc = Start-Process -FilePath "wsl" -ArgumentList $wslArgs -PassThru -NoNewWindow
+        $completed = $proc.WaitForExit(150000)
+        if (-not $completed) {
+            $proc.Kill()
+            Add-Content -Path $logFile -Value "$ts  WSL2 stop sequence exceeded 150s — force-killed to unblock shutdown"
+        } else {
+            Add-Content -Path $logFile -Value "$ts  Stop command exit code: $($proc.ExitCode)"
+        }
     } catch {
         Add-Content -Path $logFile -Value "$ts  Error running stop commands: $_"
     }
@@ -225,8 +242,9 @@ $newTriggersXml = @"
   </Triggers>
 "@
 
-# Replace triggers in the exported XML
-$taskXml = $taskXml -replace '(?s)<Triggers>.*?</Triggers>', $newTriggersXml
+# Replace triggers in the exported XML.
+# Use a regex that tolerates namespace attributes on the Triggers element (e.g. <Triggers xmlns:...>).
+$taskXml = $taskXml -replace '(?s)<Triggers[^>]*>.*?</Triggers>', $newTriggersXml
 
 # Unregister and re-register with the corrected XML
 Unregister-ScheduledTask -TaskName $TASK_NAME -Confirm:$false

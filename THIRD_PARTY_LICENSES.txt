@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v2.4.2 - Third-Party Licenses
+Spiral Pool v2.5.0 - Third-Party Licenses
 ================================================================================
 
 This software incorporates or depends on the following third-party components.
@@ -82,7 +82,7 @@ GO MODULE DEPENDENCIES (Indirect/Transitive)
 10. github.com/beorn7/perks v1.0.1
     License: MIT License
 
-11. github.com/cespare/xxhash/v2 v2.3.1
+11. github.com/cespare/xxhash/v2 v2.3.0
     License: MIT License
 
 12. github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
@@ -167,22 +167,17 @@ PYTHON DEPENDENCIES
     License: MIT License
     URL: https://gunicorn.org/
 
-33. gevent 25.9.1
-    Description: Coroutine-based networking library
-    License: MIT License
-    URL: https://www.gevent.org/
-
-34. pyyaml 6.0.3
+33. pyyaml 6.0.3
     Description: YAML parser and emitter
     License: MIT License
     URL: https://github.com/yaml/pyyaml
 
-35. bcrypt 4.1.2
+34. bcrypt 4.1.2
     Description: Modern password hashing library
     License: Apache License 2.0
     URL: https://github.com/pyca/bcrypt
 
-36. slixmpp 1.8.5
+35. slixmpp 1.8.5
     Description: Asynchronous XMPP client library for Python
     License: GPL-3.0 (GNU General Public License v3.0)
     URL: https://codeberg.org/poezio/slixmpp
@@ -205,6 +200,12 @@ PYTHON DEPENDENCIES
     Spiral Pool's BSD-3-Clause stratum server, dashboard, and all other
     components do NOT import or link against slixmpp. The stratum server
     (Go binary) is entirely independent of slixmpp.
+
+37. pytz
+    Description: World timezone definitions for Python
+    License: MIT License
+    URL: https://github.com/stub42/pytz
+    Usage: Timezone-aware schedule computation in multi-coin rotation widget (dashboard.py)
 
 38. patroni
     Description: PostgreSQL high-availability clustering solution
@@ -913,7 +914,7 @@ reference to the following open-source projects:
 DISCLAIMER
 ================================================================================
 
-This file lists dependencies to the best of our knowledge as of 2026-03-01.
+This file lists dependencies to the best of our knowledge as of 2026-05-02.
 License information is provided for informational purposes. Users should
 verify license compliance for their specific use case.
 
@@ -925,8 +926,8 @@ or changes to upstream licenses. Users are responsible for verifying
 compliance with all applicable licenses.
 
 ================================================================================
-Last Updated: 2026-04-13
-Spiral Pool Version: 2.4.2
+Last Updated: 2026-05-02
+Spiral Pool Version: 2.5.0
 ================================================================================
 
 Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️

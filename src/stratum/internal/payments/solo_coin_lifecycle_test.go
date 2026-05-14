@@ -20,7 +20,7 @@ import (
 // TEST 1: All Coins — Pending to Confirmed
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// For each of the 14 coins: add a pending block at height 800000, set the
+// For each of the 17 coins: add a pending block at height 800000, set the
 // chain tip at 800000 + maturity + 10, set a matching block hash, and run
 // StabilityWindowChecks cycles. The block must transition to confirmed.
 

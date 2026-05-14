@@ -61,7 +61,7 @@ export STRATUM_V2_ENABLED="${STRATUM_V2_ENABLED:-false}"
 if [ "$POOL_MODE" = "single" ]; then
     # Single-coin mode: require POOL_COIN, POOL_ADDRESS, POOL_ID
     if [ -z "$POOL_COIN" ]; then
-        echo "ERROR: POOL_COIN is required (e.g., bitcoin, litecoin, digibyte, bitcoincash, bitcoinii, dogecoin)"
+        echo "ERROR: POOL_COIN is required (e.g., bitcoin, litecoin, digibyte, bitcoincash, bitcoincashii, bitcoinii, bitcoinsilver, dogecoin)"
         exit 1
     fi
 
@@ -128,6 +128,16 @@ case "$POOL_COIN" in
         export STRATUM_PORT_V2="${STRATUM_PORT_V2:-5334}"
         export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-5335}"
         ;;
+    bitcoincashii|bitcoin-cash-ii|bch2)
+        export DAEMON_HOST="${DAEMON_HOST:-bitcoincashii}"
+        export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-8533}"
+        export DAEMON_RPC_USER="${DAEMON_RPC_USER:-${BCH2_RPC_USER:-spiralbch2}}"
+        export DAEMON_RPC_PASSWORD="${DAEMON_RPC_PASSWORD:-${BCH2_RPC_PASSWORD:-}}"
+        export DAEMON_ZMQ_PORT="${DAEMON_ZMQ_PORT:-28533}"
+        export STRATUM_PORT="${STRATUM_PORT:-5336}"
+        export STRATUM_PORT_V2="${STRATUM_PORT_V2:-5337}"
+        export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-5338}"
+        ;;
     bitcoinii)
         export DAEMON_HOST="${DAEMON_HOST:-bitcoinii}"
         export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-8339}"
@@ -137,6 +147,16 @@ case "$POOL_COIN" in
         export STRATUM_PORT="${STRATUM_PORT:-6333}"
         export STRATUM_PORT_V2="${STRATUM_PORT_V2:-6334}"
         export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-6335}"
+        ;;
+    bitcoinsilver|bitcoin-silver|btcs)
+        export DAEMON_HOST="${DAEMON_HOST:-bitcoinsilver}"
+        export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-10567}"
+        export DAEMON_RPC_USER="${DAEMON_RPC_USER:-${BTCS_RPC_USER:-spiralbtcs}}"
+        export DAEMON_RPC_PASSWORD="${DAEMON_RPC_PASSWORD:-${BTCS_RPC_PASSWORD:-}}"
+        export DAEMON_ZMQ_PORT="${DAEMON_ZMQ_PORT:-28567}"
+        export STRATUM_PORT="${STRATUM_PORT:-11335}"
+        export STRATUM_PORT_V2="${STRATUM_PORT_V2:-11336}"
+        export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-11337}"
         ;;
     namecoin)
         export DAEMON_HOST="${DAEMON_HOST:-namecoin}"
@@ -190,6 +210,16 @@ case "$POOL_COIN" in
         export STRATUM_PORT_V2="${STRATUM_PORT_V2:-20336}"
         export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-20337}"
         ;;
+    ecash|xec|bitcoin-abc)
+        export DAEMON_HOST="${DAEMON_HOST:-ecash}"
+        export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-9004}"
+        export DAEMON_RPC_USER="${DAEMON_RPC_USER:-${XEC_RPC_USER:-spiralxec}}"
+        export DAEMON_RPC_PASSWORD="${DAEMON_RPC_PASSWORD:-${XEC_RPC_PASSWORD:-}}"
+        export DAEMON_ZMQ_PORT="${DAEMON_ZMQ_PORT:-28335}"
+        export STRATUM_PORT="${STRATUM_PORT:-18338}"
+        export STRATUM_PORT_V2="${STRATUM_PORT_V2:-18339}"
+        export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-18340}"
+        ;;
     litecoin)
         export DAEMON_HOST="${DAEMON_HOST:-litecoin}"
         export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-9332}"
@@ -233,8 +263,9 @@ case "$POOL_COIN" in
         ;;
     *)
         echo "ERROR: Unknown POOL_COIN: $POOL_COIN"
-        echo "Valid: digibyte, dgb-scrypt, bitcoin, bitcoincash, bitcoinii, namecoin, syscoin,"
-        echo "       myriadcoin, fractalbitcoin, qbitx, litecoin, dogecoin, pepecoin, catcoin"
+        echo "Valid: digibyte, dgb-scrypt, bitcoin, bitcoincash, bitcoincashii, bitcoinii,"
+        echo "       bitcoinsilver, namecoin, syscoin, myriadcoin, fractalbitcoin, qbitx,"
+        echo "       ecash, litecoin, dogecoin, pepecoin, catcoin"
         exit 1
         ;;
 esac
@@ -386,6 +417,8 @@ generate_v2_config() {
         local dgb_v2_line=""
         [ "$v2_enabled" = "true" ] && dgb_v2_line="
       port_v2: 3334"
+        local dgb_tls_line="
+      port_tls: 3335"
         coins_yaml="${coins_yaml}
   - symbol: \"DGB\"
     pool_id: \"dgb_sha256_1\"
@@ -393,7 +426,7 @@ generate_v2_config() {
     address: \"${DGB_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 3333${dgb_v2_line}
+      port: 3333${dgb_v2_line}${dgb_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -424,6 +457,8 @@ generate_v2_config() {
         local btc_v2_line=""
         [ "$v2_enabled" = "true" ] && btc_v2_line="
       port_v2: 4334"
+        local btc_tls_line="
+      port_tls: 4335"
         coins_yaml="${coins_yaml}
   - symbol: \"BTC\"
     pool_id: \"btc_sha256_1\"
@@ -431,7 +466,7 @@ generate_v2_config() {
     address: \"${BTC_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 4333${btc_v2_line}
+      port: 4333${btc_v2_line}${btc_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -462,6 +497,8 @@ generate_v2_config() {
         local bch_v2_line=""
         [ "$v2_enabled" = "true" ] && bch_v2_line="
       port_v2: 5334"
+        local bch_tls_line="
+      port_tls: 5335"
         coins_yaml="${coins_yaml}
   - symbol: \"BCH\"
     pool_id: \"bch_sha256_1\"
@@ -469,7 +506,7 @@ generate_v2_config() {
     address: \"${BCH_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 5333${bch_v2_line}
+      port: 5333${bch_v2_line}${bch_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -496,10 +533,52 @@ generate_v2_config() {
         enabled_coins=$((enabled_coins + 1))
     fi
 
+    if [ "${ENABLE_BCH2:-false}" = "true" ]; then
+        local bch2_v2_line=""
+        [ "$v2_enabled" = "true" ] && bch2_v2_line="
+      port_v2: 5337"
+        local bch2_tls_line="
+      port_tls: 5338"
+        coins_yaml="${coins_yaml}
+  - symbol: \"BCH2\"
+    pool_id: \"bch2_sha256_1\"
+    enabled: true
+    address: \"${BCH2_POOL_ADDRESS}\"
+    coinbase_text: \"${COINBASE_TEXT}\"
+    stratum:
+      port: 5336${bch2_v2_line}${bch2_tls_line}
+      difficulty:
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 90
+          variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
+    nodes:
+      - id: \"primary\"
+        host: \"bitcoincashii\"
+        port: 8533
+        user: \"${BCH2_RPC_USER:-spiralbch2}\"
+        password: \"${BCH2_RPC_PASSWORD}\"
+        zmq:
+          enabled: true
+          endpoint: \"tcp://bitcoincashii:28533\"
+    payments:
+      enabled: true
+      interval: 600s
+      minimum_payment: 0.01
+      scheme: \"SOLO\""
+        enabled_coins=$((enabled_coins + 1))
+    fi
+
     if [ "${ENABLE_BC2:-false}" = "true" ]; then
         local bc2_v2_line=""
         [ "$v2_enabled" = "true" ] && bc2_v2_line="
       port_v2: 6334"
+        local bc2_tls_line="
+      port_tls: 6335"
         coins_yaml="${coins_yaml}
   - symbol: \"BC2\"
     pool_id: \"bc2_sha256_1\"
@@ -507,7 +586,7 @@ generate_v2_config() {
     address: \"${BC2_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 6333${bc2_v2_line}
+      port: 6333${bc2_v2_line}${bc2_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -534,10 +613,52 @@ generate_v2_config() {
         enabled_coins=$((enabled_coins + 1))
     fi
 
+    if [ "${ENABLE_BTCS:-false}" = "true" ]; then
+        local btcs_v2_line=""
+        [ "$v2_enabled" = "true" ] && btcs_v2_line="
+      port_v2: 11336"
+        local btcs_tls_line="
+      port_tls: 11337"
+        coins_yaml="${coins_yaml}
+  - symbol: \"BTCS\"
+    pool_id: \"btcs_sha256_1\"
+    enabled: true
+    address: \"${BTCS_POOL_ADDRESS}\"
+    coinbase_text: \"${COINBASE_TEXT}\"
+    stratum:
+      port: 11335${btcs_v2_line}${btcs_tls_line}
+      difficulty:
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 90
+          variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
+    nodes:
+      - id: \"primary\"
+        host: \"bitcoinsilver\"
+        port: 10567
+        user: \"${BTCS_RPC_USER:-spiralbtcs}\"
+        password: \"${BTCS_RPC_PASSWORD}\"
+        zmq:
+          enabled: true
+          endpoint: \"tcp://bitcoinsilver:28567\"
+    payments:
+      enabled: true
+      interval: 300s
+      minimum_payment: 0.01
+      scheme: \"SOLO\""
+        enabled_coins=$((enabled_coins + 1))
+    fi
+
     if [ "${ENABLE_NMC:-false}" = "true" ]; then
         local nmc_v2_line=""
         [ "$v2_enabled" = "true" ] && nmc_v2_line="
       port_v2: 14336"
+        local nmc_tls_line="
+      port_tls: 14337"
         coins_yaml="${coins_yaml}
   - symbol: \"NMC\"
     pool_id: \"nmc_sha256_1\"
@@ -545,7 +666,7 @@ generate_v2_config() {
     address: \"${NMC_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 14335${nmc_v2_line}
+      port: 14335${nmc_v2_line}${nmc_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -576,6 +697,8 @@ generate_v2_config() {
         local sys_v2_line=""
         [ "$v2_enabled" = "true" ] && sys_v2_line="
       port_v2: 15336"
+        local sys_tls_line="
+      port_tls: 15337"
         coins_yaml="${coins_yaml}
   - symbol: \"SYS\"
     pool_id: \"sys_sha256_1\"
@@ -583,7 +706,7 @@ generate_v2_config() {
     address: \"${SYS_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 15335${sys_v2_line}
+      port: 15335${sys_v2_line}${sys_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -614,6 +737,8 @@ generate_v2_config() {
         local xmy_v2_line=""
         [ "$v2_enabled" = "true" ] && xmy_v2_line="
       port_v2: 17336"
+        local xmy_tls_line="
+      port_tls: 17337"
         coins_yaml="${coins_yaml}
   - symbol: \"XMY\"
     pool_id: \"xmy_sha256_1\"
@@ -621,7 +746,7 @@ generate_v2_config() {
     address: \"${XMY_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 17335${xmy_v2_line}
+      port: 17335${xmy_v2_line}${xmy_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -652,6 +777,8 @@ generate_v2_config() {
         local fbtc_v2_line=""
         [ "$v2_enabled" = "true" ] && fbtc_v2_line="
       port_v2: 18336"
+        local fbtc_tls_line="
+      port_tls: 18337"
         coins_yaml="${coins_yaml}
   - symbol: \"FBTC\"
     pool_id: \"fbtc_sha256_1\"
@@ -659,7 +786,7 @@ generate_v2_config() {
     address: \"${FBTC_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 18335${fbtc_v2_line}
+      port: 18335${fbtc_v2_line}${fbtc_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -690,6 +817,8 @@ generate_v2_config() {
         local qbx_v2_line=""
         [ "$v2_enabled" = "true" ] && qbx_v2_line="
       port_v2: 20336"
+        local qbx_tls_line="
+      port_tls: 20337"
         coins_yaml="${coins_yaml}
   - symbol: \"QBX\"
     pool_id: \"qbx_sha256_1\"
@@ -697,7 +826,7 @@ generate_v2_config() {
     address: \"${QBX_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 20335${qbx_v2_line}
+      port: 20335${qbx_v2_line}${qbx_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -714,8 +843,48 @@ generate_v2_config() {
         user: \"${QBX_RPC_USER:-spiralqbx}\"
         password: \"${QBX_RPC_PASSWORD}\"
         zmq:
-          enabled: true
+          enabled: false
           endpoint: \"tcp://qbitx:28344\"
+    payments:
+      enabled: true
+      interval: 600s
+      minimum_payment: 0.01
+      scheme: \"SOLO\""
+        enabled_coins=$((enabled_coins + 1))
+    fi
+
+    if [ "${ENABLE_XEC:-false}" = "true" ]; then
+        local xec_v2_line=""
+        [ "$v2_enabled" = "true" ] && xec_v2_line="
+      port_v2: 18339"
+        local xec_tls_line="
+      port_tls: 18340"
+        coins_yaml="${coins_yaml}
+  - symbol: \"XEC\"
+    pool_id: \"xec_sha256_1\"
+    enabled: true
+    address: \"${XEC_POOL_ADDRESS}\"
+    coinbase_text: \"${COINBASE_TEXT}\"
+    stratum:
+      port: 18338${xec_v2_line}${xec_tls_line}
+      difficulty:
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 1000000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
+    nodes:
+      - id: \"primary\"
+        host: \"ecash\"
+        port: 9004
+        user: \"${XEC_RPC_USER:-spiralxec}\"
+        password: \"${XEC_RPC_PASSWORD}\"
+        zmq:
+          enabled: true
+          endpoint: \"tcp://ecash:28335\"
     payments:
       enabled: true
       interval: 600s
@@ -730,6 +899,8 @@ generate_v2_config() {
         local ltc_v2_line=""
         [ "$v2_enabled" = "true" ] && ltc_v2_line="
       port_v2: 7334"
+        local ltc_tls_line="
+      port_tls: 7335"
         coins_yaml="${coins_yaml}
   - symbol: \"LTC\"
     pool_id: \"ltc_scrypt_1\"
@@ -737,7 +908,7 @@ generate_v2_config() {
     address: \"${LTC_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 7333${ltc_v2_line}
+      port: 7333${ltc_v2_line}${ltc_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -768,6 +939,8 @@ generate_v2_config() {
         local doge_v2_line=""
         [ "$v2_enabled" = "true" ] && doge_v2_line="
       port_v2: 8337"
+        local doge_tls_line="
+      port_tls: 8342"
         coins_yaml="${coins_yaml}
   - symbol: \"DOGE\"
     pool_id: \"doge_scrypt_1\"
@@ -775,7 +948,7 @@ generate_v2_config() {
     address: \"${DOGE_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 8335${doge_v2_line}
+      port: 8335${doge_v2_line}${doge_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -806,6 +979,8 @@ generate_v2_config() {
         local dgbs_v2_line=""
         [ "$v2_enabled" = "true" ] && dgbs_v2_line="
       port_v2: 3337"
+        local dgbs_tls_line="
+      port_tls: 3338"
         coins_yaml="${coins_yaml}
   - symbol: \"DGB-SCRYPT\"
     pool_id: \"dgb_scrypt_1\"
@@ -813,7 +988,7 @@ generate_v2_config() {
     address: \"${DGB_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 3336${dgbs_v2_line}
+      port: 3336${dgbs_v2_line}${dgbs_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -844,6 +1019,8 @@ generate_v2_config() {
         local pep_v2_line=""
         [ "$v2_enabled" = "true" ] && pep_v2_line="
       port_v2: 10336"
+        local pep_tls_line="
+      port_tls: 10337"
         coins_yaml="${coins_yaml}
   - symbol: \"PEP\"
     pool_id: \"pep_scrypt_1\"
@@ -851,7 +1028,7 @@ generate_v2_config() {
     address: \"${PEP_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 10335${pep_v2_line}
+      port: 10335${pep_v2_line}${pep_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -882,6 +1059,8 @@ generate_v2_config() {
         local cat_v2_line=""
         [ "$v2_enabled" = "true" ] && cat_v2_line="
       port_v2: 12336"
+        local cat_tls_line="
+      port_tls: 12337"
         coins_yaml="${coins_yaml}
   - symbol: \"CAT\"
     pool_id: \"cat_scrypt_1\"
@@ -889,7 +1068,7 @@ generate_v2_config() {
     address: \"${CAT_POOL_ADDRESS}\"
     coinbase_text: \"${COINBASE_TEXT}\"
     stratum:
-      port: 12335${cat_v2_line}
+      port: 12335${cat_v2_line}${cat_tls_line}
       difficulty:
         varDiff:
           enabled: true
@@ -981,6 +1160,12 @@ database:
   batching:
     size: 1000
     interval: 3s
+
+redis:
+  dedup:
+    enabled: ${REDIS_DEDUP_ENABLED}
+    addr: "${REDIS_DEDUP_ADDR}"
+    password: "${REDIS_DEDUP_PASSWORD}"
 CONFIGEOF
 
     if [ $? -ne 0 ]; then
@@ -988,6 +1173,51 @@ CONFIGEOF
         rm -f "${CONFIG_OUTPUT}.tmp"
         exit 1
     fi
+
+    # ── Optional Multi-Port (Smart Port) block ────────────────────────────────
+    # Set MULTIPORT_ENABLED=true and MULTIPORT_COINS="COIN1:WEIGHT1,COIN2:WEIGHT2"
+    # to enable the Smart Port in the generated config.
+    # Example: MULTIPORT_COINS="DGB:80,BTC:20"
+    # SMARTPORT_MODE: TIME (default, weight-based schedule) | DIFFICULTY (auto-select easiest coin)
+    if [ "${MULTIPORT_ENABLED:-false}" = "true" ] && [ -n "${MULTIPORT_COINS:-}" ]; then
+        local mp_mode="${SMARTPORT_MODE:-TIME}"
+        local mp_port="${MULTIPORT_PORT:-16180}"
+        local mp_prefer="${MULTIPORT_PREFER_COIN:-}"
+        local mp_check="${MULTIPORT_CHECK_INTERVAL:-30s}"
+        local mp_min_time="${MULTIPORT_MIN_TIME:-60s}"
+        local mp_coins_yaml=""
+
+        # Parse MULTIPORT_COINS="DGB:80,BTC:20" into YAML coin entries
+        IFS=',' read -ra coin_entries <<< "$MULTIPORT_COINS"
+        for entry in "${coin_entries[@]}"; do
+            local sym weight
+            sym="${entry%%:*}"
+            weight="${entry##*:}"
+            mp_coins_yaml="${mp_coins_yaml}
+    ${sym}:
+      weight: ${weight}"
+        done
+
+        # Determine prefer_coin (first coin if not set)
+        if [ -z "$mp_prefer" ]; then
+            mp_prefer="${coin_entries[0]%%:*}"
+        fi
+
+        cat >> "${CONFIG_OUTPUT}.tmp" << MPEOF
+
+# Multi-Coin Smart Port — generated from MULTIPORT_* env vars
+multi_port:
+  enabled: true
+  port: ${mp_port}
+  mode: "${mp_mode}"
+  coins:${mp_coins_yaml}
+  check_interval: ${mp_check}
+  prefer_coin: ${mp_prefer}
+  min_time_on_coin: ${mp_min_time}
+MPEOF
+        echo "  Smart Port:    enabled (mode=${mp_mode}, port=${mp_port}, coins=${MULTIPORT_COINS})"
+    fi
+
     mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
     chmod 600 "${CONFIG_OUTPUT}"
 
@@ -1006,6 +1236,12 @@ CONFIGEOF
 # The default TLS path (/spiralpool/tls/) may be a read-only bind mount.
 # If we can't write there, generate to /spiralpool/data/tls/ (writable volume)
 # and update the env vars so the config template uses the correct paths.
+# Treat a missing key alongside an existing cert as a broken pair — regenerate both.
+if [ -f "$TLS_CERT_FILE" ] && [ ! -f "$TLS_KEY_FILE" ]; then
+    echo "WARNING: TLS cert exists at $TLS_CERT_FILE but key is missing at $TLS_KEY_FILE — regenerating pair"
+    rm -f "$TLS_CERT_FILE"
+fi
+
 if [ ! -f "$TLS_CERT_FILE" ]; then
     echo "Generating self-signed TLS certificate..."
     tls_dir="$(dirname "$TLS_CERT_FILE")"
@@ -1062,6 +1298,8 @@ if [ "$POOL_MODE" = "single" ]; then
         # R-12 FIX: Atomic write (tempfile + mv).
         # Commands split so set -e catches envsubst failure (left side of && is exempt).
         envsubst < "$CONFIG_TEMPLATE" > "${CONFIG_OUTPUT}.tmp"
+        # Guard against silent empty output (e.g. envsubst piped to a full-disk write)
+        [ -s "${CONFIG_OUTPUT}.tmp" ] || { echo "ERROR: envsubst produced empty config — aborting"; rm -f "${CONFIG_OUTPUT}.tmp"; exit 1; }
         mv "${CONFIG_OUTPUT}.tmp" "${CONFIG_OUTPUT}"
         chmod 600 "${CONFIG_OUTPUT}"
     fi

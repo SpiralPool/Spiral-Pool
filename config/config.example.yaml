@@ -1,6 +1,6 @@
 # Spiral Pool v2.4.2 Configuration
 # Multi-coin support with node failover
-# Supports SHA256d coins: BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC, QBX
+# Supports SHA256d coins: BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX, XEC
 # Supports Scrypt coins: LTC, DOGE, DGB-SCRYPT, PEP, CAT
 #
 # NOTE: This is a TEMPLATE. All "CHANGE_ME" passwords are replaced automatically
@@ -260,6 +260,58 @@ coins:
       enabled: true
       scheme: SOLO
 
+  # Bitcoin Cash II Pool (SHA256d)
+  # ╔════════════════════════════════════════════════════════════════════════╗
+  # ║  ⚠️  WARNING: BCH2/BCH/BTC ADDRESS AMBIGUITY                          ║
+  # ║  BCH2 legacy bytes (1..., 3...) are identical to BCH and BTC.         ║
+  # ║  Use CashAddr format (bitcoincashii:q...) to avoid confusion.         ║
+  # ╚════════════════════════════════════════════════════════════════════════╝
+  - symbol: BCH2
+    pool_id: bch2_sha256_1
+    enabled: false  # Enable when ready
+    address: "bitcoincashii:qyourbch2address..."  # CashAddr format preferred
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 5336  # BCH2 Stratum V1 port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 55s
+
+    nodes:
+      - id: primary
+        host: bch2-node.local
+        port: 8533
+        user: spiralbch2
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://bch2-node.local:28533"
+
+    payments:
+      enabled: true
+      scheme: SOLO
+
   # Bitcoin II Pool (SHA256d)
   # ╔═══════════════════════════════════════════════════════════════════════════╗
   # ║  ⚠️  CRITICAL WARNING: BC2/BTC ADDRESS COLLISION RISK                     ║
@@ -325,6 +377,53 @@ coins:
         password: "CHANGE_ME"
         priority: 1
         weight: 1
+
+    payments:
+      enabled: true
+      scheme: SOLO
+
+  # Bitcoin Silver Pool (SHA256d) - 5-minute blocks, SegWit+Taproot
+  - symbol: BTCS
+    pool_id: btcs_sha256_1
+    enabled: false  # Enable when ready
+    address: "Byourbitcoinsilveraddress..."  # B-prefix P2PKH, bs1q SegWit, or bs1p Taproot
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 11335  # BTCS Stratum V1 port
+      difficulty:
+        initial: 5000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 100000000
+          targetTime: 10
+          retargetTime: 60          # 5-minute blocks — shorter retarget
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 30s          # 5-minute blocks — rebroadcast more often
+
+    nodes:
+      - id: primary
+        host: btcs-node.local
+        port: 10567
+        user: spiralbtcs
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://btcs-node.local:28567"
 
     payments:
       enabled: true
@@ -575,8 +674,58 @@ coins:
         priority: 0
         weight: 1
         zmq:
-          enabled: true
+          enabled: false  # QBX binary compiled without ZMQ support; uses RPC polling
           endpoint: "tcp://127.0.0.1:28344"
+
+    payments:
+      enabled: true
+      scheme: SOLO
+
+  # eCash Pool (XEC — SHA-256d, Bitcoin ABC v0.31.12)
+  # CashAddr format: ecash:q... (P2PKH) or ecash:p... (P2SH)
+  # Post-Nov 2025: uses RTT (Real Time Target) difficulty mechanism
+  # Mandatory coinbase outputs: MinerFund + StakingRewards
+  - symbol: XEC
+    pool_id: xec_sha256_1
+    enabled: false  # Enable when ready
+    address: "ecash:qyourxecaddresshere..."  # CashAddr format required
+    coinbase_text: "Spiral Pool"
+
+    stratum:
+      port: 18338             # XEC stratum port (V1)
+      difficulty:
+        initial: 10000
+        varDiff:
+          enabled: true
+          minDiff: 0.001
+          maxDiff: 1000000000
+          targetTime: 10
+          retargetTime: 120
+          variancePercent: 30
+      banning:
+        enabled: true
+        banDuration: 600s
+        invalidSharesThreshold: 5
+      connection:
+        timeout: 600s
+        maxConnections: 10000
+        keepaliveInterval: 60s
+      version_rolling:
+        enabled: true
+        mask: 536862720
+      job_rebroadcast: 30s    # XEC has 2-min target blocks
+
+    nodes:
+      - id: primary
+        host: 127.0.0.1
+        port: 9004
+        user: spiralxec
+        password: "CHANGE_ME"
+        priority: 0
+        weight: 1
+        zmq:
+          enabled: true
+          endpoint: "tcp://127.0.0.1:28335"
 
     payments:
       enabled: true
@@ -853,6 +1002,12 @@ coins:
 #   prefer_coin: QBX             # Default coin / tie-breaker
 #   min_time_on_coin: 60s        # Minimum time before switch (prevents flip-flopping)
 #   timezone: America/New_York   # IANA timezone for 24h schedule
+#
+#   # Routing mode (default: TIME — backward-compatible)
+#   # TIME:       Distribute mining time by coin weights on a 24-hour schedule.
+#   # DIFFICULTY: Always mine the coin with the lowest current network difficulty.
+#   #             Coin weights are ignored; selection is dynamic.
+#   mode: TIME
 #
 #   # Wallet Resolution:
 #   # By default, shares are credited to each coin's pool payout address

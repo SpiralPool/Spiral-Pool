@@ -7,6 +7,393 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [v2.5.0]  -  2026-05-14 -  Phi Hash Reactor
+
+### Added
+- **Worker Statistics panel — per-coin per-worker hashrate, shares, best diff** — New overview-tab section listing every worker that has submitted shares in the selected time window (10 min / 1 h / 24 h), grouped by coin. Backed by a new `actual_difficulty` column on the per-pool `shares_<id>` tables (migration v11) populated from `result.ActualDifficulty` in `coinpool.go` (`handleShare`, `HandleMultiPortShare`) and `pool.go` (`handleShare`). `WriteBatch` / `WriteBatchForPool` carry the new column in their COPY statements; the initial `CREATE TABLE shares_*` also includes it for fresh installs. `dashboard.py` adds `get_worker_stats_from_db(pool_ids, minutes)` (best-diff = `GREATEST(MAX(difficulty), MAX(actual_difficulty))`, hashrate estimated as `shares/elapsed × avg_diff × 2^32`) and an admin-gated `/api/worker-stats?minutes=10|60|1440` endpoint generalized to all 17 supported coins (the upstream port only enumerated 5). Frontend renders client-side via `fetchWorkerStats()` + `renderWorkerStats()`; the overview coin-selector filters `.worker-coin-group` divs in-place. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@8474355](https://github.com/bkhuraijam/Spiral-Pool/commit/847435523dface3d9e2bc23d08f454b9f1ef12b8), [bkhuraijam/Spiral-Pool@63941f1](https://github.com/bkhuraijam/Spiral-Pool/commit/63941f1ef66cca0626ee5f783fe9f9699a612bc4))
+- **Smart Port DIFFICULTY routing mode** — Multi-coin smart port (port 16180) now supports a second routing strategy: `mode: DIFFICULTY` selects the coin with the lowest current network difficulty in real time, polling all configured coins every `check_interval` (default 30s) and rotating with the same `min_time_on_coin` guard used by TIME mode. Existing TIME-based routing is unchanged and remains the default. Configurable via `multi_port.mode` in `config.yaml`, `MULTIPORT_MODE` in `coins.env` (bare metal), `SMARTPORT_MODE` in Docker, or the dashboard Settings → Multi-Coin Mode panel. The stratum `/api/multiport` response now includes `routing_mode`. Covered by 10 new unit tests in `selector_difficulty_test.go`.
+- **Alternative coin price sources with FX conversion** — Coins not listed on CoinGecko (BTCS, QBX, BCH2) now display live prices in all supported fiat currencies instead of `$--`. BTCS is fetched from CoinPaprika (`btcs-bitcoin-silver1`); QBX is fetched from the Klingex exchange REST API (`api.klingex.io/api/markets`, QBX/USDT entry — raw integer price shifted by `price_decimals`). USD prices are converted to CAD, EUR, GBP, JPY, AUD, CHF, CNY, NZD, and SEK using live rates from `open.er-api.com` (free, no API key, cached 1 hour). FX conversion is applied everywhere prices appear: the block reward header, block reward earnings cards, and the multi-coin price table. All three sources degrade gracefully: network timeouts or missing markets leave the price at `$--` and are retried on the next 300-second price cycle.
+- **Smart Port difficulty exclusion list** — New `multi_port.exclude_coins` config field (DIFFICULTY mode only) prevents specific installed coins from ever being auto-selected by difficulty routing, even if they currently have the lowest network difficulty. Configurable in `config.yaml` as a list of coin symbols (`exclude_coins: [DGB]`) or interactively via Settings → Multi-Coin Mode → **Exclude from Rotation** pill picker, which appears automatically when Difficulty-Based mode is selected and shows every installed coin as a toggleable button (grey = eligible, red ✗ = excluded). If a miner session is already on an excluded coin (e.g. the exclusion list was updated while the pool was running), the `min_time_on_coin` guard is bypassed and the miner is rotated to an eligible coin immediately. If all coins are excluded the pool falls back to `prefer_coin`. The stratum `/api/multiport` response now includes `exclude_coins`; both the Smart Port panel bars and the Rotation Widget on the overview dashboard display excluded coins below active coins at reduced opacity with a ✗ marker. Covered by 3 new unit tests: `TestDifficultyMode_ExcludedCoinSkipped`, `TestDifficultyMode_ExcludedCurrentCoinBypassesMinTime`, `TestDifficultyMode_AllCoinsExcluded_FallbackToPrefer`.
+- **Debian 13 "Trixie" bare metal support** — `install.sh` now accepts Debian 13 as a supported host OS alongside Ubuntu 24.04/26.04 LTS. No flags or workarounds required; the installer auto-detects the OS.
+- `scripts/linux/detect-os.sh` — new OS abstraction module that exports `OS_ID`, `OS_VERSION`, `OS_CODENAME`, `OS_PRETTY_NAME`, `DOCKER_DISTRO`, and `UNATTENDED_UPGRADES_EXTRA_ORIGINS`. Provides `is_ubuntu()`, `is_debian()`, `is_debian_13()`, and `require_supported_os()` helpers. Sourced early in `install.sh`; eliminates all direct `/etc/os-release` reads from install logic.
+- **Ubuntu 26.04 LTS (Resolute Raccoon) support** — `install.sh` now accepts both Ubuntu 24.04 LTS and 26.04 LTS. All Dockerfiles updated to `ubuntu:26.04`. Both versions are fully supported for native and Docker deployments (x86_64 only)
+- **BCH2 (Bitcoin Cash II) and BTCS (Bitcoin Silver)** — full SHA-256d coin implementations; see Ported Upstream Commits for details
+- **XEC (eCash / Bitcoin ABC) full integration** — eCash is now a first-class SHA-256d coin across every Spiral Pool component. Binary name collision resolved via unique symlinks (`ecashd`→`bitcoind`, `ecash-cli`→`bitcoin-cli`) stored in `/spiralpool/xec-bin/` with service name `ecashd` (mirrors FBTC's `fractald` pattern). CashAddr addressing (`ecash:q…` P2PKH / `ecash:p…` P2SH); does not support `address_type` parameter in `getnewaddress`. Ports: RPC 9004, P2P 8343, ZMQ 28335, Stratum V1/V2/TLS 18338/18339/18340. `src/stratum/internal/config/config.go`: `"ecash"` entry added to `SupportedCoins` map with `DefaultPort: 9004`, `P2PPort: 8343`, `BlockTime: 600`, and coin-name alias entries `ecash`/`bitcoin-abc`/`xec`. `src/stratum/internal/config/v2.go`: `"XEC": "ecash"` in `symbolToCoinName`, `case "XEC", "ECASH": return 9004` in `getDefaultPortForCoin`, `case "XEC", "ECASH": return 600` in `getBlockTimeForCoin`, XEC added to supported-coins error message. Docker: `Dockerfile.ecash` (Bitcoin ABC v0.31.12, x86_64), `docker-compose.yml` profile `xec` with stratum ports 18338/18339/18340 and P2P on 8343, `docker/config/ecash.conf` generated by `generate_docker_xec_config()` with RPC 9004 and ZMQ 28335. `.env.example`: `XEC_RPC_USER`, `XEC_RPC_PASSWORD`, `ENABLE_XEC`, `XEC_POOL_ADDRESS`. `install.sh`: `install_ecash()` function (Bitcoin ABC v0.31.12 tarball, ecashd/ecash-cli symlinks, systemd unit), address prompt with CashAddr regex validation (`ecash:[qp][a-z0-9]{41,}`), UFW rules for 18338–18340/tcp and 8343/tcp, coin menu option 17 (single-coin) and multi-coin toggle, `configure_stratum_single()` and `configure_stratum_multi()` cases, Docker config generation and `data/ecash` directory creation, disk-space calculation (+20 GB), upgrade-path credential/address preservation, and `ecashd` in `reset-failed` and start lists. `coin-upgrade.sh`: `[XEC]="0.31.12"` in `COIN_TARGET`, download function `download_XEC()`, service name `ecashd`. `wait-for-node.sh`: RPC credential lookup, CLI path, wallet dir, conf path, and address-type group. `src/dashboard/dashboard.py`: XEC added to `MULTI_COIN_NODES` (service `ecashd`, RPC 9004, conf `/spiralpool/xec/bitcoin.conf`, block time 600s), `COIN_BLOCK_REWARDS["XEC"] = 3125000`, `COIN_BLOCK_TIMES["XEC"] = 600`, both inline `coin_block_times` dicts, block-reward fallback handler, `PORT_TO_COIN[9004] = "XEC"`, alias map `"ecash"/"xec"`, both `COIN_WHITELIST` sets, `default_ports["XEC"] = 18338`, `default_rpc_ports["XEC"] = 9004`, `batch_update_pool` default port, `VALID_COIN_TYPES_EXTENDED` (`XEC`, `ECASH`, `BITCOIN-ABC`), and extended normalisation map (`ECASH`/`BITCOIN-ABC` → `XEC`). `COINGECKO_IDS["XEC"] = "ecash"`. `docs/reference/MULTI_COIN_PORT.md`: XEC row added to stratum port reference table. (contributed by [bkhuraijam](https://github.com/bkhuraijam), [commit d7c1939](https://github.com/bkhuraijam/Spiral-Pool/commit/d7c19395ef3e6f3335c4ca7482d4b5e83f081b8b))
+- **IBD regression tests** — `src/stratum/internal/daemon/ibd_regression_test.go`: three tests pin the IBD state handling that failed during XEC mid-sync recovery. `TestGetBlockchainInfo_IBD` verifies `GetBlockchainInfo` correctly parses `initialblockdownload=true` with exact field values from the incident (451977/948279 blocks, 47.66 % progress, pruned). `TestGetBlockchainInfo_FullySynced` covers the fully-synced flip side. `TestSubmitBlockWithVerification_NodeInIBD` proves the submit pipeline (`submitblock` → `preciousblock` → `getblockhash`) is independent of IBD state — a found block must be credited even when the node reports mid-sync.
+- **XEC coin-level tests covering mining, submission, reward, and maturation** — `src/stratum/internal/coin/ecash_test.go`: 20 tests covering the full XEC coinbase pipeline. Address validation tests use the package's internal `cashAddrPolymod`/`bchConvertBits` helpers to generate valid `ecash:q`/`ecash:p` CashAddr test vectors, verifying encode→decode round-trips and correct rejection of BCH-checksummed and BTC bech32 addresses. `TestECashCoinbaseScript_P2PKH_CashAddr` and `_P2SH_CashAddr` verify the output scripts byte-for-byte (OP_DUP OP_HASH160 / OP_HASH160 opcodes, embedded hash identity). `TestDecodeMinerFundScript` and `TestDecodeStakingScript` cover the mandatory IFP and staking-rewards coinbase outputs — the building blocks of every valid XEC block. `TestECashCoinbaseRewardPipeline` pins the complete mining → submission → reward → maturation path at height 951,001: pool reward script (P2PKH), MinerFund script (P2SH), StakingRewards script (P2SH from node hex), and maturation window (100 blocks × 600 s = 60,000 s ≈ 16.67 h). Genesis hash constant pinned against Bitcoin's genesis (shared by BTC/BCH/XEC). Registry tests cover both `XEC` and `ECASH` aliases with case-insensitive lookup.
+- **Block history table** — Last 5,000 blocks shown in a collapsible table on the Blocks tab with height, time, miner/worker, net diff, miner diff, effort %, and status badges
+- **PostgreSQL-backed block fetching** — `get_blocks_from_db()` queries block history directly from Postgres for accurate historical data across all pool tables
+- **Difficulty-from-hash computation** — `hash_to_difficulty()` computes actual miner difficulty from block hash for correct effort/luck calculation
+- **Coin explorer links** — Clickable block explorer links for BTC (mempool.space), BCH (blockchair), DGB (chainz.cryptoid), FBTC (mempool.fractalbitcoin.io), QBX (explorer.qbitx.org)
+- **Coin badges in block history** — Each block row shows a coin badge with its symbol
+- **Status badge CSS** — Confirmed (green), Pending (yellow), Orphaned (red, strikethrough) styling
+- **psycopg2-binary dependency** — Added to requirements.txt for Postgres connectivity
+- **pytz dependency** — Added to requirements.txt for timezone-aware schedule computation in rotation widget
+- **Multi-Coin Rotation widget** — Visual 24h timeline bar, live status (active coin, time remaining, next switch), schedule breakdown table, auto-hides when multi-port is disabled (contributed by bkhuraijam)
+- **Network difficulty in Est. Time to Block** — ETB stat card now shows current network difficulty alongside 24h probability; updates when switching coins; no-hashrate state clears ETB while still displaying difficulty
+- **Initial network difficulty fetch on startup** — Stratum now fetches network difficulty synchronously before accepting miners, preventing blocks found during the startup jitter window from recording `networkdifficulty=1` (contributed by bkhuraijam)
+- **Dynamic pool discovery** — `index()` route discovers running pools from stratum API instead of hardcoded pool IDs
+- **Block DB → API → cache fallback** — `get_blocks()` function tries Postgres first, falls back to pool API, then local file cache
+- **True pool effort calculation** — `CoinPool` and `Pool` now track `currentRoundDifficulty` per round; effort stored at block-find time as `(roundDiff / networkDiff) × 100`; `GetPoolEffort()` returns live round effort; `GetBlocksWithOrphans()` accepts `?pageSize=` query parameter (default 100/200, max 5,000)
+- **Per-coin accepted/rejected shares** — `GetAcceptedShares()` and `GetRejectedShares()` added to `StatsProvider` and `CoinPoolProvider` interfaces; dashboard displays accept/reject rate per coin
+- **Per-coin session and all-time best share difficulty** — `GetBestShareDiff()` added to pool interfaces; all-time best persisted in `lifetime_stats["per_coin_best_diff"]` across dashboard restarts
+- `docker/config/dashboard_config.json` — sanitized example config (wallet address and device IPs replaced with documented placeholders)
+- **Docker container management in Management tab** — New `GET /api/docker/containers` endpoint lists all containers with run state; `POST /api/docker/containers/<name>/<action>` performs start/stop/restart on any named container. Container name and action are validated before execution. All actions recorded to the activity log. UI card in the Management tab shows per-container status and control buttons; card is hidden when Docker is not available. `_docker_available()` helper checks Docker daemon reachability with a 5-second timeout. Mock container support via `SPIRAL_DOCKER_MOCK=1` env var for local testing
+- **System package update management** — New `GET /api/system/updates` endpoint reports available apt package upgrades; `POST /api/system/updates/refresh` runs `apt-get update`; `POST /api/system/updates/apply` runs `apt-get dist-upgrade` via `scripts/linux/apt-noninteractive.sh`. All three endpoints are admin-gated and rate-limited per client IP
+- `scripts/linux/apt-noninteractive.sh` — new helper script wrapping apt operations for non-interactive execution from the dashboard backend; used by the system update endpoints
+- **Sentinel price crash detection** — `check_price_crash()` alerts when any enabled coin drops 15%+ in USD value within a 1-hour window; per-coin 4-hour cooldown prevents alert storms; returns current price, baseline price, and percentage drop
+- **Sentinel revenue velocity decline detection** — `check_revenue_velocity()` compares current-month earnings pace against the previous month; requires a minimum of 3 days of current-month data before firing; fires at most once per month per coin; supports multi-currency conversion for previous-month comparison
+- **Sentinel enhanced miner health score** — `calc_enhanced_health_score()` produces a 0–100 composite score from six weighted components: uptime (25%), temperature stability (15%), temperature trend (10%), hashrate consistency (25%), stale rate (15%), and restart stability (10%); returns both the score and a per-component breakdown for diagnostic display
+- **Sentinel zombie miner detection** — `check_zombie_miner()` detects miners that are online and connected but not submitting valid shares; applies a 15-minute post-restart cooldown to avoid false positives; distinguishes stale shares from true rejections
+- **Share difficulty logging and near-miss detection** — Every accepted share now emits a structured `debug`-level log entry with `actualDiff`, `shareDiff`, `nonce`, `worker`, and `coin` fields (suppressed in production; enable with `logLevel: debug`). A `warn`-level "NEAR MISS" entry fires when `actualDiff` exceeds 50% of the current network difficulty, logging the exact `percentOfNetwork` for block analysis. Both standalone (`handleShare`) and multi-port (`HandleMultiPortShare`) paths are covered. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@7b9e7cf](https://github.com/bkhuraijam/Spiral-Pool/commit/7b9e7cf34e186ea3d608f94c93552130c4af2e58))
+
+### Changed
+- **Bitcoin Knots upgraded to v29.3.knots20260508** — `docker/Dockerfile.bitcoin` now builds from `debian:bookworm-slim` and downloads the official release tarball directly from GitHub Releases (`bitcoin-29.3.knots20260508-x86_64-linux-gnu.tar.gz`), eliminating the dependency on the third-party `bitcoinknots/bitcoin` Docker Hub image. Installs `bitcoind`, `bitcoin-cli`, and `bitcoin-tx`; creates a dedicated `bitcoin` user with restricted privileges. Pinned version updated in `install.sh` (`BITCOIN_KNOTS_PINNED_VERSION` and BTC version cache fallback). (contributed by [bkhuraijam](https://github.com/bkhuraijam), [commit 35fc61f](https://github.com/bkhuraijam/Spiral-Pool/commit/35fc61f585e30dc2562a4ca31cb773ff65d1c9cb))
+- **Wallet backup confirmation requires explicit typed acknowledgement** — All three wallet backup prompt locations in `install.sh` (spiralpool-wallet success path, spiralpool-wallet auto-export-failed path, and start_services() wallet block) now require the operator to type `I HAVE BACKED UP THE WALLET` exactly before proceeding. Simply pressing ENTER is no longer accepted. The prompt loops until the exact phrase is entered. Each backup display now also shows the file type (`wallet.dat` — binary wallet file, or descriptor dump — JSON export of private keys) with the correct restore command for each format.
+- **`backupwallet` replaces `dumpwallet` as primary backup method everywhere** — `dumpwallet` is unsupported on descriptor wallets (DGB v8+, Bitcoin Knots, XEC) and would fail silently, leaving operators with no backup. All backup calls in `install.sh` (spiralpool-wallet, start_services wallet block, early-sync backup) and `upgrade.sh` now use `backupwallet` as primary, which works for both legacy (BerkeleyDB) and descriptor (SQLite) wallets. Fallback to `listdescriptors true` (JSON key export) is used only when `backupwallet` explicitly errors. Backup files use `.dat` extension for `backupwallet` output and `.dump` for descriptor fallback so the format is unambiguous.
+- **`.backup-confirmed-{coin}` marker system** — After an operator confirms a wallet backup in `install.sh`, a marker file is written to `/spiralpool/backups/.backup-confirmed-{coin}`. The start_services() wallet backup block now triggers on either `PENDING_GENERATION` address OR absence of this marker, so reinstalls and re-runs always prompt for a backup confirmation unless the operator has already confirmed one. Prevents re-prompting on clean reinstalls where the backup was already saved.
+- **`ismine` verification after wallet address generation** — After `getnewaddress`, `spiralpool-wallet` now calls `getaddressinfo` (with `validateaddress` fallback for older daemons) and checks `ismine: true`. If the address does not belong to the target named wallet (`pool-{coin}`), the script exits with an error rather than writing a wrong address to `config.yaml`. Catches wrong-wallet scenarios caused by silent `createwallet` failures, leftover default wallets from previous installs, or HA replication edge cases.
+- **`scripts/linux/wallet-backup.sh`** — New standalone emergency backup script for existing installations. Reads `config.yaml` to detect all enabled coins, calls `backupwallet` for each live daemon, falls back to `listdescriptors true` if needed, prints the exact SCP command for every successful backup file, and lists failed coins with manual recovery instructions. Usage: `sudo bash wallet-backup.sh`. Intended for operators who installed before the backup hardening changes shipped.
+- **`upgrade.sh` wallet backup repair on every upgrade** — `repair_wallet_backups()` function added to `upgrade.sh`. Runs during every upgrade while daemons are live: for each enabled coin that lacks a `.backup-confirmed-{coin}` marker, attempts a 4-method recovery cascade (`backupwallet` → `listdescriptors true` → SQLite `.recover` for descriptor wallets → `-salvagewallet` restart for legacy wallets), displays the backup file path and SCP command, and blocks on typed `I HAVE BACKED UP THE WALLET` confirmation before marking the coin confirmed. `--recover-wallets` flag added to `upgrade.sh` to run the repair standalone at any time (clears all existing markers and re-prompts for every coin).
+- **XEC added to `_wg_cli` case in start_services() wallet block** — XEC was missing from the coin CLI lookup table, causing wallet backup to be silently skipped for eCash installations. Added `xec) _wg_cli="ecash-cli -conf=$INSTALL_DIR/xec/bitcoin.conf -rpcwallet=pool-xec"`.
+- **Backup directory ownership corrected** — `backupwallet` RPC is executed by the daemon process (running as `spiralpool` user). Backup dir is now explicitly `chown`ed to `POOL_USER:POOL_USER` before any backup call, preventing silent write failures when the directory was owned by root.
+- **Async single-coin job broadcast** — `cp.stratumServer.BroadcastJob(job)` in the ZMQ job callback is now launched in a goroutine, preventing the single-coin session-iteration loop (which can take 2–5 s with many miners) from blocking the callback and delaying multi-port relay. Multi-port relay was already async; this makes the single-coin path consistent. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@a1050ac](https://github.com/bkhuraijam/Spiral-Pool/commit/a1050ac0962ad186589e6c883b62643288c1141b))
+- **ZMQ block notification logs include endpoint** — `"endpoint", z.cfg.Endpoint` added to the `hashblock` notification log entry so multi-daemon deployments can trace which ZMQ socket each block arrived on. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@a1050ac](https://github.com/bkhuraijam/Spiral-Pool/commit/a1050ac0962ad186589e6c883b62643288c1141b))
+- **ARM64 support removed** — All ARM/aarch64 code paths, download branches, detection functions, and documentation removed; project is x86_64 (amd64) only
+- **Postgres env vars in docker-compose** — Dashboard service now receives Postgres connection vars via `${DB_PASSWORD}`, `${DB_NAME}`, `${DB_USER}` (env vars, never hardcoded)
+- **Block history coin badges** — All coin badges use consistent cyan styling (no hardcoded per-coin colors)
+- `docker-compose.yml` — ZMQ ports exposed for DGB (28532), BTC (28332), BCH (28432), FBTC (28340); `extra_hosts: host.docker.internal` added to stratum and dashboard; SmartPort 16180 added; PROMETHEUS_URL added to dashboard env
+- `SpiralSentinel.py` — sync check interval reduced from 60s to 30s; block alert retry queue persists failed Discord notifications to disk and retries each cycle; Discord retries increased from 3 to 5 for block-found alerts; block dedup switched to hash-only (fixes CGMiner worker name mismatch suppressing alerts)
+- `dashboard.py` — blocks with `effort=0` (legacy rows) now display `---` instead of a garbage fallback calculation
+- Docker CE and PostgreSQL PGDG apt repository setup now uses distro-aware variables (`${DOCKER_DISTRO}`, `${OS_CODENAME}`) instead of hardcoded `ubuntu` and `lsb_release -cs`
+- `etcd` installation on Debian 13 downloads binary from GitHub Releases (v3.5.16) — `etcd-server`/`etcd-client` packages do not exist in Debian 13's official repositories; Ubuntu install path unchanged
+- Q-BitX runtime library installation uses a try/fallback pattern for `libevent-pthreads` and `libleveldb` package names to accommodate naming differences across distros
+- `unattended-upgrades` configuration no longer writes Ubuntu ESM/Pro origins on Debian installs
+
+### Fixed
+- **Sentinel wallet address not auto-synced from stratum `config.yaml` — block alerts, payout alerts, wallet balance display, and Avalon LED celebration all silently suppressed** — The sentinel config (`/spiralpool/config/sentinel/config.json`) is a separate file from the stratum config (`config.yaml`). When the sentinel config was regenerated (e.g. during upgrade or after a config reset) the `wallet_address` field reverted to the installer placeholder `PENDING_GENERATION`. The sentinel's block filter at `check_pool_for_new_blocks()` compares each block's `miner` field against the configured wallet address; with `PENDING_GENERATION` as the filter value, every block was silently added to `seen_pool_block_hashes` and discarded — no `block_found` Discord alert, no Avalon LED celebration via `trigger_block_celebration()`, no `payout_received` alert (balance fetch returns `None` after security regex rejects `_` in the placeholder), and no `🏦 WALLET` section in 6-hour intel reports. Fixed in `load_config()` by adding a wallet address auto-sync block that reads coin `address:` entries from `config.yaml` at startup, replaces any placeholder `wallet_address` value in both the top-level config (single-coin / auto-detect mode) and the per-coin `coins` array (multi-coin mode), then persists the corrected values back to `config.json` so they survive future restarts. The stratum refuses to start with `PENDING_GENERATION` addresses (`config.go`), so `config.yaml` is always authoritative when it contains a real address. The fix is non-destructive — real addresses already in `config.json` are never overwritten.
+- **Sentinel Prometheus metrics `HTTP 401: Unauthorized` — infrastructure health alerts non-functional** — The `spiralsentinel` systemd service did not receive the `SPIRAL_METRICS_TOKEN` environment variable that `install.sh` injects only into the `spiralstratum` service unit. As a result `fetch_prometheus_metrics()` sent unauthenticated requests to `localhost:9100/metrics`, received HTTP 401, and returned `None` every cycle — silently disabling all Prometheus-fed infrastructure alerts (`circuit_breaker`, `backpressure`, `wal_errors`, `zmq_disconnected`, share batch loss rate, etc.) and suppressing the `🏦 WALLET` infrastructure health section from intel reports. Fixed by extending the existing `pool_admin_api_key` auto-discovery block in `load_config()` to also read `metrics_auth_token:` from `config.yaml` in the same single-pass file read. Both keys are now discovered together at startup; the loop exits early once both are found. Operators do not need to configure either value manually — both are read from the single authoritative source in `config.yaml`.
+- **XEC dead peer-discovery seeds causing 20+ minute connection delays on fresh sync** — `seeder.ecash.network` and `seeder2.ecash.network` return NXDOMAIN. Both replaced with `seeder.status.cash` and `seeder.fabien.cash` (verified active in Bitcoin ABC's DNS seed rotation) in `docker/config/ecash.conf.template` and `install.sh`. The Docker heredoc in `generate_docker_xec_config()` also listed `electrum.bitcoinabc.org:8343` (an Electrum server, not a P2P node) and `seed.flowee.cash:8343` (wrong port — outbound peer connections use each peer's advertised port, 8333, not the local listen port 8343); both replaced with correct seed hostnames. The native Linux clearnet config block had `dnsseed=1` but no `addnode` fallbacks, leaving fresh installs and post-recovery restarts entirely dependent on DNS timing; three `addnode` entries now added. `dnsseed=1` added to the Docker heredoc where it was previously absent.
+- **XEC dbcache hardcoded at 2048 MB causing OOM restarts during IBD** — The 948k-block eCash chain with `dbcache=2048` regularly exhausted the `MemoryMax=4G` systemd cgroup, killing the daemon mid-sync and forcing re-download from an earlier checkpoint. XEC now uses the same auto-sizing formula as DGB/BTC/BCH: 55 % of total RAM capped at 8192 MB, with `MemoryMax` set to `(dbcache_mb + 3072) / 1024` GB to cover UTXO set, mempool, and OS overhead. The Docker heredoc's `dbcache=2048` is corrected to 4096 to match `docker/config/ecash.conf.template` which already had the correct value.
+- **`spiralctl sync --coin xec` falsely reporting "daemon is not running" during manual recovery** — `check_daemon_running()` in the sync script and `isServiceRunning()` in the Go spiralctl binary relied solely on `systemctl is-active`, giving false negatives for daemons started outside systemd (e.g. `bitcoind` launched directly with `-reindex` during chainstate recovery). `check_daemon_running()` now falls back to `pgrep -f "datadir=$DATADIR"` matching any process started with the coin's data directory regardless of binary name. The Go binary gains `isCoinServiceRunning(service, rpcPort)` in `status.go` which falls back to a 1-second TCP dial of the RPC port; `coinStatus()` in `coin.go` now uses this instead of `isServiceRunning()`.
+- **XEC CashAddr checksum never verified — corrupted or wrong-network addresses silently accepted** — `cashAddrDecode()` in `ecash.go` stripped the 8 trailing 5-bit checksum groups from the address but discarded them without verification. Any address with valid CashAddr characters and correct length would pass, including typos and BCH addresses (which are checksummed with the `"bitcoincash"` prefix, not `"ecash"`). Added `cashAddrPolymod()` (BCH polynomial, generator constants matching the CashAddr spec) and `cashAddrVerifyChecksum()` which expands the network prefix, appends a zero separator, appends the full bare address 5-bit values, and confirms `polymod == 0`. `decodeCashAddr()` now calls this before decoding — rejects wrong-network addresses and catches any address corruption at entry time for both pool-operator config addresses and per-miner solo addresses.
+- **XEC RTT block-submission compile error** — `skipSubmission = true` added in the RTT rejection branch (`coinpool.go:1200`) referenced a variable not yet declared in that scope (first declared with `:=` at line 1377 inside the submission block). This would prevent the entire pool binary from compiling. The assignment was also dead code: `finalStatus = "orphaned"` set two lines earlier already prevents submission via the `if finalStatus != "pending"` gate at line 1215. Removed the erroneous assignment; added a comment explaining why `finalStatus` alone is sufficient.
+- **XEC RTT fields lost when Job is cloned for secondary stratum ports** — `Job.Clone()` in `protocol.go` performed deep copies of all slice fields (MerkleBranches, TransactionData, AuxBlocks, etc.) but silently omitted the four RTT fields (`RTTPrevHeaderTime []int64`, `RTTPrevBits`, `RTTNextTarget`, `RTTBits`). In multi-port or HA multiserver mode the stratum clones the job before sending it to secondary listeners; the clone arrived with a nil RTTPrevHeaderTime slice, causing the RTT check in `coinpool.go` to skip validation entirely (`len(job.RTTPrevHeaderTime) >= 2` is false), so blocks found on secondary ports bypassed RTT and were submitted to the network unvalidated — guaranteed orphans. Fixed by deep-copying `RTTPrevHeaderTime` and copying the three string fields into the clone's return struct.
+- **XEC VarDiff and job-rebroadcast interval defaulting to wrong values** — Two `symbolToCoin` lookup maps in `v2.go` (used to resolve coin symbol → `SupportedCoins` key for block-time–aware defaults) listed every coin except XEC. When XEC fell through to the fallback `coinName = coinSymbol` ("xec"), the subsequent `SupportedCoins["xec"]` lookup found nothing (the key is "ecash"), so VarDiff `TargetTime` defaulted to 4 s instead of the correct 30 s (capped from 600 s / 4), and `JobRebroadcast` defaulted to 5 s instead of 60 s. Added `"xec": "ecash"` to both maps in `v2.go` (lines 962 and 1033).
+- **XEC missing from `getAlgoBlockTime()` switch** — The function in `pool.go` that returns expected block time for network-difficulty estimation had explicit cases for all other coins but not XEC, relying on the `default: return 600` fallback. Added `"XEC"` explicitly to the 600-second case alongside BTC, BCH, and NMC.
+- **XEC address validation rejecting `ecash:` prefixed addresses** — `validateCashAddr()` in `config.go` stripped `bitcoincash:` and `bitcoincashii:` prefixes but not `ecash:`, so a pool config containing a full CashAddr like `ecash:qzxx...` failed validation at startup with a misleading character error. Fixed by adding `"ecash:"` to both the dispatch `case` (line 2103) and the prefix-stripping block inside `validateCashAddr()`. Bare `q`/`p` forms were already accepted; only the full-prefix form was broken.
+- **XEC Docker image missing `ecashd` / `ecash-cli` symlinks** — `Dockerfile.ecash` installed `bitcoind` and `bitcoin-cli` from the Bitcoin ABC release tarball but never created the canonical `ecashd` / `ecash-cli` symlinks that all scripts, the stratum entrypoint, and operator tooling expect (mirrors the `fractald` / `fractal-cli` pattern in `Dockerfile.fractalbitcoin`). Added `ln -sf` for both after the install step. Updated the `docker-compose.yml` ecash healthcheck from `bitcoin-cli` → `ecash-cli` for consistency.
+- **XEC RTT validation not actually preventing block submission** — `skipSubmission = true` was never set in the RTT rejection branch, so even when a block failed the Real Time Target check the submission code still executed (the `if !skipSubmission {` guard at the HA layer was never reached with a true value from RTT). Added `skipSubmission = true` inside the `else if !meetsRTT` path in `coinpool.go` so RTT-failed XEC blocks are truly rejected before the RPC submit. Previously: RTT said "no" → submit ran anyway → block guaranteed-orphaned on-chain. Now: RTT says "no" → submit is skipped → block correctly discarded. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@30d2e11](https://github.com/bkhuraijam/Spiral-Pool/commit/30d2e113b29ed6ae8390f14da84f795e038f921e))
+- **Daily blocks chart blank on page refresh** — `fetchDailyBlocks()` is now called on `DOMContentLoaded` so the chart populates immediately on hard refresh; `updateAllStatsCharts()` skips `blocks_found` to prevent the daily-bar series from being overwritten by the time-series update path (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@b6a7e98](https://github.com/bkhuraijam/Spiral-Pool/commit/b6a7e9890450615338904d73be0fd4f22537ea90))
+- **Daily blocks chart not refreshed on coin switch or periodic refresh cycle** — `fetchDailyBlocks()` was missing from the coin-select handler and the main data fetch cycle, leaving the chart stale after switching coins or waiting for the next full-page refresh; added to both call sites (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@7987d93](https://github.com/bkhuraijam/Spiral-Pool/commit/7987d93))
+- **Pool effort inflated after daemon/stratum restart** — `lastBlockTime` was always initialized to the zero value on startup, so effort calculation used "epoch start" as the previous block time; `initBlockStats()` now loads the last found block timestamp from Postgres, preventing wildly over-estimated effort values after restarts (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@b1de5fe](https://github.com/bkhuraijam/Spiral-Pool/commit/b1de5fe))
+- **FBTC effort calculation skewed by indexing provider difficulty cycle** — When FBTC's `getdifficulty` RPC returns 1 (indexing provider) or an astronomical merged-mining value (>1T), effort was computed against the wrong difficulty; replaced round-accumulator effort with time-based effort (`actualSeconds / expectedSeconds × 100`) and introduced `lastGoodNetworkDiff` caching (values in range 1 < diff < 1e12) to provide a stable fallback; `checkMultiPortDifficultySpike()` in sentinel also skips FBTC readings outside this range (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@7987d93](https://github.com/bkhuraijam/Spiral-Pool/commit/7987d93))
+- **Race condition on startup** — Network difficulty was 0 during the first 10-second jitter window, causing blocks found in that window to record `networkdifficulty=1`
+- **FBTC indexing provider cycle** — When `getdifficulty` returns 1, network difficulty falls back to the cached validator difficulty for both the block record and effort calculation
+- **Hardcoded pool IDs** — `index()` route no longer hardcodes pool IDs; dynamically discovers from `/api/pools`
+- **Coin badge styling** — Removed hardcoded FBTC-orange styling from block history coin badges
+- **Dashboard luck calculation using all-time blocks vs session time window** — `update_luck_tracker()` and `get_luck_overview()` used `per_coin["blocks"]` (all-time total) combined with `mining_duration` (session uptime), producing 37,000%+ absurd luck values. Fixed by computing `dashboard_blocks` as a delta from a per-coin block baseline captured on first poll, ensuring both blocks_found and blocks_expected cover the same session window
+- **Dashboard luck per-coin endpoint using pool hashrate instead of farm hashrate** — `get_luck_overview()?coin=QBX` used `pool_hps` instead of `miner_cache["totals"]["hashrate_ths"]`, inflating expected blocks on shared pools; fixed with fallback to pool per-coin hashrate when miner detection is unavailable
+- **Dashboard Blocks chart showing aggregate data regardless of selected coin** — Cumulative blocks chart ignored the coin selector; fixed by storing per-coin breakdown in each luck history entry and filtering by coin in `get_luck_overview()`
+- **Dashboard ETB stuck on stale value when miner detection returns 0** — `update_etb_calculation()` now falls back to pool total hashrate instead of returning early
+- **`bestShareDiff` variable used without `var` declaration in `server.go`** (pre-existing compilation bug)
+- **Block History dropped historical blocks from coins not exposed by the stratum API** — `index()` route's Block History query in `dashboard.py` relied solely on `/api/pools` dynamic discovery (which only returns running pools) with a single-coin env-var fallback, so blocks from any coin that wasn't currently active disappeared from the table. Fixed by seeding `pool_ids` with the complete set of all 17 supported pool IDs (12 SHA-256d + 5 Scrypt) before merging in API-discovered IDs. `get_blocks_from_db` already skips pool IDs whose `blocks_<id>` table doesn't exist, so the comprehensive list is safe on every deployment regardless of which coins are installed. (contributed by [kamakhu](https://github.com/kamakhu), [bkhuraijam/Spiral-Pool@fdb5fe3](https://github.com/bkhuraijam/Spiral-Pool/commit/fdb5fe34ced6233b1e27a987e1da1fc4b1e10d3a))
+- **Health monitor PostgreSQL check causing false node-down alerts and cascading stratum restarts** — `health-monitor.sh` checked PostgreSQL health with `sudo -u postgres /usr/bin/psql -c "SELECT 1"`, which requires a `NOPASSWD` sudoers entry for `spiraluser`. When `/etc/sudoers.d/spiralpool` was empty (sudoers entries not written during install), the `sudo` call silently exited non-zero on every tick, causing the health monitor to incorrectly declare PostgreSQL down, stop and restart it, stop and restart `spiralstratum` as a cascade dependency, and repeat up to 3 times per hour — even though PostgreSQL and the DGB node were perfectly healthy the entire time. Sentinel, which polls the stratum API to determine node health, would then fire "node down" and "node recovered" alerts on each stratum restart cycle. Fixed by replacing the `sudo psql` check with `/usr/bin/pg_isready -h 127.0.0.1 -p 5432 -q`, which confirms PostgreSQL is accepting connections without requiring any authentication or sudoers configuration. The now-unnecessary `NOPASSWD: /usr/bin/psql -c SELECT 1` entry removed from both `install.sh` and `upgrade.sh`. `upgrade.sh` now includes a migration step that patches the deployed `health-monitor.sh` on existing servers and restarts the health monitor service automatically.
+
+### Fixed · XEC Deep Audit 
+
+**`src/stratum/internal/pool/coinpool.go`**
+- **XEC RTT block-hash byte order inverted — every valid XEC block fails RTT** — `hex.DecodeString(result.BlockHash)` already produces big-endian bytes (most-significant byte first), matching the `new(big.Int).SetBytes(blockHashBE)` call inside `CheckRTTTargetRaw()`. The code then immediately reversed the 32 bytes in a for-loop labelled "Convert from daemon display order (big-endian) to internal order", making the input to `CheckRTTTargetRaw` little-endian. Since RTT compares the hash numerically against the target, an inverted hash would compare as a completely different value — a valid block would fail RTT and be discarded; an invalid block might (probabilistically) pass. Removed the reversal loop entirely; `blockHashBytes` is now passed to `CheckRTTTargetRaw` as-is from `hex.DecodeString`.
+
+**`src/stratum/internal/jobs/manager.go`**
+- **XEC output script length encoded as single byte — breaks for scripts ≥ 253 bytes** — `buildCoinbaseTx()` used `byte(len(script))` to write the output script length for the pool-reward output (line 1233), the MinerFund output (line 1241), and the StakingRewards output (line 1250). Bitcoin varint encoding requires a three-byte prefix (`0xfd` + uint16 LE) for lengths ≥ 253; a single byte is only valid for lengths 0–252. The witness commitment at line 1296 already used `crypto.EncodeVarInt()` correctly. Changed all three to `crypto.EncodeVarInt(uint64(len(script)))...` for consistency and protocol correctness.
+- **XEC mandatory outputs dropped on invalid witness commitment** — When `template.DefaultWitnessCommitment` failed hex-decode or format validation, the fallback code rebuilt `cb2` from scratch using hard-coded `0x01` output count and a single pool-reward output, discarding already-computed MinerFund and StakingRewards data. The network requires these outputs unconditionally; a block missing them is rejected. Fixed both fallback paths (invalid-hex and invalid-format) to compute the correct output count (`1 + hasMinerFund + hasStakingReward`), re-append MinerFund and StakingRewards outputs in the correct order, and use `crypto.EncodeVarInt` for script lengths.
+- **MinerFund output skipped when MinimumValue == 0 but Addresses present** — `mf.MinimumValue > 0` was used as the gate for including the MinerFund output; if the network sends a MinimumValue of 0 (e.g. during a soft-fork activation grace period) but still includes addresses (indicating the output is required), the pool would build a block without the mandatory output and get rejected. Changed to `len(mf.Addresses) > 0` — presence of addresses is the authoritative signal. If MinimumValue is 0, the output is still included with a 0-satoshi value, which is valid.
+- **StakingRewards output skipped when MinimumValue == 0** — Same issue: `sr.MinimumValue > 0` gate removed; changed to `sr.PayoutScript.Hex != ""` as the single gate for including the staking output.
+
+**`src/stratum/internal/coin/ecash.go`**
+- **Duplicate `cashAddrPolymod` / `cashAddrVerifyChecksum` / `cashAddrDecode` in same package** — Previous session added three functions to `ecash.go` that already existed in `bitcoincash.go` (same `coin` package), causing a redeclaration compile error. Additionally, the `ecash.go` version of `cashAddrVerifyChecksum` had a bug: it used `uint64(c)` for prefix expansion instead of `uint64(c) & 0x1f` (lower 5 bits only), so checksum verification would always fail for valid addresses. Removed all three functions from `ecash.go`; replaced the two-step verify+decode call in `decodeCashAddr()` with a single call to `decodeCashAddrDataWithPrefix(XECCashAddrPrefix, bare)` which already exists in `bitcoincash.go` and uses the correct prefix expansion.
+
+**`scripts/linux/regtest.sh`**
+- **XEC missing from `COIN_DATA_DIR` cleanup map** — `COIN_SYMBOL=XEC` fell through to the `*)` case, leaving `COIN_DATA_DIR=""` and printing "Unknown coin data directory for XEC — manual cleanup may be needed" on every run. Added `XEC) COIN_DATA_DIR="$HOME/.bitcoin-abc" ;;` (matching `DATA_DIR=.bitcoin-abc` set in the xec coin block at line 396).
+- **XEC daemon data directory collides with BTC on startup** — `ecashd` is a symlink to `bitcoind`; without an explicit `-datadir` it defaults to `~/.bitcoin`, overwriting BTC chain data in multi-coin test environments. Added `-datadir="$HOME/.bitcoin-abc"` to all four startup paths where the same fix already existed for FBTC: initial `DAEMON_ARGS`, restart `RESTART_ARGS`, HA `HA_DAEMON_ARGS`, and auxiliary daemon `AUX_DAEMON_ARGS`.
+
+### Fixed · Audit
+
+**`install.sh`**
+- **`pip` silent failure under `set -e`** — `pip_output=$(cmd)` would exit the installer silently on pip failure; replaced with `|| pip_exit=$?` capture pattern so failures are logged and handled
+- **DGB stratum log line unconditional** — `log "DGB Stratum: port 3333..."` fired regardless of `ENABLE_DGB`; wrapped in guard
+- **BCH2/BTCS missing from `cleanup_on_failure()`** — stop/disable/rm-service blocks omitted `bitcoincashIId` and `bitcoinsilverd`; added
+- **`libminiupnpc17` has no install candidate on Ubuntu 24.04+/Debian 13** — replaced with `libminiupnpc-dev`; added `.so.17 → .so.21` compat symlink block after apt-get
+- **`libevent-pthreads-2.1-7t64` split on Ubuntu 26.04** — replaced with `libevent-dev`, which pulls the correct split packages on all supported distros
+- **BTCS symlink not guaranteed after install** — `install_bitcoinsilver()` skipped symlink creation when binary already existed; added guaranteed symlink block after both install paths
+- **`python3-requests` missing from apt package list** — sentinel uses system Python with `requests` as a third-party dep; added to apt install list
+- **`wait_for_daemon()` infinite loop on timeout** — `wait_count=0` reset instead of `break` when timeout was hit; fixed to `return 0` after 5-minute ceiling
+- **`while ! all_synced` loop had no daemon liveness check** — added per-coin `systemctl is-active` check; warns after 3 consecutive daemon-down cycles instead of spinning forever
+- **`gunzip` corruption silent in DB restore** — `gunzip | psql || log_warn "normal"` produced an empty database on a corrupt archive with no fatal error; added `gunzip -t` integrity check; restore now aborts on corruption
+- **New-coin RPC passwords blank on native upgrade** — upgrade path read existing passwords but never generated them for newly-added coins; added `_gen_rpc_pass()` fallback for all 15 coins after credential recovery
+- **New-coin RPC passwords blank on Docker upgrade** — same gap in Docker upgrade path; same fix applied
+- **BCH2/BTCS missing from coins.env read block on upgrade** — `BCH2_RPC_PASSWORD` and `BTCS_RPC_PASSWORD` not read from `coins.env` on native upgrade; added both
+- **Sudoers syntax error logged as warning** — demoted `log_warn` to `log_error` with remediation message so operators are not misled
+- **BCH2/BTCS missing from Enabled-coins config comment** — header comment omitted the two coins from the enabled list; added
+- **`coins.env` non-atomic write** — `tee coins.env` then `chmod 600` left the file briefly world-readable on crash; fixed to write to `.tmp.$$`, chmod, then `mv`
+- **`compress_backup()` non-atomic write + no size check** — `tar` wrote directly to the output file, producing a partial archive on interruption; fixed to write to `.tmp.$$`, validate non-zero size, then `mv`
+- **QBX version comparison on existing binary** — `install_qbx()` set `qbx_download_needed=false` whenever the binary existed, silently skipping version upgrades; now compares installed version against `QBX_VERSION` and re-downloads if they differ
+- **QBX version cache not written after install** — `QBX_VERSION` not persisted to `/spiralpool/config/coin-versions/QBX.ver` after a successful install; added write so subsequent checks skip the API call
+- **`LITECOIN_VERSION` global constant stale** — top-level constant was `0.21.4`; updated to `0.21.5.4` to match the local function constant and coin-upgrade.sh
+
+**`upgrade.sh`**
+- **`pip` failures silently swallowed** — `2>/dev/null` hid all pip output; replaced with captured output and `|| _pip_rc=$?` pattern
+
+**`src/dashboard/requirements.txt`**
+- **`psycopg2-binary==2.9.9` incompatible with Python 3.13+** — `_PyInterpreterState_Get` was removed in Python 3.13; pinned version fails to compile; changed to `>=2.9.10`
+
+**`scripts/linux/pool-mode.sh`**
+- **`install_node_if_needed` skipped version comparison** — all coins returned early if the binary existed with no version check, preventing upgrades via SpiralDash; now compares installed version against target before deciding to skip or re-download
+- **Hardcoded version strings in `install_node_if_needed`** — all per-coin version constants replaced with `_coin_upgrade_target()` calls; versions are now resolved dynamically at install time rather than baked in at release
+- **Stale `/tmp` archives reused across runs** — `if [[ ! -f "$ARCHIVE" ]]` skipped re-download of stale or partial archives; replaced with unconditional `rm -f` before each `wget`
+- **NMC GitHub latest tag has no Linux binary assets** — `namecoin/namecoin-core` `releases/latest` returns `nc31.0` which ships no pre-built binaries; removed NMC from the GitHub lookup so it falls through to coin-upgrade.sh's pinned `28.0`
+
+**`docker/docker-compose.yml`**
+- **Healthcheck credential exposure (CR-2)** — All 15 coin container healthchecks previously passed `-rpcuser=` and `-rpcpassword=` as CLI arguments, making credentials visible in `docker inspect` output and readable from `/proc/*/cmdline` by any process in the container. Changed all healthchecks to use `-conf=/home/<coin>/.<coin>/<coin>.conf`, reading credentials from the mounted config file at runtime (DGB-Scrypt has no separate container — it shares the DGB daemon)
+- **Container privilege escalation prevention** — Added `security_opt: no-new-privileges:true` to stratum and dashboard service containers; prevents container processes from gaining elevated privileges via setuid/setgid binaries
+
+**`install.sh` — BCH2 / BC2 RPC port isolation**
+- **BCH2 rpcbind corrected to `127.0.0.1:8533`** — BCH2 was previously binding on all interfaces on port 8339, conflicting with BC2's assigned RPC port. Fixed `rpcbind` to `127.0.0.1` and `rpcport` to `8533`, isolating BCH2 to its own port and freeing 8339 exclusively for BC2 (`bitcoiniid`)
+
+### Changed · Audit  
+
+**`scripts/linux/pool-mode.sh`**
+- **Dynamic coin version resolution** — added `_github_latest_version()`, `_coin_upgrade_target()`, `_write_version_cache()`, and `_coin_installed_version()` helpers; `install_node_if_needed` now queries the GitHub `releases/latest` API for each coin's target version and falls back to the `COIN_TARGET` array in `coin-upgrade.sh` when offline or rate-limited; installed version is read from the version cache (written on first install), then from binary `--version` output
+
+### Attribution
+- Block history, Multi-Coin Rotation widget, and initial difficulty fetch ported and modified from [bkhuraijam](https://github.com/bkhuraijam/Spiral-Pool)
+- ETB network difficulty display ported and modified from bkhuraijam
+- Bitcoin Knots v29.3.knots20260508 upgrade and source-build Dockerfile approach by [bkhuraijam](https://github.com/bkhuraijam/Spiral-Pool) ([commit 35fc61f](https://github.com/bkhuraijam/Spiral-Pool/commit/35fc61f585e30dc2562a4ca31cb773ff65d1c9cb))
+- FBTC difficulty fallback fix ported from [kamakhu](https://github.com/bkhuraijam/Spiral-Pool/commit/8100071fc0498dcf5d9922cb38486e754e334f14) (bkhuraijam/Spiral-Pool)
+- Time-based effort calculation, FBTC difficulty hardening, daily blocks chart refresh, and lastBlockTime database initialization ported and modified from [kamakhu](https://github.com/kamakhu) (bkhuraijam/Spiral-Pool)
+
+### Documentation
+- `docs/setup/OPERATIONS.md` — added "0a. Server Preparation — Debian 13 Trixie" subsection
+- `README.md` — added Debian 13 row to Platform Support table; updated Prerequisites
+- `docs/setup/WINDOWS_GUIDE.md` — updated production OS recommendation to include Debian 13
+
+### Ported Upstream Commits
+
+The following commits were ported from forks of this repository.
+All commits were security-scanned, personally-identifiable data sanitized,
+and personal operational customizations reverted before integration.
+
+### Commit 1 — Full stack fixes (stratum API, Sentinel, Docker)
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/91464e2c04c50b473e945f81069ca730e48d002a
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+**Security:** CLEAN — personal wallet address, hostname, and LAN IPs sanitized from `dashboard_config.json`; port remap, Werkzeug flag, Grafana exposure, and hardcoded stratum difficulty all reverted
+
+**Changes:**
+- `GetBlocksWithOrphans()` now accepts a `limit int` parameter; V1 and V2 API endpoints parse `?pageSize=` query parameter (default 100/200, max 5000)
+- `Effort: share.Difficulty` now stored in block DB record at block-find time
+- `SpiralSentinel.py` — sync check interval reduced from 60s to 30s
+- `SpiralSentinel.py` — block alert retry queue: failed Discord notifications for block-found alerts are persisted to disk and retried each monitoring cycle instead of being dropped to a log file
+- `SpiralSentinel.py` — Discord retries increased from 3 to 5 for block-found alerts specifically
+- `SpiralSentinel.py` — block dedup switched from worker-name + hash to hash-only (CGMiner worker name mismatch was silently suppressing pool-side block alerts)
+- `docker-compose.yml` — ZMQ ports exposed for DGB (28532), BTC (28332), BCH (28432), FBTC (28340); `extra_hosts: host.docker.internal` added to stratum and dashboard; SmartPort 16180 added; PROMETHEUS_URL added to dashboard env
+- `docker/config/dashboard_config.json` — sanitized example config created (wallet address and device IPs replaced with documented placeholders)
+
+---
+
+### Commit 2 — Network difficulty in ETB widget
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/6e5e0783760d45d91397328dba0ab8ceff6422ce
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+
+**Changes:**
+- Est. Time to Block card now shows current network difficulty alongside the 24h probability
+- Difficulty updates when switching coins even with no hashrate
+- No-hashrate state clears ETB while still displaying difficulty
+
+---
+
+### Commit 3 — True pool effort calculation
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/78612934d00596fc0345b7e705b55f5d9d9d4622
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+
+**Changes:**
+- `CoinPool` and `Pool` now track cumulative share difficulty per mining round (`currentRoundDifficulty`) using a mutex-protected accumulator
+- Effort calculated at block-find time as `(roundDiff / networkDiff) × 100` and stored in the blocks table
+- Round accumulator resets to 0 after each block for the next round
+- `GetPoolEffort()` now returns live round effort instead of 0
+- `dashboard.py` — blocks with `effort=0` (legacy blocks) now display `---` instead of a garbage fallback calculation
+- Effort uses FBTC-corrected network difficulty in `CoinPool.handleBlock()`
+
+---
+
+### Commit 4 — FBTC indexing provider cycle fix
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/8100071fc0498dcf5d9922cb38486e754e334f14
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+
+**Changes:**
+- When `getdifficulty` RPC returns 1 (FBTC indexing provider cycle), network difficulty now falls back to the cached validator difficulty for both `NetworkDifficulty` in the block record and for effort calculation
+
+---
+
+### Commit 5 — Per-coin accepted and rejected shares
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/41261f1ae47e1e106aa86a230da1853cdeb5d1b1
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+
+**Changes:**
+- `GetAcceptedShares()` and `GetRejectedShares()` added to `StatsProvider` (V1) and `CoinPoolProvider` (V2) interfaces
+- Implemented in `Pool`, `CoinPool`, and stubbed in `auxPoolProvider`
+- `acceptedShareCount atomic.Int64` per-pool field added; incremented on each accepted share
+- V1 and V2 API endpoints now expose `acceptedShares` and `rejectedShares` in pool stats responses
+- Dashboard displays per-coin accepted shares and reject rate when a specific coin is selected from the header badge
+- Fixed pre-existing compilation bug: `bestShareDiff` variable was used without a `var` declaration in `server.go`
+
+---
+
+### Commit 6 — Per-coin session best share difficulty
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/a1db09e965dea2ccb619148de3ccc9fcc7ad4bd2
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `GetBestShareDiff()` added to `StatsProvider` (V1) and `CoinPoolProvider` (V2) interfaces
+- Implemented in `Pool` and `CoinPool` using `atomic.Uint64` storing float64 bits with a lock-free CAS loop for thread-safe updates
+- `bestShareDiffBits atomic.Uint64` per-pool field; updated on every accepted share via CAS loop
+- V1 and V2 API endpoints now expose `bestShareDiff` in pool stats responses
+- Dashboard displays per-coin session best share diff when a coin is selected
+
+---
+
+### Commit 7 — Per-coin all-time best share difficulty
+**Commit:** https://github.com/SpiralPool/Spiral-Pool/commit/66ef12ad17313993caabb8cc6069f16df2ad534f
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (SpiralPool)
+
+**Changes:**
+- `lifetime_stats["per_coin_best_diff"]` dict persists per-coin all-time best share difficulty across dashboard restarts
+- Dashboard shows per-coin all-time best share diff (from `lifetime_stats`) when a coin is selected
+- Aggregate best-diff view still shows global all-time best when no coin is selected
+- `_lastLifetimeStats` JS variable caches lifetime stats for fast per-coin lookups in the UI
+
+---
+
+### Commit 8 — BCH2 and BTCS coin support (PHASE 5)
+**Commit:** https://github.com/MESKONE0722/Spiral-Pool/commit/47e86a9009ed1a86985e61c7c20dc90a4eeca9dd
+**Date:** 2026-05-14 | **Contributor:** MESKONE0722
+
+**Changes:**
+- **BCH2 (Bitcoin Cash II)** — full SHA-256d coin implementation:
+  - `src/stratum/internal/coin/bch2.go` — address validation (CashAddr `bitcoincashii:` prefix + legacy Base58Check), coinbase script builder, SHA256d header hashing, complete `Coin` interface
+  - `docker/Dockerfile.bitcoincashii` — v27.0.2, x86_64 only, corrected release URL format (`bitcoincashII-v{V}-linux-x86_64.tar.gz`), ZMQ confirmed in BCH2 source tree
+  - `docker/config/bitcoincashii.conf.template` — BCH-style config, ports 8534/8533/28533
+  - `docker-compose.yml` — `bitcoincashii` service block with profiles `["bch2", "multi"]`, stratum ports 5336-5338, healthcheck, named volume
+  - `install.sh` — port vars, BCH2_RPC_USER=spiralbch2, ENABLE_BCH2, BCH2_POOL_ADDRESS, address prompt with CashAddr validation
+  - `config/coins.manifest.yaml` — BCH2 entry with genesis hash, ports, and CashAddr flag
+  - `src/sentinel/SpiralSentinel.py` — BCH2 default coin config entry
+  - `src/dashboard/dashboard.py` — BCH2 added to VALID_COINS, WALLET_PATTERNS, port map, coin-type map
+- **BTCS (Bitcoin Silver)** — full SHA-256d coin implementation:
+  - `src/stratum/internal/coin/btcs.go` — address validation (B-prefix P2PKH, 3 P2SH, bs1q SegWit, bs1p Taproot), full BTC-style coinbase script builder with P2WPKH/P2WSH/P2TR support
+  - `docker/Dockerfile.bitcoinsilver` — source build pinned to commit `ff5c3c3d` via targeted `git fetch --depth=1` (supply chain protection), ZMQ confirmed in BTCS source tree
+  - `docker/config/bitcoinsilver.conf.template` — BTC-style config, ports 10566/10567/28567
+  - `docker-compose.yml` — `bitcoinsilver` service block with profiles `["btcs", "multi"]`, stratum ports 11335-11337, healthcheck, named volume
+  - `install.sh` — port vars, BTCS_RPC_USER=spiralbtcs, ENABLE_BTCS, BTCS_POOL_ADDRESS, address prompt with B-prefix/bech32 validation
+  - `config/coins.manifest.yaml` — BTCS entry with genesis hash, ports, SegWit flag
+  - `src/sentinel/SpiralSentinel.py` — BTCS default coin config entry
+  - `src/dashboard/dashboard.py` — BTCS added to VALID_COINS, WALLET_PATTERNS, port map, coin-type map
+- **Both coins** — SmartPort multiport rotation supported (standard SHA-256d, no coordinator changes required)
+- `src/stratum/internal/coin/manifest_test.go` — expected coin count updated 14→16, SHA256d 9→11
+
+---
+
+### Commit 9 — lastBlockTime database initialization on startup
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/b1de5fe
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `initBlockStats()` in `coinpool.go` now calls `postgresDB.GetLastBlockFoundTime()` on startup and seeds `cp.lastBlockTime` from the database result
+- Prevents effort calculation from treating epoch start as "previous block time" after a daemon or stratum restart, which inflated effort to unrealistic values until the first block was found
+
+---
+
+### Commit 10 — Time-based effort, daily blocks endpoint, FBTC difficulty hardening
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/7987d93
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+**Security:** CLEAN — personal operational defaults (report currency, display timezone, difficulty alert flag) reverted to project defaults before integration
+
+**Changes:**
+- `coinpool.go` — replaced round-accumulator effort with time-based effort: `effortPercent = (actualSeconds / expectedSeconds) × 100` where `expectedSeconds = (networkDiff × 2^32) / poolHashrate`; `lastBlockTime` mutex-protected field tracks inter-block intervals
+- `coinpool.go` — added `lastGoodNetworkDiff` / `lastGoodDiffMu` fields; `GetMiningDifficulty()` returns the cached last-known-good difficulty for FBTC when live difficulty is outside the valid range (1 < diff < 1e12), covering both the indexing-provider cycle (=1) and merged-mining spike (>1T)
+- `coinpool.go` — `lastGoodNetworkDiff` updated in `Start()` and both fetch paths of `difficultyLoop()` for FBTC
+- `sentinel.go` — `checkMultiPortDifficultySpike()` skips FBTC difficulty readings where `prev ≤ 1`, `current ≤ 1`, `prev > 1e12`, or `current > 1e12`, preventing false spike alerts during indexing or merged-mining cycles
+- `dashboard.py` — new `GET /api/blocks/daily` endpoint: aggregates per-coin block counts by date over the last 30 days; coin-filterable via `?coin=` query param; protected by `@api_key_or_login_required`; uses `POOL_API_URL` env var and `get_enabled_coins()` for dynamic discovery (no hardcoded credentials or pool IDs)
+- `dashboard.html` — `fetchDailyBlocks()` now called in the coin-select handler (after `applyStatsCoinFilter()`) and in the main data fetch cycle (between `fetchETBData()` and `fetchLeaderboard()`), in addition to the existing `DOMContentLoaded` call ported in commit b6a7e98
+
+---
+
+### Commit 11 — Per-coin lastBlockTime initialization for effort calculation
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/ecca3e7c3260d4ff6137f91772903e9d80f8a1f1
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `GetLastBlockFoundTimeForPool(ctx, poolID)` added to `postgres.go` — queries the per-coin `blocks_<poolID>` table directly using a caller-supplied `poolID` instead of relying on the shared `db.poolID` field of the DB connection
+- `initBlockStats()` in `coinpool.go` now calls `GetLastBlockFoundTimeForPool(ctx, cp.poolID)` instead of `GetLastBlockFoundTime(ctx)`, ensuring each coin pool seeds its `lastBlockTime` from its own block table at startup
+- Fixes: when multiple coins shared a single DB connection, all coins were inheriting DGB's last block time because `GetLastBlockFoundTime` used `db.poolID` (DGB's ID) regardless of which `CoinPool` called it
+
+---
+
+### Commit 12 — XEC (eCash / Bitcoin ABC) full coin integration
+**Fork:** https://github.com/bkhuraijam/Spiral-Pool
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+**Security:** CLEAN — no hardcoded wallets, credentials, or personal addresses; all passwords injected via environment variables; XEC P2P port set to 8343 (avoids collision with BTC 8333)
+
+**Changes:**
+- `src/stratum/internal/coin/ecash.go` — `ECashCoin` type implementing the full `Coin` interface: CashAddr address validation and decoding (`ecash:q…` P2PKH, `ecash:p…` P2SH), coinbase script builder (P2PKH + P2SH), SHA-256d block header serialization, RTT (Real Time Target) difficulty checking via `CheckRTTTargetRaw`, `GetBlockTemplate` consuming `coinbasetxn.minerfund` and `coinbasetxn.stakingrewards` for mandatory post-Nov-2025 coinbase outputs, full `SerializeXECCoinbaseTx` with MinerFund and StakingRewards outputs
+- `docker/Dockerfile.ecash` — Bitcoin ABC v0.31.12, x86_64 only, official release tarball from GitHub Releases
+- `docker/docker-compose.yml` — `ecash` service block, profiles `["xec", "multi"]`, stratum ports 18338/18339/18340, P2P 8343, RPC 9004, ZMQ 28335, healthcheck via `bitcoin-cli -conf=…/bitcoin.conf getblockchaininfo`
+- `docker/config/ecash.conf.template` — standard Bitcoin ABC config: RPC on 9004, ZMQ on 28335, P2P on 8343, credential injection via `${RPC_USER}` / `${RPC_PASSWORD}`
+- `docker/.env.example` — `XEC_RPC_USER`, `XEC_RPC_PASSWORD`, `ENABLE_XEC`, `XEC_POOL_ADDRESS`, `XEC_DATA_DIR` (commented), daemon override table updated
+- `install.sh` — port variables (XEC_RPC_PORT=9004, XEC_P2P_PORT=8343, XEC_ZMQ_PORT=28335), address prompt with CashAddr regex (`^ecash:[qp][a-z0-9]{41,}$`), UFW rules for 18338–18340/tcp and 8343/tcp, coin menu option 17 (single-coin) and multi-coin toggle (sel_xec), Docker profile injection, upgrade-path credential/address preservation, `_PASS_RECOVERY` map entry `[XEC]="xec:bitcoin.conf"`
+- `coin-upgrade.sh` — `COIN_TARGET[XEC]="0.31.12"`, `COIN_RISK[XEC]="NONE"`, `COIN_SERVICE[XEC]="bitcoind"`, `COIN_DAEMON_CMD[XEC]="bitcoind"`, `COIN_CLI_CMD[XEC]="bitcoin-cli"`, `COIN_CONF[XEC]`, `COIN_ENV_FLAG[XEC]="ENABLE_XEC"`, `download_XEC()` fetching `bitcoin-abc-0.31.12-x86_64-linux-gnu.tar.gz`, install case `BCH|FBTC|XEC`
+- `scripts/spiralctl.sh` — daemon `ecashd`, CLI `bitcoin-cli -conf=…/bitcoin.conf`, `conf_name="bitcoin.conf"`, built-in coin guard, `ecash → XEC` normalisation in single-coin detect, SHA-256d help text updated
+- `src/dashboard/dashboard.py` — `XEC` in `VALID_COINS` (both locations), CashAddr `WALLET_PATTERNS` regex, `COIN_CONFIGS["XEC"]` (RPC 9004, conf `/spiralpool/xec/bitcoin.conf`), `COINGECKO_IDS["XEC"] = "ecash"`, `normalize_coin` entries for `ECASH` and `BITCOIN-ABC`
+- `config/coins.manifest.yaml` — XEC entry: `algorithm: sha256d`, `rpc_port: 9004`, `p2p_port: 8343`, `zmq_port: 28335`, `stratum_port: 18338`, `stratum_v2_port: 18339`, `stratum_tls_port: 18340`, `supports_cashaddr: true`, `genesis_hash` (Bitcoin genesis), `coingecko_id: "ecash"`
+- `src/stratum/internal/coin/manifest_test.go` — expected coin count updated 16→17, SHA256d 11→12
+- `docs/reference/MULTI_COIN_PORT.md` — XEC row added to stratum port reference table
+
+---
+
+### Commit 13 — Block History includes all supported coins
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/fdb5fe34ced6233b1e27a987e1da1fc4b1e10d3a
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `src/dashboard/dashboard.py` — Block History query in the `index()` route previously relied solely on dynamic pool discovery via `/api/pools` with a single-coin fallback (`POOL_ID` env var or `dgb_sha256_1`), so historical blocks from coins not currently exposed by the stratum API were silently dropped. The upstream commit added BTC/BCH/XEC to a hardcoded 2-coin list; this port goes further by seeding `pool_ids` with the complete set of supported pool IDs across all 17 coins (12 SHA-256d: `btc/bch/bch2/bc2/btcs/dgb/fbtc/nmc/qbx/sys/xec/xmy_sha256_1`; 5 Scrypt: `cat/dgb/doge/ltc/pep_scrypt_1`) before merging in API-discovered pool IDs (deduplicated). `get_blocks_from_db` already skips pool IDs whose `blocks_<id>` table does not exist, so listing every coin is safe even when the deployment only runs a subset.
+
+---
+
+### Commit 14 — Worker Statistics section (foundation)
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/847435523dface3d9e2bc23d08f454b9f1ef12b8
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `src/stratum/internal/database/migrate.go` — `actual_difficulty DOUBLE PRECISION NOT NULL DEFAULT 0` added to the `CREATE TABLE shares_*` template in `createPoolTables`; new migration v11 (`add_actual_difficulty`) registered in both the standard migrations slice and `poolMigrations` (idempotent `ALTER TABLE shares_<poolID> ADD COLUMN IF NOT EXISTS actual_difficulty`).
+- `src/stratum/internal/database/postgres.go` — `actual_difficulty` added to the `WriteBatch` `CopyFrom` column list and value tuple, sourced from `s.ActualDifficulty`.
+- `src/stratum/internal/database/postgres_v2.go` — same change for `WriteBatchForPool`.
+- `src/stratum/internal/pool/coinpool.go` — `share.ActualDifficulty = result.ActualDifficulty` set immediately before `cp.sharePipeline.Submit(share)` in both `handleShare` and `HandleMultiPortShare`, so the true per-share hash difficulty (rather than the assigned target) reaches the DB.
+- `src/stratum/internal/pool/pool.go` — same assignment in the v1 `handleShare`.
+- `src/stratum/pkg/protocol/protocol.go` — `ActualDifficulty float64` field already present on `Share`; no change required in this codebase.
+- `src/dashboard/dashboard.py` — new `get_worker_stats_from_db(pool_ids, minutes=1440)` helper queries each `shares_<pool_id>` table (skipping any whose table does not exist), groups by `worker`, returns shares count, best diff (`GREATEST(MAX(difficulty), MAX(actual_difficulty))`), avg diff, max network diff, first/last share timestamps, and a hashrate estimate (`shares/elapsed × avg_diff × 2^32`).
+- `src/dashboard/templates/dashboard.html` — new collapsible `Worker Statistics` section inserted above the Multi-Coin Rotation widget; `worker-stats-section` added to `restoreCollapsedStates`; coin-selector now filters `.worker-coin-group` blocks in place.
+
+---
+
+### Commit 15 — Worker Statistics time window switcher
+**Commit:** https://github.com/bkhuraijam/Spiral-Pool/commit/63941f1ef66cca0626ee5f783fe9f9699a612bc4
+**Date:** 2026-05-14 | **Contributor:** Kamakhu (bkhuraijam fork)
+
+**Changes:**
+- `src/dashboard/dashboard.py` — `get_worker_stats_from_db` parameter changed from `hours: int = 24` to `minutes: int = 1440` so the same helper serves the 10 min, 1 h, and 24 h windows; SQL `WHERE` clause now uses `INTERVAL '{minutes} minutes'`. New admin-gated `GET /api/worker-stats?minutes=10|60|1440` endpoint (`api_worker_stats`) reuses the helper and projects per-pool rows into a coin-keyed JSON payload. The upstream port enumerated only five pool IDs in the endpoint; this port introduces a `WORKER_STATS_POOL_MAP` covering all 17 supported coins so the panel works on every deployment.
+- `src/dashboard/templates/dashboard.html` — collapsible header gains three time-window buttons (`ws-btn-10`, `ws-btn-60`, `ws-btn-1440`) with `event.stopPropagation()` so clicks don't toggle the section; body container renamed to `worker-stats-body`; client-side `fetchWorkerStats(minutes)` / `renderWorkerStats(data)` replace the section innerHTML and update the title and button styling; `formatWorkerHashrate` / `formatWorkerDiff` render H/s through PH/s and K through P. Coin color/background tables (`WORKER_COIN_COLORS`, `WORKER_COIN_BG`) and a canonical `WORKER_COIN_ORDER` are added covering every supported coin (upstream only styled the five sha256d coins); unmapped coins fall back to the cyan accent. Initial fetch fires on `DOMContentLoaded`, eliminating the Jinja-side server-render path (so `worker_stats` no longer needs to be passed to the template).
+
+---
+
 ## [2.4.2]  -  2026-04-14  -  Phi Hash Reactor
 
 > *Multi-port stale share storm fix, Antminer user-agent classification fix for proper vardiff assignment.*

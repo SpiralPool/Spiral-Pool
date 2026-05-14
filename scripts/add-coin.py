@@ -10,7 +10,7 @@ This script is for adding coins that are NOT natively supported by Spiral Pool.
 The following coins ship with Spiral Pool and should be installed via the installer
 (sudo bash install.sh → "Add coins to existing installation"):
 
-    SHA-256d: BTC, BCH, BC2, DGB, FBTC, NMC, QBX, SYS, XMY
+    SHA-256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC, QBX, SYS, XEC, XMY
     Scrypt:   LTC, DOGE, DGB-SCRYPT, PEP, CAT
 
 Use this script only for coins outside the above list.
@@ -97,8 +97,10 @@ KNOWN_SCRYPT_COINS = {
 # Known SHA256d coins for algorithm detection fallback
 KNOWN_SHA256D_COINS = {
     "BTC", "BITCOIN", "BCH", "BITCOINCASH", "DGB", "DIGIBYTE",
+    "BCH2", "BITCOINCASHII", "BTCS", "BITCOINSILVER",
     "BC2", "BITCOINII", "NMC", "NAMECOIN", "SYS", "SYSCOIN",
-    "XMY", "MYRIAD", "QBX", "QBITX"
+    "XMY", "MYRIAD", "QBX", "QBITX",
+    "XEC", "ECASH", "BITCOINABC",
 }
 
 # CoinGecko API base URL
@@ -1411,7 +1413,7 @@ def generate_node_dockerfile(
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="{params.name} Node for Spiral Pool"
@@ -1438,7 +1440,6 @@ RUN useradd -r -m -s /bin/bash {coinlower} \\
     && chown -R {coinlower}:{coinlower} /home/{coinlower}
 
 # Download and install {params.name}
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
 WORKDIR /tmp
 RUN ARCHIVE="$(basename "{release_url}")" \\
     && wget -q --max-redirect=5 "{release_url}" -O "$ARCHIVE" \\

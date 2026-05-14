@@ -400,19 +400,19 @@ func TestValidateBlockTemplate_ValidCoinbaseValues(t *testing.T) {
 		description   string
 	}{
 		{
-			name:          "BTC block reward (6.25 BTC)",
-			coinbaseValue: 625_000_000, // 6.25 BTC in satoshis
-			description:   "Current Bitcoin block reward",
+			name:          "BTC block reward (6.25 BTC, 3rd era)",
+			coinbaseValue: 625_000_000, // 6.25 BTC in satoshis (height 630000-839999)
+			description:   "3rd era Bitcoin block reward (pre-2024 halving)",
 		},
 		{
-			name:          "BTC block reward (3.125 BTC)",
-			coinbaseValue: 312_500_000, // 3.125 BTC in satoshis (post-2024 halving)
-			description:   "Post-2024 halving Bitcoin block reward",
+			name:          "BTC block reward (3.125 BTC, current)",
+			coinbaseValue: 312_500_000, // 3.125 BTC in satoshis (post-April 2024 halving)
+			description:   "Current Bitcoin block reward (4th era, height 840000+)",
 		},
 		{
-			name:          "DGB block reward (725 DGB)",
-			coinbaseValue: 72_500_000_000, // 725 DGB in satoshis
-			description:   "Current DigiByte block reward",
+			name:          "DGB block reward (725 DGB, historical)",
+			coinbaseValue: 72_500_000_000, // 725 DGB in satoshis (pre-2019 era)
+			description:   "Historical DigiByte block reward (current era ~277 DGB)",
 		},
 		{
 			name:          "Minimum realistic reward",

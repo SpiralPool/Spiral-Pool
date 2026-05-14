@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -97,9 +98,11 @@ func printNodeStatus() {
 		config  string
 	}{
 		// Alphabetically ordered (no coin preference)
+		{"Bitcoin Cash II", "bitcoincashIId", DefaultBCH2Config},
 		{"Bitcoin II", "bitcoiniid", DefaultBC2Config},
 		{"Bitcoin Cash", "bitcoind-bch", DefaultBCHConfig},
 		{"Bitcoin Knots", "bitcoind", DefaultBTCConfig},
+		{"Bitcoin Silver", "bitcoinsilverd", DefaultBTCSConfig},
 		{"Catcoin", "catcoind", DefaultCATConfig},
 		{"DigiByte", "digibyted", DefaultDGBConfig},
 		{"DigiByte-Scrypt", "digibyted-scrypt", DefaultDGBScryptConfig},
@@ -111,6 +114,7 @@ func printNodeStatus() {
 		{"PepeCoin", "pepecoind", DefaultPEPConfig},
 		{"Q-BitX", "qbitxd", DefaultQBXConfig},
 		{"Syscoin", "syscoind", DefaultSYSConfig},
+		{"eCash", "ecashd", DefaultXECConfig},
 	}
 
 	for _, node := range nodes {
@@ -200,7 +204,9 @@ func printTorStatus() {
 		// Alphabetically ordered (no coin preference)
 		{"BC2", DefaultBC2Config},
 		{"BCH", DefaultBCHConfig},
+		{"BCH2", DefaultBCH2Config},
 		{"BTC", DefaultBTCConfig},
+		{"BTCS", DefaultBTCSConfig},
 		{"CAT", DefaultCATConfig},
 		{"DGB", DefaultDGBConfig},
 		{"DGB-SCRYPT", DefaultDGBScryptConfig},
@@ -211,6 +217,7 @@ func printTorStatus() {
 		{"PEP", DefaultPEPConfig},
 		{"QBX", DefaultQBXConfig},
 		{"SYS", DefaultSYSConfig},
+		{"XEC", DefaultXECConfig},
 		{"XMY", DefaultXMYConfig},
 	}
 
@@ -234,6 +241,20 @@ func printTorStatus() {
 func isServiceRunning(service string) bool {
 	cmd := exec.Command("systemctl", "is-active", "--quiet", service)
 	return cmd.Run() == nil
+}
+
+// isCoinServiceRunning checks systemd first, then falls back to probing the RPC port.
+// This handles coin daemons started manually outside systemd (e.g., during -reindex recovery).
+func isCoinServiceRunning(service string, rpcPort int) bool {
+	if isServiceRunning(service) {
+		return true
+	}
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", rpcPort), time.Second)
+	if err == nil {
+		conn.Close()
+		return true
+	}
+	return false
 }
 
 func isTorEnabled(configPath string) bool {

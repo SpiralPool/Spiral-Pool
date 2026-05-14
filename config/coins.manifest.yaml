@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v2.4.2 - SINGLE COIN MANIFEST
+# SPIRAL POOL v2.5.0 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
@@ -202,6 +202,44 @@ coins:
       explorer_url: null
 
   # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: BCH2
+    name: Bitcoin Cash II
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 8533
+      p2p_port: 8534
+      zmq_port: 28533
+
+    mining:
+      stratum_port: 5336
+      stratum_v2_port: 5337
+      stratum_tls_port: 5338
+
+    address:
+      p2pkh_version: 0x00
+      p2sh_version: 0x05
+      # BCH2 uses CashAddr format with prefix 'bitcoincashii:' (not bech32)
+      supports_cashaddr: true
+      collision_warning: "Uses same address bytes as BCH/BTC - verify wallet before use!"
+
+    chain:
+      # BCH2 forked from BC2 at block 53,200 — shares BC2's genesis block
+      genesis_hash: "0000000028f062b221c1a8a5cf0244b1627315f7aa5b775b931cfec46dc17ceb"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: false   # BCH2 uses BCH consensus — no SegWit
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Bitcoin Cash II"
+      short_name: "BCH2"
+      coingecko_id: null
+      explorer_url: "https://bch2explorer.com"
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # SHA-256d MERGE-MINEABLE COINS (AuxPoW with Bitcoin)
   # ─────────────────────────────────────────────────────────────────────────────
 
@@ -381,6 +419,45 @@ coins:
 
   # ─────────────────────────────────────────────────────────────────────────────
 
+  - symbol: XEC
+    name: eCash
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 9004    # ecash-node default RPC port
+      p2p_port: 8343    # Non-default — avoids collision with BTC P2P (8333)
+      zmq_port: 28335
+
+    mining:
+      stratum_port: 18338
+      stratum_v2_port: 18339
+      stratum_tls_port: 18340
+
+    address:
+      p2pkh_version: 0x00
+      p2sh_version: 0x05
+      # eCash uses CashAddr format (ecash:q...) — not bech32
+      supports_cashaddr: true
+
+    chain:
+      # eCash shares Bitcoin's genesis block (inherited via BCH fork lineage)
+      genesis_hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+      block_time: 600
+      coinbase_maturity: 100
+      supports_segwit: false
+      min_coinbase_script_len: 2
+      # NOTE: eCash has RTT (Real Time Target) difficulty post-Nov 2025 upgrade.
+      # RTT validation is handled in pool/coinpool.go using coin.CheckRTTTargetRaw.
+
+    display:
+      full_name: "eCash"
+      short_name: "XEC"
+      coingecko_id: "ecash"
+      explorer_url: "https://explorer.e.cash"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
   - symbol: QBX
     name: Q-BitX
     algorithm: sha256d
@@ -391,7 +468,7 @@ coins:
       # Using unique ports to avoid collision
       rpc_port: 8344
       p2p_port: 8345
-      zmq_port: 28344
+      zmq_port: 0  # QBX binary compiled without ZMQ support
 
     mining:
       stratum_port: 20335
@@ -578,6 +655,44 @@ coins:
       short_name: "PEP"
       coingecko_id: null
       explorer_url: null
+
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - symbol: BTCS
+    name: Bitcoin Silver
+    algorithm: sha256d
+    role: standalone
+
+    network:
+      rpc_port: 10567
+      p2p_port: 10566
+      zmq_port: 28567
+
+    mining:
+      stratum_port: 11335
+      stratum_v2_port: 11336
+      stratum_tls_port: 11337
+
+    address:
+      p2pkh_version: 0x1A  # 'B' addresses (decimal 26)
+      p2sh_version: 0x05   # '3' addresses
+      bech32_hrp: "bs"     # 'bs1q' (SegWit) / 'bs1p' (Taproot) addresses
+
+    chain:
+      # Verified from bitcoin-silver/core/src/kernel/chainparams.cpp
+      # assert(hashGenesisBlock == "0x00000ea8e97e04892a03df35947ff0c4df705723f5b18be7cc6456ed16e9788e")
+      # Genesis timestamp: 1720806555 (July 12, 2024)
+      genesis_hash: "00000ea8e97e04892a03df35947ff0c4df705723f5b18be7cc6456ed16e9788e"
+      block_time: 300        # 5 minutes (vs BTC's 10 minutes)
+      coinbase_maturity: 200 # 200 blocks (vs BTC's 100)
+      supports_segwit: true  # SegWit + Taproot active from block 0
+      min_coinbase_script_len: 2
+
+    display:
+      full_name: "Bitcoin Silver"
+      short_name: "BTCS"
+      coingecko_id: null
+      explorer_url: "https://explorer.bitcoinsilver.top"
 
   # ─────────────────────────────────────────────────────────────────────────────
 

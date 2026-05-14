@@ -1328,8 +1328,10 @@ class MultiCoinExtendedScenarios:
         self.coins = {
             "BTC": CoinConfig("BTC", "sha256d", {"stratum": 4333}),
             "BCH": CoinConfig("BCH", "sha256d", {"stratum": 5333}),
+            "BCH2": CoinConfig("BCH2", "sha256d", {"stratum": 5336}),
             "DGB": CoinConfig("DGB", "sha256d", {"stratum": 3333}),
             "BC2": CoinConfig("BC2", "sha256d", {"stratum": 6333}),
+            "BTCS": CoinConfig("BTCS", "sha256d", {"stratum": 11335}),
             "NMC": CoinConfig("NMC", "sha256d", {"stratum": 10333}),
             "SYS": CoinConfig("SYS", "sha256d", {"stratum": 11333}),
             "XMY": CoinConfig("XMY", "sha256d", {"stratum": 12333}),

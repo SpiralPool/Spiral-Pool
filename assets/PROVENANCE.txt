@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v2.4.2 - Asset Provenance
+Spiral Pool v2.5.0 - Asset Provenance
 ================================================================================
 
 This file documents the origin and licensing status of all visual assets
@@ -113,8 +113,8 @@ THE AUTHORS EXPRESSLY DISCLAIM ALL LIABILITY FOR IP CLAIMS RELATED TO
 AI-GENERATED ASSETS. USE AT YOUR OWN RISK.
 
 ================================================================================
-Last Updated: 2026-04-13
-Spiral Pool Version: 2.4.2
+Last Updated: 2026-05-02
+Spiral Pool Version: 2.5.0
 Origin: Canada
 ================================================================================
 

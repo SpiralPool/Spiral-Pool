@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v2.1
+    Spiral Pool - Windows Installer v2.4.2
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -34,7 +34,7 @@
         • Volume persistence across Docker Desktop updates
         • Performance under high miner connection load
 
-      For production mining: Use Linux (Ubuntu 24.04 LTS)
+      For production mining: Use Linux (Ubuntu 24.04 LTS or 26.04 LTS)
     ════════════════════════════════════════════════════════════════════
 
 .EXAMPLE
@@ -51,7 +51,7 @@
 param(
     [switch]$Unattended,
     [string]$PoolAddress,
-    [ValidateSet("DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX")]
+    [ValidateSet("DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC")]
     [string]$Coin,  # Required in unattended mode; interactive mode shows menu
     [string]$DataDrive = "C:",
     [switch]$AcceptTerms,
@@ -68,19 +68,22 @@ $Script:Version = "2.4.2"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# COIN CONFIGURATION TABLE (single source of truth for all 14 coins)
+# COIN CONFIGURATION TABLE (single source of truth for all 17 coins)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $Script:CoinConfig = @{
     DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="60 GB";   CliName="digibyte-cli" }
     BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  V2Port=4334;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="600 GB";  CliName="bitcoin-cli" }
     BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  V2Port=5334;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="250 GB";  CliName="bitcoin-cli" }
+    BCH2         = @{ Container="bitcoincashii";  RpcPort=8533;  P2pPort=8534;  ZmqPort=28533; RpcUser="spiralbch2"; StratumPort=5336;  V2Port=5337;  TlsPort=5338;  PoolCoin="bitcoincashii";   Profile="bch2";       Algo="SHA256d"; Storage="20 GB";   CliName="bitcoincashII-cli" }
     BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  ZmqPort=28338; RpcUser="spiralbc2";  StratumPort=6333;  V2Port=6334;  TlsPort=6335;  PoolCoin="bitcoinii";       Profile="bc2";        Algo="SHA256d"; Storage="10 GB";   CliName="bitcoinii-cli" }
+    BTCS         = @{ Container="bitcoinsilver";  RpcPort=10567; P2pPort=10566; ZmqPort=28567; RpcUser="spiralbtcs"; StratumPort=11335; V2Port=11336; TlsPort=11337; PoolCoin="bitcoinsilver";   Profile="btcs";       Algo="SHA256d"; Storage="15 GB";   CliName="bitcoin-silver-cli" }
     NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  ZmqPort=28336; RpcUser="spiralnmc";  StratumPort=14335; V2Port=14336; TlsPort=14337; PoolCoin="namecoin";        Profile="nmc";        Algo="SHA256d"; Storage="15 GB";   CliName="namecoin-cli" }
     SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; V2Port=15336; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
     XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; V2Port=17336; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
     FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; V2Port=18336; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
     QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  ZmqPort=28344; RpcUser="spiralqbx";  StratumPort=20335; V2Port=20336; TlsPort=20337; PoolCoin="qbitx";            Profile="qbx";        Algo="SHA256d"; Storage="5 GB";    CliName="qbitx-cli" }
+    XEC          = @{ Container="ecash";          RpcPort=9004;  P2pPort=8343;  ZmqPort=28335; RpcUser="spiralxec";  StratumPort=18338; V2Port=18339; TlsPort=18340; PoolCoin="ecash";            Profile="xec";        Algo="SHA256d"; Storage="20 GB";   CliName="bitcoin-cli" }
     LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
     DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
     "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="60 GB";   CliName="digibyte-cli" }
@@ -93,12 +96,15 @@ $Script:WalletPatterns = @{
     DGB          = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|S[a-km-zA-HJ-NP-Z1-9]{25,34}|dgb1[a-z0-9]{38,59})$"
     BTC          = "^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58})$"
     BCH          = "^(bitcoincash:[qp][a-z0-9]{41}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$"
+    BCH2         = "^(bitcoincashii:[a-z0-9]+|q[a-z0-9]{41}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$"
     BC2          = "^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58})$"
+    BTCS         = "^(B[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bs1q[a-z0-9]{38,58}|bs1p[a-z0-9]{58})$"
     NMC          = "^(N[a-km-zA-HJ-NP-Z1-9]{25,34}|M[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     SYS          = "^(sys1[a-z0-9]{38,59})$"
     XMY          = "^(M[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     FBTC         = "^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58})$"
     QBX          = "^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$"
+    XEC          = "^ecash:[qp][a-z0-9]{41,}$"
     LTC          = "^(L[a-km-zA-HJ-NP-Z1-9]{25,34}|M[a-km-zA-HJ-NP-Z1-9]{25,34}|ltc1[a-z0-9]{38,59})$"
     DOGE         = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|A[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     "DGB-SCRYPT" = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|S[a-km-zA-HJ-NP-Z1-9]{25,34}|dgb1[a-z0-9]{38,59})$"
@@ -133,7 +139,7 @@ function Write-Banner {
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
     Write-Host "                           v2.4.2" -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "           Solo Mining Pool - SHA256d & Scrypt (14 Coins)" -ForegroundColor Cyan
+    Write-Host "           Solo Mining Pool - SHA256d & Scrypt (17 Coins)" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
     Write-Host ""
@@ -214,7 +220,7 @@ function Show-Help {
   OPTIONS:
     -Unattended       Fully automated installation (no prompts)
     -PoolAddress      Your wallet address for mining rewards
-    -Coin             Coin to mine: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, or XMY
+    -Coin             Coin to mine: BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XEC, or XMY
     -DataDrive        Drive for blockchain data (default: C:)
     -AcceptTerms      Accept Terms of Use and warnings (non-interactive)
     -Help             Show this help message
@@ -235,8 +241,8 @@ function Show-Help {
   INTERACTIVE MODE:
     When run without -Unattended, the installer presents a coin selection menu:
 
-    SHA256d: DGB (~60GB), BTC (~600GB), BCH (~250GB), BC2 (~10GB)
-             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), QBX (~5GB)
+    SHA256d: DGB (~60GB), BTC (~600GB), BCH (~250GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
+             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), QBX (~5GB), XEC (~20GB)
     Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~60GB), PEP (~5GB), CAT (~5GB)
 
     You will be prompted for:
@@ -256,7 +262,7 @@ function Show-Help {
     - No merge mining (BTC+NMC, LTC+DOGE, etc.)
     - No V2 Enhanced Stratum (encrypted binary protocol)
     - No High Availability (HA failover)
-    For full features: sudo ./install.sh on Ubuntu 24.04 LTS
+    For full features: sudo ./install.sh on Ubuntu 24.04 LTS or 26.04 LTS
 
   DOCKER BACKEND:
     The installer automatically configures the best available backend:
@@ -389,8 +395,8 @@ function Show-DockerLimitations {
 
 function Show-SoloCoinMenu {
     $coinMap = @{
-        "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BC2"; "5"="NMC"; "6"="SYS"; "7"="XMY"; "8"="FBTC"; "9"="QBX"
-        "10"="LTC"; "11"="DOGE"; "12"="DGB-SCRYPT"; "13"="PEP"; "14"="CAT"
+        "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BCH2"; "5"="BC2"; "6"="BTCS"; "7"="NMC"; "8"="SYS"; "9"="XMY"; "10"="FBTC"; "11"="QBX"; "12"="XEC"
+        "13"="LTC"; "14"="DOGE"; "15"="DGB-SCRYPT"; "16"="PEP"; "17"="CAT"
     }
 
     while ($true) {
@@ -411,46 +417,55 @@ function Show-SoloCoinMenu {
         Write-Host "BCH  - Bitcoin Cash" -NoNewline -ForegroundColor White
         Write-Host "    ~250 GB  Port 5333" -ForegroundColor DarkGray
         Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
+        Write-Host "BCH2 - Bitcoin Cash II" -NoNewline -ForegroundColor White
+        Write-Host "  ~15 GB   Port 5336" -ForegroundColor DarkGray
+        Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
         Write-Host "BC2  - Bitcoin II" -NoNewline -ForegroundColor White
         Write-Host "      ~10 GB   Port 6333" -ForegroundColor DarkGray
-        Write-Host "   [5] " -NoNewline -ForegroundColor Cyan
+        Write-Host "   [6] " -NoNewline -ForegroundColor Cyan
+        Write-Host "BTCS - Bitcoin Silver" -NoNewline -ForegroundColor White
+        Write-Host "   ~8 GB    Port 11335" -ForegroundColor DarkGray
+        Write-Host "   [7] " -NoNewline -ForegroundColor Cyan
         Write-Host "NMC  - Namecoin" -NoNewline -ForegroundColor White
         Write-Host "       ~15 GB   Port 14335" -ForegroundColor DarkGray
-        Write-Host "   [6] " -NoNewline -ForegroundColor DarkGray
+        Write-Host "   [8] " -NoNewline -ForegroundColor DarkGray
         Write-Host "SYS  - Syscoin" -NoNewline -ForegroundColor DarkGray
         Write-Host "        (merge-mining only, requires BTC)" -ForegroundColor DarkRed
-        Write-Host "   [7] " -NoNewline -ForegroundColor Cyan
+        Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
         Write-Host "XMY  - Myriadcoin" -NoNewline -ForegroundColor White
         Write-Host "     ~8 GB    Port 17335" -ForegroundColor DarkGray
-        Write-Host "   [8] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
         Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
         Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
-        Write-Host "   [9] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
         Write-Host "QBX  - Q-BitX" -NoNewline -ForegroundColor White
         Write-Host "         ~5 GB    Port 20335" -ForegroundColor DarkGray
+        Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
+        Write-Host "XEC  - eCash" -NoNewline -ForegroundColor White
+        Write-Host "          ~20 GB   Port 18338" -ForegroundColor DarkGray
         Write-Host ""
         Write-Host "  Scrypt Coins:" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
         Write-Host "LTC  - Litecoin" -NoNewline -ForegroundColor Green
         Write-Host "       ~150 GB  Port 7333" -ForegroundColor DarkGray
-        Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
         Write-Host "DOGE - Dogecoin" -NoNewline -ForegroundColor White
         Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
-        Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [15] " -NoNewline -ForegroundColor Cyan
         Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
         Write-Host " ~60 GB   Port 3336" -ForegroundColor DarkGray
-        Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [16] " -NoNewline -ForegroundColor Cyan
         Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
         Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
-        Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
+        Write-Host "  [17] " -NoNewline -ForegroundColor Cyan
         Write-Host "CAT  - Catcoin" -NoNewline -ForegroundColor White
         Write-Host "        ~5 GB    Port 12335" -ForegroundColor DarkGray
         Write-Host ""
         Write-Host "  Enter 'b' to go back, 'q' to quit" -ForegroundColor DarkGray
         Write-Host ""
 
-        $choice = Read-Host "  Select coin (1-14, b=back, q=quit) [default: 1]"
+        $choice = Read-Host "  Select coin (1-17, b=back, q=quit) [default: 1]"
         if ([string]::IsNullOrEmpty($choice)) { $choice = "1" }
 
         if ($choice -eq "b" -or $choice -eq "B") { return $null }
@@ -469,7 +484,7 @@ function Show-SoloCoinMenu {
             }
             return $coinMap[$choice]
         } else {
-            Write-Host "  Invalid selection. Please enter 1-14." -ForegroundColor Red
+            Write-Host "  Invalid selection. Please enter 1-17." -ForegroundColor Red
         }
     }
 }
@@ -1196,6 +1211,7 @@ function Set-Firewall {
             @{ Name = "REST API"; Port = $apiPort; Desc = "Pool statistics API" }
             @{ Name = "Dashboard"; Port = $dashboardPort; Desc = "Web dashboard" }
             @{ Name = "Metrics"; Port = $metricsPort; Desc = "Prometheus metrics" }
+            @{ Name = "Smart Multi Stratum"; Port = 16180; Desc = "Multi-coin stratum entry-point (port 16180)" }
         )
 
         # Build coin-specific rules from manifest or fallback to Config

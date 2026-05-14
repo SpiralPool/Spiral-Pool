@@ -59,6 +59,18 @@ type MultiPortConfig struct {
 	// Key: worker name (case-insensitive), Value: coin symbol → wallet address.
 	// Example: {"Heat2Sats": {"QBX": "qbx1...", "BC2": "bc2..."}}
 	WalletMap map[string]map[string]string `yaml:"wallet_map,omitempty"`
+
+	// Mode controls the routing strategy.
+	// "TIME" (default): distributes mining time by configured coin weights on a 24-hour schedule.
+	// "DIFFICULTY": always selects the coin with the lowest current network difficulty.
+	// Omit or leave empty for backward-compatible TIME behaviour.
+	Mode string `yaml:"mode,omitempty"`
+
+	// ExcludeCoins lists coin symbols that are never selected during DIFFICULTY-mode
+	// rotation, even when they have the lowest network difficulty. Useful for keeping
+	// a specific coin out of automatic rotation (e.g. a low-difficulty altcoin you only
+	// want to mine on a fixed schedule). Has no effect in TIME mode.
+	ExcludeCoins []string `yaml:"exclude_coins,omitempty"`
 }
 
 // CoinRouteConfig holds per-coin routing parameters.
@@ -443,6 +455,25 @@ func (c *ConfigV2) Validate() error {
 				fmt.Println("")
 			}
 
+			// BTCS uses unique 'B' prefix (0x1A) — verify it's a Bitcoin Silver address.
+			if strings.ToUpper(coin.Symbol) == "BTCS" {
+				addr := coin.Address
+				isLegacy := len(addr) >= 25 && len(addr) <= 35 && (addr[0] == '3' || addr[0] == 'B')
+				isBech32 := strings.HasPrefix(strings.ToLower(addr), "bs1q") || strings.HasPrefix(strings.ToLower(addr), "bs1p")
+				if !isLegacy && !isBech32 {
+					return fmt.Errorf("coins[%d].address: BTCS address must start with 'B' (P2PKH), '3' (P2SH), 'bs1q' (SegWit), or 'bs1p' (Taproot), got: %s", i, addr)
+				}
+				fmt.Println("")
+				fmt.Println("╔═══════════════════════════════════════════════════════════════════════════╗")
+				fmt.Println("║  ℹ️  BTCS (Bitcoin Silver) Address Format Notice                          ║")
+				fmt.Println("╠═══════════════════════════════════════════════════════════════════════════╣")
+				fmt.Println("║  BTCS P2SH addresses (3...) are byte-identical to BTC/BC2 P2SH.          ║")
+				fmt.Printf("║  Your configured BTCS address: %-42s ║\n", truncateAddress(addr, 42))
+				fmt.Println("║  RECOMMENDED: Use bech32 format (bs1q...) for clear BTCS identification. ║")
+				fmt.Println("╚═══════════════════════════════════════════════════════════════════════════╝")
+				fmt.Println("")
+			}
+
 			if len(coin.Nodes) == 0 {
 				return fmt.Errorf("coins[%d].nodes: at least one node required", i)
 			}
@@ -568,8 +599,8 @@ func (c *ConfigV2) Validate() error {
 		}
 		coinName := symbolToCoinName(coin.Symbol)
 		if _, ok := SupportedCoins[coinName]; !ok {
-			return fmt.Errorf("coins[%d]: unknown symbol '%s'. Supported: BTC, BCH, BC2, DGB, DGB-SCRYPT, "+
-				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC, QBX (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
+			return fmt.Errorf("coins[%d]: unknown symbol '%s'. Supported: BTC, BCH, BCH2, BC2, BTCS, DGB, DGB-SCRYPT, "+
+				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC, QBX, XEC (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
 		}
 	}
 
@@ -944,6 +975,7 @@ func (c *ConfigV2) SetDefaults() {
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
 				"qbx":        "qbitx",
+				"xec":        "ecash",
 			}
 			coinName := symbolToCoin[coinSymbol]
 			if coinName == "" {
@@ -1015,6 +1047,7 @@ func (c *ConfigV2) SetDefaults() {
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
 				"qbx":        "qbitx",
+				"xec":        "ecash",
 			}
 			coinName := symbolToCoin[coinSymbol]
 			if coinName == "" {
@@ -1151,8 +1184,12 @@ func getBlockTimeForCoin(symbol string) int {
 		return 600 // 10 minute blocks
 	case "BCH", "BITCOINCASH", "BITCOIN-CASH":
 		return 600 // 10 minute blocks
+	case "BCH2", "BITCOINCASHII", "BITCOIN-CASH-II":
+		return 600 // 10 minute blocks (BCH fork — same block time)
 	case "BC2", "BCII", "BITCOINII", "BITCOIN-II", "BITCOIN2":
 		return 600 // 10 minute blocks
+	case "BTCS", "BITCOINSILVER", "BITCOIN-SILVER":
+		return 300 // 5 minute blocks
 	case "LTC", "LITECOIN":
 		return 150 // 2.5 minute blocks
 	case "DOGE", "DOGECOIN":
@@ -1171,6 +1208,8 @@ func getBlockTimeForCoin(symbol string) int {
 		return 30 // 30 second blocks
 	case "QBX", "QBITX":
 		return 600 // 10 minute blocks
+	case "XEC", "ECASH":
+		return 600 // 10 minute blocks (like Bitcoin)
 	default:
 		return 600 // Default to Bitcoin-like 10 minute blocks
 	}
@@ -1277,10 +1316,10 @@ func setZMQTimingDefaults(zmq *NodeZMQConfig, blockTimeSeconds int) {
 func symbolToCoinName(symbol string) string {
 	m := map[string]string{
 		"DGB": "digibyte", "DGB-SCRYPT": "digibyte-scrypt", "DGB_SCRYPT": "digibyte-scrypt",
-		"BTC": "bitcoin", "BCH": "bitcoincash", "BC2": "bitcoinii",
+		"BTC": "bitcoin", "BCH": "bitcoincash", "BCH2": "bitcoincashii", "BC2": "bitcoinii", "BTCS": "bitcoinsilver",
 		"LTC": "litecoin", "DOGE": "dogecoin", "PEP": "pepecoin",
 		"CAT": "catcoin", "NMC": "namecoin", "SYS": "syscoin",
-		"XMY": "myriadcoin", "FBTC": "fractalbitcoin", "QBX": "qbitx",
+		"XMY": "myriadcoin", "FBTC": "fractalbitcoin", "QBX": "qbitx", "XEC": "ecash",
 	}
 	if name, ok := m[strings.ToUpper(symbol)]; ok {
 		return name
@@ -1298,6 +1337,10 @@ func getDefaultPortForCoin(symbol string) int {
 		return 8339 // Bitcoin II uses port 8339
 	case "BCH", "BITCOINCASH", "BITCOIN-CASH":
 		return 8432 // Uses 8432 to avoid conflict with BTC (8332)
+	case "BCH2", "BITCOINCASHII", "BITCOIN-CASH-II":
+		return 8533 // Bitcoin Cash II RPC port
+	case "BTCS", "BITCOINSILVER", "BITCOIN-SILVER":
+		return 10567 // Bitcoin Silver RPC port
 	case "BTC", "BITCOIN":
 		return 8332
 	case "LTC", "LITECOIN":
@@ -1318,6 +1361,8 @@ func getDefaultPortForCoin(symbol string) int {
 		return 8340 // FIX: Was 8341 (P2P port). RPC port is 8340.
 	case "QBX", "QBITX", "Q-BITX":
 		return 8344
+	case "XEC", "ECASH":
+		return 9004
 	default:
 		return 8332
 	}

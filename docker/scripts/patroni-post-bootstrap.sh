@@ -22,6 +22,7 @@ CONNSTR="${1:-}"
 APP_USER="${DB_USER:-spiralstratum}"
 APP_DB="${DB_NAME:-spiralstratum}"
 APP_PASS="${DB_PASSWORD:-}"
+REWIND_PASS="${REWIND_PASSWORD:-}"
 
 # FIX G-6: Escape single quotes in password to prevent SQL injection.
 # A password containing ' would break the SQL statement or allow injection.
@@ -48,6 +49,26 @@ END
 # Create application database if not exists
 psql "$CONNSTR" -tc "SELECT 1 FROM pg_database WHERE datname = '${APP_DB_LITERAL}'" | grep -q 1 || \
     psql "$CONNSTR" -c "CREATE DATABASE \"${APP_DB_IDENT}\" OWNER \"${APP_USER_IDENT}\";"
+
+# Create rewind_user required by pg_rewind for Patroni failover.
+# Must exist before any failover attempt; creating it here (once at bootstrap)
+# ensures it is present on the initial leader and replicated to all standbys.
+REWIND_PASS_ESCAPED="${REWIND_PASS//\'/\'\'}"
+psql "$CONNSTR" -c "
+DO \$\$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'rewind_user') THEN
+        CREATE ROLE rewind_user WITH LOGIN PASSWORD '${REWIND_PASS_ESCAPED}';
+    END IF;
+END
+\$\$;"
+
+psql "$CONNSTR" -c "GRANT pg_monitor TO rewind_user;"
+psql "$CONNSTR" -c "GRANT EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) TO rewind_user;"
+psql "$CONNSTR" -c "GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_file(text, boolean) TO rewind_user;"
+psql "$CONNSTR" -c "GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO rewind_user;"
+psql "$CONNSTR" -c "GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO rewind_user;"
+echo "Post-bootstrap: rewind_user created with pg_rewind grants."
 
 # Run init-db.sh if mounted (creates base tables, indexes, grants)
 # Use postgres superuser via local socket targeting the app database.

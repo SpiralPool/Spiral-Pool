@@ -33,13 +33,16 @@ var coinRegistry = map[string]coinMetadata{
 	// SHA-256d coins
 	"btc":  {"Bitcoin", "sha256d", DefaultBTCConfig, "bitcoind", "bitcoin-cli", 8332},
 	"bch":  {"Bitcoin Cash", "sha256d", DefaultBCHConfig, "bitcoind-bch", "bitcoin-cli-bch", 8432},
+	"bch2": {"Bitcoin Cash II", "sha256d", DefaultBCH2Config, "bitcoincashIId", "bitcoincashII-cli", 8533},
 	"dgb":  {"DigiByte", "sha256d", DefaultDGBConfig, "digibyted", "digibyte-cli", 14022},
 	"bc2":  {"Bitcoin II", "sha256d", DefaultBC2Config, "bitcoiniid", "bitcoinii-cli", 8339},
+	"btcs": {"Bitcoin Silver", "sha256d", DefaultBTCSConfig, "bitcoinsilverd", "bitcoinsilver-cli", 10567},
 	"nmc":  {"Namecoin", "sha256d", DefaultNMCConfig, "namecoind", "namecoin-cli", 8336},
 	"sys":  {"Syscoin", "sha256d", DefaultSYSConfig, "syscoind", "syscoin-cli", 8370},
 	"xmy":  {"Myriad", "sha256d", DefaultXMYConfig, "myriadcoind", "myriadcoin-cli", 10889},
 	"fbtc": {"Fractal Bitcoin", "sha256d", DefaultFBTCConfig, "fractald", "fractal-cli", 8340},
 	"qbx":  {"Q-BitX", "sha256d", DefaultQBXConfig, "qbitxd", "qbitx-cli", 8344},
+	"xec":  {"eCash", "sha256d", DefaultXECConfig, "ecashd", "bitcoin-cli", 9004},
 
 	// Scrypt coins
 	"ltc":        {"Litecoin", "scrypt", DefaultLTCConfig, "litecoind", "litecoin-cli", 9332},
@@ -85,6 +88,8 @@ var syncRequirements = map[string]struct {
 }{
 	"btc":  {600, "3-7 days"},
 	"bch":  {350, "2-4 days"},
+	"bch2": {15, "< 1 day"},  // Bitcoin Cash II: young chain (Dec 2024)
+	"btcs": {8, "< 1 day"},   // Bitcoin Silver: young chain (Jul 2024), 5-min blocks
 	"dgb":  {45, "1-2 days"},
 	"bc2":  {5, "< 1 day"},
 	"nmc":  {12, "1-2 days"},
@@ -126,6 +131,7 @@ type DaemonConfig struct {
 type MultiPortConfig struct {
 	Enabled       bool                       `yaml:"enabled"`
 	Port          int                        `yaml:"port"`
+	Mode          string                     `yaml:"mode,omitempty"` // TIME (default) or DIFFICULTY
 	Coins         map[string]CoinRouteConfig `yaml:"coins"`
 	CheckInterval string                     `yaml:"check_interval,omitempty"`
 	PreferCoin    string                     `yaml:"prefer_coin,omitempty"`
@@ -347,8 +353,16 @@ func runMining(args []string) error {
 				return fmt.Errorf("coin weights required. Usage: spiralctl mining multiport weights <coin:weight,...>")
 			}
 			return multiportWeights(args[2], autoYes)
+		case "mode":
+			// spiralctl mining multiport mode               → show current mode
+			// spiralctl mining multiport mode TIME          → set mode to TIME
+			// spiralctl mining multiport mode DIFFICULTY    → set mode to DIFFICULTY
+			if len(args) < 3 || strings.HasPrefix(args[2], "-") {
+				return multiportShowMode()
+			}
+			return multiportSetMode(args[2], autoYes)
 		default:
-			return fmt.Errorf("unknown multiport action: %s. Use 'status', 'enable', 'disable', or 'weights'", args[1])
+			return fmt.Errorf("unknown multiport action: %s. Use 'status', 'enable', 'disable', 'weights', or 'mode'", args[1])
 		}
 	default:
 		printMiningUsage()
@@ -373,13 +387,17 @@ func printMiningUsage() {
 	fmt.Println("                     Enable with coin:weight pairs (must sum to 100)")
 	fmt.Printf("  %smultiport disable%s Disable smart port\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport weights <spec>%s\n", ColorCyan, ColorReset)
-	fmt.Println("                     Update coin weight allocation (must sum to 100)")
+	fmt.Println("                     Update coin weight allocation (TIME mode; must sum to 100)")
+	fmt.Printf("  %smultiport mode%s  Show current routing mode\n", ColorCyan, ColorReset)
+	fmt.Printf("  %smultiport mode <TIME|DIFFICULTY>%s\n", ColorCyan, ColorReset)
+	fmt.Println("                     Set routing strategy: TIME (weighted 24h schedule) or")
+	fmt.Println("                     DIFFICULTY (always mine the lowest-difficulty coin)")
 	fmt.Println()
 	fmt.Printf("%sOptions:%s\n", ColorBold, ColorReset)
 	fmt.Println("  --yes, -y        Skip confirmation prompts (for automation)")
 	fmt.Println()
 	fmt.Printf("%sSupported Coins (SHA-256d):%s\n", ColorBold, ColorReset)
-	fmt.Println("  btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx")
+	fmt.Println("  btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx")
 	fmt.Println()
 	fmt.Printf("%sSupported Coins (Scrypt):%s\n", ColorBold, ColorReset)
 	fmt.Println("  ltc, doge, dgb-scrypt, pep, cat")
@@ -399,12 +417,14 @@ func printMiningUsage() {
 	fmt.Println("  spiralctl mining solo ltc --yes")
 	fmt.Println("  spiralctl mining multiport enable dgb:80,bch:15,btc:5")
 	fmt.Println("  spiralctl mining multiport weights dgb:50,btc:50")
+	fmt.Println("  spiralctl mining multiport mode DIFFICULTY")
 	fmt.Println("  spiralctl mining multiport disable")
 	fmt.Println()
 	fmt.Printf("%sNotes:%s\n", ColorBold, ColorReset)
 	fmt.Println("  • Multi-coin mode requires all coins to use the same algorithm")
 	fmt.Println("  • Merge mining requires parent chain to be synced first")
-	fmt.Println("  • Multi coin smart port uses weighted 24h UTC scheduling (port 16180)")
+	fmt.Println("  • Multi coin smart port (port 16180) supports TIME (weighted 24h schedule)")
+	fmt.Println("    and DIFFICULTY (lowest network difficulty wins) routing modes")
 	fmt.Println("  • Switching modes will restart the stratum service")
 	fmt.Println()
 }
@@ -2032,7 +2052,7 @@ func multiportWizard(autoYes bool) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// 1. Discover available SHA-256d coins
-	sha256dCoins := []string{"btc", "bch", "dgb", "bc2", "qbx"}
+	sha256dCoins := []string{"btc", "bch", "bch2", "dgb", "bc2", "btcs", "qbx"}
 	type coinState struct {
 		symbol    string
 		name      string
@@ -2447,6 +2467,144 @@ func multiportWeights(spec string, autoYes bool) error {
 	}
 
 	return applyMultiPortConfig(weights)
+}
+
+// multiportShowMode prints the current routing mode.
+func multiportShowMode() error {
+	cfg, err := loadExtendedConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.MultiPort == nil || !cfg.MultiPort.Enabled {
+		fmt.Printf("%sMulti coin smart port is not enabled%s\n", ColorYellow, ColorReset)
+		return nil
+	}
+	mode := strings.ToUpper(strings.TrimSpace(cfg.MultiPort.Mode))
+	if mode == "" {
+		mode = "TIME"
+	}
+	fmt.Printf("%-20s %s\n", "Routing Mode:", mode)
+	switch mode {
+	case "DIFFICULTY":
+		fmt.Println("  Pool routes miners to the coin with the lowest current network difficulty.")
+		fmt.Println("  Coin weights and the 24h schedule are ignored in this mode.")
+	default:
+		tz := strings.TrimSpace(cfg.MultiPort.Timezone)
+		if tz == "" {
+			tz = "UTC"
+		}
+		fmt.Println("  Pool rotates miners on a weighted 24h schedule (timezone:", tz+").")
+	}
+	return nil
+}
+
+// multiportSetMode switches the routing mode in config.yaml and restarts stratum.
+func multiportSetMode(mode string, autoYes bool) error {
+	normalized := strings.ToUpper(strings.TrimSpace(mode))
+	if normalized != "TIME" && normalized != "DIFFICULTY" {
+		return fmt.Errorf("invalid mode %q — must be TIME or DIFFICULTY", mode)
+	}
+
+	cfg, err := loadExtendedConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.MultiPort == nil || !cfg.MultiPort.Enabled {
+		return fmt.Errorf("multi coin smart port is not enabled — run 'spiralctl mining multiport enable' first")
+	}
+
+	current := strings.ToUpper(strings.TrimSpace(cfg.MultiPort.Mode))
+	if current == "" {
+		current = "TIME"
+	}
+	if current == normalized {
+		fmt.Printf("%sRouting mode is already %s — no change%s\n", ColorYellow, normalized, ColorReset)
+		return nil
+	}
+
+	printBanner()
+	fmt.Printf("%s=== SET SMART PORT ROUTING MODE ===%s\n\n", ColorBold, ColorReset)
+	fmt.Printf("Switching from %s%s%s to %s%s%s\n\n",
+		ColorCyan, current, ColorReset, ColorGreen, normalized, ColorReset)
+	if !autoYes && !confirmActionMining("Apply mode change? This will restart the stratum service") {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	if err := writeMultiPortMode(normalized); err != nil {
+		return fmt.Errorf("write multi_port.mode: %w", err)
+	}
+	updateCoinsEnvLine("MULTIPORT_MODE", normalized)
+	printSuccess("Routing mode set to " + normalized)
+	printInfo("Restarting stratum service...")
+
+	if err := restartService("spiralstratum"); err != nil {
+		printWarning(fmt.Sprintf("Failed to restart stratum: %v", err))
+	} else {
+		printSuccess("Stratum service restarted")
+	}
+	return nil
+}
+
+// writeMultiPortMode updates only the mode field of multi_port in config.yaml,
+// inserting it if absent. Mirrors the YAML-node patching pattern used by
+// multiportDisable.
+func writeMultiPortMode(mode string) error {
+	data, err := os.ReadFile(DefaultConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+	root := docRoot(&doc)
+	if root == nil {
+		return fmt.Errorf("config file has empty or malformed YAML document")
+	}
+
+	var mp *yaml.Node
+	for i := 0; i < len(root.Content)-1; i += 2 {
+		if root.Content[i].Value == "multi_port" {
+			mp = root.Content[i+1]
+			break
+		}
+	}
+	if mp == nil || mp.Kind != yaml.MappingNode {
+		return fmt.Errorf("multi_port section not found in config.yaml")
+	}
+
+	// Update existing mode key if present.
+	for j := 0; j < len(mp.Content)-1; j += 2 {
+		if mp.Content[j].Value == "mode" {
+			mp.Content[j+1].Value = mode
+			mp.Content[j+1].Tag = "!!str"
+			return encodeAndWriteConfig(&doc)
+		}
+	}
+	// Otherwise append mode at the end of the multi_port block.
+	mp.Content = append(mp.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "mode"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: mode, Tag: "!!str"},
+	)
+	return encodeAndWriteConfig(&doc)
+}
+
+// encodeAndWriteConfig serializes the YAML document and atomically writes it
+// to DefaultConfigFile.
+func encodeAndWriteConfig(doc *yaml.Node) error {
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(doc); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
+	_ = enc.Close()
+	if err := atomicWriteFile(DefaultConfigFile, []byte(buf.String()), 0600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	return nil
 }
 
 // buildMultiPortNode creates the YAML node for multi_port config

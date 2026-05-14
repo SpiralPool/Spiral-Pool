@@ -149,12 +149,30 @@
                         </div>
                         <div class="coin-check">✓</div>
                     </div>
+                    <div class="coin-option" id="coin-BCH2" data-coin="BCH2" onclick="toggleCoin('BCH2')">
+                        <div class="coin-icon">🟤</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Bitcoin Cash II</div>
+                            <div class="coin-symbol">BCH2</div>
+                            <div class="coin-port">Port: 5336</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
                     <div class="coin-option" id="coin-BTC" data-coin="BTC" onclick="toggleCoin('BTC')">
                         <div class="coin-icon">🟠</div>
                         <div class="coin-info">
                             <div class="coin-name">Bitcoin</div>
                             <div class="coin-symbol">BTC</div>
                             <div class="coin-port">Port: 4333</div>
+                        </div>
+                        <div class="coin-check">✓</div>
+                    </div>
+                    <div class="coin-option" id="coin-BTCS" data-coin="BTCS" onclick="toggleCoin('BTCS')">
+                        <div class="coin-icon">⚪</div>
+                        <div class="coin-info">
+                            <div class="coin-name">Bitcoin Silver</div>
+                            <div class="coin-symbol">BTCS</div>
+                            <div class="coin-port">Port: 11335</div>
                         </div>
                         <div class="coin-check">✓</div>
                     </div>
@@ -417,13 +435,51 @@
                                 <!-- Live stats populated by JS -->
                             </div>
 
-                            <button type="button" class="cyber-btn" onclick="saveMultiPort()"
-                                    style="background: var(--neon-purple); color: #000; font-weight: 600; width: 100%;">
-                                Save & Restart Stratum
-                            </button>
+                            </div>
 
+                    </div>
+
+                    <!-- Routing Mode Selector -->
+                    <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px;">
+                        <div style="font-size: 0.85rem; color: var(--neon-purple); font-weight: 600; margin-bottom: 0.5rem;">Routing Mode</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                            <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer; padding: 0.5rem;
+                                          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);
+                                          border-radius: 6px; transition: border-color 0.2s;"
+                                   id="mode-time-label">
+                                <input type="radio" name="smartport-mode" value="TIME" id="smartport-mode-time"
+                                       onchange="updateSmartPortModeUI()"
+                                       style="margin-top: 3px; accent-color: var(--neon-purple);">
+                                <div>
+                                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Time-Based</div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 1px;">Mine each coin for its configured % of each day</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer; padding: 0.5rem;
+                                          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);
+                                          border-radius: 6px; transition: border-color 0.2s;"
+                                   id="mode-difficulty-label">
+                                <input type="radio" name="smartport-mode" value="DIFFICULTY" id="smartport-mode-difficulty"
+                                       onchange="updateSmartPortModeUI()"
+                                       style="margin-top: 3px; accent-color: var(--neon-purple);">
+                                <div>
+                                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Difficulty-Based</div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 1px;">Always mine the coin with the lowest network difficulty</div>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="mode-difficulty-note" style="display: none; margin-top: 0.5rem; font-size: 0.75rem; color: var(--neon-cyan);">
+                            ℹ️ In Difficulty mode, coin weights and schedule are ignored. The pool dynamically selects whichever coin is easiest to mine.
                         </div>
 
+                        <!-- Exclude from rotation (DIFFICULTY mode only) -->
+                        <div id="difficulty-exclude-panel" style="display:none; margin-top: 0.75rem; padding: 0.6rem; background: rgba(255,68,68,0.06); border: 1px solid rgba(255,68,68,0.2); border-radius: 6px;">
+                            <div style="font-size: 0.78rem; font-weight: 600; color: var(--neon-red, #ff4444); margin-bottom: 0.35rem;">Exclude from Rotation</div>
+                            <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                Coins marked below will never be auto-selected, even if they have the lowest difficulty.
+                            </div>
+                            <div id="exclude-coins-pills" style="display: flex; flex-wrap: wrap; gap: 0.35rem;"></div>
+                        </div>
                     </div>
 
                     <div style="margin-top: 0.75rem; padding: 0.6rem; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 6px;">
@@ -435,8 +491,14 @@
                         </div>
                     </div>
 
-
                 </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <button type="button" class="cyber-btn" onclick="saveMultiPort()"
+                        style="background: var(--neon-purple); color: #000; font-weight: 600; width: 100%;">
+                    Save & Restart Stratum
+                </button>
             </div>
         </div>
 
@@ -940,7 +1002,9 @@
             // SHA-256d solo coins
             'BC2': { name: 'Bitcoin II', icon: '🔵', port: 6333, algo: 'sha256d' },
             'BCH': { name: 'Bitcoin Cash', icon: '🟢', port: 5333, algo: 'sha256d' },
+            'BCH2': { name: 'Bitcoin Cash II', icon: '🟤', port: 5336, algo: 'sha256d' },
             'BTC': { name: 'Bitcoin', icon: '🟠', port: 4333, algo: 'sha256d' },
+            'BTCS': { name: 'Bitcoin Silver', icon: '⚪', port: 11335, algo: 'sha256d' },
             'DGB': { name: 'DigiByte', icon: '💎', port: 3333, algo: 'sha256d' },
             // SHA-256d merge-mineable (BTC parent)
             'FBTC': { name: 'Fractal Bitcoin', icon: '🔶', port: 18335, algo: 'sha256d', mergeParent: 'BTC' },
@@ -2199,6 +2263,51 @@
         // ── Multi Coin Smart Port UI ──────────────────────────────────
 
         let multiportData = null; // cached GET /api/multiport response
+        let excludedCoins = new Set(); // coins excluded from DIFFICULTY-mode rotation
+
+        function renderExcludeCoinsPills() {
+            const container = document.getElementById('exclude-coins-pills');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const available = (multiportData && multiportData.available_coins) || [];
+            const installed = available.filter(c => c.enabled).map(c => c.symbol.toUpperCase());
+            if (installed.length === 0) {
+                container.innerHTML = '<span style="font-size:0.72rem;color:var(--text-muted);">No coins installed yet.</span>';
+                return;
+            }
+
+            installed.sort().forEach(sym => {
+                const isExcluded = excludedCoins.has(sym);
+                const pill = document.createElement('button');
+                pill.type = 'button';
+                pill.dataset.coin = sym;
+                pill.textContent = isExcluded ? `${sym} ✗` : sym;
+                pill.style.cssText = [
+                    'padding: 0.25rem 0.55rem',
+                    'border-radius: 999px',
+                    'font-size: 0.75rem',
+                    'font-family: var(--font-mono)',
+                    'font-weight: 600',
+                    'cursor: pointer',
+                    'border: 1px solid',
+                    'transition: all 0.15s',
+                    isExcluded
+                        ? 'background: rgba(255,68,68,0.18); border-color: rgba(255,68,68,0.6); color: #ff4444;'
+                        : 'background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); color: var(--text-muted);',
+                ].join(';');
+                pill.title = isExcluded ? `Click to allow ${sym} back into rotation` : `Click to exclude ${sym} from rotation`;
+                pill.onclick = () => {
+                    if (excludedCoins.has(sym)) {
+                        excludedCoins.delete(sym);
+                    } else {
+                        excludedCoins.add(sym);
+                    }
+                    renderExcludeCoinsPills();
+                };
+                container.appendChild(pill);
+            });
+        }
 
         async function loadMultiPort() {
             const statusText = document.getElementById('multiport-status-text');
@@ -2214,6 +2323,15 @@
                 statusText.textContent = multiportData.enabled ? 'Enabled' : 'Disabled';
                 statusText.style.color = multiportData.enabled ? 'var(--neon-green)' : 'var(--text-muted)';
                 configDiv.style.display = multiportData.enabled ? 'block' : 'none';
+
+                // Pre-select routing mode radio button
+                const savedMode = (multiportData.mode || 'TIME').toUpperCase();
+                const modeRadio = document.querySelector(`input[name="smartport-mode"][value="${savedMode}"]`);
+                if (modeRadio) modeRadio.checked = true;
+
+                // Populate exclude list from saved config
+                excludedCoins = new Set((multiportData.exclude_coins || []).map(c => c.toUpperCase()));
+                updateSmartPortModeUI();
 
                 renderMultiPortCoins();
                 updateMultiPortTotal();
@@ -2449,7 +2567,15 @@
                 const data = await resp.json();
                 if (data.success) {
                     showGlobalStatus('success', data.message);
-                    await loadMultiPort();
+                    // Optimistically remove the rows immediately so the UI reflects the
+                    // removal without racing the async backend service-stop + config cleanup.
+                    const coinContainer = document.getElementById('multiport-coins');
+                    const hoursContainer = document.getElementById('multiport-hours');
+                    coinContainer.querySelector(`[data-coin="${sym}"]`)?.remove();
+                    hoursContainer.querySelector(`input[data-coin="${sym}"]`)?.closest('div')?.remove();
+                    updateMultiPortTotal();
+                    // Refresh from server after backend has had time to finish.
+                    setTimeout(() => loadMultiPort(), 1500);
                 } else {
                     showGlobalStatus('error', data.error || 'Remove failed');
                 }
@@ -2523,7 +2649,7 @@
 
             // Visual bar (24h timeline)
             html += '<div style="position: relative; height: 28px; border-radius: 4px; overflow: hidden; margin-bottom: 0.75rem; background: rgba(255,255,255,0.05);">';
-            const colors = { DGB: '#0066cc', BTC: '#f7931a', BCH: '#0ac18e', BC2: '#4a90d9', QBX: '#9b59b6', LTC: '#bfbbbb', DOGE: '#c2a633', CAT: '#f0a030', NMC: '#186aa5', FBTC: '#e67e22' };
+            const colors = { DGB: '#0066cc', BTC: '#f7931a', BCH: '#0ac18e', BCH2: '#8d6e63', BC2: '#4a90d9', BTCS: '#9e9e9e', QBX: '#9b59b6', LTC: '#bfbbbb', DOGE: '#c2a633', CAT: '#f0a030', NMC: '#186aa5', FBTC: '#e67e22' };
             const defaultColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
             let ci = 0;
             slots.forEach(s => {
@@ -2593,77 +2719,123 @@
             container.innerHTML = html;
         }
 
+        function updateSmartPortModeUI() {
+            const isDifficulty = document.getElementById('smartport-mode-difficulty')?.checked;
+            const scheduleSection = document.getElementById('multiport-hours')?.closest('div[style]');
+            const totalDiv = document.getElementById('multiport-total');
+            const scheduleDiv = document.getElementById('multiport-schedule');
+            const diffNote = document.getElementById('mode-difficulty-note');
+            const excludePanel = document.getElementById('difficulty-exclude-panel');
+
+            if (diffNote) diffNote.style.display = isDifficulty ? 'block' : 'none';
+            if (excludePanel) {
+                excludePanel.style.display = isDifficulty ? 'block' : 'none';
+                if (isDifficulty) renderExcludeCoinsPills();
+            }
+
+            // In DIFFICULTY mode, dim the schedule controls (they're ignored)
+            const scheduleOpacity = isDifficulty ? '0.4' : '1';
+            if (totalDiv) totalDiv.style.opacity = scheduleOpacity;
+            if (scheduleDiv) scheduleDiv.style.opacity = scheduleOpacity;
+
+            const modeTimeLabel = document.getElementById('mode-time-label');
+            const modeDiffLabel = document.getElementById('mode-difficulty-label');
+            if (modeTimeLabel) modeTimeLabel.style.borderColor = !isDifficulty ? 'var(--neon-purple)' : 'rgba(255,255,255,0.1)';
+            if (modeDiffLabel) modeDiffLabel.style.borderColor = isDifficulty ? 'var(--neon-purple)' : 'rgba(255,255,255,0.1)';
+        }
+
         async function saveMultiPort() {
             const toggle = document.getElementById('multiport-enabled');
             const enabled = toggle.checked;
             const hInputs = document.querySelectorAll('.multiport-hours-input');
             const sInputs = document.querySelectorAll('.multiport-start-input');
+            const selectedMode = document.querySelector('input[name="smartport-mode"]:checked')?.value || 'TIME';
 
-            // Collect hours and start times, convert to percentage weights (sum=100)
-            const hourEntries = {};
-            const startEntries = {};
-            let totalHours = 0;
-            let preferCoin = '';
-            let maxHours = 0;
+            let body;
+            let coins = null;
+            if (!enabled) {
+                body = { enabled: false, mode: selectedMode };
+            } else {
+                // Collect hours and start times, convert to percentage weights (sum=100)
+                const hourEntries = {};
+                const startEntries = {};
+                let totalHours = 0;
+                let preferCoin = '';
+                let maxHours = 0;
 
-            hInputs.forEach(inp => {
-                const h = parseFloat(inp.value) || 0;
-                if (h > 0) {
-                    hourEntries[inp.dataset.coin] = h;
-                    totalHours += h;
-                    if (h > maxHours) { maxHours = h; preferCoin = inp.dataset.coin; }
-                }
-            });
+                hInputs.forEach(inp => {
+                    const h = parseFloat(inp.value) || 0;
+                    if (h > 0) {
+                        hourEntries[inp.dataset.coin] = h;
+                        totalHours += h;
+                        if (h > maxHours) { maxHours = h; preferCoin = inp.dataset.coin; }
+                    }
+                });
 
-            sInputs.forEach(inp => {
-                if (inp.value && hourEntries[inp.dataset.coin]) {
-                    const [hh, mm] = inp.value.split(':').map(Number);
-                    startEntries[inp.dataset.coin] = hh + (mm || 0) / 60;
-                }
-            });
+                sInputs.forEach(inp => {
+                    if (inp.value && hourEntries[inp.dataset.coin]) {
+                        const [hh, mm] = inp.value.split(':').map(Number);
+                        startEntries[inp.dataset.coin] = hh + (mm || 0) / 60;
+                    }
+                });
 
-            totalHours = Math.round(totalHours * 10) / 10;
+                totalHours = Math.round(totalHours * 10) / 10;
 
-            if (enabled) {
                 if (Object.keys(hourEntries).length < 2) {
                     showGlobalStatus('error', 'At least 2 coins with hours > 0 required');
                     return;
                 }
-                if (totalHours !== 24) {
-                    showGlobalStatus('error', `Hours must sum to 24, currently ${totalHours}`);
+
+                // In TIME mode, hours must sum to 24. In DIFFICULTY mode, schedule is
+                // informational only — the backend ignores weights for routing.
+                if (selectedMode === 'TIME' && totalHours !== 24) {
+                    showGlobalStatus('error', `Hours must sum to 24 in Time-Based mode, currently ${totalHours}`);
                     return;
                 }
-            }
 
-            // Convert hours to integer percentage weights that sum to exactly 100
-            const coins = {};
-            let weightSum = 0;
-            const entries = Object.entries(hourEntries);
-            entries.forEach(([sym, h], i) => {
-                const coinCfg = {};
-                if (i === entries.length - 1) {
-                    coinCfg.weight = 100 - weightSum;
-                } else {
-                    const w = Math.round(h / totalHours * 100);
-                    coinCfg.weight = w;
-                    weightSum += w;
+                // Convert hours to integer percentage weights that sum to exactly 100
+                // (kept even for DIFFICULTY mode so config remains valid if user switches back)
+                coins = {};
+                let weightSum = 0;
+                const entries = Object.entries(hourEntries);
+                entries.forEach(([sym, h], i) => {
+                    const coinCfg = {};
+                    if (selectedMode === 'DIFFICULTY') {
+                        // In DIFFICULTY mode use equal weights as a neutral default
+                        coinCfg.weight = i === entries.length - 1
+                            ? 100 - weightSum
+                            : Math.floor(100 / entries.length);
+                        weightSum += coinCfg.weight;
+                    } else {
+                        if (i === entries.length - 1) {
+                            coinCfg.weight = 100 - weightSum;
+                        } else {
+                            const w = Math.round(h / totalHours * 100);
+                            coinCfg.weight = w;
+                            weightSum += w;
+                        }
+                    }
+                    // Include custom start time if set (TIME mode only — ignored in DIFFICULTY)
+                    if (selectedMode === 'TIME' && startEntries[sym] !== undefined) {
+                        coinCfg.start_hour = Math.round(startEntries[sym] * 100) / 100;
+                    }
+                    coins[sym] = coinCfg;
+                });
+
+                // Sanity check: no negative weights and total = 100 (TIME mode only)
+                if (selectedMode === 'TIME') {
+                    const total = Object.values(coins).reduce((s, c) => s + c.weight, 0);
+                    const hasNegative = Object.values(coins).some(c => c.weight <= 0);
+                    if (total !== 100 || hasNegative) {
+                        showGlobalStatus('error', `Internal error: weights sum to ${total}, expected 100 with all positive`);
+                        return;
+                    }
                 }
-                // Include custom start time if set
-                if (startEntries[sym] !== undefined) {
-                    coinCfg.start_hour = Math.round(startEntries[sym] * 100) / 100;
-                }
-                coins[sym] = coinCfg;
-            });
 
-            // Sanity check: no negative weights and total = 100
-            const total = Object.values(coins).reduce((s, c) => s + c.weight, 0);
-            const hasNegative = Object.values(coins).some(c => c.weight <= 0);
-            if (enabled && (total !== 100 || hasNegative)) {
-                showGlobalStatus('error', `Internal error: weights sum to ${total}, expected 100 with all positive`);
-                return;
+                // Include exclude list (DIFFICULTY mode only; harmless to send in TIME mode)
+                const excludeList = selectedMode === 'DIFFICULTY' ? [...excludedCoins] : [];
+                body = { enabled, mode: selectedMode, coins, prefer_coin: preferCoin, exclude_coins: excludeList };
             }
-
-            const body = { enabled, coins, prefer_coin: preferCoin };
 
             try {
                 const resp = await fetch('/api/multiport', {
@@ -2674,8 +2846,9 @@
                 const result = await resp.json();
                 if (result.success) {
                     showGlobalStatus('success', result.message);
-                    // Show sync status for selected coins and reload state
-                    startMultiPortSyncWatch(Object.keys(coins));
+                    if (enabled) {
+                        startMultiPortSyncWatch(Object.keys(coins));
+                    }
                     setTimeout(loadMultiPort, 2000);
                 } else {
                     showGlobalStatus('error', result.error || 'Failed to save');

@@ -37,18 +37,21 @@ type testCoinConfig struct {
 	ParentChain  string // Parent chain symbol (if aux)
 }
 
-// allTestCoins defines all 14 supported coins with their characteristics.
+// allTestCoins defines all 17 supported coins with their characteristics.
 // Source of truth: config/coins.manifest.yaml + internal/coin/*.go
 var allTestCoins = []testCoinConfig{
 	// SHA-256d coins
 	{Symbol: "BTC", Algorithm: "sha256d", BlockTimeSec: 600, IsParent: true},
 	{Symbol: "BCH", Algorithm: "sha256d", BlockTimeSec: 600},
+	{Symbol: "BCH2", Algorithm: "sha256d", BlockTimeSec: 600}, // Bitcoin Cash II — BCH fork, 10-min blocks
 	{Symbol: "DGB", Algorithm: "sha256d", BlockTimeSec: 15},
 	{Symbol: "BC2", Algorithm: "sha256d", BlockTimeSec: 600},
+	{Symbol: "BTCS", Algorithm: "sha256d", BlockTimeSec: 300}, // Bitcoin Silver — 5-min blocks
 	{Symbol: "NMC", Algorithm: "sha256d", BlockTimeSec: 600, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "SYS", Algorithm: "sha256d", BlockTimeSec: 60, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "XMY", Algorithm: "sha256d", BlockTimeSec: 60, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "FBTC", Algorithm: "sha256d", BlockTimeSec: 30, IsAux: true, ParentChain: "BTC"},
+	{Symbol: "XEC", Algorithm: "sha256d", BlockTimeSec: 600}, // eCash — Bitcoin ABC fork, CashAddr
 	{Symbol: "QBX", Algorithm: "sha256d", BlockTimeSec: 150},
 
 	// Scrypt coins

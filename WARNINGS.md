@@ -97,21 +97,6 @@ Spiral Pool can be installed on cloud-based VPS instances. The installer detects
 
 **YOU ARE SOLELY RESPONSIBLE** for reading your provider's Terms of Service, monitoring bandwidth billing, and all consequences of cloud deployment. See [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) for the complete cloud operations guide.
 
-### ARM Architecture
-
-**WARNING: ARM ARCHITECTURE HAS NOT BEEN TESTED**
-
-Spiral Pool has **NOT** been tested on ARM architecture (including Raspberry Pi, ARM64/aarch64, and ARMv7). All packages, build references, and binary dependencies target **x86_64 (amd64)** on Ubuntu 24.04 LTS.
-
-| Concern | Details |
-|---------|---------|
-| **Package availability** | Ubuntu 24.04 LTS packages may differ or be unavailable on ARM |
-| **Go compilation** | Cross-compilation and binary compatibility are not verified |
-| **Daemon binaries** | Cryptocurrency daemon binaries (Bitcoin Core, Litecoin, etc.) may not be available for ARM |
-| **Performance** | Performance characteristics are unknown on ARM hardware |
-
-The installer will detect ARM architecture and display a warning. You may choose to continue at your own risk, but ARM deployments are **NOT supported** and issues arising from ARM-based installations may not be investigated.
-
 ### No Security Audit
 
 **WARNING: THIS SOFTWARE HAS NOT BEEN PROFESSIONALLY AUDITED**
@@ -432,6 +417,27 @@ This software:
 - Does NOT recover lost or stolen cryptocurrency
 - Sends rewards to whatever address you configure
 
+### BCH2 Address Collision Warning
+
+**BCH2 (Bitcoin Cash II) uses IDENTICAL legacy address bytes to BCH and BTC.**
+
+BCH2 P2PKH (version byte 0x00) produces addresses starting with `1...` — the same format as Bitcoin and Bitcoin Cash. BCH2 P2SH (0x05) produces `3...` addresses identical to BTC/BCH.
+
+**If you use a BTC or BCH address as your BCH2 pool address, your block rewards will be sent to the wrong blockchain and will be permanently unrecoverable.**
+
+Use CashAddr format (`bitcoincashii:q...`) for BCH2 to eliminate ambiguity. The installer and `spiralpool-wallet` always generate CashAddr format for BCH2.
+
+### BTCS Address Format Warning
+
+**BTCS (Bitcoin Silver) uses non-standard P2PKH version byte 0x1A**, which produces addresses starting with `B`. This is distinct from BTC (`1...`), BCH (`q...`/`bitcoincash:`), and all other supported coins.
+
+BTCS also supports:
+- `3...` P2SH addresses (same as BTC — use with care)
+- `bs1q...` SegWit bech32 addresses
+- `bs1p...` Taproot bech32m addresses
+
+Standard BTC addresses are NOT valid BTCS addresses (wrong version byte). Sending BTCS rewards to a BTC address will result in permanent loss.
+
 **VERIFY ALL WALLET ADDRESSES BEFORE DEPLOYMENT.** Cloud operators: see [CLOUD_OPERATIONS.md — Wallet Security on Cloud](docs/setup/CLOUD_OPERATIONS.md#wallet-security-on-cloud) for additional risks related to auto-generated wallets on provider infrastructure.
 
 ### Tax and Reporting Obligations
@@ -469,9 +475,7 @@ Cryptocurrency mining is speculative. You may lose money.
 
 3. **CLOUD DEPLOYMENT CARRIES SERIOUS RISKS** — provider ToS violations can cause immediate account termination and permanent data loss; bandwidth charges can be hundreds of dollars per sync; the provider has unrestricted access to your wallet credentials and all server data. The installer requires written acknowledgment of all risks before proceeding on cloud. See the Cloud Deployment section above and [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md)
 
-4. **ARM ARCHITECTURE IS NOT TESTED** - all packages and binaries target x86_64 (amd64); ARM/Raspberry Pi may not work
-
-5. **LEGAL COMPLIANCE IS YOUR RESPONSIBILITY** - mining may be regulated or prohibited
+4. **LEGAL COMPLIANCE IS YOUR RESPONSIBILITY** - mining may be regulated or prohibited
 
 6. **DATA LOSS WILL OCCUR** - backups are mandatory, not optional
 
@@ -497,5 +501,5 @@ By deploying Spiral Pool, you acknowledge that:
 
 ---
 
-*Spiral Pool v2.4.2 - Specific Hazard Warnings*
+*Spiral Pool v2.5.0 - Specific Hazard Warnings*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

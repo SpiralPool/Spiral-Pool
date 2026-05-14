@@ -18,7 +18,7 @@ import (
 
 func TestCreate_RegisteredCoin(t *testing.T) {
 	// Test that registered coins can be created
-	coins := []string{"DGB", "BTC", "BCH", "BC2"}
+	coins := []string{"DGB", "BTC", "BCH", "BC2", "BCH2", "BTCS"}
 
 	for _, symbol := range coins {
 		t.Run(symbol, func(t *testing.T) {
@@ -94,6 +94,8 @@ func TestIsRegistered(t *testing.T) {
 		{"BTC", true},  // Registered at init
 		{"BCH", true},  // Registered at init
 		{"BC2", true},  // Registered at init (Bitcoin II)
+		{"BCH2", true}, // Registered at init (Bitcoin Cash II)
+		{"BTCS", true}, // Registered at init (Bitcoin Silver)
 		{"FAKE", false},
 		{"", false},
 		{"xyz", false},
@@ -191,7 +193,7 @@ func TestRegistry_ConcurrentRead(t *testing.T) {
 }
 
 func TestRegistry_ConcurrentCreateDifferentCoins(t *testing.T) {
-	coins := []string{"DGB", "BTC", "BCH", "BC2"}
+	coins := []string{"DGB", "BTC", "BCH", "BC2", "BCH2", "BTCS"}
 	registeredCoins := make([]string, 0)
 	for _, c := range coins {
 		if IsRegistered(c) {

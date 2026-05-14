@@ -36,7 +36,7 @@
 #   ./ha-replicate.sh --mode [blockchain|postgres|full] --source <host> --execute
 #
 # REQUIREMENTS:
-#   - Ubuntu 24.04 LTS
+#   - Ubuntu 24.04 LTS or 26.04 LTS
 #   - rsync 3.2+
 #   - SSH key-based authentication between nodes
 #   - Root or sudo access
@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.4.2"
+SCRIPT_VERSION="2.5.0"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -82,10 +82,12 @@ _chain_dir() {
 declare -A BLOCKCHAIN_DIRS=(
     ["bitcoin"]="$(_chain_dir btc)"
     ["bitcoin-cash"]="$(_chain_dir bch)"
+    ["bitcoincashii"]="$(_chain_dir bch2)"
     ["litecoin"]="$(_chain_dir ltc)"
     ["dogecoin"]="$(_chain_dir doge)"
     ["digibyte"]="$(_chain_dir dgb)"
     ["bitcoinii"]="$(_chain_dir bc2)"
+    ["bitcoinsilver"]="$(_chain_dir btcs)"
     ["pepecoin"]="$(_chain_dir pep)"
     ["catcoin"]="$(_chain_dir cat)"
     ["namecoin"]="$(_chain_dir nmc)"
@@ -93,6 +95,7 @@ declare -A BLOCKCHAIN_DIRS=(
     ["myriadcoin"]="$(_chain_dir xmy)"
     ["fractal"]="$(_chain_dir fbtc)"
     ["qbitx"]="$(_chain_dir qbx)"
+    ["ecash"]="$(_chain_dir xec)"
 )
 
 # rsync flags for blockchain data (large files, sparse files, hardlinks)
@@ -208,8 +211,8 @@ check_requirements() {
     detected_id=$(grep -oP '^ID=\K.*' /etc/os-release | tr -d '"')
     detected_version=$(grep -oP '^VERSION_ID=\K.*' /etc/os-release | tr -d '"')
     detected_name=$(grep -oP '^PRETTY_NAME=\K.*' /etc/os-release | tr -d '"')
-    if [[ "$detected_id" != "ubuntu" ]] || [[ ! "$detected_version" =~ ^24\.04 ]]; then
-        log WARN "This script is designed for Ubuntu 24.04 LTS. Detected: $detected_name"
+    if [[ "$detected_id" != "ubuntu" ]] || [[ ! "$detected_version" =~ ^(24|26)\.04 ]]; then
+        log WARN "This script is designed for Ubuntu 24.04 LTS or 26.04 LTS. Detected: $detected_name"
         log WARN "Proceeding anyway, but unexpected behavior may occur."
     fi
 
@@ -406,6 +409,12 @@ get_blockchain_service_name() {
         bitcoin-cash)
             echo "bitcoind-bch"
             ;;
+        bitcoincashii)
+            echo "bitcoincashIId"
+            ;;
+        bitcoinsilver)
+            echo "bitcoinsilverd"
+            ;;
         litecoin)
             echo "litecoind"
             ;;
@@ -438,6 +447,9 @@ get_blockchain_service_name() {
             ;;
         qbitx)
             echo "qbitxd"
+            ;;
+        ecash)
+            echo "ecashd"
             ;;
         *)
             die "Unknown blockchain: $blockchain"

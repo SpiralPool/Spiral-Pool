@@ -15,7 +15,7 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM postgres:18-bookworm
+FROM postgres:18.1-bookworm
 
 LABEL maintainer="Spiral Miner"
 LABEL description="PostgreSQL 18 with Patroni HA for Spiral Pool"

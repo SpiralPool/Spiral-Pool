@@ -46,7 +46,7 @@ func TestGetBlockMaturity_Default(t *testing.T) {
 		BlockMaturity: 0, // Use default
 	}
 
-	p := &Processor{cfg: cfg}
+	p := &Processor{cfg: cfg, poolCfg: &config.PoolConfig{}}
 
 	maturity := p.getBlockMaturity()
 	if maturity != DefaultBlockMaturityConfirmations {
@@ -250,7 +250,7 @@ func TestSOLOMode_BlockMaturityTracking(t *testing.T) {
 				Scheme:        "SOLO",
 				BlockMaturity: tc.configuredValue,
 			}
-			p := &Processor{cfg: cfg}
+			p := &Processor{cfg: cfg, poolCfg: &config.PoolConfig{Coin: tc.coin}}
 
 			maturity := p.getBlockMaturity()
 			if maturity != tc.expectedMaturity {
@@ -397,6 +397,12 @@ func TestBlockRewardVerification(t *testing.T) {
 			coin:           "BTC",
 			blockHeight:    700000,
 			expectedReward: 6.25, // After 630000 block halving
+		},
+		{
+			name:           "BTC after 4th halving",
+			coin:           "BTC",
+			blockHeight:    880000,
+			expectedReward: 3.125, // After block 840000 halving (April 2024) — current era
 		},
 	}
 

@@ -191,15 +191,6 @@ accept NO LIABILITY for any consequences of cloud deployment. See WARNINGS.md
 and TERMS.md (Section 5B) for complete details.
 
 ===========================================
-ARM ARCHITECTURE
-===========================================
-
-This software has NOT been tested on ARM architecture (including Raspberry Pi,
-ARM64/aarch64, and ARMv7). All packages and binary dependencies target x86_64
-(amd64) on Ubuntu 24.04 LTS. ARM deployments are NOT supported. See WARNINGS.md
-and TERMS.md (Section 5C) for complete details.
-
-===========================================
 TOR NETWORK FUNCTIONALITY
 ===========================================
 

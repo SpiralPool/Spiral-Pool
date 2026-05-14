@@ -1125,7 +1125,7 @@ func TestExt_CircuitBreaker_HalfOpen_BlocksAdditionalRequests(t *testing.T) {
 // Simulation: 50 goroutines per coin, 100 shares each = 25,000 total.
 // Observation: No cross-contamination. Each tracker independent.
 func TestExt_MultiCoin_ConcurrentDuplicateTrackers(t *testing.T) {
-	coins := []string{"dgb", "btc", "ltc", "doge", "sys"}
+	coins := []string{"dgb", "btc", "bch", "bch2", "bc2", "btcs", "ltc", "doge", "sys"}
 	trackers := make(map[string]*shares.DuplicateTracker)
 	for _, coin := range coins {
 		trackers[coin] = shares.NewDuplicateTracker()
@@ -1159,8 +1159,9 @@ func TestExt_MultiCoin_ConcurrentDuplicateTrackers(t *testing.T) {
 	wg.Wait()
 
 	total := totalAccepted.Load() + totalDuplicates.Load()
-	if total != 25000 {
-		t.Errorf("FAIL: Total shares mismatch: %d, expected 25000", total)
+	expected := int64(len(coins)) * 50 * 100
+	if total != expected {
+		t.Errorf("FAIL: Total shares mismatch: %d, expected %d", total, expected)
 	}
 
 	// Verify each tracker is independent by submitting same share to all

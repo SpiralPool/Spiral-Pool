@@ -53,6 +53,7 @@ type MultiServerConfig struct {
 
 	// Coin routing
 	AllowedCoins  []string     // which coins participate
+	ExcludeCoins  []string     // coins excluded from DIFFICULTY-mode selection
 	CoinWeights   []CoinWeight // per-coin weights (maps to 24h UTC time slots)
 	PreferCoin    string       // tie-breaker / default
 	MinTimeOnCoin time.Duration // minimum time before switch (default 60s)
@@ -65,6 +66,11 @@ type MultiServerConfig struct {
 	// correct wallet for the active coin. Required for multi-coin setups where
 	// coins use different address formats (e.g., QBX vs BC2).
 	WalletMap map[string]map[string]string
+
+	// RoutingMode controls whether the Smart Port uses time-based or
+	// difficulty-based coin selection. Used for logging and stats only;
+	// the actual routing logic lives in the Selector.
+	RoutingMode RoutingMode
 
 	Logger *zap.Logger
 }
@@ -267,6 +273,7 @@ func (ms *MultiServer) Start(ctx context.Context) error {
 		"port", ms.cfg.Port,
 		"coins", ms.cfg.AllowedCoins,
 		"checkInterval", ms.cfg.CheckInterval,
+		"routingMode", ms.cfg.RoutingMode,
 	)
 
 	return nil
@@ -828,7 +835,9 @@ type MultiServerStats struct {
 	TotalSwitches    uint64
 	CoinDistribution map[string]int
 	AllowedCoins     []string
-	CoinWeights      map[string]int // symbol → weight %
+	ExcludeCoins     []string       // coins excluded from DIFFICULTY-mode selection
+	CoinWeights      map[string]int // symbol → weight % (empty in DIFFICULTY mode)
+	RoutingMode      RoutingMode    // "TIME" or "DIFFICULTY"
 }
 
 func (ms *MultiServer) Stats() MultiServerStats {
@@ -838,6 +847,8 @@ func (ms *MultiServer) Stats() MultiServerStats {
 		TotalSwitches:    ms.totalSwitches.Load(),
 		CoinDistribution: ms.selector.GetCoinDistribution(),
 		AllowedCoins:     ms.cfg.AllowedCoins,
+		ExcludeCoins:     ms.cfg.ExcludeCoins,
+		RoutingMode:      ms.selector.Mode(),
 	}
 	if len(ms.cfg.CoinWeights) > 0 {
 		stats.CoinWeights = make(map[string]int, len(ms.cfg.CoinWeights))

@@ -4,7 +4,7 @@
 // Package coin - Multi-algorithm and multi-coin test scenarios
 //
 // This file contains comprehensive tests for:
-// 1. SHA-256d only configurations (DGB, BTC, BCH, BC2)
+// 1. SHA-256d only configurations (DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX)
 // 2. Scrypt only configurations (LTC, DOGE, DGB-SCRYPT, PEP, CAT)
 // 3. Mixed algorithm configurations (SHA-256d + Scrypt)
 // 4. Algorithm isolation (cross-algorithm confusion prevention)
@@ -22,7 +22,7 @@ import (
 
 func TestSHA256dOnlyMultiCoin(t *testing.T) {
 	// Test that all SHA-256d coins can be created and work together
-	sha256dCoins := []string{"DGB", "BTC", "BCH", "BC2"}
+	sha256dCoins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC", "NMC", "SYS", "XMY", "FBTC", "QBX"}
 
 	t.Run("all SHA256d coins can be created", func(t *testing.T) {
 		for _, symbol := range sha256dCoins {
@@ -68,12 +68,18 @@ func TestSHA256dOnlyMultiCoin(t *testing.T) {
 			coin, _ := Create(symbol)
 			genesis := coin.GenesisBlockHash()
 
+			// Coins that share BTC's genesis (forked at non-genesis block height)
+			btcGenesisFamily := map[string]bool{"BTC": true, "BCH": true, "FBTC": true, "XEC": true}
+			// Coins that share BC2's genesis (BCH2 forked from BC2 at block 53,200)
+			bc2GenesisFamily := map[string]bool{"BC2": true, "BCH2": true}
+
 			for prevSymbol, prevGenesis := range genesisHashes {
 				if genesis == prevGenesis {
-					// BCH forked from BTC, so they share the same genesis block
-					// This is expected and not a configuration error
-					if (symbol == "BCH" && prevSymbol == "BTC") || (symbol == "BTC" && prevSymbol == "BCH") {
-						continue // Skip BCH/BTC comparison - same genesis is expected
+					if btcGenesisFamily[symbol] && btcGenesisFamily[prevSymbol] {
+						continue
+					}
+					if bc2GenesisFamily[symbol] && bc2GenesisFamily[prevSymbol] {
+						continue
 					}
 					t.Errorf("%s and %s have the same genesis block hash - this is a configuration error", symbol, prevSymbol)
 				}
@@ -161,7 +167,7 @@ func TestScryptOnlyMultiCoin(t *testing.T) {
 func TestMixedAlgorithmMultiCoin(t *testing.T) {
 	// Test mixed SHA-256d + Scrypt configurations
 
-	sha256d := []string{"DGB", "BTC", "NMC", "SYS", "XMY", "FBTC"}
+	sha256d := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC", "NMC", "SYS", "XMY", "FBTC", "QBX"}
 	scrypt := []string{"LTC", "DOGE", "PEP", "CAT"}
 
 	t.Run("algorithms produce different hashes", func(t *testing.T) {
@@ -208,7 +214,7 @@ func TestMixedAlgorithmMultiCoin(t *testing.T) {
 
 	t.Run("all coins have unique symbols", func(t *testing.T) {
 		allCoins := append(append([]string{}, sha256d...), scrypt...)
-		allCoins = append(allCoins, "BCH", "BC2", "DGB-SCRYPT")
+		allCoins = append(allCoins, "DGB-SCRYPT") // only addition not already in sha256d or scrypt
 
 		symbols := make(map[string]bool)
 		for _, coinName := range allCoins {
@@ -293,8 +299,13 @@ func TestCoinRegistryComplete(t *testing.T) {
 		{"BITCOIN", "BTC", "sha256d"},
 		{"BCH", "BCH", "sha256d"},
 		{"BITCOINCASH", "BCH", "sha256d"},
+		{"BCH2", "BCH2", "sha256d"},
+		{"BITCOINCASHII", "BCH2", "sha256d"},
 		{"BC2", "BC2", "sha256d"},
 		{"BITCOINII", "BC2", "sha256d"},
+		{"BTCS", "BTCS", "sha256d"},
+		{"BITCOINSILVER", "BTCS", "sha256d"},
+		{"QBX", "QBX", "sha256d"},
 		{"NMC", "NMC", "sha256d"},
 		{"NAMECOIN", "NMC", "sha256d"},
 		{"SYS", "SYS", "sha256d"},
@@ -339,7 +350,10 @@ func TestBlockTimeConfigurations(t *testing.T) {
 		"DGB":        15,  // 15 seconds
 		"BTC":        600, // 10 minutes
 		"BCH":        600, // 10 minutes
+		"BCH2":       600, // 10 minutes (BCH fork)
 		"BC2":        600, // 10 minutes
+		"BTCS":       300, // 5 minutes (unique — not 600!)
+		"QBX":        150, // 2.5 minutes (verified from qbx chainparams)
 		"NMC":        600, // 10 minutes (same as Bitcoin)
 		"SYS":        150, // 2.5 minutes
 		"XMY":        60,  // 1 minute
@@ -378,7 +392,7 @@ func TestPortConfigurations(t *testing.T) {
 
 	coinPorts := make(map[string]portConfig)
 
-	allCoins := []string{"DGB", "BTC", "BCH", "BC2", "NMC", "SYS", "XMY", "FBTC", "LTC", "DOGE", "PEP", "CAT"}
+	allCoins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC", "NMC", "SYS", "XMY", "FBTC", "QBX", "LTC", "DOGE", "PEP", "CAT"}
 	// Note: DGB-SCRYPT uses same ports as DGB (same node)
 
 	for _, symbol := range allCoins {
@@ -427,7 +441,7 @@ func TestConcurrentMultiAlgorithmHashing(t *testing.T) {
 	// Test that SHA256d and Scrypt can run concurrently without interference
 	// This simulates a multi-coin pool processing shares for different algorithms
 
-	sha256dCoins := []string{"DGB", "BTC", "BCH", "BC2", "NMC", "SYS", "XMY", "FBTC"}
+	sha256dCoins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC", "NMC", "SYS", "XMY", "FBTC", "QBX"}
 	scryptCoins := []string{"LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT"}
 
 	// Pre-create all coin instances
@@ -567,9 +581,9 @@ func TestConcurrentMultiAlgorithmHashing(t *testing.T) {
 		violations := make(chan bool, checks)
 
 		for i := 0; i < checks; i++ {
-			go func() {
-				sha := sha256dInstances[i%len(sha256dInstances)].HashBlockHeader(header)
-				scr := scryptInstances[i%len(scryptInstances)].HashBlockHeader(header)
+			go func(idx int) {
+				sha := sha256dInstances[idx%len(sha256dInstances)].HashBlockHeader(header)
+				scr := scryptInstances[idx%len(scryptInstances)].HashBlockHeader(header)
 
 				// Check they're different
 				same := true
@@ -580,7 +594,7 @@ func TestConcurrentMultiAlgorithmHashing(t *testing.T) {
 					}
 				}
 				violations <- same
-			}()
+			}(i)
 		}
 
 		for i := 0; i < checks; i++ {
@@ -655,7 +669,7 @@ func TestMultiAlgorithmSymbolUniqueness(t *testing.T) {
 
 	allSymbols := make(map[string]string) // symbol -> algorithm
 
-	sha256dCoins := []string{"DGB", "BTC", "BCH", "BC2", "NMC", "SYS", "XMY", "FBTC"}
+	sha256dCoins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC", "NMC", "SYS", "XMY", "FBTC", "QBX"}
 	scryptCoins := []string{"LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT"}
 
 	for _, name := range sha256dCoins {

@@ -38,7 +38,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.4.2"
+SCRIPT_VERSION="2.5.0"
 SCRIPT_NAME="$(basename "$0")"
 
 POOL_USER="${POOL_USER:-spiraluser}"
@@ -74,7 +74,9 @@ _chain_dir() {
 declare -A COIN_DIRS=(
     ["BTC"]="$(_chain_dir btc)"
     ["BCH"]="$(_chain_dir bch)"
+    ["BCH2"]="$(_chain_dir bch2)"
     ["BC2"]="$(_chain_dir bc2)"
+    ["BTCS"]="$(_chain_dir btcs)"
     ["LTC"]="$(_chain_dir ltc)"
     ["DOGE"]="$(_chain_dir doge)"
     ["DGB"]="$(_chain_dir dgb)"
@@ -85,13 +87,16 @@ declare -A COIN_DIRS=(
     ["XMY"]="$(_chain_dir xmy)"
     ["FBTC"]="$(_chain_dir fbtc)"
     ["QBX"]="$(_chain_dir qbx)"
+    ["XEC"]="$(_chain_dir xec)"
 )
 
 # Coin symbol → display label
 declare -A COIN_LABELS=(
     ["BTC"]="Bitcoin (BTC)"
     ["BCH"]="Bitcoin Cash (BCH)"
+    ["BCH2"]="Bitcoin Cash II (BCH2)"
     ["BC2"]="Bitcoin II (BC2)"
+    ["BTCS"]="Bitcoin Silver (BTCS)"
     ["LTC"]="Litecoin (LTC)"
     ["DOGE"]="Dogecoin (DOGE)"
     ["DGB"]="DigiByte (DGB)"
@@ -102,13 +107,16 @@ declare -A COIN_LABELS=(
     ["XMY"]="Myriadcoin (XMY)"
     ["FBTC"]="Fractal Bitcoin (FBTC)"
     ["QBX"]="Q-BitX (QBX)"
+    ["XEC"]="eCash (XEC)"
 )
 
 # Coin symbol → systemd service name
 declare -A COIN_SERVICES=(
     ["BTC"]="bitcoind"
     ["BCH"]="bitcoind-bch"
+    ["BCH2"]="bitcoincashIId"
     ["BC2"]="bitcoiniid"
+    ["BTCS"]="bitcoinsilverd"
     ["LTC"]="litecoind"
     ["DOGE"]="dogecoind"
     ["DGB"]="digibyted"
@@ -119,6 +127,7 @@ declare -A COIN_SERVICES=(
     ["XMY"]="myriadcoind"
     ["FBTC"]="fractald"
     ["QBX"]="qbitxd"
+    ["XEC"]="ecashd"
 )
 
 # rsync flags for blockchain data

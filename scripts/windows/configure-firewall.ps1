@@ -356,6 +356,7 @@ $rules = @()
 $rules += @{ Name = "REST API"; Port = 4000; Desc = "Pool statistics API"; Category = "Common" }
 $rules += @{ Name = "Dashboard"; Port = 1618; Desc = "Web dashboard"; Category = "Common" }
 $rules += @{ Name = "Metrics"; Port = 9100; Desc = "Prometheus metrics"; Category = "Common" }
+$rules += @{ Name = "Smart Multi Stratum"; Port = 16180; Desc = "Multi-coin stratum entry-point (used when pool runs in multi-coin mode)"; Category = "Common" }
 
 # Coin-specific ports
 foreach ($coin in $selectedCoins) {

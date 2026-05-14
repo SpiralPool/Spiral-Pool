@@ -1,6 +1,6 @@
 # Trademark Notice
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-05-02
 
 ## Third-Party Trademarks
 
@@ -87,6 +87,8 @@ This software and its documentation reference third-party products, services, an
 | Bitcoin.com Explorer | Saint Bitts LLC | Primary Bitcoin Cash block explorer |
 | DigiExplorer | DigiByte community | Primary DigiByte block explorer |
 | Cryptoid / Chainz | Cryptoid.info | Block explorer API (DGB, NMC, SYS, XMY, LTC, DOGE, CAT) |
+| BCH2 Explorer | Bitcoin Cash II community | Primary Bitcoin Cash II block explorer (bch2explorer.com) |
+| Bitcoin Silver Explorer | Bitcoin Silver community | Primary Bitcoin Silver block explorer (explorer.bitcoinsilver.top) |
 
 ### Cryptocurrency Projects
 
@@ -105,6 +107,8 @@ This software and its documentation reference third-party products, services, an
 | PepeCoin | PepeCoin community | Protocol implementation (merge-mining) |
 | Catcoin | Catcoin community | Protocol implementation |
 | Bitcoin II | Bitcoin II community | Protocol implementation |
+| Bitcoin Cash II | Bitcoin Cash II community | Protocol implementation |
+| Bitcoin Silver | Bitcoin Silver community | Protocol implementation |
 
 ### Infrastructure and Services
 
@@ -206,7 +210,8 @@ This software and its documentation reference third-party products, services, an
 |------|-------|---------------------|
 | Dell, PowerEdge | Dell Technologies Inc. | Installer bare metal server examples |
 | HP, ProLiant | Hewlett Packard Enterprise (HPE) | Installer bare metal server examples |
-| Ubuntu | Canonical Ltd. | Required operating system (Ubuntu 24.04 LTS) |
+| Ubuntu | Canonical Ltd. | Supported operating systems (Ubuntu 24.04 LTS, 26.04 LTS) |
+| Debian | Software in the Public Interest, Inc. | Supported operating system (Debian 13 "Trixie") |
 | Linux | Linus Torvalds (registered trademark) | Operating system kernel references throughout |
 | systemd | systemd Project (freedesktop.org) | VM detection via systemd-detect-virt, service management |
 
@@ -218,7 +223,7 @@ This software and its documentation reference third-party products, services, an
 | QNX | BlackBerry Limited (QNX Software Systems) | Installer VM detection (systemd-detect-virt) |
 | ACRN | The Linux Foundation | Installer VM detection (systemd-detect-virt) |
 
-This list includes the principal trademarks referenced in the codebase as of v2.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
+This list includes the principal trademarks referenced in the codebase as of v2.5.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
 
 ---
 
@@ -288,5 +293,5 @@ This project includes AI-generated visual assets (logo, images). AI-generated co
 
 *This notice is provided to clarify trademark ownership and usage. It is not legal advice.*
 
-*Spiral Pool v2.4.2 - Trademark Notice*
+*Spiral Pool v2.5.0 - Trademark Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

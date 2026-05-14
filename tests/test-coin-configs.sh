@@ -30,16 +30,9 @@ YELLOW='\033[1;33m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-# Architecture
-ARCH=$(uname -m)
-if [[ "$ARCH" == "x86_64" ]]; then
-    ARCH_SUFFIX="x86_64-linux-gnu"
-elif [[ "$ARCH" == "aarch64" ]]; then
-    ARCH_SUFFIX="aarch64-linux-gnu"
-else
-    echo "Unsupported architecture: $ARCH"
-    exit 1
-fi
+# Architecture (x86_64 only)
+ARCH="x86_64"
+ARCH_SUFFIX="x86_64-linux-gnu"
 
 # Generate RPC password
 gen_rpc_pass() {
@@ -627,7 +620,6 @@ test_bc2() {
     local coin="bc2"
     # BC2 uses -CLI suffix, not -gnu
     local bc2_arch="x86_64-linux-CLI"
-    [[ "$ARCH" == "aarch64" ]] && bc2_arch="aarch64-linux-CLI"
     local url="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-${bc2_arch}.tar.gz"
     local rpc_user="spiralbc2"
     local rpc_pass=$(gen_rpc_pass)
@@ -1002,6 +994,88 @@ EOF
     test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 60 "pool-fbtc" "bech32" "bc1" "modern"
 }
 
+test_xec() {
+    local coin="xec"
+    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.31.12/bitcoin-abc-0.31.12-${ARCH_SUFFIX}.tar.gz"
+    local rpc_user="spiralxec"
+    local rpc_pass=$(gen_rpc_pass)
+    local rpc_port=9004
+    local zmq_port=28335
+    local p2p_port=8343
+    local datadir="$TEST_BASE/$coin/data"
+    local conf="$datadir/bitcoin.conf"
+
+    download_extract "$coin" "$url" || return 1
+
+    # Bitcoin ABC ships as bitcoind/bitcoin-cli (same binary names as Bitcoin Core)
+    local daemon=$(find "$TEST_BASE/$coin/extract" -name "bitcoind" -type f | head -1)
+    local cli=$(find "$TEST_BASE/$coin/extract" -name "bitcoin-cli" -type f | head -1)
+    [[ -z "$daemon" ]] && { log_fail "$coin - bitcoind not found in archive"; return 1; }
+    chmod +x "$daemon" "$cli"
+
+    mkdir -p "$datadir"
+
+    # XEC config: no chain=main, no SegWit rules, CashAddr addressing
+    # NOTE: getnewaddress "wallet-name" (no address_type arg) returns ecash:q... CashAddr
+    cat > "$conf" << EOF
+# eCash (XEC) / Bitcoin ABC Configuration
+# Spiral Pool - Multi-Coin Solo Mining
+# NOTE: ecashd/ecash-cli are symlinks to bitcoind/bitcoin-cli.
+#       Address format: ecash:q... (P2PKH, CashAddr) — no SegWit, no address_type param.
+
+# === CORE SETTINGS ===
+server=1
+daemon=1
+txindex=1
+prune=0
+
+# === RPC CONFIGURATION (port 9004) ===
+rpcuser=$rpc_user
+rpcpassword=$rpc_pass
+rpcport=$rpc_port
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+rpcthreads=8
+
+# === ZMQ NOTIFICATIONS (port 28335) ===
+zmqpubhashblock=tcp://127.0.0.1:$zmq_port
+zmqpubrawtx=tcp://127.0.0.1:$zmq_port
+
+# === PERFORMANCE ===
+dbcache=4096
+maxmempool=300
+par=4
+
+# === NETWORK CONFIGURATION (P2P port 8343) ===
+maxconnections=64
+listen=1
+bind=0.0.0.0:$p2p_port
+port=$p2p_port
+onlynet=ipv4
+dnsseed=1
+
+# === WALLET ===
+disablewallet=0
+
+# === LOGGING ===
+printtoconsole=0
+logtimestamps=1
+logips=1
+shrinkdebugfile=1
+
+# === XEC-SPECIFIC ===
+excessiveblocksize=32000000
+
+# === SEED NODES ===
+seednode=seeder.ecash.be
+seednode=seeder2.ecash.be
+seednode=seed.bitcoinabc.org
+EOF
+
+    # Wallet: pool-xec, NO address type (CashAddr default), prefix ecash:. Standalone SHA-256d.
+    test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 60 "pool-xec" "" "ecash:" ""
+}
+
 test_qbx() {
     local coin="qbx"
 
@@ -1015,7 +1089,7 @@ test_qbx() {
     local rpc_user="spiralqbx"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8344
-    local zmq_port=28344
+    local zmq_port=0  # QBX binary compiled without ZMQ support
     local p2p_port=8345
     local datadir="$TEST_BASE/$coin/data"
     local conf="$datadir/qbitx.conf"
@@ -1045,9 +1119,7 @@ rpcallowip=127.0.0.1
 rpcbind=127.0.0.1
 rpcport=$rpc_port
 
-# ZMQ for block notifications
-zmqpubhashblock=tcp://127.0.0.1:$zmq_port
-zmqpubrawtx=tcp://127.0.0.1:$zmq_port
+# NOTE: ZMQ not enabled — QBX binary compiled without ZMQ support
 
 # P2P port
 port=$p2p_port
@@ -1273,9 +1345,8 @@ EOF
 
 test_cat() {
     local coin="cat"
-    # CAT uses ZIP, different naming
+    # CAT uses ZIP format
     local cat_filename="Catcoin-Linux.zip"
-    [[ "$ARCH" == "aarch64" ]] && cat_filename="Catcoin-AArch.zip"
     local url="https://github.com/CatcoinCore/catcoincore/releases/download/v2.1.1/${cat_filename}"
     local rpc_user="spiralcat"
     local rpc_pass=$(gen_rpc_pass)
@@ -1358,7 +1429,7 @@ echo "Arch: $ARCH ($ARCH_SUFFIX)" >> "$RESULTS_FILE"
 echo "---" >> "$RESULTS_FILE"
 
 # Determine which coins to test
-ALL_COINS="dgb btc bch bc2 nmc sys xmy fbtc qbx ltc doge pep cat"
+ALL_COINS="dgb btc bch bc2 nmc sys xmy fbtc xec qbx ltc doge pep cat"
 if [[ $# -gt 0 ]]; then
     COINS_TO_TEST="$*"
 else
@@ -1386,6 +1457,7 @@ for coin in $COINS_TO_TEST; do
         sys)  test_sys  ;;
         xmy)  test_xmy  ;;
         fbtc) test_fbtc ;;
+        xec)  test_xec  ;;
         qbx)  test_qbx  ;;
         ltc)  test_ltc  ;;
         doge) test_doge ;;

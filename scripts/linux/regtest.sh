@@ -21,8 +21,9 @@
 #          |---- ZMQ hashblock -->|                                     |
 #          |                      |---- DB insert + status ------------>|
 #
-# SUPPORTED COINS (12 solo):
+# SUPPORTED COINS (15 solo):
 #   bc2   - Bitcoin II       btc   - Bitcoin          bch   - Bitcoin Cash
+#   bch2  - Bitcoin Cash II  btcs  - Bitcoin Silver   xec   - eCash
 #   ltc   - Litecoin         dgb   - DigiByte (SHA256d)  nmc   - Namecoin
 #   dgb-scrypt - DigiByte (Scrypt)
 #   xmy   - Myriad           fbtc  - Fractal Bitcoin    qbx   - Q-BitX
@@ -89,13 +90,8 @@
 # =============================================================================
 set -euo pipefail
 
-# Detect system architecture for coin binary downloads
-# dpkg returns "amd64" or "arm64"; fallback to amd64 if dpkg unavailable
-SYSTEM_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+SYSTEM_ARCH="amd64"
 ARCH_SUFFIX="x86_64-linux-gnu"
-if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
-    ARCH_SUFFIX="aarch64-linux-gnu"
-fi
 
 # =============================================================================
 # Argument Validation
@@ -107,6 +103,7 @@ if [[ -z "${1:-}" ]]; then
     echo ""
     echo "Supported coins:"
     echo "  bc2   - Bitcoin II         btc   - Bitcoin            bch   - Bitcoin Cash"
+    echo "  bch2  - Bitcoin Cash II    btcs  - Bitcoin Silver     xec   - eCash"
     echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
     echo "  xmy   - Myriad             fbtc  - Fractal Bitcoin    qbx   - Q-BitX"
     echo "  doge  - Dogecoin           pep   - PepeCoin            cat   - Catcoin"
@@ -208,13 +205,8 @@ setup_coin() {
             GBT_RULES='["segwit"]'
             # Auto-install info (BC2 uses -CLI suffix instead of -gnu)
             DAEMON_VERSION="29.1.0"
-            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
-                DOWNLOAD_URL="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-aarch64-linux-CLI.tar.gz"
-                TARBALL_DIR="BitcoinII-29.1.0-aarch64-linux-CLI"
-            else
-                DOWNLOAD_URL="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-x86_64-linux-CLI.tar.gz"
-                TARBALL_DIR="BitcoinII-29.1.0-x86_64-linux-CLI"
-            fi
+            DOWNLOAD_URL="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-x86_64-linux-CLI.tar.gz"
+            TARBALL_DIR="BitcoinII-29.1.0-x86_64-linux-CLI"
             ;;
         dgb)
             COIN_SYMBOL=DGB; COIN_NAME="DigiByte (SHA256d)"; COIN_ALGO=sha256d
@@ -285,6 +277,42 @@ setup_coin() {
             DOWNLOAD_URL="https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v29.0.0/bitcoin-cash-node-29.0.0-${ARCH_SUFFIX}.tar.gz"
             TARBALL_DIR="bitcoin-cash-node-29.0.0"
             ;;
+        bch2)
+            COIN_SYMBOL=BCH2; COIN_NAME="Bitcoin Cash II"; COIN_ALGO=sha256d
+            ADDR_TYPE="legacy"  # BCH2: "legacy" arg → EncodeDestination returns bitcoincashii:q... CashAddr
+            DAEMON_CMD="${BITCOINCASHIID:-bitcoincashiid}"; CLI_CMD="${BITCOINCASHIICLI:-bitcoincashii-cli}"
+            RPC_PORT_DEF=18633; P2P_PORT_DEF=18634; ZMQ_PORT_DEF=29433
+            STRATUM_PORT_DEF=16336; STRATUM_V2_PORT_DEF=17342; API_PORT_DEF=14016; METRICS_PORT_DEF=19116
+            HA_STRATUM=16337; HA_API=14017; HA_METRICS=19117
+            DB_NAME_DEF=spiralstratum_bch2_regtest; WALLET_NAME=regtest-pool-bch2
+            POOL_ID=bch2_sha256_1; DATA_DIR=.bitcoincashii
+            DAEMON_LOG=bitcoincashIId-regtest.log; DAEMON_STARTUP=bitcoincashIId-startup.log
+            PKILL_PATTERN="bitcoincashiid.*regtest"
+            GITHUB_URL="https://github.com/BitcoincashII/bitcoincashII-core"
+            GBT_RULES='[]'  # BCH2 uses BCH consensus — no SegWit
+            # Auto-install info
+            DAEMON_VERSION="27.0.2"
+            DOWNLOAD_URL="https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v27.0.2/bitcoincashII-v27.0.2-linux-x86_64.tar.gz"
+            TARBALL_DIR="bitcoincashII-27.0.2"
+            ;;
+        btcs)
+            COIN_SYMBOL=BTCS; COIN_NAME="Bitcoin Silver"; COIN_ALGO=sha256d
+            ADDR_TYPE="bech32"  # BTCS: returns bs1q... SegWit address
+            DAEMON_CMD="${BITCOINSILVERD:-bitcoinsilverd}"; CLI_CMD="${BITCOINSILVERCLI:-bitcoinsilver-cli}"
+            RPC_PORT_DEF=18767; P2P_PORT_DEF=18766; ZMQ_PORT_DEF=29567
+            STRATUM_PORT_DEF=16346; STRATUM_V2_PORT_DEF=17343; API_PORT_DEF=14018; METRICS_PORT_DEF=19118
+            HA_STRATUM=16347; HA_API=14019; HA_METRICS=19119
+            DB_NAME_DEF=spiralstratum_btcs_regtest; WALLET_NAME=regtest-pool-btcs
+            POOL_ID=btcs_sha256_1; DATA_DIR=.bitcoinsilver
+            DAEMON_LOG=bitcoinsilverd-regtest.log; DAEMON_STARTUP=bitcoinsilverd-startup.log
+            PKILL_PATTERN="bitcoinsilverd.*regtest"
+            GITHUB_URL="https://github.com/bitcoin-silver/core"
+            GBT_RULES='["segwit"]'  # BTCS supports SegWit+Taproot from block 0
+            # Source build — no binary download
+            DAEMON_VERSION="source-ff5c3c3d"
+            DOWNLOAD_URL=""
+            TARBALL_DIR=""
+            ;;
         ltc)
             COIN_SYMBOL=LTC; COIN_NAME="Litecoin"; COIN_ALGO=scrypt
             DAEMON_CMD="${LITECOIND:-litecoind}"; CLI_CMD="${LITECOINCLI:-litecoin-cli}"
@@ -353,15 +381,27 @@ setup_coin() {
             PKILL_PATTERN="fractald.*regtest"
             GITHUB_URL="https://github.com/nickingeniero/fractal-bitcoin"
             GBT_RULES='["segwit"]'
-            # Auto-install info (FBTC has no arm64 binary)
             DAEMON_VERSION="0.2.9"
-            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
-                DOWNLOAD_URL=""
-                TARBALL_DIR=""
-            else
-                DOWNLOAD_URL="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.2.9/fractald-0.2.9-x86_64-linux-gnu.tar.gz"
-                TARBALL_DIR="fractald-0.2.9-x86_64-linux-gnu"
-            fi
+            DOWNLOAD_URL="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.2.9/fractald-0.2.9-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="fractald-0.2.9-x86_64-linux-gnu"
+            ;;
+        xec)
+            COIN_SYMBOL=XEC; COIN_NAME="eCash"; COIN_ALGO=sha256d
+            ADDR_TYPE=""  # XEC: CashAddr (ecash:q...) — no address_type param to getnewaddress
+            DAEMON_CMD="${ECASHD:-ecashd}"; CLI_CMD="${ECASHCLI:-ecash-cli}"
+            RPC_PORT_DEF=18568; P2P_PORT_DEF=18569; ZMQ_PORT_DEF=29360
+            STRATUM_PORT_DEF=16355; STRATUM_V2_PORT_DEF=17348; API_PORT_DEF=14022; METRICS_PORT_DEF=19122
+            HA_STRATUM=16356; HA_API=14023; HA_METRICS=19123
+            DB_NAME_DEF=spiralstratum_xec_regtest; WALLET_NAME=regtest-pool-xec
+            POOL_ID=xec_sha256_1; DATA_DIR=.bitcoin-abc
+            DAEMON_LOG=ecashd-regtest.log; DAEMON_STARTUP=ecashd-startup.log
+            PKILL_PATTERN="ecashd.*regtest"
+            GITHUB_URL="https://github.com/Bitcoin-ABC/bitcoin-abc"
+            GBT_RULES='[]'  # XEC: no SegWit (CashAddr is an address format, not a script type)
+            # Auto-install info
+            DAEMON_VERSION="0.31.12"
+            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.31.12/bitcoin-abc-0.31.12-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="bitcoin-abc-0.31.12"
             ;;
         qbx)
             COIN_SYMBOL=QBX; COIN_NAME="Q-BitX"; COIN_ALGO=sha256d
@@ -374,15 +414,9 @@ setup_coin() {
             DAEMON_LOG=qbitxd-regtest.log; DAEMON_STARTUP=qbitxd-startup.log
             PKILL_PATTERN="qbitx.*regtest"
             GITHUB_URL="https://github.com/q-bitx/Source-"
-            # Auto-install info (QBX has no arm64 binary)
             DAEMON_VERSION="0.1.0"
-            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
-                DOWNLOAD_URL=""
-                TARBALL_DIR=""
-            else
-                DOWNLOAD_URL="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
-                TARBALL_DIR=""
-            fi
+            DOWNLOAD_URL="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
+            TARBALL_DIR=""
             ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt
@@ -439,15 +473,9 @@ setup_coin() {
             PKILL_PATTERN="catcoind.*regtest"
             GITHUB_URL="https://github.com/nickingeniero/catcoin"
             GBT_RULES='["mweb", "segwit"]'  # Catcoin Core is Litecoin-based, daemon requires both rules
-            # Auto-install info (CAT uses ZIP format, different filenames per arch)
             DAEMON_VERSION="2.1.1"
-            if [[ "$SYSTEM_ARCH" == "arm64" ]]; then
-                DOWNLOAD_URL="https://github.com/CatcoinCore/catcoincore/releases/download/v2.1.1/Catcoin-AArch.zip"
-                TARBALL_DIR="Catcoin-AArch"
-            else
-                DOWNLOAD_URL="https://github.com/CatcoinCore/catcoincore/releases/download/v2.1.1/Catcoin-Linux.zip"
-                TARBALL_DIR="Catcoin-Linux"
-            fi
+            DOWNLOAD_URL="https://github.com/CatcoinCore/catcoincore/releases/download/v2.1.1/Catcoin-Linux.zip"
+            TARBALL_DIR="Catcoin-Linux"
             ARCHIVE_TYPE="zip"
             ;;
         *)
@@ -455,6 +483,7 @@ setup_coin() {
             echo ""
             echo "Supported coins:"
             echo "  bc2   - Bitcoin II         btc   - Bitcoin            bch   - Bitcoin Cash"
+            echo "  bch2  - Bitcoin Cash II    btcs  - Bitcoin Silver     xec   - eCash"
             echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
             echo "  sys   - Syscoin            xmy   - Myriad"
             echo "  fbtc  - Fractal Bitcoin    doge  - Dogecoin           pep   - PepeCoin"
@@ -935,6 +964,22 @@ install_daemon() {
         sudo ln -sf "$bch_bin_dir/bitcoind" /usr/local/bin/bitcoind-bch
         sudo ln -sf "$bch_bin_dir/bitcoin-cli" /usr/local/bin/bitcoin-cli-bch
         log_info "  Installed to $bch_bin_dir, symlinked bitcoind-bch/bitcoin-cli-bch"
+    # Bitcoin Cash II: archive ships bitcoincashIId/bitcoincashII-cli (mixed case)
+    # Install to separate dir and create lowercase symlinks (matches install.sh install_bitcoincashii)
+    elif [[ "${DAEMON_CMD##*/}" == "bitcoincashiid" ]]; then
+        local bch2_bin_dir="/usr/local/lib/bitcoincashii"
+        sudo mkdir -p "$bch2_bin_dir"
+        # Try bin/ subdir first, then flat structure
+        if [[ -d "$tarball_dir/bin" ]]; then
+            sudo cp -v "$tarball_dir/bin/bitcoincashIId" "$tarball_dir/bin/bitcoincashII-cli" "$bch2_bin_dir/" 2>/dev/null || \
+            sudo cp -v "$tarball_dir/bin/"* "$bch2_bin_dir/" 2>/dev/null
+        else
+            sudo cp -v "$tarball_dir/bitcoincashIId" "$tarball_dir/bitcoincashII-cli" "$bch2_bin_dir/" 2>/dev/null || true
+        fi
+        sudo ln -sf "$bch2_bin_dir/bitcoincashIId" /usr/local/bin/bitcoincashiid
+        sudo ln -sf "$bch2_bin_dir/bitcoincashII-cli" /usr/local/bin/bitcoincashii-cli
+        installed=1
+        log_info "  Installed to $bch2_bin_dir, symlinked bitcoincashiid/bitcoincashii-cli"
     # Bitcoin II: archive ships bitcoinIId/bitcoinII-cli (mixed case) but we need lowercase
     # Create lowercase symlinks (matches production install.sh lines 10490-10491)
     elif [[ "${DAEMON_CMD##*/}" == "bitcoiniid" ]] && [[ -f "$tarball_dir/bitcoinIId" ]]; then
@@ -1232,7 +1277,9 @@ if [[ "${KEEP_CHAIN:-0}" != "1" ]]; then
         LTC)   COIN_DATA_DIR="$HOME/.litecoin" ;;
         DOGE)  COIN_DATA_DIR="$HOME/.dogecoin" ;;
         DGB|DGB-SCRYPT) COIN_DATA_DIR="$HOME/.digibyte" ;;
-        BCH)   COIN_DATA_DIR="$HOME/.bitcoin" ;;
+        BCH)   COIN_DATA_DIR="$HOME/.bitcoin-bch" ;;
+        BCH2)  COIN_DATA_DIR="$HOME/.bitcoincashii" ;;
+        BTCS)  COIN_DATA_DIR="$HOME/.bitcoinsilver" ;;
         PEP)   COIN_DATA_DIR="$HOME/.pepecoin" ;;
         CAT)   COIN_DATA_DIR="$HOME/.catcoin" ;;
         SYS)   COIN_DATA_DIR="$HOME/.syscoin" ;;
@@ -1241,6 +1288,7 @@ if [[ "${KEEP_CHAIN:-0}" != "1" ]]; then
         FBTC)  COIN_DATA_DIR="$HOME/.fractal" ;;
         QBX)   COIN_DATA_DIR="$HOME/.qbitx" ;;
         BC2)   COIN_DATA_DIR="$HOME/.bitcoinii" ;;
+        XEC)   COIN_DATA_DIR="$HOME/.bitcoin-abc" ;;
         *)     COIN_DATA_DIR="" ;;
     esac
 
@@ -1324,11 +1372,25 @@ if [[ "$COIN" == "fbtc" ]]; then
     mkdir -p "$HOME/.fractal"
     DAEMON_ARGS+=(-datadir="$HOME/.fractal")
 fi
+# eCash: binary is ecashd (symlink to bitcoind, defaults to ~/.bitcoin), must override datadir
+# Without this, XEC would collide with BTC's data directory
+if [[ "$COIN" == "xec" ]]; then
+    mkdir -p "$HOME/.bitcoin-abc"
+    DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
+fi
 
 # Q-BitX: ensure data directory exists
 if [[ "$COIN" == "qbx" ]]; then
     mkdir -p "$HOME/.qbitx"
     DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
+fi
+if [[ "$COIN" == "bch2" ]]; then
+    mkdir -p "$HOME/.bitcoincashii"
+    DAEMON_ARGS+=(-datadir="$HOME/.bitcoincashii")
+fi
+if [[ "$COIN" == "btcs" ]]; then
+    mkdir -p "$HOME/.bitcoinsilver"
+    DAEMON_ARGS+=(-datadir="$HOME/.bitcoinsilver")
 fi
 
 # Add optional flags based on coin type
@@ -1529,6 +1591,12 @@ if [[ "$MERGE_MODE" == "1" ]]; then
             # Fractal Bitcoin: binary is bitcoind, must specify datadir to avoid ~/.bitcoin collision
             mkdir -p "$HOME/.fractal"
             AUX_DAEMON_ARGS+=(-datadir="$HOME/.fractal" -blockfilterindex=1)
+            ;;
+        xec)
+            # eCash: ecashd is a symlink to bitcoind, must specify datadir to avoid ~/.bitcoin collision
+            # XEC has no SegWit so no blockfilterindex needed
+            mkdir -p "$HOME/.bitcoin-abc"
+            AUX_DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
             ;;
         sys)
             # Syscoin: SegWit-compatible, modern wallet
@@ -2835,6 +2903,8 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     [[ "$COIN" == "fbtc" ]] && RESTART_ARGS+=(-datadir="$HOME/.fractal")
     # Q-BitX: specify datadir
     [[ "$COIN" == "qbx" ]] && RESTART_ARGS+=(-datadir="$HOME/.qbitx")
+    # eCash: must specify datadir (ecashd is a symlink to bitcoind, defaults to ~/.bitcoin)
+    [[ "$COIN" == "xec" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoin-abc")
     # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
 
     "$DAEMON_CMD" "${RESTART_ARGS[@]}" &>"$LOG_DIR/$DAEMON_STARTUP" &
@@ -3309,6 +3379,8 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
             [[ "$COIN" == "fbtc" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.fractal")
             # Q-BitX: specify datadir
             [[ "$COIN" == "qbx" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
+            # eCash: must specify datadir (ecashd is a symlink to bitcoind, defaults to ~/.bitcoin)
+            [[ "$COIN" == "xec" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
 
             # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
 

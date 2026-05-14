@@ -11,7 +11,7 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Syscoin Core Node for Spiral Pool"
@@ -38,15 +38,14 @@ RUN useradd -r -m -s /bin/bash syscoin \
     && chown -R syscoin:syscoin /home/syscoin
 
 # Download and install Syscoin Core
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
-# Upstream binaries exist but have not been verified in this Docker environment.
+# NOTE: Only x86_64 (amd64) is supported.
 WORKDIR /tmp
-RUN ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "amd64" ]; then SYS_ARCH="x86_64-linux-gnu"; \
-       elif [ "$ARCH" = "arm64" ]; then SYS_ARCH="aarch64-linux-gnu"; \
-       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
-    && wget -q --max-redirect=5 "https://github.com/syscoin/syscoin/releases/download/v${SYSCOIN_VERSION}/syscoin-${SYSCOIN_VERSION}-${SYS_ARCH}.tar.gz" \
-    && tar -xzf "syscoin-${SYSCOIN_VERSION}-${SYS_ARCH}.tar.gz" \
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && wget -q --max-redirect=5 "https://github.com/syscoin/syscoin/releases/download/v${SYSCOIN_VERSION}/syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && tar -tzf "syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
+    && tar -xzf "syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "syscoin-${SYSCOIN_VERSION}/bin/"* /usr/local/bin/ \
     && rm -rf /tmp/*
 

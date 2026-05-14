@@ -1368,7 +1368,9 @@ class MultiCoinProfileScenarios:
             "DGB": {"pool_id": "dgb_sha256_1", "port": 3333},
             "BTC": {"pool_id": "btc_sha256_1", "port": 4333},
             "BCH": {"pool_id": "bch_sha256_1", "port": 5333},
-            "BC2": {"pool_id": "bc2_sha256_1", "port": 6333}
+            "BCH2": {"pool_id": "bch2_sha256_1", "port": 5336},
+            "BC2": {"pool_id": "bc2_sha256_1", "port": 6333},
+            "BTCS": {"pool_id": "btcs_sha256_1", "port": 11335}
         }
 
     def scenario_single_coin_mode(self):

@@ -72,7 +72,7 @@ func runTor(args []string) error {
 	}
 
 	fs := flag.NewFlagSet("tor", flag.ExitOnError)
-	nodeFlag := fs.String("node", "", "Specific node (btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx, ltc, doge, dgb-scrypt, pep, cat) or 'all'")
+	nodeFlag := fs.String("node", "", "Specific node (btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx, ltc, doge, dgb-scrypt, pep, cat) or 'all'")
 	allFlag := fs.Bool("all", false, "Apply to all nodes")
 
 	if len(args) < 1 {
@@ -108,7 +108,7 @@ func printTorUsage() {
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  --node <coin>  Apply to specific node")
-	fmt.Println("                 SHA-256d: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx")
+	fmt.Println("                 SHA-256d: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx")
 	fmt.Println("                 Scrypt:   ltc, doge, dgb-scrypt, pep, cat")
 	fmt.Println("  --all          Apply to all installed nodes")
 	fmt.Println()
@@ -254,9 +254,11 @@ type nodeInfo struct {
 func getAllNodes() []nodeInfo {
 	return []nodeInfo{
 		// Alphabetically ordered (no coin preference)
+		{"Bitcoin Cash II", "bch2", DefaultBCH2Config, "bitcoincashIId"},
 		{"Bitcoin II", "bc2", DefaultBC2Config, "bitcoiniid"},
 		{"Bitcoin Cash", "bch", DefaultBCHConfig, "bitcoind-bch"},
 		{"Bitcoin Knots", "btc", DefaultBTCConfig, "bitcoind"},
+		{"Bitcoin Silver", "btcs", DefaultBTCSConfig, "bitcoinsilverd"},
 		{"Catcoin", "cat", DefaultCATConfig, "catcoind"},
 		{"DigiByte", "dgb", DefaultDGBConfig, "digibyted"},
 		{"DigiByte-Scrypt", "dgb-scrypt", DefaultDGBScryptConfig, "digibyted-scrypt"},
@@ -268,6 +270,7 @@ func getAllNodes() []nodeInfo {
 		{"PepeCoin", "pep", DefaultPEPConfig, "pepecoind"},
 		{"Q-BitX", "qbx", DefaultQBXConfig, "qbitxd"},
 		{"Syscoin", "sys", DefaultSYSConfig, "syscoind"},
+		{"eCash", "xec", DefaultXECConfig, "ecashd"},
 	}
 }
 

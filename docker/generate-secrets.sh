@@ -67,18 +67,18 @@ while grep -q "CHANGE_THIS_TO_A_STRONG_PASSWORD" "$ENV_FILE"; do
     count=$((count + 1))
 done
 
-if [ "$count" -gt 0 ]; then
-    echo "Generated $count unique password(s) for placeholder entries."
-else
-    echo "No placeholder passwords found (already generated or manually set)."
-fi
-
 # Also handle CHANGE_THIS_TO_A_STRONG_KEY variant (used by ADMIN_API_KEY)
 while grep -q "CHANGE_THIS_TO_A_STRONG_KEY" "$ENV_FILE"; do
     password=$(generate_password)
     sed -i "0,/CHANGE_THIS_TO_A_STRONG_KEY/{s/CHANGE_THIS_TO_A_STRONG_KEY/$password/}" "$ENV_FILE"
     count=$((count + 1))
 done
+
+if [ "$count" -gt 0 ]; then
+    echo "Generated $count unique password(s) for placeholder entries."
+else
+    echo "No placeholder passwords found (already generated or manually set)."
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 2: Add HA infrastructure passwords if not present
@@ -102,6 +102,10 @@ add_if_missing() {
 }
 
 echo ""
+echo "Checking required passwords..."
+add_if_missing "DB_PASSWORD" "PostgreSQL application user password"
+add_if_missing "GRAFANA_ADMIN_PASSWORD" "Grafana admin dashboard password"
+add_if_missing "ADMIN_API_KEY" "Pool admin API key"
 echo "Checking HA infrastructure passwords..."
 add_if_missing "REDIS_PASSWORD" "Redis authentication password (HA mode)"
 add_if_missing "REPLICATION_PASSWORD" "Patroni PostgreSQL replication password (HA mode)"

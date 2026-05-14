@@ -262,7 +262,7 @@ func TestSOLO_ZMQFailure_AllCoins_Stall(t *testing.T) {
 // to the processor; only DB contents matter.
 //
 // Risk vector: ZMQ disabled (pure RPC polling fallback for all block discovery)
-// Coverage: all 14 coins, all algorithms (sha256d, scrypt), all block intervals
+// Coverage: all 17 coins, all algorithms (sha256d, scrypt), all block intervals
 func TestSOLO_ZMQFailure_AllCoins_Disabled(t *testing.T) {
 	t.Parallel()
 
@@ -310,7 +310,7 @@ func TestSOLO_ZMQFailure_AllCoins_Disabled(t *testing.T) {
 // and block interval characteristics matter for polling timing.
 //
 // Risk vector: ZMQ disabled, SHA-256d algorithm coins only
-// Coins: BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC
+// Coins: BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX
 func TestSOLO_ZMQFailure_DisabledSHA256d_AllCoins(t *testing.T) {
 	t.Parallel()
 

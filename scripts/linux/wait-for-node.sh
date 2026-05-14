@@ -212,9 +212,19 @@ get_rpc_creds() {
                 [ -f "$f" ] && { conf_file="$f"; break; }
             done
             ;;
+        BCH2)
+            for f in "$base_dir/bch2/bitcoincashii.conf" "$base_dir/bitcoincashii/bitcoincashii.conf"; do
+                [ -f "$f" ] && { conf_file="$f"; break; }
+            done
+            ;;
         BC2)
             # Bitcoin II - uses bitcoinii.conf (note: lowercase ii)
             for f in "$base_dir/bc2/bitcoinii.conf" "$base_dir/bc2/bitcoin.conf" "$base_dir/bitcoinii/bitcoinii.conf"; do
+                [ -f "$f" ] && { conf_file="$f"; break; }
+            done
+            ;;
+        BTCS)
+            for f in "$base_dir/btcs/bitcoinsilver.conf" "$base_dir/bitcoinsilver/bitcoinsilver.conf"; do
                 [ -f "$f" ] && { conf_file="$f"; break; }
             done
             ;;
@@ -282,6 +292,12 @@ get_rpc_creds() {
         QBX)
             # Q-BitX (Post-Quantum Bitcoin)
             for f in "$base_dir/qbx/qbitx.conf" "$base_dir/qbitx/qbitx.conf"; do
+                [ -f "$f" ] && { conf_file="$f"; break; }
+            done
+            ;;
+        XEC)
+            # eCash (Bitcoin ABC) — uses bitcoin.conf like BTC/BCH
+            for f in "$base_dir/xec/bitcoin.conf" "$base_dir/ecash/bitcoin.conf"; do
                 [ -f "$f" ] && { conf_file="$f"; break; }
             done
             ;;
@@ -481,7 +497,7 @@ ensure_auxchain_wallet_and_address() {
     local current_address
     current_address=$(get_auxchain_field "$config_file" "$symbol" "address")
 
-    if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ]; then
+    if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ] && [ "$current_address" != "PENDING" ]; then
         echo "    ✓ Aux chain $symbol address configured: $current_address"
         return 0
     fi
@@ -493,7 +509,7 @@ ensure_auxchain_wallet_and_address() {
         if spiralpool-wallet --coin "${symbol,,}" --auto 2>/dev/null; then
             # Re-check if address was written to config
             current_address=$(get_auxchain_field "$config_file" "$symbol" "address")
-            if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ]; then
+            if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ] && [ "$current_address" != "PENDING" ]; then
                 echo "    ✓ Aux chain $symbol address set via spiralpool-wallet: $current_address"
                 return 0
             fi
@@ -582,7 +598,7 @@ ensure_auxchain_wallet_and_address() {
             ;;
     esac
 
-    if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9]{20,90}$ ]]; then
+    if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9:]{20,100}$ ]]; then
         echo "    ✓ Generated aux chain address: $new_address"
 
         if update_auxchain_field "$config_file" "$symbol" "address" "$new_address"; then
@@ -616,7 +632,7 @@ extract_v2_nodes() {
 BEGIN { in_coins=0; in_coin=0; in_daemon=0; in_stratum=0; in_nodes=0; in_node_entry=0; symbol=""; enabled=0; port="" }
 
 /^coins:/ { in_coins=1; next }
-/^[a-z]+:/ && !/^coins:/ && !/^-/ { in_coins=0; in_coin=0 }
+/^[a-z_]+:/ && !/^coins:/ && !/^-/ { in_coins=0; in_coin=0 }
 !in_coins { next }
 
 /^[[:space:]]*-[[:space:]]+symbol:/ {
@@ -630,7 +646,7 @@ in_coin && /^[[:space:]]+enabled:[[:space:]]*true/ { enabled=1 }
 in_coin && /^[[:space:]]+daemon:/ { in_daemon=1; in_stratum=0; in_nodes=0; next }
 in_coin && /^[[:space:]]+nodes:/ { in_nodes=1; in_daemon=0; in_stratum=0; next }
 in_coin && /^[[:space:]]+stratum:/ { in_stratum=1; in_daemon=0; in_nodes=0; next }
-in_daemon && /^[[:space:]]+port:/ { port=$NF; gsub(/["']/, "", port) }
+in_daemon && /^[[:space:]]+port:/ { if (port == "") { port=$NF; gsub(/["']/, "", port) } }
 in_nodes && /^[[:space:]]+-[[:space:]]/ { in_node_entry=1; next }
 in_nodes && in_node_entry && /^[[:space:]]+port:/ { if (port == "") { port=$NF; gsub(/["']/, "", port) } }
 in_nodes && /^[[:space:]]+[a-z_]+:/ && !/^[[:space:]]+port:/ && !/^[[:space:]]+host:/ && !/^[[:space:]]+id:/ && !/^[[:space:]]+user:/ && !/^[[:space:]]+password:/ && !/^[[:space:]]+weight:/ && !/^[[:space:]]+zmq:/ && !/^[[:space:]]+-/ { in_nodes=0; in_node_entry=0 }
@@ -725,8 +741,14 @@ get_cli_path() {
         BCH)
             echo "$base_dir/bch/bin/bitcoin-cli"
             ;;
+        BCH2)
+            echo "$base_dir/bch2/bin/bitcoincashII-cli"
+            ;;
         BC2)
             echo "$base_dir/bc2/bin/bitcoinII-cli"
+            ;;
+        BTCS)
+            echo "$base_dir/btcs/bin/bitcoinsilver-cli"
             ;;
         # Coins with separate binary directories (*-bin)
         LTC)
@@ -758,6 +780,10 @@ get_cli_path() {
         QBX)
             echo "$base_dir/qbx-bin/qbitx-cli"
             ;;
+        XEC)
+            # eCash ships bitcoin-cli; ecash-cli symlink lives in /usr/local/bin only
+            echo "$base_dir/xec-bin/bin/bitcoin-cli"
+            ;;
     esac
 }
 
@@ -768,7 +794,9 @@ get_wallet_dir() {
 
     case "$symbol" in
         DGB|DGB-SCRYPT) echo "$base_dir/dgb/wallets" ;;
+        BCH2) echo "$base_dir/bch2/wallets" ;;
         BC2) echo "$base_dir/bc2/wallets" ;;
+        BTCS) echo "$base_dir/btcs/wallets" ;;
         BTC) echo "$base_dir/btc/wallets" ;;
         BCH) echo "$base_dir/bch/wallets" ;;
         LTC) echo "$base_dir/ltc/wallets" ;;
@@ -780,6 +808,7 @@ get_wallet_dir() {
         XMY) echo "$base_dir/xmy/wallets" ;;
         FBTC) echo "$base_dir/fbtc/wallets" ;;
         QBX) echo "$base_dir/qbx/wallets" ;;
+        XEC) echo "$base_dir/xec/wallets" ;;
         *) echo "$base_dir/${symbol,,}/wallets" ;;
     esac
 }
@@ -793,8 +822,14 @@ get_conf_path() {
         DGB|DGB-SCRYPT)
             echo "$base_dir/dgb/digibyte.conf"
             ;;
+        BCH2)
+            echo "$base_dir/bch2/bitcoincashii.conf"
+            ;;
         BC2)
             echo "$base_dir/bc2/bitcoinii.conf"
+            ;;
+        BTCS)
+            echo "$base_dir/btcs/bitcoinsilver.conf"
             ;;
         BTC)
             echo "$base_dir/btc/bitcoin.conf"
@@ -830,6 +865,9 @@ get_conf_path() {
         QBX)
             echo "$base_dir/qbx/qbitx.conf"
             ;;
+        XEC)
+            echo "$base_dir/xec/bitcoin.conf"
+            ;;
     esac
 }
 
@@ -850,7 +888,7 @@ ensure_wallet_and_address() {
     fi
 
     # If address is configured and valid, we're done - no wallet needed
-    if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ]; then
+    if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ] && [ "$current_address" != "PENDING" ]; then
         echo "  ✓ Pool address configured: $current_address"
         return 0
     fi
@@ -866,7 +904,7 @@ ensure_wallet_and_address() {
             else
                 current_address=$(grep -E '^\s*address:' "$config_file" 2>/dev/null | head -1 | sed 's/.*address:\s*["'\'']\?\([^"'\'']*\)["'\'']\?.*/\1/' | tr -d ' ')
             fi
-            if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ]; then
+            if [ -n "$current_address" ] && [ "$current_address" != '""' ] && [ "$current_address" != "PENDING_GENERATION" ] && [ "$current_address" != "PENDING" ]; then
                 echo "  ✓ Address set via spiralpool-wallet: $current_address"
                 return 0
             fi
@@ -963,7 +1001,7 @@ ensure_wallet_and_address() {
     if [ "$mode" = "v2" ] && [ "$symbol" = "DGB-SCRYPT" ]; then
         local dgb_address
         dgb_address=$(get_coin_field "$config_file" "DGB" "address")
-        if [ -n "$dgb_address" ] && [ "$dgb_address" != "PENDING_GENERATION" ] && [ "$dgb_address" != '""' ]; then
+        if [ -n "$dgb_address" ] && [ "$dgb_address" != "PENDING_GENERATION" ] && [ "$dgb_address" != "PENDING" ] && [ "$dgb_address" != '""' ]; then
             echo "  → DGB-SCRYPT uses same blockchain as DGB, reusing DGB address"
             if update_coin_field "$config_file" "DGB-SCRYPT" "address" "$dgb_address"; then
                 echo "  ✓ Updated config with DGB address for DGB-SCRYPT: $dgb_address"
@@ -987,30 +1025,35 @@ ensure_wallet_and_address() {
     local use_addr_type=true
 
     case "$symbol" in
-        BTC|LTC|DGB|DGB-SCRYPT|NMC|SYS)
-            # Modern Bitcoin-derived daemons with SegWit support
-            # NMC: Namecoin supports SegWit (nc1q... addresses)
-            # SYS: Syscoin supports SegWit (sys1q... addresses)
+        BTC|LTC)
             addr_type="bech32"
             ;;
+        DGB|DGB-SCRYPT)
+            # DGB uses legacy addresses (D... or S...) not bech32
+            addr_type="legacy"
+            ;;
+        BC2|BTCS|FBTC)
+            # These support bech32
+            addr_type="bech32"
+            ;;
+        NMC|SYS)
+            # NMC and SYS use legacy addresses
+            addr_type="legacy"
+            ;;
         QBX)
-            # Q-BitX: post-quantum "pq" address type per qbitx.org docs
-            # Try pq first; daemon falls back to legacy if not yet supported
             addr_type="pq"
             use_addr_type=true
             ;;
-        BCH|DOGE|BC2|PEP|CAT|XMY|FBTC)
-            # These daemons do NOT support standard address_type parameter:
-            # - BCH: No SegWit (rejected it)
-            # - DOGE: No SegWit implemented
-            # - BC2: Older Bitcoin fork
-            # - PEP/CAT: Legacy Scrypt coins without SegWit
-            # - XMY: Myriad uses legacy addresses (M...)
-            # - FBTC: Fractal Bitcoin - use legacy for compatibility
+        BCH2)
+            # BCH2 uses legacy arg to get bitcoincashii:q... CashAddr
+            addr_type="legacy"
+            ;;
+        BCH|DOGE|PEP|CAT|XMY|XEC)
+            # No address_type parameter: BCH (CashAddr), DOGE/PEP/CAT (legacy),
+            # XMY (legacy M...), XEC (CashAddr, rejects addr_type param)
             use_addr_type=false
             ;;
         *)
-            # Unknown coin - try without address type for safety
             use_addr_type=false
             ;;
     esac
@@ -1022,7 +1065,7 @@ ensure_wallet_and_address() {
         new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
     fi
 
-    if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9]{20,90}$ ]]; then
+    if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9:]{20,100}$ ]]; then
         echo "  ✓ Generated address: $new_address"
 
         # Update the config file based on mode
@@ -1272,7 +1315,9 @@ elif [ -n "$V1_INFO" ]; then
         digibyte-scrypt|dgb-scrypt) COIN_SYMBOL="DGB-SCRYPT" ;;
         bitcoin|btc) COIN_SYMBOL="BTC" ;;
         bitcoincash|bitcoin-cash|bch) COIN_SYMBOL="BCH" ;;
+        bitcoincashii|bitcoin-cash-ii|bch2) COIN_SYMBOL="BCH2" ;;
         bitcoinii|bitcoin-ii|bitcoin2|bc2) COIN_SYMBOL="BC2" ;;
+        bitcoinsilver|bitcoin-silver|btcs) COIN_SYMBOL="BTCS" ;;
         litecoin|ltc) COIN_SYMBOL="LTC" ;;
         dogecoin|doge) COIN_SYMBOL="DOGE" ;;
         pepecoin|pep) COIN_SYMBOL="PEP" ;;
@@ -1282,6 +1327,7 @@ elif [ -n "$V1_INFO" ]; then
         myriadcoin|myriad|xmy) COIN_SYMBOL="XMY" ;;
         fractalbitcoin|fractal|fbtc) COIN_SYMBOL="FBTC" ;;
         qbitx|q-bitx|qbx) COIN_SYMBOL="QBX" ;;
+        ecash|bitcoin-abc|xec) COIN_SYMBOL="XEC" ;;
         *) COIN_SYMBOL="${COIN_RAW^^}" ;;
     esac
     echo "Coin: $COIN_SYMBOL"

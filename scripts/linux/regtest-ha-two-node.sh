@@ -33,7 +33,7 @@
 #  10. Reverse failover succeeds           → both nodes are interchangeable
 #
 # VM SETUP INSTRUCTIONS (8GB VMs are sufficient):
-#   1. Create two Ubuntu 24.04 VMs (VM1 and VM2) on the same network
+#   1. Create two Ubuntu 24.04 or 26.04 VMs (VM1 and VM2) on the same network
 #   2. Assign static IPs or note DHCP addresses
 #   3. On BOTH VMs, install Spiral Pool:
 #        sudo ./install.sh

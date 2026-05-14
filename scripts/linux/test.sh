@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
 #
-# Spiral Pool v2.4.2 - Complete Test Suite
+# Spiral Pool v2.5.0 - Complete Test Suite
 # Tests environment, installs dependencies, runs all tests, then optionally installs
 #
 # Usage: chmod +x test.sh && ./test.sh
@@ -16,8 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 STRATUM_DIR="$ROOT_DIR/src/stratum"
 
-# Detect system architecture for Go downloads (dpkg returns "amd64" or "arm64")
-SYSTEM_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+SYSTEM_ARCH="amd64"
 
 # Colors
 RED='\033[0;31m'
@@ -73,8 +72,8 @@ cat << 'EOF'
    ___) | |_) | | | | (_| | | |  __/ (_) | (_) | |
   |____/| .__/|_|_|  \__,_|_| |_|   \___/ \___/|_|
         |_|
-              v2.4.2 Complete Test Suite
-              SHA256d: DGB | BTC | BCH | BC2 | QBX
+              v2.5.0 Complete Test Suite
+              SHA256d: DGB | BTC | BCH | BCH2 | BC2 | BTCS | QBX | XEC
               Scrypt:  LTC | DOGE | DGB-SCRYPT | PEP | CAT
 EOF
 echo -e "${NC}"
@@ -435,7 +434,7 @@ echo ""
 
 if [ "$FAILED" -eq 0 ]; then
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  ALL TESTS PASSED! Spiral Pool v2.4.2 is ready.${NC}"
+    echo -e "${GREEN}  ALL TESTS PASSED! Spiral Pool v2.5.0 is ready.${NC}"
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${WHITE}Features Verified:${NC}"

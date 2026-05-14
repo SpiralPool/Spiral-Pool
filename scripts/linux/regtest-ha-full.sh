@@ -361,7 +361,7 @@ setup_environment() {
             POOL_COIN_NAME="qbitx"
             DAEMON_HOST="qbitx"
             DAEMON_RPC_PORT=8344
-            DAEMON_ZMQ_PORT=28344
+            DAEMON_ZMQ_PORT=0  # QBX binary compiled without ZMQ support
             STRATUM_PORT=20335
             STRATUM_PORT_V2=20336
             POOL_ID="pool_qbx_sha256"

@@ -10,11 +10,11 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Catcoin Core Node for Spiral Pool"
-LABEL version="2.4.2"
+LABEL version="2.1.1"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -40,17 +40,16 @@ RUN useradd -r -m -s /bin/bash catcoin \
     && mkdir -p /home/catcoin/.catcoin \
     && chown -R catcoin:catcoin /home/catcoin
 
-# Download and install Catcoin Core (uses ZIP format, different filenames per arch)
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
-# Upstream binaries exist but have not been verified in this Docker environment.
+# Download and install Catcoin Core (uses ZIP format)
+# NOTE: Only x86_64 (amd64) is supported.
 WORKDIR /tmp
-RUN ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "amd64" ]; then CAT_FILE="Catcoin-Linux"; \
-       elif [ "$ARCH" = "arm64" ]; then CAT_FILE="Catcoin-AArch"; \
-       else echo "Unsupported architecture: $ARCH" && exit 1; fi \
-    && wget -q --max-redirect=5 "https://github.com/CatcoinCore/catcoincore/releases/download/v${CATCOIN_VERSION}/${CAT_FILE}.zip" \
-    && unzip -q "${CAT_FILE}.zip" \
-    && cp "${CAT_FILE}/bin/"* /usr/local/bin/ \
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && wget -q --max-redirect=5 "https://github.com/CatcoinCore/catcoincore/releases/download/v${CATCOIN_VERSION}/Catcoin-Linux.zip" \
+    && unzip -t "Catcoin-Linux.zip" > /dev/null \
+    && unzip -q "Catcoin-Linux.zip" \
+    && cp "Catcoin-Linux/bin/"* /usr/local/bin/ \
     && rm -rf /tmp/*
 
 # Create entrypoint script

@@ -1472,12 +1472,15 @@ class MultiCoinExtendedScenarios:
         self.coins = {
             "BTC": {"algorithm": "sha256d", "port": 4333},
             "BCH": {"algorithm": "sha256d", "port": 5333},
+            "BCH2": {"algorithm": "sha256d", "port": 5336},
             "DGB": {"algorithm": "sha256d", "port": 3333},
             "BC2": {"algorithm": "sha256d", "port": 6333},
+            "BTCS": {"algorithm": "sha256d", "port": 11335},
             "NMC": {"algorithm": "sha256d", "port": 10333},
             "SYS": {"algorithm": "sha256d", "port": 11333},
             "XMY": {"algorithm": "sha256d", "port": 12333},
             "FBTC": {"algorithm": "sha256d", "port": 13333},
+            "XEC": {"algorithm": "sha256d", "port": 18338},
             "QBX": {"algorithm": "sha256d", "port": 20335},
             "LTC": {"algorithm": "scrypt", "port": 7333},
             "DOGE": {"algorithm": "scrypt", "port": 8335},
@@ -1486,12 +1489,12 @@ class MultiCoinExtendedScenarios:
             "CAT": {"algorithm": "scrypt", "port": 16333},
         }
 
-    def scenario_all_14_coins_supported(self) -> Dict:
-        """All 14 supported coins configurable."""
+    def scenario_all_17_coins_supported(self) -> Dict:
+        """All 17 supported coins configurable."""
         return {
             "supported_coins": list(self.coins.keys()),
             "count": len(self.coins),
-            "pass": len(self.coins) >= 14
+            "pass": len(self.coins) >= 16
         }
 
     def scenario_coin_port_assignment(self) -> Dict:
@@ -1546,6 +1549,16 @@ class MultiCoinExtendedScenarios:
                 "legacy": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
                 "valid_prefixes": ["1", "3", "bitcoincash:", "q", "p"]
             },
+            "BCH2": {
+                "cashaddr": "bitcoincashii:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a",  # short CashAddr form valid for BCH2
+                "legacy": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+                "valid_prefixes": ["1", "3", "bitcoincashii:", "q", "p"]
+            },
+            "BTCS": {
+                "p2sh": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",  # P2SH (same version byte as BTC)
+                "bech32": "bs1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",  # bs1q (HRP "bs" + same payload)
+                "valid_prefixes": ["B", "3", "bs1q", "bs1p"]
+            },
             "LTC": {
                 "p2pkh": "LaMT348PWRnrqeeWArpwQPbuanpXDZGEUz",  # L prefix
                 "p2sh": "MJRSgZ3UUFcTBTBAaN38XAXvZLwQNtauE2",  # M prefix
@@ -1578,6 +1591,9 @@ class MultiCoinExtendedScenarios:
             "DGB": 280.0,      # DigiByte current block reward
             "BTC": 3.125,      # Bitcoin post-halving 2024
             "BCH": 3.125,      # Bitcoin Cash (similar to BTC)
+            "BCH2": 50.0,      # Bitcoin Cash II (young chain, Dec 2024)
+            "BC2": 50.0,       # Bitcoin II (young chain)
+            "BTCS": 50.0,      # Bitcoin Silver (young chain, Jul 2024)
             "LTC": 6.25,       # Litecoin
             "DOGE": 10000.0,   # Dogecoin fixed reward
         }
@@ -1600,7 +1616,7 @@ class MultiCoinExtendedScenarios:
 
     def scenario_scrypt_vs_sha256_separation(self) -> Dict:
         """Verify Scrypt and SHA256 coins use different validation."""
-        sha256_coins = ["DGB", "BTC", "BCH", "BC2"]  # SHA256d algorithm
+        sha256_coins = ["DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS"]  # SHA256d algorithm
         scrypt_coins = ["LTC", "DOGE", "XVG", "PEP", "JKC", "CAT", "LKY"]  # Scrypt algorithm
 
         # Verify no crossover - a share from SHA256 coin shouldn't validate on Scrypt

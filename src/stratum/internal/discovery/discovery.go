@@ -67,7 +67,9 @@ var DefaultStratumPorts = []int{
 	3336,       // DGB-SCRYPT
 	4333,       // BTC
 	5333,       // BCH
+	5336,       // BCH2 (Bitcoin Cash II)
 	6333,       // BC2 (Bitcoin II)
+	11335,      // BTCS (Bitcoin Silver)
 	7333,       // LTC
 	8335,       // DOGE
 	10335,      // PEP (PepeCoin)

@@ -40,7 +40,7 @@ func (db *PostgresDB) WriteBatchForPool(ctx context.Context, poolID string, shar
 		ctx,
 		pgx.Identifier{tableName},
 		[]string{
-			"poolid", "blockheight", "difficulty", "networkdifficulty",
+			"poolid", "blockheight", "difficulty", "actual_difficulty", "networkdifficulty",
 			"miner", "worker", "useragent", "ipaddress", "source", "created",
 		},
 		pgx.CopyFromSlice(len(shares), func(i int) ([]interface{}, error) {
@@ -49,6 +49,7 @@ func (db *PostgresDB) WriteBatchForPool(ctx context.Context, poolID string, shar
 				poolID,
 				s.BlockHeight,
 				s.Difficulty,
+				s.ActualDifficulty,
 				s.NetworkDiff,
 				s.MinerAddress,
 				s.WorkerName,

@@ -79,8 +79,8 @@ bootstrap:
   post_bootstrap: /usr/local/bin/patroni-post-bootstrap.sh
 
   pg_hba:
-    - host replication replicator 0.0.0.0/0 scram-sha-256
-    - host all all 0.0.0.0/0 scram-sha-256
+    - host replication replicator 172.16.0.0/12 scram-sha-256
+    - host all all 172.16.0.0/12 scram-sha-256
 
 postgresql:
   listen: 0.0.0.0:5432

@@ -26,7 +26,7 @@ What actually happened.
 
 ## 📊 Environment
 
-- **OS:** Ubuntu 24.04 LTS
+- **OS:** Ubuntu 24.04 LTS / 26.04 LTS
 - **Architecture:** x86_64 (amd64)
 - **Spiral Pool Version:** (e.g., 2.0.1)
 - **Coin(s) Affected:** (e.g., BTC, LTC, DGB)
@@ -34,7 +34,7 @@ What actually happened.
 - **Hardware:** Bare Metal / Self-Hosted VM (specify hypervisor)
 - **HA Enabled:** Yes / No
 
-> **Note:** Cloud/VPS deployments (AWS, Azure, GCP, DigitalOcean, Hetzner, etc.) and ARM/Raspberry Pi are NOT supported. Issues from unsupported environments may be closed without investigation.
+> **Note:** Cloud/VPS deployments (AWS, Azure, GCP, DigitalOcean, Hetzner, etc.) are NOT supported. Issues from unsupported environments may be closed without investigation.
 
 ## 📎 Logs / Screenshots
 

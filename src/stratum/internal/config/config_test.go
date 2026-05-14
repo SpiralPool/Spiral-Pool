@@ -1022,12 +1022,18 @@ func TestGetBlockTimeForCoin(t *testing.T) {
 		{"SYS", 150, true},          // Syscoin - 2.5 minute blocks
 		{"SYSCOIN", 150, true},
 
+		// Medium-slow coins (300 seconds)
+		{"BTCS", 300, true},         // Bitcoin Silver - 5 minute blocks
+		{"BITCOINSILVER", 300, true},
+
 		// Slow coins (600 seconds) - relaxed ZMQ timing
 		{"BTC", 600, true},          // Bitcoin - 10 minute blocks
 		{"BITCOIN", 600, true},
 		{"BCH", 600, true},          // Bitcoin Cash - 10 minute blocks
 		{"BITCOINCASH", 600, true},
 		{"BITCOIN-CASH", 600, true},
+		{"BCH2", 600, true},         // Bitcoin Cash II - 10 minute blocks (BCH fork)
+		{"BITCOINCASHII", 600, true},
 		{"BC2", 600, true},          // Bitcoin II - 10 minute blocks
 		{"BCII", 600, true},
 		{"BITCOINII", 600, true},

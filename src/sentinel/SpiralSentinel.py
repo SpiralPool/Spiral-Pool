@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.4.2 - PHI HASH REACTOR EDITION                                 ║
-║  Autonomous SHA-256 Solo Mining Monitor (DGB/BTC/BCH/BC2)                   ║
+║  Spiral Sentinel v2.5.0 - PHI HASH REACTOR EDITION                            ║
+║  Autonomous Solo Mining Monitor (17 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
 ║  FEATURES:                                                                  ║
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.4.2-PHI_HASH_REACTOR"
+__version__ = "2.5.0"
 __codename__ = "PHI_HASH_REACTOR"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -540,7 +540,7 @@ def check_pool_health():
 # Global sync state - prevents notification spam during initial sync
 _blockchain_synced = False
 _last_sync_check = 0
-_SYNC_CHECK_INTERVAL = 60  # Check sync status every 60 seconds
+_SYNC_CHECK_INTERVAL = 30  # Check sync status every 30s — 60s could hold stale "not synced" state
 
 def is_blockchain_ready():
     """Check if blockchain is synced (with caching to reduce RPC calls)"""
@@ -637,6 +637,87 @@ def _atomic_json_save(filepath, data, indent=None):
             pass
         logger.error(f"Atomic JSON save failed for {filepath}: {e}")
         # Don't re-raise — file save failure should not crash the monitor
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BLOCK ALERT RETRY QUEUE
+# When all notification channels fail for a block-found alert (e.g. Discord
+# rate-limit, transient network outage), the embed is persisted to disk and
+# retried on the next monitoring cycle instead of being silently dropped.
+# ─────────────────────────────────────────────────────────────────────────────
+BLOCK_ALERT_RETRY_FILE = DATA_DIR / "pending_block_alerts.json"
+
+
+def queue_block_alert_for_retry(embed: dict) -> None:
+    """Persist a failed block-found alert so it is retried next cycle."""
+    try:
+        existing = []
+        if BLOCK_ALERT_RETRY_FILE.exists():
+            try:
+                with open(BLOCK_ALERT_RETRY_FILE) as _f:
+                    existing = json.load(_f)
+            except (json.JSONDecodeError, IOError):
+                existing = []
+        existing.append({"embed": embed, "queued_at": time.time()})
+        _atomic_json_save(BLOCK_ALERT_RETRY_FILE, existing)
+        logger.warning(
+            f"Block alert queued for retry ({len(existing)} pending) — "
+            f"all channels failed at time of block find"
+        )
+    except Exception as _e:
+        logger.error(f"Failed to queue block alert for retry: {_e}")
+
+
+def retry_pending_block_alerts() -> int:
+    """
+    Retry block alerts that previously failed to send.
+    Called once per monitoring cycle near the top of the loop.
+    Returns number of alerts successfully sent.
+    """
+    if not BLOCK_ALERT_RETRY_FILE.exists():
+        return 0
+    try:
+        with open(BLOCK_ALERT_RETRY_FILE) as _f:
+            pending = json.load(_f)
+    except (json.JSONDecodeError, IOError):
+        BLOCK_ALERT_RETRY_FILE.unlink(missing_ok=True)
+        return 0
+
+    if not pending:
+        BLOCK_ALERT_RETRY_FILE.unlink(missing_ok=True)
+        return 0
+
+    still_pending = []
+    sent_count = 0
+    _now = time.time()
+
+    for item in pending:
+        age = _now - item.get("queued_at", 0)
+        if age > 86400:          # Drop alerts older than 24 hours
+            logger.warning(
+                f"Dropping expired block alert from retry queue "
+                f"(age {age/3600:.1f}h > 24h)"
+            )
+            continue
+        if send_notifications(item["embed"]):
+            logger.info(
+                f"Retried block alert sent successfully "
+                f"(was queued {age/60:.1f}m ago)"
+            )
+            sent_count += 1
+        else:
+            still_pending.append(item)
+
+    if still_pending:
+        _atomic_json_save(BLOCK_ALERT_RETRY_FILE, still_pending)
+        logger.warning(
+            f"Block alert retry: {len(still_pending)} still pending "
+            f"(will retry next cycle)"
+        )
+    else:
+        BLOCK_ALERT_RETRY_FILE.unlink(missing_ok=True)
+
+    return sent_count
+
 
 def set_maintenance_mode(minutes, reason="Scheduled maintenance"):
     """Enable maintenance mode for specified minutes."""
@@ -1140,6 +1221,20 @@ DEFAULT_CONFIG = {
             "rpc_port": 8432,
             "zmq_port": 28432,
         },
+        # Bitcoin Cash II (disabled by default)
+        # BCH consensus rules, CashAddr addresses (bitcoincashii:q...), SHA-256d
+        # WARNING: Legacy address bytes are identical to BCH/BTC - verify network before use
+        {
+            "symbol": "BCH2",
+            "name": "Bitcoin Cash II",
+            "enabled": False,
+            "pool_id": "bch2_sha256_1",
+            "wallet_address": os.environ.get("BCH2_WALLET_ADDRESS", "YOUR_BCH2_ADDRESS"),
+            "stratum_port": 5336,
+            "stratum_v2_port": 5337,
+            "rpc_port": 8533,
+            "zmq_port": 28533,
+        },
         # Bitcoin II (disabled by default - user enables during install)
         # WARNING: BC2 uses identical address formats to Bitcoin (bc1q, 1, 3)
         # Ensure your wallet address is from Bitcoin II Core, NOT Bitcoin Core!
@@ -1153,6 +1248,34 @@ DEFAULT_CONFIG = {
             "stratum_v2_port": 6334,
             "rpc_port": 8339,
             "zmq_port": 28338,
+        },
+        # Bitcoin Silver (disabled by default)
+        # BTC-style consensus, SHA-256d, 5-min blocks, SegWit+Taproot from block 0
+        # Addresses: B prefix P2PKH, 3 P2SH, bs1q SegWit, bs1p Taproot
+        {
+            "symbol": "BTCS",
+            "name": "Bitcoin Silver",
+            "enabled": False,
+            "pool_id": "btcs_sha256_1",
+            "wallet_address": os.environ.get("BTCS_WALLET_ADDRESS", "YOUR_BTCS_ADDRESS"),
+            "stratum_port": 11335,
+            "stratum_v2_port": 11336,
+            "rpc_port": 10567,
+            "zmq_port": 28567,
+        },
+        # eCash (disabled by default)
+        # Bitcoin ABC fork (SHA-256d), CashAddr addresses (ecash:q... P2PKH, ecash:p... P2SH)
+        # RTT (Real Time Target) difficulty + mandatory MinerFund/StakingRewards coinbase outputs
+        {
+            "symbol": "XEC",
+            "name": "eCash",
+            "enabled": False,
+            "pool_id": "xec_sha256_1",
+            "wallet_address": os.environ.get("XEC_WALLET_ADDRESS", "YOUR_XEC_ADDRESS"),
+            "stratum_port": 18338,
+            "stratum_v2_port": 18339,
+            "rpc_port": 9004,
+            "zmq_port": 28335,
         },
         # Namecoin (disabled by default - merge-mineable with Bitcoin)
         # First coin to implement AuxPoW (merged mining) - mine NMC while mining BTC
@@ -1526,31 +1649,43 @@ def load_config():
             else:
                 logger.info(f"Config override from env: {config_key}={env_value[:20]}..." if len(str(env_value)) > 20 else f"Config override from env: {config_key}={env_value}")
 
-    # Fallback: Auto-discover admin API key from pool's config.yaml if not set
-    # This mirrors dashboard.py:get_stratum_admin_api_key() fallback logic
-    if not config.get("pool_admin_api_key"):
+    # Fallback: Auto-discover admin API key and metrics token from pool's config.yaml if not set.
+    # This mirrors dashboard.py:get_stratum_admin_api_key() fallback logic.
+    # Both secrets live in config.yaml and are authoritative there — the sentinel reads them
+    # once at startup so operators only need to configure them in one place.
+    _need_api_key = not config.get("pool_admin_api_key")
+    _need_metrics_token = not config.get("metrics_token")
+    if _need_api_key or _need_metrics_token:
         stratum_config_path = INSTALL_DIR / "config" / "config.yaml"
         if stratum_config_path.exists():
             try:
                 with open(stratum_config_path) as f:
                     for line in f:
                         line = line.strip()
-                        # V1 format: adminApiKey: "value" or adminApiKey: value
-                        if line.startswith("adminApiKey:"):
+                        # Admin API key — V1 camelCase or V2 snake_case
+                        if _need_api_key and line.startswith("adminApiKey:"):
                             key = line.split(":", 1)[1].strip().strip('"').strip("'")
                             if key and len(key) >= 32:
                                 config["pool_admin_api_key"] = key
                                 logger.info("Auto-discovered pool_admin_api_key from stratum config.yaml")
-                                break
-                        # V2 format: admin_api_key: "value"
-                        elif line.startswith("admin_api_key:"):
+                                _need_api_key = False
+                        elif _need_api_key and line.startswith("admin_api_key:"):
                             key = line.split(":", 1)[1].strip().strip('"').strip("'")
                             if key and len(key) >= 32:
                                 config["pool_admin_api_key"] = key
                                 logger.info("Auto-discovered pool_admin_api_key from stratum config.yaml")
-                                break
+                                _need_api_key = False
+                        # Prometheus metrics bearer token
+                        elif _need_metrics_token and line.startswith("metrics_auth_token:"):
+                            tok = line.split(":", 1)[1].strip().strip('"').strip("'")
+                            if tok and len(tok) >= 16:
+                                config["metrics_token"] = tok
+                                logger.info("Auto-discovered metrics_token from stratum config.yaml")
+                                _need_metrics_token = False
+                        if not _need_api_key and not _need_metrics_token:
+                            break
             except (IOError, OSError) as e:
-                logger.debug(f"Could not read stratum config for API key: {e}")
+                logger.debug(f"Could not read stratum config for API key / metrics token: {e}")
 
     # Fallback: Try to read Discord webhook from update-settings.conf if not set
     # This provides better UX - users configure webhook in one place
@@ -1575,6 +1710,65 @@ def load_config():
                     logger.debug(f"Could not read {settings_path}: {e}")
                 if config.get("discord_webhook_url"):
                     break
+
+    # Fallback: Auto-sync wallet addresses from stratum config.yaml when placeholders remain.
+    # The stratum refuses to start with PENDING_GENERATION/YOUR_* addresses (config.go:864),
+    # so config.yaml is always authoritative. This heals sentinel configs that were regenerated
+    # during upgrades or wallet changes without carrying forward the real addresses.
+    def _is_wallet_placeholder(addr):
+        if not addr:
+            return True
+        au = addr.upper()
+        return (au.startswith("YOUR") or au.startswith("PENDING") or
+                au in {"PENDING_GENERATION", "CHANGE_ME", "PLACEHOLDER", ""})
+
+    _stratum_cfg = INSTALL_DIR / "config" / "config.yaml"
+    _synced_any = False
+    if _stratum_cfg.exists():
+        try:
+            # Build symbol → address map from config.yaml coin blocks
+            _yaml_addresses = {}
+            _cur_symbol = None
+            with open(_stratum_cfg) as f:
+                for _line in f:
+                    _s = _line.strip()
+                    if _s.startswith("symbol:"):
+                        _cur_symbol = _s.split(":", 1)[1].strip().strip('"').strip("'").upper()
+                    elif _s.startswith("address:") and _cur_symbol:
+                        _addr = _s.split(":", 1)[1].strip().strip('"').strip("'")
+                        if _addr and not _is_wallet_placeholder(_addr):
+                            _yaml_addresses[_cur_symbol] = _addr
+                        _cur_symbol = None
+
+            # Sync top-level wallet_address (single-coin / auto-detect mode)
+            if _is_wallet_placeholder(config.get("wallet_address", "")) and _yaml_addresses:
+                # On a single-coin server there will be exactly one address; on multi-coin
+                # servers the per-coin sync below is what matters, but syncing the first
+                # real address here is still safe and useful for auto-detect mode.
+                _first_sym, _first_addr = next(iter(_yaml_addresses.items()))
+                config["wallet_address"] = _first_addr
+                logger.info(f"Auto-synced wallet_address from stratum config.yaml "
+                            f"({_first_sym}: {_first_addr[:8]}...)")
+                _synced_any = True
+
+            # Sync per-coin wallet_address entries (multi-coin mode)
+            for _coin in config.get("coins", []):
+                _sym = _coin.get("symbol", "").upper()
+                if _is_wallet_placeholder(_coin.get("wallet_address", "")) and _sym in _yaml_addresses:
+                    _coin["wallet_address"] = _yaml_addresses[_sym]
+                    logger.info(f"Auto-synced {_sym} wallet_address from stratum config.yaml")
+                    _synced_any = True
+
+        except (IOError, OSError) as e:
+            logger.debug(f"Could not read stratum config for wallet address sync: {e}")
+
+    # Persist any auto-synced addresses back to config.json so they survive the next restart
+    if _synced_any:
+        try:
+            _atomic_json_save(CONFIG_FILE, config, indent=2)
+            logger.info("Persisted auto-synced wallet addresses to sentinel config.json")
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Could not persist synced wallet addresses to {CONFIG_FILE}: {e}")
 
     return config
 
@@ -1634,6 +1828,8 @@ def get_enabled_coins():
     COIN_PORT_DEFAULTS = {
         "BC2": {"stratum": 6333, "stratum_v2": 6334, "rpc": 8339, "zmq": 28338, "pool_id": "bc2_sha256_1"},
         "BCH": {"stratum": 5333, "stratum_v2": 5334, "rpc": 8432, "zmq": 28432, "pool_id": "bch_sha256_1"},
+        "BCH2": {"stratum": 5336, "stratum_v2": 5337, "rpc": 8533, "zmq": 28533, "pool_id": "bch2_sha256_1"},
+        "BTCS": {"stratum": 11335, "stratum_v2": 11336, "rpc": 10567, "zmq": 28567, "pool_id": "btcs_sha256_1"},
         "BTC": {"stratum": 4333, "stratum_v2": 4334, "rpc": 8332, "zmq": 28332, "pool_id": "btc_sha256_1"},
         "CAT": {"stratum": 12335, "stratum_v2": 12336, "rpc": 9932, "zmq": 28932, "pool_id": "cat_scrypt_1"},
         "DGB": {"stratum": 3333, "stratum_v2": 3334, "rpc": 14022, "zmq": 28532, "pool_id": "dgb_sha256_1"},
@@ -1643,8 +1839,9 @@ def get_enabled_coins():
         "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933, "pool_id": "ltc_scrypt_1"},
         "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336, "pool_id": "nmc_sha256_1"},
         "PEP": {"stratum": 10335, "stratum_v2": 10336, "rpc": 33873, "zmq": 28873, "pool_id": "pep_scrypt_1"},
-        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": 28344, "pool_id": "qbx_sha256_1"},
+        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": None, "pool_id": "qbx_sha256_1"},  # No ZMQ — binary compiled without it
         "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370, "pool_id": "sys_sha256_1"},  # Merge-mining only (BTC parent) — cannot solo mine
+        "XEC": {"stratum": 18338, "stratum_v2": 18339, "rpc": 9004, "zmq": 28335, "pool_id": "xec_sha256_1"},
         "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889, "pool_id": "xmy_sha256_1"},
     }
 
@@ -1667,6 +1864,9 @@ def get_enabled_coins():
             _pool_id_prefixes = [
                 ("dgb_scrypt", "DGB-SCRYPT"), ("dgb-scrypt", "DGB-SCRYPT"),
                 ("fbtc", "FBTC"),
+                ("bch2", "BCH2"), ("bitcoincashii", "BCH2"),   # must be before "bch"
+                ("btcs", "BTCS"), ("bitcoinsilver", "BTCS"),   # must be before "btc"
+                ("xec", "XEC"), ("ecash", "XEC"),              # must be before "btc"/"bch" (no substring risk)
                 ("btc", "BTC"), ("bch", "BCH"),
                 ("bc2", "BC2"), ("bitcoinii", "BC2"),
                 ("dgb", "DGB"),
@@ -1729,12 +1929,15 @@ def get_coin_emoji(symbol):
         "DGB": "💎",
         "BTC": "🟠",
         "BCH": "🟢",
+        "BCH2": "🟤",  # Bitcoin Cash II - brown circle
         "BC2": "🔵",  # Bitcoin II - blue circle
+        "BTCS": "⚪",  # Bitcoin Silver - white circle
         "NMC": "📛",  # Namecoin - name badge (DNS)
         "SYS": "⚙️",  # Syscoin - gear (platform)
         "XMY": "🌀",  # Myriad - spiral (multi-algo)
         "FBTC": "🔶",  # Fractal Bitcoin - orange diamond
         "QBX": "⚛️",   # Q-BitX - atom (post-quantum)
+        "XEC": "💚",  # eCash - green (eCash brand colour)
         # Scrypt coins
         "LTC": "🥈",  # Litecoin - silver
         "DOGE": "🐕",  # Dogecoin - doge
@@ -1753,12 +1956,15 @@ def get_coin_name(symbol):
         "DGB": "DigiByte",
         "BTC": "Bitcoin",
         "BCH": "Bitcoin Cash",
+        "BCH2": "Bitcoin Cash II",
         "BC2": "Bitcoin II",
+        "BTCS": "Bitcoin Silver",
         "NMC": "Namecoin",
         "SYS": "Syscoin",
         "XMY": "Myriad",
         "FBTC": "Fractal Bitcoin",
         "QBX": "Q-BitX",
+        "XEC": "eCash",
         # Scrypt coins
         "LTC": "Litecoin",
         "DOGE": "Dogecoin",
@@ -1978,12 +2184,14 @@ def discover_active_aux_pools(parent_symbol):
 
         # Map API coin type names to symbols (API returns full names like "Namecoin")
         coin_type_to_symbol = {
-            "BITCOIN": "BTC", "BITCOINCASH": "BCH", "BITCOINII": "BC2",
+            "BITCOIN": "BTC", "BITCOINCASH": "BCH", "BITCOINCASHII": "BCH2",
+            "BITCOINII": "BC2", "BITCOINSILVER": "BTCS",
             "DIGIBYTE": "DGB", "LITECOIN": "LTC", "DOGECOIN": "DOGE",
             "PEPECOIN": "PEP", "CATCOIN": "CAT",
             "NAMECOIN": "NMC", "SYSCOIN": "SYS", "MYRIADCOIN": "XMY",
             "MYRIAD": "XMY", "FRACTALBITCOIN": "FBTC", "FRACTAL": "FBTC",
             "QBITX": "QBX", "Q-BITX": "QBX",
+            "ECASH": "XEC", "BITCOIN-ABC": "XEC",
         }
 
         # Build symbol -> pool_id from API response
@@ -2223,9 +2431,12 @@ def fetch_pool_stats_by_symbol(symbol):
     POOL_ID_PATTERNS = {
         "DGB": "dgb_sha256",
         "QBX": "qbx_mainnet",
+        "XEC": "xec_sha256",
         "BTC": "btc_sha256",
         "BCH": "bch_sha256",
+        "BCH2": "bch2_sha256",
         "BC2": "bc2_sha256",
+        "BTCS": "btcs_sha256",
         "NMC": "nmc_sha256",
         "SYS": "sys_sha256",  # Merge-mining only (BTC parent required)
         "XMY": "xmy_sha256",
@@ -2305,7 +2516,8 @@ def validate_wallet_addresses():
         if not address or not rpc_port:
             continue
         # Skip placeholder addresses
-        if address.upper().startswith("YOUR"):
+        _addr_up = address.upper()
+        if _addr_up.startswith("YOUR") or _addr_up in ("PENDING_GENERATION", "PENDING", "TBD", ""):
             continue
         try:
             result = _rpc_call("127.0.0.1", rpc_port, "validateaddress", [address])
@@ -2637,13 +2849,16 @@ def _extract_coin_from_pool(pool):
     coin_map = {
         "digibyte": "DGB", "digibyte-sha256": "DGB", "dgb": "DGB",
         "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
+        "bitcoincashii": "BCH2", "bitcoin-cash-ii": "BCH2", "bch2": "BCH2",
         "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
+        "bitcoinsilver": "BTCS", "bitcoin-silver": "BTCS", "btcs": "BTCS",
         "bitcoin": "BTC", "btc": "BTC",
         "namecoin": "NMC", "nmc": "NMC",
         "syscoin": "SYS", "sys": "SYS",
         "myriad": "XMY", "myriadcoin": "XMY", "xmy": "XMY",
         "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
         "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
+        "ecash": "XEC", "bitcoin-abc": "XEC", "xec": "XEC",
         "litecoin": "LTC", "ltc": "LTC",
         "dogecoin": "DOGE", "doge": "DOGE",
         "digibyte-scrypt": "DGB-SCRYPT", "dgb-scrypt": "DGB-SCRYPT",
@@ -2658,12 +2873,15 @@ def _extract_coin_from_pool(pool):
         "DGB": {"stratum": 3333, "stratum_v2": 3334, "rpc": 14022, "zmq": 28532},
         "BTC": {"stratum": 4333, "stratum_v2": 4334, "rpc": 8332, "zmq": 28332},
         "BCH": {"stratum": 5333, "stratum_v2": 5334, "rpc": 8432, "zmq": 28432},
+        "BCH2": {"stratum": 5336, "stratum_v2": 5337, "rpc": 8533, "zmq": 28533},
         "BC2": {"stratum": 6333, "stratum_v2": 6334, "rpc": 8339, "zmq": 28338},
+        "BTCS": {"stratum": 11335, "stratum_v2": 11336, "rpc": 10567, "zmq": 28567},
         "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336},
         "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370},
         "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889},
         "FBTC": {"stratum": 18335, "stratum_v2": 18336, "rpc": 8340, "zmq": 28340},
-        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": 28344},
+        "XEC": {"stratum": 18338, "stratum_v2": 18339, "rpc": 9004, "zmq": 28335},
+        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": None},  # No ZMQ — binary compiled without it
         "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933},
         "DOGE": {"stratum": 8335, "stratum_v2": 8337, "rpc": 22555, "zmq": 28555},
         "DGB-SCRYPT": {"stratum": 3336, "stratum_v2": 3337, "rpc": 14022, "zmq": 28532},
@@ -2750,6 +2968,12 @@ def auto_detect_pool_coin():
             "bitcoincash": "BCH",
             "bitcoin-cash": "BCH",
             "bch": "BCH",
+            "bitcoincashii": "BCH2",
+            "bitcoin-cash-ii": "BCH2",
+            "bch2": "BCH2",
+            "bitcoinsilver": "BTCS",
+            "bitcoin-silver": "BTCS",
+            "btcs": "BTCS",
             "bitcoinii": "BC2",
             "bitcoin-ii": "BC2",
             "bitcoin2": "BC2",
@@ -2797,12 +3021,15 @@ def auto_detect_pool_coin():
             "DGB": {"stratum": 3333, "stratum_v2": 3334, "rpc": 14022, "zmq": 28532},
             "BTC": {"stratum": 4333, "stratum_v2": 4334, "rpc": 8332, "zmq": 28332},
             "BCH": {"stratum": 5333, "stratum_v2": 5334, "rpc": 8432, "zmq": 28432},
+            "BCH2": {"stratum": 5336, "stratum_v2": 5337, "rpc": 8533, "zmq": 28533},
             "BC2": {"stratum": 6333, "stratum_v2": 6334, "rpc": 8339, "zmq": 28338},
+            "BTCS": {"stratum": 11335, "stratum_v2": 11336, "rpc": 10567, "zmq": 28567},
             # SHA-256d merge-mineable coins
             "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336},
             "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370},
             "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889},
             "FBTC": {"stratum": 18335, "stratum_v2": 18336, "rpc": 8340, "zmq": 28340},
+            "XEC": {"stratum": 18338, "stratum_v2": 18339, "rpc": 9004, "zmq": 28335},
             # Scrypt coins
             "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933},
             "DOGE": {"stratum": 8335, "stratum_v2": 8337, "rpc": 22555, "zmq": 28555},
@@ -2915,13 +3142,17 @@ def create_coin_change_embed(old_coin, new_coin, new_config=None):
             "stratum_v2": new_config.get("stratum_v2_port", "unknown")
         }
     else:
-        # Fallback defaults for all 14 supported coins (only used if no config available)
+        # Fallback defaults for all 17 supported coins (only used if no config available)
         default_ports = {
             # SHA-256d coins
             "DGB": {"stratum": 3333, "stratum_v2": 3334},
             "BTC": {"stratum": 4333, "stratum_v2": 4334},
             "BCH": {"stratum": 5333, "stratum_v2": 5334},
+            "BCH2": {"stratum": 5336, "stratum_v2": 5337},
             "BC2": {"stratum": 6333, "stratum_v2": 6334},
+            "BTCS": {"stratum": 11335, "stratum_v2": 11336},
+            "XEC": {"stratum": 18338, "stratum_v2": 18339},
+            "QBX": {"stratum": 20335, "stratum_v2": 20336},
             # SHA-256d merge-mineable coins
             "NMC": {"stratum": 14335, "stratum_v2": 14336},
             "SYS": {"stratum": 15335, "stratum_v2": 15336},
@@ -3073,7 +3304,9 @@ def detect_pool_mode():
             _coin_type_map = {
                 # SHA-256d coins
                 "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
+                "bitcoincashii": "BCH2", "bitcoin-cash-ii": "BCH2", "bch2": "BCH2",
                 "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
+                "bitcoinsilver": "BTCS", "bitcoin-silver": "BTCS", "btcs": "BTCS",
                 "fractalbitcoin": "FBTC", "fractal-bitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
                 "bitcoin": "BTC", "btc": "BTC",
                 # Scrypt coins
@@ -4451,12 +4684,12 @@ VS_CURRENCIES = ",".join(c["code"] for c in SUPPORTED_CURRENCIES.values())
 CURRENCY_CODES = VS_CURRENCIES.split(",")
 
 # All supported coin symbols (lowercase, for price dict keys)
-SUPPORTED_COIN_SYMBOLS = ["dgb", "btc", "bch", "bc2", "qbx", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat"]
+SUPPORTED_COIN_SYMBOLS = ["dgb", "btc", "bch", "bch2", "bc2", "btcs", "xec", "qbx", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat"]
 
 # Default block rewards by coin (used as fallback when API data unavailable)
 DEFAULT_BLOCK_REWARDS = {
     # SHA-256d coins
-    "DGB": 277.38, "BTC": 3.125, "BCH": 3.125, "BC2": 50.0, "QBX": 12.5,
+    "DGB": 277.38, "BTC": 3.125, "BCH": 3.125, "BCH2": 50.0, "BC2": 50.0, "BTCS": 50.0, "XEC": 3125000.0, "QBX": 12.5,
     # SHA-256d merge-mineable aux chains
     "NMC": 6.25, "SYS": 1.25, "XMY": 500.0, "FBTC": 25.0,
     # Scrypt coins
@@ -4471,7 +4704,9 @@ DEFAULT_BLOCK_REWARDS = {
 BLOCK_EXPLORER_URLS = {
     "BTC":       "https://mempool.space/block/{hash}",
     "BCH":       "https://blockchair.com/bitcoin-cash/block/{hash}",
+    "BCH2":      "https://bch2explorer.com/block/{hash}",
     "BC2":       None,
+    "BTCS":      "https://explorer.bitcoinsilver.top/block/{hash}",
     "DGB":       "https://digiexplorer.info/block/{hash}",
     "QBX":       None,
     "NMC":       "https://bchain.info/NMC/block/{hash}",
@@ -5773,7 +6008,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.4.2-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.0-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -5792,7 +6027,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.4.2-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.0-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -5950,8 +6185,11 @@ COIN_CHECK_INTERVALS = {
     # Standard block coins - use default interval
     "BTC": 120,         # Bitcoin: 10min block time
     "BCH": 120,         # Bitcoin Cash: 10min block time
-    "BC2": 120,         # Block Creator 2
+    "BCH2": 120,        # Bitcoin Cash II: 10min block time (BCH-forked)
+    "BC2": 120,         # Bitcoin II: 10min block time
+    "BTCS": 90,         # Bitcoin Silver: 5min (300s) block time, check every 90s
     "NMC": 120,         # Namecoin: ~10min block time
+    "XEC": 120,         # eCash: 10min block time
     "QBX": 60,          # Q-BitX: 150s block time, check every 60s
     # Other coins - use default
     "PEP": 60,          # Pepecoin
@@ -6230,7 +6468,9 @@ COIN_THRESHOLDS = {
     "DGB": {"AMAZING": {"max": 30, "emoji": "🟢"}, "GREAT": {"max": 40, "emoji": "🔵"}, "GOOD": {"max": 50, "emoji": "🟡"}, "NORMAL": {"max": 95, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "BTC": {"AMAZING": {"max": 500000, "emoji": "🟢"}, "GREAT": {"max": 600000, "emoji": "🔵"}, "GOOD": {"max": 700000, "emoji": "🟡"}, "NORMAL": {"max": 900000, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "BCH": {"AMAZING": {"max": 3000, "emoji": "🟢"}, "GREAT": {"max": 4000, "emoji": "🔵"}, "GOOD": {"max": 5000, "emoji": "🟡"}, "NORMAL": {"max": 8000, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
+    "BCH2": {"AMAZING": {"max": 0.5, "emoji": "🟢"}, "GREAT": {"max": 1, "emoji": "🔵"}, "GOOD": {"max": 3, "emoji": "🟡"}, "NORMAL": {"max": 10, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "BC2": {"AMAZING": {"max": 15, "emoji": "🟢"}, "GREAT": {"max": 25, "emoji": "🔵"}, "GOOD": {"max": 35, "emoji": "🟡"}, "NORMAL": {"max": 60, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
+    "BTCS": {"AMAZING": {"max": 0.1, "emoji": "🟢"}, "GREAT": {"max": 0.3, "emoji": "🔵"}, "GOOD": {"max": 0.8, "emoji": "🟡"}, "NORMAL": {"max": 2, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "NMC": {"AMAZING": {"max": 300000, "emoji": "🟢"}, "GREAT": {"max": 400000, "emoji": "🔵"}, "GOOD": {"max": 500000, "emoji": "🟡"}, "NORMAL": {"max": 700000, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "SYS": {"AMAZING": {"max": 1, "emoji": "🟢"}, "GREAT": {"max": 5, "emoji": "🔵"}, "GOOD": {"max": 10, "emoji": "🟡"}, "NORMAL": {"max": 30, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
     "XMY": {"AMAZING": {"max": 0.5, "emoji": "🟢"}, "GREAT": {"max": 1, "emoji": "🔵"}, "GOOD": {"max": 3, "emoji": "🟡"}, "NORMAL": {"max": 10, "emoji": "⚪"}, "HIGH": {"max": float('inf'), "emoji": "🔴"}},
@@ -6260,11 +6500,14 @@ COIN_NET_CRASH = {
     "DGB": {"floor": 45, "drop": 48, "reset": 52},      # DGB: ~50 PH/s network
     "BTC": {"floor": 600000, "drop": 650000, "reset": 700000},  # BTC: ~700 EH/s network
     "BCH": {"floor": 4000, "drop": 4500, "reset": 5000},  # BCH: ~5 EH/s network
+    "BCH2": {"floor": 0.5, "drop": 1.0, "reset": 2.0},  # BCH2: young chain, small network
     "BC2": {"floor": 20, "drop": 23, "reset": 28},      # BC2: ~25-30 PH/s network
+    "BTCS": {"floor": 0.1, "drop": 0.2, "reset": 0.5},  # BTCS: young chain, small network
     "NMC": {"floor": 300000, "drop": 350000, "reset": 450000},  # NMC: merge-mined with BTC
     "SYS": {"floor": 1, "drop": 3, "reset": 5},         # SYS: small network
     "XMY": {"floor": 0.3, "drop": 0.5, "reset": 1},     # XMY: small multi-algo network
     "FBTC": {"floor": 80, "drop": 100, "reset": 150},   # FBTC: newer chain
+    "XEC": {"floor": 2000, "drop": 2500, "reset": 3000},  # XEC: ~2-5 EH/s network (SHA-256d, Bitcoin ABC)
     "QBX": {"floor": 0.05, "drop": 0.08, "reset": 0.12},  # QBX: new small network
     # Scrypt coins (much smaller networks, values in PH/s)
     "LTC": {"floor": 0.8, "drop": 0.9, "reset": 1.1},   # LTC: ~1 PH/s network
@@ -6336,7 +6579,10 @@ COIN_ZMQ_STALE_THRESHOLDS = {
     # Slow block coins (600s block times)
     "BTC": 3600,            # Bitcoin: 600s blocks × 6 = 3600s (60 min, ~0.25% false positive)
     "BCH": 3600,            # Bitcoin Cash: 600s blocks × 6
-    "BC2": 3600,            # Block Creator 2: 600s blocks × 6
+    "BCH2": 3600,           # Bitcoin Cash II: 600s blocks × 6 (same as BCH)
+    "BC2": 3600,            # Bitcoin II: 600s blocks × 6
+    # Medium-slow block coins (300s = 5-minute block time)
+    "BTCS": 2100,           # Bitcoin Silver: 300s blocks × 7 = 2100s (~35 min)
     "NMC": 3600,            # Namecoin: 600s blocks × 6
     "SYS": 420,             # Syscoin: 60s blocks × 7
     "XMY": 420,             # Myriad: 60s blocks × 7
@@ -8364,6 +8610,33 @@ def fetch_network_stats(coin=None):
             logger.warning("BCH network stats unavailable from all sources")
             return None
 
+        elif coin == "BCH2":
+            # Bitcoin Cash II - BCH consensus fork, 600 second block time
+            # Pool API → Direct RPC fallback (explorer: bch2explorer.com)
+
+            pool_stats = fetch_pool_stats_by_symbol(coin)
+            pool_data = pool_stats.get("poolStats", {}) if pool_stats else {}
+            if pool_data.get("networkDifficulty"):
+                diff = float(pool_data.get("networkDifficulty", 0))
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 600) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            bch2_rpc_port = coin_config.get("rpc_port", 8533) if coin_config else 8533
+            rpc_result = _rpc_call("127.0.0.1", bch2_rpc_port, "getmininginfo")
+            if rpc_result and "difficulty" in rpc_result:
+                diff = float(rpc_result["difficulty"])
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 600) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            rpc_result = _rpc_call("127.0.0.1", bch2_rpc_port, "getblockchaininfo")
+            if rpc_result and "difficulty" in rpc_result:
+                diff = float(rpc_result["difficulty"])
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 600) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            logger.warning("BCH2 network stats unavailable from pool API and direct RPC")
+            return None
+
         elif coin == "BC2":
             # Bitcoin II - BC2 has 600 second block time like Bitcoin
             # Try multiple sources in order of reliability:
@@ -8397,6 +8670,33 @@ def fetch_network_stats(coin=None):
                     return {"network_phs": (diff * (2**32) / 600) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
 
             logger.warning("BC2 network stats unavailable from pool API and direct RPC")
+            return None
+
+        elif coin == "BTCS":
+            # Bitcoin Silver - BTC-style consensus, 300 second (5 minute) block time
+            # Pool API → Direct RPC fallback (explorer: explorer.bitcoinsilver.top)
+
+            pool_stats = fetch_pool_stats_by_symbol(coin)
+            pool_data = pool_stats.get("poolStats", {}) if pool_stats else {}
+            if pool_data.get("networkDifficulty"):
+                diff = float(pool_data.get("networkDifficulty", 0))
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 300) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            btcs_rpc_port = coin_config.get("rpc_port", 10567) if coin_config else 10567
+            rpc_result = _rpc_call("127.0.0.1", btcs_rpc_port, "getmininginfo")
+            if rpc_result and "difficulty" in rpc_result:
+                diff = float(rpc_result["difficulty"])
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 300) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            rpc_result = _rpc_call("127.0.0.1", btcs_rpc_port, "getblockchaininfo")
+            if rpc_result and "difficulty" in rpc_result:
+                diff = float(rpc_result["difficulty"])
+                if diff > 0:
+                    return {"network_phs": (diff * (2**32) / 300) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
+
+            logger.warning("BTCS network stats unavailable from pool API and direct RPC")
             return None
 
         # ═══════════════════════════════════════════════════════════════════
@@ -9492,6 +9792,76 @@ def check_api_sentinel_alerts(state):
     return forwarded
 
 
+# ---- Alternative price sources (coins absent from CoinGecko) ----
+
+def _fetch_fx_rates_sentinel():
+    """USD→fiat exchange rates from open.er-api.com. Cached 1 h."""
+    def _fetch():
+        data = _http("https://open.er-api.com/v6/latest/USD")
+        if data and data.get("result") == "success":
+            raw = data.get("rates", {})
+            return {code: float(raw[code.upper()]) for code in CURRENCY_CODES if code.upper() in raw}
+        return None
+    return _cached_fetch("fx_rates_usd", _fetch, 3600) or {}
+
+
+def _fetch_alt_coin_prices_sentinel():
+    """Fetch USD spot prices for BTCS (CoinPaprika), BCH2 (CoinPaprika), QBX (Klingex).
+
+    Returns {SYMBOL: usd_price_float}. Cached 120 s (matches CoinGecko cadence).
+    """
+    def _fetch():
+        prices = {}
+        # BTCS and BCH2 via CoinPaprika
+        for sym, cp_id in (("BTCS", "btcs-bitcoin-silver1"), ("BCH2", "bch2-bitcoin-cash-ii")):
+            data = _http(f"https://api.coinpaprika.com/v1/tickers/{cp_id}")
+            if data:
+                usd = (data.get("quotes") or {}).get("USD", {}).get("price")
+                if usd is not None and float(usd) > 0:
+                    prices[sym] = float(usd)
+        # QBX via Klingex /api/markets
+        markets = _http("https://api.klingex.io/api/markets")
+        if markets:
+            for m in markets:
+                if (
+                    str(m.get("base_asset_symbol", "")).upper() == "QBX"
+                    and str(m.get("quote_asset_symbol", "")).upper() == "USDT"
+                    and m.get("is_active")
+                ):
+                    raw_price = m.get("last_price")
+                    decimals = int(m.get("price_decimals", 6))
+                    if raw_price is not None:
+                        usdt_price = float(raw_price) / (10 ** decimals)
+                        if usdt_price > 0:
+                            prices["QBX"] = usdt_price
+                    break
+        return prices or None
+    return _cached_fetch("alt_coin_prices", _fetch, 120) or {}
+
+
+def _build_alt_price_entries(alt_usd):
+    """Convert {SYMBOL: usd} to fetch_all_prices() flat-key format using FX rates.
+
+    Sats values are omitted (set to 0) — a BTC price fetch is not worth the
+    extra network call for coins that don't have a meaningful sats denomination.
+    """
+    if not alt_usd:
+        return {}
+    fx = _fetch_fx_rates_sentinel()
+    result = {}
+    for sym, usd_price in alt_usd.items():
+        key = sym.lower()
+        for code in CURRENCY_CODES:
+            if code == "usd":
+                result[f"{key}_{code}"] = usd_price
+            elif code in fx:
+                result[f"{key}_{code}"] = usd_price * fx[code]
+            else:
+                result[f"{key}_{code}"] = 0.0
+        result[f"{key}_sats"] = 0
+    return result
+
+
 def fetch_dgb_price():
     def _fetch():
         d = _http("https://api.coingecko.com/api/v3/simple/price?ids=digibyte,bitcoin&vs_currencies=" + VS_CURRENCIES)
@@ -9527,8 +9897,8 @@ def fetch_bch_price():
 def fetch_all_prices():
     """Fetch all coin prices in a single API call for efficiency.
 
-    Includes both SHA-256d coins (DGB, BTC, BCH, BC2) and Scrypt coins (LTC, DOGE, PEP, CAT).
-    BC2 may not be listed on CoinGecko yet.
+    Includes SHA-256d coins (DGB, BTC, BCH, NMC, SYS, XMY, FBTC) and Scrypt coins (LTC, DOGE, PEP, CAT)
+    from CoinGecko, plus BTCS/BCH2 from CoinPaprika and QBX from Klingex with FX conversion.
     Also includes sat values (price in BTC satoshis) for all non-BTC coins.
     """
     def _fetch():
@@ -9564,6 +9934,9 @@ def fetch_all_prices():
             for cur_code in CURRENCY_CODES:
                 result[f"dgb-scrypt_{cur_code}"] = result.get(f"dgb_{cur_code}", 0)
             result["dgb-scrypt_sats"] = result.get("dgb_sats", 0)
+
+            # Merge alternative prices (BTCS, BCH2, QBX) with FX conversion
+            result.update(_build_alt_price_entries(_fetch_alt_coin_prices_sentinel()))
 
             return result
         return None
@@ -9652,9 +10025,10 @@ def fetch_cat_price():
 def fetch_coin_price(symbol):
     """Fetch price for a specific coin.
 
-    Supports all coins: SHA-256d (DGB, BTC, BCH, BC2, NMC, SYS, XMY)
+    Supports all 17 coins: SHA-256d (DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX)
     and Scrypt (LTC, DOGE, DGB-SCRYPT, PEP, CAT).
-    DGB-SCRYPT uses DGB price since it's the same blockchain.
+    DGB-SCRYPT uses DGB price (same blockchain).
+    BCH2/BTCS use CoinPaprika; QBX uses Klingex. BC2 has no price source yet.
     """
     symbol = symbol.upper()
     # SHA-256d coins
@@ -9664,9 +10038,24 @@ def fetch_coin_price(symbol):
         return fetch_btc_price()
     elif symbol == "BCH":
         return fetch_bch_price()
+    elif symbol in ("BCH2", "BTCS", "QBX"):
+        alt = _fetch_alt_coin_prices_sentinel()
+        usd = alt.get(symbol)
+        if not usd:
+            return None
+        fx = _fetch_fx_rates_sentinel()
+        prices = {}
+        for code in CURRENCY_CODES:
+            if code == "usd":
+                prices[code] = usd
+            elif code in fx:
+                prices[code] = usd * fx[code]
+            else:
+                prices[code] = 0.0
+        prices["sats"] = 0  # BTC sats not available without separate BTC price fetch
+        return prices
     elif symbol == "BC2":
-        # BC2 is a new coin - may not be listed on price APIs yet
-        return None
+        return None  # BC2 not yet on major price APIs
     # SHA-256d merge-mineable coins
     elif symbol == "NMC":
         return fetch_nmc_price()
@@ -9707,7 +10096,9 @@ def get_coin_volatility_threshold(symbol):
         "DGB": 5,   # DigiByte: high volatility due to multi-algo profit switching
         "BTC": 2,   # Bitcoin: stable network, low volatility
         "BCH": 3,   # Bitcoin Cash: moderate volatility
+        "BCH2": 8,  # Bitcoin Cash II: BCH fork (Dec 2024), high volatility as network grows
         "BC2": 10,  # Bitcoin II: new chain, highly volatile as network grows
+        "BTCS": 10, # Bitcoin Silver: new chain (Jul 2024), high volatility
         # SHA-256d merge-mineable coins
         "NMC": 3,   # Namecoin: stable due to merge-mining with Bitcoin
         "SYS": 4,   # Syscoin: relatively stable merge-mined chain
@@ -9730,7 +10121,9 @@ def get_coin_volatility_description(symbol):
         "DGB": "DigiByte's SHA256 hashrate is volatile (20-50% swings are common due to profit-switching miners)",
         "BTC": "Bitcoin's network hashrate is relatively stable with gradual changes",
         "BCH": "Bitcoin Cash network has moderate volatility from profit-switching miners",
-        "BC2": "Bitcoin II is a new chain (Dec 2024) with high volatility as the network grows",
+        "BCH2": "Bitcoin Cash II is a BCH fork (Dec 2024) with high volatility as the network grows",
+        "BC2": "Bitcoin II is a new chain with high volatility as the network grows",
+        "BTCS": "Bitcoin Silver is a new chain (Jul 2024) with high volatility as the network grows",
         # SHA-256d merge-mineable coins
         "NMC": "Namecoin's network is stabilized by merge-mining with Bitcoin (first AuxPoW coin)",
         "SYS": "Syscoin network is stabilized by merge-mining with Bitcoin",
@@ -10027,8 +10420,12 @@ def fetch_block_reward_for_coin(symbol):
         return _cached_fetch("block_reward_btc", _fetch_btc, 43200)
     elif symbol == "BCH":
         return _cached_fetch("block_reward_bch", _fetch_bch, 43200)
+    elif symbol == "BCH2":
+        return 50.0  # BCH2: young chain (Dec 2024), static fallback — no public API yet
     elif symbol == "BC2":
         return _cached_fetch("block_reward_bc2", _fetch_bc2, 43200)
+    elif symbol == "BTCS":
+        return 50.0  # BTCS: young chain (Jul 2024), static fallback — no public API yet
     elif symbol == "QBX":
         return _cached_fetch("block_reward_qbx", _fetch_qbx, 43200)
     # SHA-256d merge-mineable coins
@@ -10692,22 +11089,22 @@ def calc_odds(net_phs, fleet_ths, coin=None):
 
 COIN_BLOCKS_PER_DAY = {
     # SHA-256d
-    "DGB": 1152, "BTC": 144, "BCH": 144, "BC2": 144,
-    "NMC": 144, "SYS": 1440, "XMY": 1440, "FBTC": 2880, "QBX": 576,
+    "DGB": 1152, "BTC": 144, "BCH": 144, "BCH2": 144, "BC2": 144, "BTCS": 288,
+    "NMC": 144, "SYS": 1440, "XMY": 1440, "FBTC": 2880, "XEC": 144, "QBX": 576,
     # Scrypt
     "LTC": 576, "DOGE": 1440, "DGB-SCRYPT": 1152, "PEP": 1440, "CAT": 144,
 }
 
 COIN_ALGORITHM_FAMILY = {
-    "DGB": "sha256d", "BTC": "sha256d", "BCH": "sha256d", "BC2": "sha256d",
-    "NMC": "sha256d", "SYS": "sha256d", "XMY": "sha256d", "FBTC": "sha256d", "QBX": "sha256d",
+    "DGB": "sha256d", "BTC": "sha256d", "BCH": "sha256d", "BCH2": "sha256d", "BC2": "sha256d", "BTCS": "sha256d",
+    "NMC": "sha256d", "SYS": "sha256d", "XMY": "sha256d", "FBTC": "sha256d", "XEC": "sha256d", "QBX": "sha256d",
     "LTC": "scrypt", "DOGE": "scrypt", "DGB-SCRYPT": "scrypt", "PEP": "scrypt", "CAT": "scrypt",
 }
 
 # Price key mapping: coin symbol -> key prefix in fetch_all_prices() result
 _PRICE_KEY_MAP = {
-    "DGB": "dgb", "BTC": "btc", "BCH": "bch", "BC2": "bc2", "QBX": "qbx",
-    "NMC": "nmc", "SYS": "sys", "XMY": "xmy", "FBTC": "fbtc",
+    "DGB": "dgb", "BTC": "btc", "BCH": "bch", "BCH2": "bch2", "BC2": "bc2", "BTCS": "btcs", "QBX": "qbx",
+    "NMC": "nmc", "SYS": "sys", "XMY": "xmy", "FBTC": "fbtc", "XEC": "xec",
     "LTC": "ltc", "DOGE": "doge", "DGB-SCRYPT": "dgb-scrypt", "PEP": "pep", "CAT": "cat",
 }
 
@@ -11034,7 +11431,15 @@ def send_discord(embed):
         logger.error("SECURITY: Failed to parse Discord webhook URL")
         return False
 
-    max_retries = 3
+    # Use more retries for block-found alerts — Discord rate-limits (429) are the
+    # primary cause of dropped block alerts; 5 retries gives ~30s of retry window.
+    _title_upper = embed.get("title", "").upper()
+    _is_block_alert = any(
+        kw in _title_upper
+        for kw in ("BLOCK CAPTURED", "BLOCK FOUND", "BLOCK RECOVERED",
+                   "POOL BLOCK", "AUX BLOCK", "SMART PORT BLOCK")
+    )
+    max_retries = 5 if _is_block_alert else 3
     backoff = 2  # seconds
 
     for attempt in range(max_retries):
@@ -12048,24 +12453,36 @@ def send_notifications(embed):
 
             fallback_msg = f"[NOTIFICATION FALLBACK] {title}: {desc}{fields_text}"
 
-            # Log to application log
-            logger.warning(fallback_msg)
+            # For block-found alerts, persist to retry queue so the notification is
+            # sent on the next cycle instead of being silently dropped to a log file.
+            _title_upper = title.upper()
+            _is_block_alert = any(
+                kw in _title_upper
+                for kw in ("BLOCK CAPTURED", "BLOCK FOUND", "BLOCK RECOVERED",
+                           "BLOCK DETECT", "POOL BLOCK", "AUX BLOCK",
+                           "SMART PORT BLOCK")
+            )
+            if _is_block_alert:
+                queue_block_alert_for_retry(embed)
+            else:
+                # Non-block alerts: log locally as before
+                logger.warning(fallback_msg)
 
-            # Also write to dedicated fallback file (with size limit to prevent disk exhaustion)
-            try:
-                fallback_file = str(DATA_DIR / "fallback_notifications.log")
-                os.makedirs(os.path.dirname(fallback_file), exist_ok=True)
-                # Rotate if file exceeds 5MB
-                if os.path.exists(fallback_file) and os.path.getsize(fallback_file) > 5 * 1024 * 1024:
-                    rotated = fallback_file + ".1"
-                    if os.path.exists(rotated):
-                        os.remove(rotated)
-                    os.rename(fallback_file, rotated)
-                with open(fallback_file, "a") as f:
-                    timestamp = local_now().strftime("%Y-%m-%d %H:%M:%S")
-                    f.write(f"[{timestamp}] {fallback_msg}\n")
-            except Exception as e:
-                logger.error(f"Failed to write fallback notification: {e}")
+                # Also write to dedicated fallback file (with size limit to prevent disk exhaustion)
+                try:
+                    fallback_file = str(DATA_DIR / "fallback_notifications.log")
+                    os.makedirs(os.path.dirname(fallback_file), exist_ok=True)
+                    # Rotate if file exceeds 5MB
+                    if os.path.exists(fallback_file) and os.path.getsize(fallback_file) > 5 * 1024 * 1024:
+                        rotated = fallback_file + ".1"
+                        if os.path.exists(rotated):
+                            os.remove(rotated)
+                        os.rename(fallback_file, rotated)
+                    with open(fallback_file, "a") as f:
+                        timestamp = local_now().strftime("%Y-%m-%d %H:%M:%S")
+                        f.write(f"[{timestamp}] {fallback_msg}\n")
+                except Exception as e:
+                    logger.error(f"Failed to write fallback notification: {e}")
 
     return any_sent
 
@@ -12693,7 +13110,7 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
 
     # Wallet section (coin-aware) with enhanced formatting
     if wallet_value is not None and prices:
-        if active_coin in ("BTC", "BCH"):
+        if active_coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
             wv = f"```diff\n+ {wallet_value:.8f} {active_coin}\n```"
         else:
             wv = f"```diff\n+ {wallet_value:,.2f} {active_coin}\n```"
@@ -12837,7 +13254,7 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
 
             # Wallet balance
             if sc_wb is not None:
-                if sc_sym in ("BTC", "BCH"):
+                if sc_sym in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
                     sc_lines.append(f"🏦 Wallet: `{sc_wb:.8f} {sc_sym}`")
                 else:
                     sc_lines.append(f"🏦 Wallet: `{sc_wb:,.2f} {sc_sym}`")
@@ -12910,7 +13327,7 @@ def create_report_embed(net_phs, fleet_ths, odds, md, diff=None, temps=None, pri
             recap_lines.append(f"```diff\n+ {blocks_today} block{'s' if blocks_today != 1 else ''} found today!\n```")
             for coin, reward in sorted(coin_rewards.items()):
                 coin_em = get_coin_emoji(coin)
-                if coin in ("BTC", "BCH"):
+                if coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
                     recap_lines.append(f"{coin_em} **{reward:.8f}** {coin}")
                 else:
                     recap_lines.append(f"{coin_em} **{reward:,.2f}** {coin}")
@@ -13134,7 +13551,7 @@ def create_block_embed(block_num, prices=None, bri=None, found_by=None, miner_de
 
     # Build reward and value info
     coin_display = coin or "???"
-    if coin in ["BTC", "BCH"]:
+    if coin in ["BTC", "BCH", "BCH2", "BC2", "BTCS"]:
         reward_str = f"`{br:.8f} {coin_display}`"
     else:
         reward_str = f"`{br:.2f} {coin_display}`"
@@ -13292,7 +13709,7 @@ The block reward has been **LOST**.
 
     # Revenue lost estimate
     if block_reward and block_reward > 0:
-        if coin in ("BTC", "BCH"):
+        if coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
             block_info.append(f"**Revenue Lost:** `{block_reward:.8f} {coin}`")
         else:
             block_info.append(f"**Revenue Lost:** `{block_reward:,.2f} {coin}`")
@@ -14127,7 +14544,7 @@ def create_orphan_spike_embed(new_orphans, total_orphans, coin=None, block_rewar
     if new_orphans and block_reward and prices:
         lost_coins = new_orphans * block_reward
         coin_str = coin or "coins"
-        if coin_str in ("BTC", "BCH"):
+        if coin_str in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
             coin_amount = f"{lost_coins:.8f} {coin_str}"
         else:
             coin_amount = f"{lost_coins:,.2f} {coin_str}"
@@ -15028,8 +15445,12 @@ def create_weekly_embed(stats, uptime=None, health_scores=None, earnings=None):
             coins_earned.append(f"+ {earnings['btc']:.8f} BTC")
         if earnings.get('bch', 0) > 0:
             coins_earned.append(f"+ {earnings['bch']:.8f} BCH")
+        if earnings.get('bch2', 0) > 0:
+            coins_earned.append(f"+ {earnings['bch2']:.2f} BCH2")
         if earnings.get('bc2', 0) > 0:
             coins_earned.append(f"+ {earnings['bc2']:.2f} BC2")
+        if earnings.get('btcs', 0) > 0:
+            coins_earned.append(f"+ {earnings['btcs']:.2f} BTCS")
         if earnings.get('nmc', 0) > 0:
             coins_earned.append(f"+ {earnings['nmc']:.8f} NMC")
         if earnings.get('sys', 0) > 0:
@@ -15086,21 +15507,39 @@ def create_weekly_embed(stats, uptime=None, health_scores=None, earnings=None):
 
     return _embed(theme("weekly.title"), desc, COLORS["blue"], fields, footer=theme("weekly.footer", version=__version__))
 
+def _month_label_for_report():
+    """Return the correct month label for monthly earnings reports.
+
+    On the 1st of the month, data still reflects the *previous* month
+    (reset_monthly() runs after the report is sent). Returns e.g. 'May 2026'.
+    Handles year boundaries (January → December of previous year).
+    """
+    now = local_now()
+    if now.day == 1:
+        m = now.month - 1 or 12
+        y = now.year - 1 if now.month == 1 else now.year
+        return datetime(y, m, 1, tzinfo=now.tzinfo).strftime('%B %Y')
+    return now.strftime('%B %Y')
+
 def create_monthly_earnings_embed(earnings, prices, wallet_balance=None, coin_symbol=None):
     """Create monthly earnings report with multi-coin support - ENHANCED."""
     fields = []
     # Get primary coin for wallet display
     primary_coin = coin_symbol or get_primary_coin() or "UNKNOWN"
 
-    # Multi-coin earnings display with code blocks - ALL 14 coins (alphabetically ordered)
+    # Multi-coin earnings display with code blocks - ALL 17 coins (alphabetically ordered)
     coins_mined = []
     # SHA-256d coins (alphabetically)
     if earnings.get('bc2', 0) > 0:
         coins_mined.append(f"🔷 {earnings['bc2']:.2f} BC2")
     if earnings.get('bch', 0) > 0:
         coins_mined.append(f"🟢 {earnings['bch']:.8f} BCH")
+    if earnings.get('bch2', 0) > 0:
+        coins_mined.append(f"🟤 {earnings['bch2']:.2f} BCH2")
     if earnings.get('btc', 0) > 0:
         coins_mined.append(f"🟠 {earnings['btc']:.8f} BTC")
+    if earnings.get('btcs', 0) > 0:
+        coins_mined.append(f"⚪ {earnings['btcs']:.2f} BTCS")
     # Scrypt coins (alphabetically)
     if earnings.get('cat', 0) > 0:
         coins_mined.append(f"🐱 {earnings['cat']:.2f} CAT")
@@ -15172,7 +15611,7 @@ def create_monthly_earnings_embed(earnings, prices, wallet_balance=None, coin_sy
         fields.append({"name": "⚡ ELECTRICITY", "value": "```diff\n+ FREE POWER\n```💰 100% profit margin", "inline": True})
 
     # Monthly description
-    month_name = local_now().strftime('%B %Y')
+    month_name = _month_label_for_report()
     monthly_bar = "═" * 27
     monthly_banner = theme("monthly.banner")
     desc = f"""```ansi
@@ -15261,7 +15700,7 @@ def create_quarterly_embed(stats, trends, prices, wallet_balance=None, coin_symb
     # Get primary coin for wallet display
     primary_coin = coin_symbol or get_primary_coin() or "UNKNOWN"
 
-    # Performance section with multi-coin - ALL 14 coins (alphabetically ordered)
+    # Performance section with multi-coin - ALL 17 coins (alphabetically ordered)
     perf = f"🏆 Blocks: **{stats.get('total_blocks', 0)}**\n"
 
     # Show each coin mined - SHA-256d coins (alphabetically)
@@ -15269,8 +15708,12 @@ def create_quarterly_embed(stats, trends, prices, wallet_balance=None, coin_symb
         perf += f"🔷 **{stats.get('total_bc2', 0):,.1f} BC2**\n"
     if stats.get('total_bch', 0) > 0:
         perf += f"🟢 **{stats.get('total_bch', 0):.8f} BCH**\n"
+    if stats.get('total_bch2', 0) > 0:
+        perf += f"🟤 **{stats.get('total_bch2', 0):,.1f} BCH2**\n"
     if stats.get('total_btc', 0) > 0:
         perf += f"🟠 **{stats.get('total_btc', 0):.8f} BTC**\n"
+    if stats.get('total_btcs', 0) > 0:
+        perf += f"⚪ **{stats.get('total_btcs', 0):,.1f} BTCS**\n"
     # Scrypt coins (alphabetically)
     if stats.get('total_cat', 0) > 0:
         perf += f"🐱 **{stats.get('total_cat', 0):,.1f} CAT**\n"
@@ -15559,7 +16002,7 @@ def create_consolidated_report_embed(report_types, data):
                 sc_reward = sc_bri.get('sha256_reward', sc_bri.get('scrypt_reward', sc_bri.get('reward', sc_bri.get('block_reward', 0))))
                 sc_lines.append(f"📦 Reward: `{sc_reward:.1f} {sc_sym}` (Block `#{sc_bri.get('block_height', 0):,}`)")
             if sc_wb is not None:
-                if sc_sym in ("BTC", "BCH"):
+                if sc_sym in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
                     sc_lines.append(f"🏦 Wallet: `{sc_wb:.8f} {sc_sym}`")
                 else:
                     sc_lines.append(f"🏦 Wallet: `{sc_wb:,.2f} {sc_sym}`")
@@ -15671,20 +16114,20 @@ def create_consolidated_report_embed(report_types, data):
     if "monthly" in report_types and earnings and active_coin:
         # Use coin-specific key (dgb, btc, bch) - no fallback
         coin_amount = earnings.get(active_coin.lower(), 0)
-        coin_precision = 8 if active_coin in ("BTC", "BCH", "BC2", "NMC", "SYS") else 2
+        coin_precision = 8 if active_coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS", "NMC", "SYS") else 2
         mv = f"{coin_emoji} **{coin_amount:.{coin_precision}f} {active_coin}**"
         cur = get_currency_meta()
         fiat_val = earnings.get(cur["code"], 0)
         mv += f"\n{cur['emoji']} {cur['symbol']}{fiat_val:,.{cur['decimals']}f} {REPORT_CURRENCY}"
         if earnings.get('blocks'): mv += f"\n🏆 **{earnings['blocks']}** blocks"
-        fields.append({"name": f"📅 {now.strftime('%B')} Earnings", "value": mv, "inline": True})
+        fields.append({"name": f"📅 {_month_label_for_report().split()[0]} Earnings", "value": mv, "inline": True})
 
     # === QUARTERLY SECTION (if quarterly report) ===
     if "quarterly" in report_types and active_coin:
         quarterly_stats = data.get("quarterly_stats", {})
         # Use coin-specific key - no fallback
         total_coins = quarterly_stats.get(f'total_{active_coin.lower()}', 0)
-        coin_precision = 8 if active_coin in ("BTC", "BCH", "BC2", "NMC", "SYS") else 2
+        coin_precision = 8 if active_coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS", "NMC", "SYS") else 2
         qv = f"🏆 Blocks: **{quarterly_stats.get('total_blocks', 0)}**"
         qv += f"\n{coin_emoji} Mined: **{total_coins:,.{coin_precision}f} {active_coin}**"
         if prices:
@@ -15968,6 +16411,30 @@ ACHIEVEMENTS = {
     "bc2_whale": {"name": "BC2 Whale", "emoji": "🔵🐋", "desc": "Earned 21 BC2", "condition": lambda s: s.get("lifetime_bc2", 0) >= 21},
     "bc2_mega_whale": {"name": "BC2 Mega Whale", "emoji": "🔵👑", "desc": "Earned 50 BC2", "condition": lambda s: s.get("lifetime_bc2", 0) >= 50},
     "bc2_legend": {"name": "BC2 Legend", "emoji": "🔵⚡", "desc": "Earned 100 BC2", "condition": lambda s: s.get("lifetime_bc2", 0) >= 100},
+
+    # === BCH2 EARNINGS MILESTONES (10) ===
+    "bch2_first_coins": {"name": "BCH2 First Coins", "emoji": "🟤", "desc": "Earned 0.01 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 0.01},
+    "bch2_stacker": {"name": "BCH2 Stacker", "emoji": "🟤📚", "desc": "Earned 0.1 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 0.1},
+    "bch2_holder": {"name": "BCH2 Holder", "emoji": "🟤💎", "desc": "Earned 0.5 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 0.5},
+    "bch2_whole_coiner": {"name": "BCH2 Whole Coiner", "emoji": "🟤🪙", "desc": "Earned 1 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 1},
+    "bch2_double_stack": {"name": "BCH2 Double Stack", "emoji": "🟤🟤", "desc": "Earned 2 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 2},
+    "bch2_high_five": {"name": "BCH2 High Five", "emoji": "🟤🖐️", "desc": "Earned 5 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 5},
+    "bch2_ten_stack": {"name": "BCH2 Decacoiner", "emoji": "🟤🔟", "desc": "Earned 10 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 10},
+    "bch2_whale": {"name": "BCH2 Whale", "emoji": "🟤🐋", "desc": "Earned 21 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 21},
+    "bch2_mega_whale": {"name": "BCH2 Mega Whale", "emoji": "🟤👑", "desc": "Earned 50 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 50},
+    "bch2_legend": {"name": "BCH2 Legend", "emoji": "🟤⚡", "desc": "Earned 100 BCH2", "condition": lambda s: s.get("lifetime_bch2", 0) >= 100},
+
+    # === BTCS EARNINGS MILESTONES (10) ===
+    "btcs_first_coins": {"name": "BTCS First Coins", "emoji": "🥈", "desc": "Earned 0.01 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 0.01},
+    "btcs_stacker": {"name": "BTCS Stacker", "emoji": "🥈📚", "desc": "Earned 0.1 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 0.1},
+    "btcs_holder": {"name": "BTCS Holder", "emoji": "🥈💎", "desc": "Earned 0.5 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 0.5},
+    "btcs_whole_coiner": {"name": "BTCS Whole Coiner", "emoji": "🥈🪙", "desc": "Earned 1 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 1},
+    "btcs_double_stack": {"name": "BTCS Double Stack", "emoji": "🥈🥈", "desc": "Earned 2 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 2},
+    "btcs_high_five": {"name": "BTCS High Five", "emoji": "🥈🖐️", "desc": "Earned 5 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 5},
+    "btcs_ten_stack": {"name": "BTCS Decacoiner", "emoji": "🥈🔟", "desc": "Earned 10 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 10},
+    "btcs_whale": {"name": "BTCS Whale", "emoji": "🥈🐋", "desc": "Earned 21 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 21},
+    "btcs_mega_whale": {"name": "BTCS Mega Whale", "emoji": "🥈👑", "desc": "Earned 50 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 50},
+    "btcs_legend": {"name": "BTCS Legend", "emoji": "🥈⚡", "desc": "Earned 100 BTCS", "condition": lambda s: s.get("lifetime_btcs", 0) >= 100},
 
     # === LTC EARNINGS MILESTONES (10) ===
     "ltc_first_lites": {"name": "First Lites", "emoji": "⚪", "desc": "Earned 0.01 LTC", "condition": lambda s: s.get("lifetime_ltc", 0) >= 0.01},
@@ -17354,7 +17821,7 @@ class MonitorState:
         return new_miners
 
     def record_block(self, miner, block_num, network_phs, odds, coin_symbol=None):
-        """Record a block found. Supports all 14 coins including aux chains: NMC, SYS, XMY, FBTC."""
+        """Record a block found. Supports all 17 coins including aux chains: NMC, SYS, XMY, FBTC."""
         coin = coin_symbol.upper() if coin_symbol else (get_primary_coin() or "UNKNOWN")
         self.block_history.append({
             "t": time.time(), "miner": miner, "height": block_num,
@@ -18309,7 +18776,7 @@ def create_payout_received_embed(coin, amount_change, new_balance, prices=None, 
     coin_name = get_coin_name(coin)
 
     # Format the amount based on coin type
-    if coin in ("BTC", "BCH"):
+    if coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
         amount_str = f"{amount_change:.8f} {coin}"
         balance_str = f"{new_balance:.8f} {coin}"
     else:
@@ -18354,7 +18821,7 @@ def create_missing_payout_embed(coin, days_since_change, last_balance):
     coin_emoji = get_coin_emoji(coin)
     coin_name = get_coin_name(coin)
 
-    if coin in ("BTC", "BCH"):
+    if coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
         balance_str = f"{last_balance:.8f} {coin}"
     else:
         balance_str = f"{last_balance:,.2f} {coin}"
@@ -18391,7 +18858,7 @@ def create_wallet_drop_embed(coin, amount_dropped, previous_balance, current_bal
     coin_emoji = get_coin_emoji(coin)
     coin_name = get_coin_name(coin)
 
-    if coin in ("BTC", "BCH"):
+    if coin in ("BTC", "BCH", "BCH2", "BC2", "BTCS"):
         drop_str = f"{amount_dropped:.8f} {coin}"
         prev_str = f"{previous_balance:.8f} {coin}"
         curr_str = f"{current_balance:.8f} {coin}"
@@ -19030,6 +19497,16 @@ def monitor_loop(state):
         try:
             now = local_now()
             in_startup_grace = (time.time() - startup_time) < STARTUP_GRACE_PERIOD
+
+            # Retry any block alerts that failed to send in a previous cycle.
+            # Runs every cycle so a block found during a brief Discord outage
+            # is sent as soon as connectivity is restored (typically within 2 minutes).
+            try:
+                _retried = retry_pending_block_alerts()
+                if _retried:
+                    logger.info(f"Block alert retry: {_retried} alert(s) sent successfully")
+            except Exception as _retry_err:
+                logger.debug(f"Block alert retry error (non-critical): {_retry_err}")
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # HA BACKUP NODE OPTIMIZATION - Skip all polling on non-MASTER nodes
@@ -19945,10 +20422,14 @@ def monitor_loop(state):
             for block in pool_new_blocks:
                 worker = block.get("worker") or block["miner"]
                 block_hash_pool = block.get("hash", "")
-                # Skip if already alerted via miner-reported detection — check both worker
-                # name and block hash since CGMiner may report a different name than pool API
-                if worker in alerted_workers_this_cycle or (block_hash_pool and block_hash_pool in alerted_hashes_this_cycle):
-                    logger.debug(f"Pool block for {worker} already alerted via miner-reported detection")
+                # Hash-based dedup only — worker-name dedup was silently suppressing
+                # the pool-side alert whenever CGMiner fired first with a different name
+                # (e.g. CGMiner says "q" but pool API says "BG-03"). Hash is unique.
+                if block_hash_pool and block_hash_pool in alerted_hashes_this_cycle:
+                    logger.debug(
+                        f"Pool block hash {block_hash_pool[:12]}… already alerted "
+                        f"(hash dedup), skipping"
+                    )
                     continue
 
                 state.pool_blocks_found += 1

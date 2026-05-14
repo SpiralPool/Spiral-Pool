@@ -51,15 +51,29 @@ The asymmetric limits prevent oscillation caused by miner firmware work-queue de
 
 ## 1. Installation
 
-> **Platform Requirements:** Ubuntu 24.04.x LTS on **x86_64 (amd64)** architecture. Bare metal or self-hosted VMs are recommended. Cloud/VPS deployments are supported but require written risk acknowledgment during install (provider ToS, bandwidth billing, data access risks). ARM/Raspberry Pi has not been tested. See [WARNINGS.md](../../WARNINGS.md) and [CLOUD_OPERATIONS.md](CLOUD_OPERATIONS.md).
+> **Platform Requirements:** Ubuntu 24.04.x LTS or 26.04.x LTS **or Debian 13 "Trixie"** on **x86_64 (amd64)** architecture. Bare metal or self-hosted VMs are recommended. Cloud/VPS deployments are supported but require written risk acknowledgment during install (provider ToS, bandwidth billing, data access risks). See [WARNINGS.md](../../WARNINGS.md) and [CLOUD_OPERATIONS.md](CLOUD_OPERATIONS.md).
 
-### 0. Server Preparation — Ubuntu 24.04.x LTS (Noble Numbat)
+### 0. Server Preparation — Ubuntu 24.04.x LTS or 26.04.x LTS
 
-If you already have a server running Ubuntu 24.04 LTS with SSH access, skip to [Linux (Primary Platform)](#linux-primary-platform).
+If you already have a server running Ubuntu 24.04 LTS or 26.04 LTS with SSH access, skip to [Linux (Primary Platform)](#linux-primary-platform).
+
+### 0a. Server Preparation — Debian 13 "Trixie"
+
+If you prefer Debian over Ubuntu, Debian 13 ("Trixie") is fully supported for bare metal native installs. The installer auto-detects Debian 13 and adjusts its behavior automatically — no special flags or configuration required.
+
+**Key differences from Ubuntu on Debian 13:**
+- `etcd` is not available in Debian's official repositories. The installer downloads the `etcd` binary directly from GitHub Releases (the same way Go is installed). An internet connection is required during the HA setup phase, or pre-place the tarball in `/tmp` before running `install.sh`.
+- Docker CE installs from `download.docker.com/linux/debian` rather than `linux/ubuntu`. The setup is otherwise identical.
+- Ubuntu ESM/Pro origins are not written to the `unattended-upgrades` configuration (they would match nothing on Debian and produce misleading log output).
+- Docker images continue to use Ubuntu 26.04 as their base — this is a native install concern only.
+
+**Get Debian 13:** Download the netinstall or full ISO from [https://www.debian.org/distrib/](https://www.debian.org/distrib/). Follow the standard Debian Server installation (no desktop environment). Enable SSH server during install. After first boot, run `sudo apt update && sudo apt upgrade -y`, then proceed with `install.sh` as normal.
+
+If you already have a Debian 13 server with SSH access, skip to [Linux (Primary Platform)](#linux-primary-platform).
 
 **1. Download the ISO**
 
-Get Ubuntu Server 24.04 LTS (Noble Numbat) from https://ubuntu.com/download/server — any 24.04.x point release works (tested with 24.04.3 and 24.04.4).
+Get Ubuntu Server from https://ubuntu.com/download/server — both 24.04 LTS (Noble Numbat) and 26.04 LTS (Resolute Raccoon) are supported. Any point release works (e.g. 24.04.3, 24.04.4, 26.04.1).
 
 **2. Create boot media**
 
@@ -136,7 +150,7 @@ chmod +x install.sh
 
 Follow the prompts to select coins and enter wallet addresses.
 
-**Requirements:** Ubuntu 24.04 LTS, 10 GB RAM minimum (16 GB recommended), SSD storage.
+**Requirements:** Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, or Debian 13 "Trixie" — 10 GB RAM minimum (16 GB recommended), SSD storage.
 
 ### Docker
 
@@ -174,7 +188,9 @@ Daemon host, ports, and RPC credentials are **auto-detected** from `POOL_COIN`. 
 docker compose --profile dgb up -d       # DigiByte
 docker compose --profile btc up -d       # Bitcoin
 docker compose --profile bch up -d       # Bitcoin Cash
+docker compose --profile bch2 up -d      # Bitcoin Cash II
 docker compose --profile bc2 up -d       # Bitcoin II
+docker compose --profile btcs up -d      # Bitcoin Silver
 docker compose --profile nmc up -d       # Namecoin
 docker compose --profile xmy up -d       # Myriadcoin
 docker compose --profile fbtc up -d      # Fractal Bitcoin
@@ -217,6 +233,8 @@ Two Windows installation paths are available. Both are experimental and intended
 
 ```powershell
 wsl --install -d Ubuntu-24.04
+# or for 26.04:
+# wsl --install -d Ubuntu-26.04
 ```
 ```bash
 # Inside WSL2 Ubuntu terminal:
@@ -241,7 +259,7 @@ main()
  ├── show_legal_acceptance   # Terms of use prompt — cloud: YES gate; non-cloud: I AGREE gate
  ├── acquire_operation_lock  # Prevent concurrent install/upgrade
  ├── check_resume            # Resume from checkpoint if previous run was interrupted
- ├── detect_operating_system # Verify Ubuntu 24.04 LTS
+ ├── detect_operating_system # Verify Ubuntu 24.04 LTS or 26.04 LTS
  ├── select_deploy_method    # Docker (bare metal) or VM Native (traditional)
  │
  ├── [Docker path] ──────────> docker_main() → build images → start compose
@@ -336,12 +354,16 @@ main()
 |------|--------|-------------------|
 | Bitcoin | BTC | 600 GB |
 | Bitcoin Cash | BCH | 250 GB |
+| Bitcoin Cash II | BCH2 | 15 GB |
+| Bitcoin II | BC2 | 5 GB |
+| Bitcoin Silver | BTCS | 8 GB |
 | Litecoin | LTC | 150 GB |
 | Syscoin | SYS | 25 GB |
 | Dogecoin | DOGE | 80 GB |
 | DigiByte | DGB | 60 GB |
 | Fractal Bitcoin | FBTC | 10 GB |
 | Q-BitX | QBX | 5 GB |
+| eCash | XEC | 20 GB |
 | Namecoin | NMC | 15 GB |
 | Myriad | XMY | 6 GB |
 | Bitcoin II | BC2 | 5 GB |
@@ -646,7 +668,7 @@ For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-up
   data/wal/{poolID}/                    Share write-ahead log (binary WAL: current.wal)
   data/.metrics_token                   Prometheus auth token (chmod 600)
   logs/                                 Application logs
-  dgb/, btc/, bch/, bc2/                Blockchain data + binaries (DGB, BTC, BCH, BC2)
+  dgb/, btc/, bch/, bch2/, bc2/, btcs/  Blockchain data + binaries (all SHA-256d coins)
   ltc/, doge/, pep/, cat/...             Blockchain data + config (Scrypt coins)
   ltc-bin/, doge-bin/, pep-bin/...       Daemon binaries (Scrypt coins, symlinked to /usr/local/bin/)
   nmc/, sys/, xmy/, fbtc/               Blockchain data + config (merge-mined coins)
@@ -766,4 +788,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2*
+*Spiral Pool — Phi Hash Reactor 2.5.0*

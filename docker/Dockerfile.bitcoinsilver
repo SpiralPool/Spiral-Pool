@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║              BITCOIN SILVER NODE - DOCKER IMAGE                            ║
+# ║                                                                            ║
+# ║   Separate container for Bitcoin Silver (BTCS) node                        ║
+# ║   BTC-style consensus, SHA-256d, 5-min blocks, SegWit+Taproot              ║
+# ║   NOTE: Only x86_64 (amd64) is supported.                                  ║
+# ║   NOTE: No pre-built binaries available — built from source.               ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:26.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Bitcoin Silver Node for Spiral Pool"
+LABEL version="source-ff5c3c3"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Pinned to a specific verified commit for supply chain security.
+# Source: https://github.com/bitcoin-silver/core
+# Commit: ff5c3c3d381fa3c783862768d5a2e4fbb50f0931 (2025-03-27, "Fix libraries")
+# To update: verify the new commit hash against the repository, then change this ARG.
+ARG BTCS_COMMIT=ff5c3c3d381fa3c783862768d5a2e4fbb50f0931
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    libboost-all-dev \
+    libssl-dev \
+    libevent-dev \
+    libdb5.3++-dev \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create bitcoinsilver user
+RUN useradd -r -m -s /bin/bash bitcoinsilver \
+    && mkdir -p /home/bitcoinsilver/.bitcoinsilver \
+    && chown -R bitcoinsilver:bitcoinsilver /home/bitcoinsilver
+
+# Build Bitcoin Silver from source, pinned to a specific verified commit.
+# Uses targeted shallow fetch (not HEAD) to prevent supply chain attacks.
+# NOTE: Only x86_64 (amd64) is supported.
+WORKDIR /tmp
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && git init bitcoinsilver \
+    && cd bitcoinsilver \
+    && git remote add origin https://github.com/bitcoin-silver/core.git \
+    && git fetch --depth=1 origin ${BTCS_COMMIT} \
+    && git checkout FETCH_HEAD \
+    && ./autogen.sh \
+    && ./configure \
+        --disable-tests \
+        --disable-bench \
+        --without-gui \
+        --without-miniupnpc \
+        --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/bitcoinsilver
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/bitcoinsilver/.bitcoinsilver/bitcoinsilver.conf ] && [ -s /home/bitcoinsilver/.bitcoinsilver/bitcoinsilver.conf ]; then\n\
+    echo "Using existing bitcoinsilver.conf (skipping template generation)"\n\
+elif [ -f /config/bitcoinsilver.conf.template ]; then\n\
+    envsubst < /config/bitcoinsilver.conf.template > /home/bitcoinsilver/.bitcoinsilver/bitcoinsilver.conf\n\
+    chmod 600 /home/bitcoinsilver/.bitcoinsilver/bitcoinsilver.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R bitcoinsilver:bitcoinsilver /home/bitcoinsilver/.bitcoinsilver\n\
+\n\
+# Start Bitcoin Silver daemon\n\
+exec gosu bitcoinsilver bitcoinsilverd -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 10566
+# RPC
+EXPOSE 10567
+# ZMQ
+EXPOSE 28567
+
+# Data volume
+VOLUME ["/home/bitcoinsilver/.bitcoinsilver"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

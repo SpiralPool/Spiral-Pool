@@ -246,7 +246,7 @@ When `CLOUD_DETECTED` is set during installation (100+ providers auto-detected p
 ### Recommended Deployment
 
 1. **Operator-controlled infrastructure preferred** - Bare metal or self-hosted VMs. Cloud/VPS is supported with explicit risk acknowledgment during install (provider ToS violations, bandwidth billing, provider access to credentials). See WARNINGS.md and CLOUD_OPERATIONS.md.
-2. **x86_64 architecture only** - ARM/Raspberry Pi has not been tested
+2. **x86_64 architecture only**
 3. **Run as dedicated user** - Not root except for VIP management
 4. **Audit configured paths** - Verify all binary paths before deployment
 5. **Network isolation** - Database and internal services on private networks
@@ -279,5 +279,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v2.4.2 - Security Architecture Decisions*
+*Spiral Pool v2.5.0 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

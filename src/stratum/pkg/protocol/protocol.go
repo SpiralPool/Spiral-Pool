@@ -592,6 +592,28 @@ type Job struct {
 	// AuxMerkleNonce is the nonce used in chain slot calculation.
 	// This affects which slot each aux chain occupies in the tree.
 	AuxMerkleNonce uint32
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// ECASH (XEC) REAL TIME TARGET (RTT) FIELDS
+	// These fields are nil/empty for all non-XEC coins.
+	// RTT validation: found blocks must satisfy BOTH nBits target AND RTT target.
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// RTTPrevHeaderTime contains timestamps of recent block headers (newest first).
+	// nil for non-XEC coins or pre-RTT-upgrade blocks.
+	RTTPrevHeaderTime []int64
+
+	// RTTPrevBits is the compact target (hex) of the previous block.
+	// Used as the base for RTT coefficient calculations.
+	RTTPrevBits string
+
+	// RTTNextTarget is the pre-computed RTT target from the node (hex, 64 chars).
+	// When non-empty, used directly instead of computing locally.
+	RTTNextTarget string
+
+	// RTTBits is the current block's compact target (hex).
+	// Stored for RTT fallback computation when NextTarget is unavailable.
+	RTTBits string
 }
 
 // AuxBlockData contains aux block information for merge mining.
@@ -724,6 +746,12 @@ func (j *Job) Clone() *Job {
 		auxMerkleBranch = make([]string, len(j.AuxMerkleBranch))
 		copy(auxMerkleBranch, j.AuxMerkleBranch)
 	}
+	// Deep-copy XEC RTT slice (strings are immutable, no copy needed for them)
+	var rttPrevHeaderTime []int64
+	if j.RTTPrevHeaderTime != nil {
+		rttPrevHeaderTime = make([]int64, len(j.RTTPrevHeaderTime))
+		copy(rttPrevHeaderTime, j.RTTPrevHeaderTime)
+	}
 	return &Job{
 		ID:                    j.ID,
 		PrevBlockHash:         j.PrevBlockHash,
@@ -753,6 +781,10 @@ func (j *Job) Clone() *Job {
 		AuxMerkleBranch:       auxMerkleBranch,
 		AuxTreeSize:           j.AuxTreeSize,
 		AuxMerkleNonce:        j.AuxMerkleNonce,
+		RTTPrevHeaderTime:     rttPrevHeaderTime,
+		RTTPrevBits:           j.RTTPrevBits,
+		RTTNextTarget:         j.RTTNextTarget,
+		RTTBits:               j.RTTBits,
 	}
 }
 
@@ -775,12 +807,13 @@ type Share struct {
 	VersionBits uint32
 
 	// Validation results
-	Difficulty    float64
-	MinDifficulty float64 // Minimum acceptable difficulty (from session profile)
-	NetworkDiff   float64
-	BlockHeight   uint64
-	IsBlock       bool
-	BlockHash     string
+	Difficulty       float64
+	MinDifficulty    float64 // Minimum acceptable difficulty (from session profile)
+	ActualDifficulty float64 // Actual difficulty of submitted hash (maxTarget / hashInt)
+	NetworkDiff      float64
+	BlockHeight      uint64
+	IsBlock          bool
+	BlockHash        string
 
 	// Metadata
 	IPAddress   string

@@ -419,10 +419,13 @@ func BenchmarkPoolLookup(b *testing.B) {
 // BenchmarkSymbolLookup benchmarks symbol-based pool lookup.
 func BenchmarkSymbolLookup(b *testing.B) {
 	symbolMap := map[string]string{
-		"DGB": "dgb_main",
-		"BTC": "btc_main",
-		"BCH": "bch_main",
-		"LTC": "ltc_main",
+		"DGB":  "dgb_main",
+		"BTC":  "btc_main",
+		"BCH":  "bch_main",
+		"BCH2": "bch2_main",
+		"BC2":  "bc2_main",
+		"BTCS": "btcs_main",
+		"LTC":  "ltc_main",
 	}
 
 	b.ResetTimer()

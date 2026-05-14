@@ -77,6 +77,9 @@ Cloud providers charge for outbound (egress) network traffic. Blockchain sync pu
 |------|----------------|------------------|-----------------|
 | Bitcoin (BTC) | ~600 GB | ~600 GB | ~$54 |
 | Bitcoin Cash (BCH) | ~250 GB | ~250 GB | ~$23 |
+| Bitcoin Cash II (BCH2) | ~15 GB | ~15 GB | ~$1 |
+| Bitcoin II (BC2) | ~10 GB | ~10 GB | <$1 |
+| Bitcoin Silver (BTCS) | ~8 GB | ~8 GB | <$1 |
 | Litecoin (LTC) | ~150 GB | ~150 GB | ~$14 |
 | Dogecoin (DOGE) | ~80 GB | ~80 GB | ~$7 |
 | DigiByte (DGB) | ~60 GB | ~60 GB | ~$5 |
@@ -750,4 +753,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2*
+*Spiral Pool — Phi Hash Reactor 2.5.0*

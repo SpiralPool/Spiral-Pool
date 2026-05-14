@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║              BITCOIN CASH II NODE - DOCKER IMAGE                           ║
+# ║                                                                            ║
+# ║   Separate container for Bitcoin Cash II (BCH2) node                       ║
+# ║   BCH consensus rules, CashAddr bitcoincashii: prefix, SHA-256d            ║
+# ║   NOTE: Only x86_64 (amd64) is supported.                                  ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:26.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="Bitcoin Cash II Node for Spiral Pool"
+LABEL version="27.0.2"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG BCH2_VERSION=27.0.2
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create bitcoincashii user
+RUN useradd -r -m -s /bin/bash bitcoincashii \
+    && mkdir -p /home/bitcoincashii/.bitcoincashii \
+    && chown -R bitcoincashii:bitcoincashii /home/bitcoincashii
+
+# Download and install Bitcoin Cash II
+# NOTE: Only x86_64 (amd64) is supported.
+# Release naming: bitcoincashII-v{VERSION}-linux-x86_64.tar.gz
+# Verified against https://github.com/BitcoincashII/bitcoincashII-core/releases
+WORKDIR /tmp
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && wget -q --max-redirect=5 \
+       "https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v${BCH2_VERSION}/bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" \
+    && tar -tzf "bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" > /dev/null \
+    && tar -xzf "bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" \
+    && EXTRACTED_DIR=$(ls -d bitcoincashII-*/ 2>/dev/null | head -1 | tr -d '/') \
+    && if [ -d "$EXTRACTED_DIR/bin" ]; then cp "$EXTRACTED_DIR/bin/"* /usr/local/bin/; \
+       else cp "$EXTRACTED_DIR/bitcoincashIId" "$EXTRACTED_DIR/bitcoincashII-cli" /usr/local/bin/ 2>/dev/null || true; fi \
+    && chmod +x /usr/local/bin/bitcoincashIId /usr/local/bin/bitcoincashII-cli 2>/dev/null || true \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/bitcoincashii/.bitcoincashii/bitcoincashii.conf ] && [ -s /home/bitcoincashii/.bitcoincashii/bitcoincashii.conf ]; then\n\
+    echo "Using existing bitcoincashii.conf (skipping template generation)"\n\
+elif [ -f /config/bitcoincashii.conf.template ]; then\n\
+    envsubst < /config/bitcoincashii.conf.template > /home/bitcoincashii/.bitcoincashii/bitcoincashii.conf\n\
+    chmod 600 /home/bitcoincashii/.bitcoincashii/bitcoincashii.conf\n\
+fi\n\
+\n\
+# Ensure proper ownership of data directory\n\
+chown -R bitcoincashii:bitcoincashii /home/bitcoincashii/.bitcoincashii\n\
+\n\
+# Start Bitcoin Cash II daemon\n\
+exec gosu bitcoincashii bitcoincashIId -printtoconsole "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Expose ports
+# P2P
+EXPOSE 8534
+# RPC
+EXPOSE 8533
+# ZMQ
+EXPOSE 28533
+
+# Data volume
+VOLUME ["/home/bitcoincashii/.bitcoincashii"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

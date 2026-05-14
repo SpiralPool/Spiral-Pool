@@ -191,7 +191,7 @@ func (db *PostgresDB) WriteBatch(ctx context.Context, shares []*protocol.Share) 
 		ctx,
 		pgx.Identifier{tableName},
 		[]string{
-			"poolid", "blockheight", "difficulty", "networkdifficulty",
+			"poolid", "blockheight", "difficulty", "actual_difficulty", "networkdifficulty",
 			"miner", "worker", "useragent", "ipaddress", "source", "created",
 		},
 		pgx.CopyFromSlice(len(shares), func(i int) ([]interface{}, error) {
@@ -200,6 +200,7 @@ func (db *PostgresDB) WriteBatch(ctx context.Context, shares []*protocol.Share) 
 				db.poolID,
 				s.BlockHeight,
 				s.Difficulty,
+				s.ActualDifficulty,
 				s.NetworkDiff,
 				s.MinerAddress,
 				s.WorkerName,
@@ -648,7 +649,8 @@ func (db *PostgresDB) GetBlocks(ctx context.Context) ([]*Block, error) {
 // Without orphaned blocks in the response, orphan detection is blind.
 // NOTE: Sentinel's check_pool_for_new_blocks() already filters out orphaned
 // blocks (only alerts on "pending"/"confirmed"), so this is safe for block detection.
-func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context) ([]*Block, error) {
+// limit controls the maximum rows returned (default 200, max 5000 via API pageSize param).
+func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context, limit int) ([]*Block, error) {
 	tableName := fmt.Sprintf("blocks_%s", db.poolID)
 
 	query := fmt.Sprintf(`
@@ -660,10 +662,10 @@ func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context) ([]*Block, error
 			   COALESCE(last_verified_tip, '') as last_verified_tip
 		FROM %s
 		ORDER BY blockheight DESC
-		LIMIT 5000
+		LIMIT $1
 	`, tableName)
 
-	rows, err := db.pool.Query(ctx, query)
+	rows, err := db.pool.Query(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -822,6 +824,23 @@ func (db *PostgresDB) GetBlockStats(ctx context.Context) (*BlockStats, error) {
 // Used to initialize pool effort calculation on startup.
 func (db *PostgresDB) GetLastBlockFoundTime(ctx context.Context) (time.Time, error) {
 	tableName := fmt.Sprintf("blocks_%s", db.poolID)
+	query := fmt.Sprintf(`SELECT created FROM %s ORDER BY created DESC LIMIT 1`, tableName)
+
+	var created time.Time
+	err := db.pool.QueryRow(ctx, query).Scan(&created)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return created, nil
+}
+
+// GetLastBlockFoundTimeForPool returns the creation time of the most recently found block
+// for a specific pool. Used by CoinPool to initialize effort calculation on startup.
+func (db *PostgresDB) GetLastBlockFoundTimeForPool(ctx context.Context, poolID string) (time.Time, error) {
+	if !validPoolID.MatchString(poolID) {
+		return time.Time{}, fmt.Errorf("invalid pool ID: %q", poolID)
+	}
+	tableName := fmt.Sprintf("blocks_%s", poolID)
 	query := fmt.Sprintf(`SELECT created FROM %s ORDER BY created DESC LIMIT 1`, tableName)
 
 	var created time.Time

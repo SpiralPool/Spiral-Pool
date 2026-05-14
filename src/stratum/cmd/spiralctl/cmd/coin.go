@@ -57,7 +57,7 @@ func printCoinUsage() {
 	fmt.Println("  spiralctl mining merge enable      Enable merge mining")
 	fmt.Println()
 	fmt.Println("Supported Coins (SHA256d):")
-	fmt.Println("  btc, bch, dgb, bc2, nmc, xmy, fbtc, qbx  (sys = merge-mining only w/ BTC)")
+	fmt.Println("  btc, bch, bch2, dgb, bc2, btcs, nmc, xmy, fbtc, qbx  (sys = merge-mining only w/ BTC)")
 	fmt.Println()
 	fmt.Println("Supported Coins (Scrypt):")
 	fmt.Println("  ltc, doge, dgb-scrypt, pep, cat")
@@ -83,6 +83,8 @@ func listCoins() error {
 		// Alphabetically ordered (no coin preference)
 		{"BC2", "Bitcoin II", "SHA-256d", DefaultBC2Config, "bitcoiniid"},
 		{"BCH", "Bitcoin Cash", "SHA-256d", DefaultBCHConfig, "bitcoind-bch"},
+		{"BCH2", "Bitcoin Cash II", "SHA-256d", DefaultBCH2Config, "bitcoincashIId"},
+		{"BTCS", "Bitcoin Silver", "SHA-256d", DefaultBTCSConfig, "bitcoinsilverd"},
 		{"BTC", "Bitcoin", "SHA-256d", DefaultBTCConfig, "bitcoind"},
 		{"CAT", "Catcoin", "Scrypt", DefaultCATConfig, "catcoind"},
 		{"DGB", "DigiByte", "SHA-256d", DefaultDGBConfig, "digibyted"},
@@ -94,6 +96,7 @@ func listCoins() error {
 		{"PEP", "PepeCoin", "Scrypt", DefaultPEPConfig, "pepecoind"},
 		{"QBX", "Q-BitX", "SHA-256d", DefaultQBXConfig, "qbitxd"},
 		{"SYS", "Syscoin (merge-mine only)", "SHA-256d", DefaultSYSConfig, "syscoind"},
+		{"XEC", "eCash", "SHA-256d", DefaultXECConfig, "ecashd"},
 		{"XMY", "Myriad", "SHA-256d", DefaultXMYConfig, "myriadcoind"},
 	}
 
@@ -183,13 +186,16 @@ func coinStatus() error {
 		// SHA-256d coins
 		{"BTC", "Bitcoin Knots", DefaultBTCConfig, "bitcoind", 8332, "bitcoin-cli"},
 		{"BCH", "Bitcoin Cash", DefaultBCHConfig, "bitcoind-bch", 8432, "bitcoin-cli-bch"},
+		{"BCH2", "Bitcoin Cash II", DefaultBCH2Config, "bitcoincashIId", 8533, "bitcoincashII-cli"},
 		{"DGB", "DigiByte", DefaultDGBConfig, "digibyted", 14022, "digibyte-cli"},
 		{"BC2", "Bitcoin II", DefaultBC2Config, "bitcoiniid", 8339, "bitcoinii-cli"},
+		{"BTCS", "Bitcoin Silver", DefaultBTCSConfig, "bitcoinsilverd", 10567, "bitcoinsilver-cli"},
 		{"NMC", "Namecoin", DefaultNMCConfig, "namecoind", 8336, "namecoin-cli"},
 		{"SYS", "Syscoin", DefaultSYSConfig, "syscoind", 8370, "syscoin-cli"},
 		{"XMY", "Myriad", DefaultXMYConfig, "myriadcoind", 10889, "myriadcoin-cli"},
 		{"FBTC", "Fractal Bitcoin", DefaultFBTCConfig, "fractald", 8340, "fractal-cli"},
 		{"QBX", "Q-BitX", DefaultQBXConfig, "qbitxd", 8344, "qbitx-cli"},
+		{"XEC", "eCash", DefaultXECConfig, "ecashd", 9004, "bitcoin-cli"},
 		// Scrypt coins
 		{"LTC", "Litecoin", DefaultLTCConfig, "litecoind", 9332, "litecoin-cli"},
 		{"DOGE", "Dogecoin", DefaultDOGEConfig, "dogecoind", 22555, "dogecoin-cli"},
@@ -205,7 +211,7 @@ func coinStatus() error {
 
 		fmt.Printf("%s[%s - %s]%s\n", ColorCyan, coin.symbol, coin.name, ColorReset)
 
-		if !isServiceRunning(coin.service) {
+		if !isCoinServiceRunning(coin.service, coin.rpcPort) {
 			fmt.Printf("  Status: %sService not running%s\n", ColorRed, ColorReset)
 			fmt.Println()
 			continue

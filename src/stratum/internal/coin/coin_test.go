@@ -348,6 +348,9 @@ func TestShareDifficultyMultiplier(t *testing.T) {
 		{"DGB", 1.0, "Standard Bitcoin-like difficulty"},
 		{"BTC", 1.0, "Standard difficulty"},
 		{"BCH", 1.0, "Standard difficulty"},
+		{"BCH2", 1.0, "Bitcoin Cash II — SHA256d, same diff1 as BTC/BCH"},
+		{"BC2", 1.0, "Bitcoin II — SHA256d, same diff1 as BTC"},
+		{"BTCS", 1.0, "Bitcoin Silver — SHA256d, 5-minute blocks, same diff1"},
 		{"LTC", 256.0, "Scrypt uses different diff1 (historical)"},
 	}
 

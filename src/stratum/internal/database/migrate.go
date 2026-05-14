@@ -251,6 +251,7 @@ func (m *Migrator) createPoolTables(ctx context.Context, pool *pgxpool.Pool) err
 			poolid              VARCHAR(64) NOT NULL,
 			blockheight         BIGINT NOT NULL,
 			difficulty          DOUBLE PRECISION NOT NULL,
+			actual_difficulty   DOUBLE PRECISION NOT NULL DEFAULT 0,
 			networkdifficulty   DOUBLE PRECISION NOT NULL,
 			miner               VARCHAR(256) NOT NULL,
 			worker              VARCHAR(256),
@@ -373,6 +374,11 @@ func (m *Migrator) runMigrations(ctx context.Context, pool *pgxpool.Pool) error 
 		{
 			version: 10,
 			name:    "add_last_verified_tip",
+			sql:     "", // Per-pool table - handled below
+		},
+		{
+			version: 11,
+			name:    "add_actual_difficulty",
 			sql:     "", // Per-pool table - handled below
 		},
 	}
@@ -499,6 +505,18 @@ func (m *Migrator) runMigrations(ctx context.Context, pool *pgxpool.Pool) error 
 				return fmt.Sprintf(`
 					ALTER TABLE blocks_%s
 					ADD COLUMN IF NOT EXISTS last_verified_tip VARCHAR(64) DEFAULT '';
+				`, poolID)
+			},
+		},
+		{
+			version: 11,
+			name:    "add_actual_difficulty",
+			sqlFn: func(poolID string) string {
+				// Adds the actual hash difficulty column to existing shares tables
+				// so worker stats can surface true per-share difficulty.
+				return fmt.Sprintf(`
+					ALTER TABLE shares_%s
+					ADD COLUMN IF NOT EXISTS actual_difficulty DOUBLE PRECISION NOT NULL DEFAULT 0;
 				`, poolID)
 			},
 		},

@@ -27,7 +27,6 @@ Most questions are answered in the docs:
 The following environments are **NOT supported**. Issues from these environments may be closed without investigation:
 
 - **Cloud/VPS deployments** (AWS, Azure, GCP, DigitalOcean, Hetzner, Vultr, Linode, OVH, etc.) — the installer blocks cloud infrastructure. See [WARNINGS.md](../WARNINGS.md).
-- **ARM / Raspberry Pi** — all packages and binaries target x86_64 (amd64). ARM has not been tested.
 
 ### 🐛 Bug Reports
 

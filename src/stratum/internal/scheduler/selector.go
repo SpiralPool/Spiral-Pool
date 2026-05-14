@@ -5,10 +5,24 @@ package scheduler
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+// RoutingMode controls how the Smart Port decides which coin to mine.
+type RoutingMode string
+
+const (
+	// RoutingModeTime distributes mining time by configured coin weights on a 24-hour schedule.
+	// This is the default and backward-compatible mode.
+	RoutingModeTime RoutingMode = "TIME"
+
+	// RoutingModeDifficulty always selects the coin with the lowest current network difficulty.
+	// Coin weights are ignored; the decision is made dynamically on each evaluation.
+	RoutingModeDifficulty RoutingMode = "DIFFICULTY"
 )
 
 // CoinSelection is the result of selecting the optimal coin for a miner.
@@ -43,15 +57,17 @@ type timeSlot struct {
 	endFrac   float64 // 0.0–1.0, fraction of 24 hours
 }
 
-// Selector decides which coin a miner should be mining based on the current
-// position in a 24-hour schedule (in the configured timezone). Weights map
-// directly to time: 80% DGB = 19.2 hours/day on DGB.
+// Selector decides which coin a miner should be mining. It supports two routing
+// modes: TIME (24-hour weight-based schedule) and DIFFICULTY (always pick the
+// coin with the lowest current network difficulty).
 type Selector struct {
 	mu           sync.RWMutex
 	monitor      *Monitor
 	allowedCoins []string
+	excludeCoins map[string]bool // coins never selected in DIFFICULTY mode
 	preferCoin   string
 	minTimeOnCoin time.Duration
+	mode         RoutingMode // routing strategy (default: RoutingModeTime)
 
 	// Time-based scheduling
 	coinWeights []CoinWeight
@@ -81,12 +97,14 @@ type sessionCoinState struct {
 type SelectorConfig struct {
 	Monitor       *Monitor
 	AllowedCoins  []string
+	ExcludeCoins  []string         // coins never selected in DIFFICULTY mode
 	CoinWeights   []CoinWeight
 	PreferCoin    string
 	MinTimeOnCoin time.Duration
 	Location      *time.Location   // Timezone for 24h schedule (default: UTC)
 	Logger        *zap.Logger
 	NowFunc       func() time.Time // injectable clock for testing (default: time.Now)
+	Mode          RoutingMode      // routing strategy (default: RoutingModeTime)
 }
 
 // NewSelector creates a new coin selector.
@@ -111,12 +129,24 @@ func NewSelector(cfg SelectorConfig) *Selector {
 		loc = time.UTC
 	}
 
+	mode := cfg.Mode
+	if mode != RoutingModeTime && mode != RoutingModeDifficulty {
+		mode = RoutingModeTime // default / unknown values fall back to TIME
+	}
+
+	excludeCoins := make(map[string]bool, len(cfg.ExcludeCoins))
+	for _, sym := range cfg.ExcludeCoins {
+		excludeCoins[strings.ToUpper(sym)] = true
+	}
+
 	s := &Selector{
 		monitor:          cfg.Monitor,
 		allowedCoins:     cfg.AllowedCoins,
+		excludeCoins:     excludeCoins,
 		coinWeights:      cfg.CoinWeights,
 		preferCoin:       cfg.PreferCoin,
 		minTimeOnCoin:    cfg.MinTimeOnCoin,
+		mode:             mode,
 		location:         loc,
 		sessionCoins:     make(map[uint64]*sessionCoinState),
 		maxSwitchHistory: 1000,
@@ -210,9 +240,14 @@ func buildTimeSlots(weights []CoinWeight) ([]timeSlot, float64) {
 	return slots, anchorFrac
 }
 
-// SelectCoin determines which coin a session should be mining right now
-// based on the current time (in the configured timezone) and the weight schedule.
+// SelectCoin determines which coin a session should be mining right now.
+// In TIME mode it uses the configured weight schedule; in DIFFICULTY mode it
+// always picks the coin with the lowest current network difficulty.
 func (s *Selector) SelectCoin(sessionID uint64) CoinSelection {
+	if s.mode == RoutingModeDifficulty {
+		return s.selectByDifficulty(sessionID)
+	}
+
 	s.mu.RLock()
 	state, hasState := s.sessionCoins[sessionID]
 	slots := s.timeSlots
@@ -331,6 +366,123 @@ func (s *Selector) SelectCoin(sessionID uint64) CoinSelection {
 	return CoinSelection{
 		Symbol:  chosen,
 		Reason:  "scheduled_rotation",
+		Changed: true,
+	}
+}
+
+// Mode returns the routing mode this selector was created with.
+func (s *Selector) Mode() RoutingMode {
+	return s.mode
+}
+
+// selectByDifficulty picks the coin with the lowest current network difficulty
+// among all allowed coins that are currently available. It applies the same
+// min_time_on_coin guard as the time-based path to prevent thrashing.
+func (s *Selector) selectByDifficulty(sessionID uint64) CoinSelection {
+	s.mu.RLock()
+	state, hasState := s.sessionCoins[sessionID]
+	s.mu.RUnlock()
+
+	currentCoin := ""
+	if hasState {
+		currentCoin = state.currentCoin
+
+		// Enforce minimum time on coin — identical guard to time-based path.
+		// Bypass the guard if the current coin is excluded or unavailable so the
+		// miner is moved to an eligible coin as soon as possible.
+		currentAvailable := true
+		currentExcluded := s.excludeCoins[currentCoin]
+		if s.monitor != nil {
+			if st, ok := s.monitor.GetState(currentCoin); !ok || !st.Available || st.NetworkDiff <= 0 {
+				currentAvailable = false
+			}
+		}
+		if currentAvailable && !currentExcluded && s.minTimeOnCoin > 0 && time.Since(state.assignedAt) < s.minTimeOnCoin {
+			return CoinSelection{
+				Symbol:  currentCoin,
+				Reason:  "min_time_not_elapsed",
+				Changed: false,
+			}
+		}
+	}
+
+	// Gather difficulty states for all allowed coins from the monitor,
+	// skipping any coins in the exclude list.
+	var candidates []CoinDiffState
+	var excludedSymbols []string
+	if s.monitor != nil {
+		allStates := s.monitor.GetAllStates()
+		for _, sym := range s.allowedCoins {
+			if s.excludeCoins[sym] {
+				excludedSymbols = append(excludedSymbols, sym)
+				continue
+			}
+			if st, ok := allStates[sym]; ok && st.Available && st.NetworkDiff > 0 {
+				candidates = append(candidates, st)
+			}
+		}
+	}
+
+	// Build a log-friendly slice of all evaluated coins with their difficulties.
+	type coinDiffLog struct {
+		Symbol string  `json:"symbol"`
+		Diff   float64 `json:"diff"`
+	}
+	evaluated := make([]coinDiffLog, 0, len(candidates))
+	for _, c := range candidates {
+		evaluated = append(evaluated, coinDiffLog{Symbol: c.Symbol, Diff: c.NetworkDiff})
+	}
+
+	if len(candidates) == 0 {
+		fallback := s.preferCoin
+		if currentCoin != "" {
+			fallback = currentCoin
+		}
+		s.logger.Warnw("No coins available for difficulty-based selection, using fallback",
+			"mode", "DIFFICULTY",
+			"fallback", fallback,
+			"evaluated", evaluated,
+			"excluded", excludedSymbols,
+		)
+		return CoinSelection{
+			Symbol:  fallback,
+			Reason:  "no_coins_available",
+			Changed: false,
+		}
+	}
+
+	// Sort ascending by NetworkDiff — lowest difficulty = easiest = highest priority.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].NetworkDiff < candidates[j].NetworkDiff
+	})
+	chosen := candidates[0]
+
+	s.logger.Infow("Difficulty-based coin selection",
+		"mode", "DIFFICULTY",
+		"selected_coin", chosen.Symbol,
+		"selected_diff", chosen.NetworkDiff,
+		"reason", "lowest_difficulty",
+		"candidates", evaluated,
+		"excluded", excludedSymbols,
+	)
+
+	if currentCoin == "" {
+		return CoinSelection{
+			Symbol:  chosen.Symbol,
+			Reason:  "initial_assignment_difficulty",
+			Changed: true,
+		}
+	}
+	if chosen.Symbol == currentCoin {
+		return CoinSelection{
+			Symbol:  currentCoin,
+			Reason:  "difficulty_same",
+			Changed: false,
+		}
+	}
+	return CoinSelection{
+		Symbol:  chosen.Symbol,
+		Reason:  "difficulty_rotation",
 		Changed: true,
 	}
 }

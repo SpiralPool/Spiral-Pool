@@ -1,0 +1,39 @@
+{
+  "_comment": "OPERATOR ACTION REQUIRED: Replace all placeholder values below before starting the pool.",
+  "_wallet_note": "wallet_address MUST be set to YOUR wallet address for the selected coin. Mining rewards will be sent to this address.",
+  "pool_api_url": "http://stratum:4000",
+  "prometheus_url": "http://stratum:9100/metrics",
+  "metrics_url": "http://stratum:9100/metrics",
+  "default_pool_id": "YOUR_POOL_ID_HERE",
+  "setup_complete": false,
+  "auth_enabled": false,
+  "coins": [
+    {
+      "symbol": "DGB",
+      "enabled": true,
+      "wallet_address": "YOUR_DGB_WALLET_ADDRESS_HERE"
+    }
+  ],
+  "dashboard_title": "Spiral Solo Pool",
+  "first_run": true,
+  "_devices_note": "Add your mining devices here. Each device needs a 'name' and 'ip'. Supported types: axeos, nmaxe, nerdqaxe, qaxe, qaxeplus, luckyminer, jingleminer, zyber, esp32miner, avalon, antminer, antminer_scrypt, whatsminer, innosilicon, goldshell, hammer, futurebit, canaan, ebang, gekkoscience, ipollo, epic, elphapex, braiins, vnish, luxos",
+  "_devices_example": {
+    "_note": "Copy the structure below into 'devices' and replace with your miner's name and IP address. Port 4028 is the Antminer API default.",
+    "antminer": [
+      { "name": "Antminer_S19_1", "ip": "192.168.1.100", "port": 4028 }
+    ]
+  },
+  "devices": {},
+  "refresh_interval": 30,
+  "theme": "cyberpunk",
+  "display_currency": "USD",
+  "power_cost": {
+    "currency": "USD",
+    "currency_symbol": "$",
+    "rate_per_kwh": 0.10,
+    "is_free_power": false
+  },
+  "pool_mode": "solo",
+  "multi_coin_enabled": false,
+  "expected_fleet_ths": 0
+}

@@ -2032,6 +2032,194 @@
             padding: 0.6rem 0.8rem;
             font-size: 0.85rem;
         }
+
+        /* Multi-Coin Rotation Widget */
+.rotation-section {
+    margin-bottom: 1.5rem;
+}
+
+.rotation-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.rotation-header:hover {
+    background: rgba(0, 212, 255, 0.05);
+    border-color: rgba(0, 212, 255, 0.3);
+}
+
+.rotation-header h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1rem;
+    color: var(--neon-cyan);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.rotation-body {
+    padding-top: 1rem;
+    overflow: hidden;
+
+.rotation-live-bar {
+    display: flex;
+    gap: 1.25rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.rotation-live-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.rotation-live-label {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+
+.rotation-live-value {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.rotation-live-value.active-coin {
+    font-size: 1.3rem;
+    text-shadow: 0 0 12px currentColor;
+}
+
+.rotation-timeline {
+    position: relative;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 0.5rem;
+}
+
+.rotation-timeline-segment {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: rgba(0, 0, 0, 0.8);
+    transition: filter 0.3s ease;
+    border-right: 1px solid rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.rotation-timeline-segment.dimmed {
+    filter: brightness(0.45);
+}
+
+.rotation-timeline-now {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+    z-index: 10;
+    transition: left 60s linear;
+}
+
+.rotation-timeline-now::after {
+    content: '\25BC';
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    color: #fff;
+}
+
+.rotation-timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.rotation-schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+}
+
+.rotation-schedule-table th {
+    text-align: left;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-weight: 500;
+}
+
+.rotation-schedule-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+}
+
+.rotation-schedule-table tr.active-row td {
+    color: var(--text-primary);
+    background: rgba(0, 212, 255, 0.06);
+}
+
+.rotation-coin-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+}
+
+.rotation-meta {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.rotation-empty {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
     </style>
     <script>
         (function() {
@@ -2798,7 +2986,7 @@
                 <div class="stat-value">
                     <span id="etb-time">--</span>
                 </div>
-                <div class="stat-sub" id="etb-probability">24h odds: --%</div>
+                <div class="stat-sub"><span id="etb-diff">Diff: --</span> · <span id="etb-probability">24h odds: --%</span></div>
             </div>
 
             <div class="stat-card difficulty">
@@ -2824,105 +3012,89 @@
                     <span id="pool-uptime">--</span>
                 </div>
                 <div class="stat-sub" id="pool-uptime-sub"></div>
-            </div>
+</div>
         </section>
 
-        <!-- Algo Badges (hidden when only one algorithm active) -->
-        <div id="algo-badges" class="algo-badges" style="display:none;"></div>
-
-        <!-- Draggable sections container (everything below stats bar) -->
         <div id="sortable-sections">
 
-        <!-- Statistics Chart Grid (2x2: Pool Hashrate, Network Hashrate, Difficulty, Workers) -->
-        <section class="collapsible-section charts-row" id="charts-section" data-section-id="charts">
+        <!-- Statistics Charts -->
+        <section class="collapsible-section" id="charts-section" data-section-id="charts-section" style="margin-bottom:-1.5rem">
             <div class="collapsible-header" onclick="toggleSection('charts-section')">
                 <span class="drag-handle" title="Drag to reorder">⠿</span>
                 <h3>📊 Statistics</h3>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                    <select id="stats-coin-selector" class="stats-period-dropdown" onchange="changeStatsCoin(this.value)" onclick="event.stopPropagation()" style="display:none; min-width:120px; font-size:0.75rem; padding-right:24px; border-color:var(--neon-blue, #3b9dff); background:rgba(59,157,255,0.1);">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <select id="stats-coin-selector" class="stats-period-dropdown" onchange="changeStatsCoin(this.value)" style="display:none;">
                         <option value="all">All Coins</option>
                     </select>
-                    <select id="stats-period-selector" class="stats-period-dropdown" onchange="changeStatsPeriod(this.value)" onclick="event.stopPropagation()">
-                        <option value="15m">15M</option>
-                        <option value="1h">1H</option>
-                        <option value="6h">6H</option>
-                        <option value="12h">12H</option>
-                        <option value="24h" selected>24H</option>
-                        <option value="7d">7D</option>
-                        <option value="30d">30D</option>
+                    <select id="stats-period-select" class="stats-period-dropdown" onchange="changeStatsPeriod(this.value)">
+                        <option value="15m">15m</option>
+                        <option value="1h">1h</option>
+                        <option value="6h">6h</option>
+                        <option value="12h">12h</option>
+                        <option value="24h" selected>24h</option>
+                        <option value="7d">7d</option>
+                        <option value="30d">30d</option>
                     </select>
                     <span class="collapsible-toggle">▼</span>
                 </div>
             </div>
             <div class="collapsible-content">
                 <div class="stats-chart-grid">
+                    <!-- Pool Hashrate -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-pool-hashrate)"></span>
-                                Pool Hashrate
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-pool-hashrate" style="color: var(--chart-pool-hashrate)">--</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-pool-hashrate,#fb923c);"></span>Pool Hashrate</span>
+                            <span class="stats-chart-value" id="chart-val-pool-hashrate">--</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-pool-hashrate"></canvas>
                         </div>
                     </div>
+                    <!-- Network Hashrate -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-network-hashrate)"></span>
-                                Network Hashrate
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-network-hashrate" style="color: var(--chart-network-hashrate)">--</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-network-hashrate,#3b9dff);"></span>Network Hashrate</span>
+                            <span class="stats-chart-value" id="chart-val-network-hashrate">--</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-network-hashrate"></canvas>
                         </div>
                     </div>
+                    <!-- Difficulty -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-difficulty)"></span>
-                                Difficulty
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-difficulty" style="color: var(--chart-difficulty)">--</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-difficulty,#9175f0);"></span>Network Difficulty</span>
+                            <span class="stats-chart-value" id="chart-val-difficulty">--</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-difficulty"></canvas>
                         </div>
                     </div>
+                    <!-- Workers -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-workers)"></span>
-                                Workers &amp; Miners
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-workers" style="color: var(--chart-workers)">--</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-workers,#4ade80);"></span>Workers</span>
+                            <span class="stats-chart-value" id="chart-val-workers">--</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-workers"></canvas>
                         </div>
                     </div>
+                    <!-- Blocks Found -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-blocks-found)"></span>
-                                Blocks Found
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-blocks-found" style="color: var(--chart-blocks-found)">0</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-blocks-found,#ffd700);"></span>Blocks Found</span>
+                            <span class="stats-chart-value" id="chart-val-blocks-found">0</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-blocks-found"></canvas>
                         </div>
                     </div>
+                    <!-- Shares Rate -->
                     <div class="stats-chart-card">
                         <div class="stats-chart-header">
-                            <div class="stats-chart-label">
-                                <span class="stats-chart-dot" style="background: var(--chart-shares-rate)"></span>
-                                Shares Rate
-                            </div>
-                            <div class="stats-chart-value" id="chart-val-shares-rate" style="color: var(--chart-shares-rate)">--</div>
+                            <span class="stats-chart-label"><span class="stats-chart-dot" style="background:var(--chart-shares-rate,#4ade80);"></span>Shares Rate</span>
+                            <span class="stats-chart-value" id="chart-val-shares-rate">--</span>
                         </div>
                         <div class="stats-chart-body">
                             <canvas id="chart-shares-rate"></canvas>
@@ -2932,39 +3104,29 @@
             </div>
         </section>
 
-
-        <!-- Fleet Group Summary Bar -->
-        <div id="fleet-group-summary" class="fleet-group-bar" style="display:none;"></div>
-
-        <!-- Miners Section -->
-        <section class="collapsible-section miners-section" id="miners-section" data-section-id="miners">
+        <!-- Mining Devices -->
+        <section class="collapsible-section miners-section" id="miners-section" data-section-id="miners-section">
             <div class="collapsible-header" onclick="toggleSection('miners-section')">
                 <span class="drag-handle" title="Drag to reorder">⠿</span>
                 <h3>⛏ Mining Devices</h3>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                    <button class="view-toggle-btn" id="view-toggle-btn" onclick="event.stopPropagation(); toggleMinerView()" title="Toggle grouped/flat view">
-                        <span id="view-toggle-icon">&#9636;</span>
-                        <span id="view-toggle-label">Group</span>
-                    </button>
-                    <span class="miner-count" id="miner-count">0 devices</span>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span id="miner-count" style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">0 devices</span>
+                    <button onclick="toggleMinerView()" id="view-toggle-btn" class="stats-period-dropdown" style="font-size:0.65rem;padding:2px 6px;" title="Toggle view"><span id="view-toggle-icon">⊞</span> <span id="view-toggle-label">Group</span></button>
                     <span class="collapsible-toggle">▼</span>
                 </div>
             </div>
             <div class="collapsible-content">
-            <div class="miners-grid" id="miners-grid">
-                <!-- Miner cards will be inserted here -->
-                <div class="miner-card loading">
-                    <div class="miner-header">
-                        <div class="miner-name">Loading miners...</div>
-                    </div>
-                    <div class="miner-body">
-                        <p style="text-align: center; color: var(--text-muted);">
-                            Fetching device data...
-                        </p>
+                <div class="miners-grid" id="miners-grid">
+                    <div class="miner-card">
+                        <div class="miner-header">
+                            <div class="miner-name">No Devices Configured</div>
+                        </div>
+                        <div class="miner-body">
+                            <p style="text-align:center;color:var(--text-muted)"><a href="/settings" style="color:var(--neon-blue)">Add devices in settings</a></p>
+                        </div>
                     </div>
                 </div>
             </div>
-            </div><!-- /collapsible-content miners -->
         </section>
 
         <!-- Earnings Calculator -->
@@ -3138,6 +3300,75 @@
             </div>
         </section>
 
+        <!-- Per-Coin Worker Stats -->
+        <section class="collapsible-section" id="worker-stats-section" style="margin-bottom: 1rem;">
+            <div class="collapsible-header" onclick="toggleSection('worker-stats-section')">
+                <h3 id="worker-stats-title">Worker Statistics (24h)</h3>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <div id="worker-window-buttons" style="display:flex; gap:4px;" onclick="event.stopPropagation()">
+                        <button onclick="fetchWorkerStats(10)" id="ws-btn-10" style="background:var(--border-primary);color:var(--text-muted);border:1px solid var(--border-primary);padding:2px 8px;border-radius:3px;font-size:0.65rem;cursor:pointer;">10m</button>
+                        <button onclick="fetchWorkerStats(60)" id="ws-btn-60" style="background:var(--border-primary);color:var(--text-muted);border:1px solid var(--border-primary);padding:2px 8px;border-radius:3px;font-size:0.65rem;cursor:pointer;">1h</button>
+                        <button onclick="fetchWorkerStats(1440)" id="ws-btn-1440" style="background:var(--accent-primary);color:var(--bg-body);border:1px solid var(--accent-primary);padding:2px 8px;border-radius:3px;font-size:0.65rem;cursor:pointer;">24h</button>
+                    </div>
+                    <span class="collapsible-toggle">▼</span>
+                </div>
+            </div>
+            <div class="collapsible-content" id="worker-stats-body">
+                <div style="padding:40px;text-align:center;color:var(--text-muted);">Loading worker statistics…</div>
+            </div>
+        </section>
+
+        <!-- Multi-Coin Rotation Status -->
+        <section class="collapsible-section" id="rotation-widget" data-section-id="rotation" style="display:none;">
+            <div class="collapsible-header" onclick="toggleSection('rotation-widget')">
+                <span class="drag-handle" title="Drag to reorder">⠿</span>
+                <h3>🔀 Multi-Coin Rotation</h3>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <span id="rotation-active-badge" class="coin-badge" style="font-size:0.65rem; display:none;">--</span>
+                    <span class="collapsible-toggle">▼</span>
+                </div>
+            </div>
+            <div class="collapsible-content rotation-body">
+                <div class="rotation-live-bar">
+                    <div class="rotation-live-item">
+                        <span class="rotation-live-label">Active Coin</span>
+                        <span class="rotation-live-value active-coin" id="rotation-active-coin" style="color: var(--neon-cyan);">--</span>
+                    </div>
+                    <div class="rotation-live-item">
+                        <span class="rotation-live-label">Time Remaining</span>
+                        <span class="rotation-live-value" id="rotation-time-remaining" style="color: var(--neon-green);">--</span>
+                    </div>
+                    <div class="rotation-live-item">
+                        <span class="rotation-live-label">Next Switch</span>
+                        <span class="rotation-live-value" id="rotation-next-switch" style="color: var(--neon-orange);">--</span>
+                    </div>
+                </div>
+                <div class="rotation-timeline" id="rotation-timeline"></div>
+                <div class="rotation-timeline-labels">
+                    <span>00:00</span>
+                    <span>06:00</span>
+                    <span>12:00</span>
+                    <span>18:00</span>
+                    <span>24:00</span>
+                </div>
+                <table class="rotation-schedule-table">
+                    <thead>
+                        <tr>
+                            <th>Coin</th>
+                            <th>Weight</th>
+                            <th>Hours</th>
+                            <th>Schedule</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rotation-schedule-body"></tbody>
+                </table>
+                <div class="rotation-meta">
+                    <span>Port: <span id="rotation-port">16180</span></span>
+                    <span><span id="rotation-meta-tz-label">Timezone:</span> <span id="rotation-timezone">--</span></span>
+                </div>
+            </div>
+        </section>
+
         <!-- Activity Feed & Top Block Finders -->
         <section class="collapsible-section" id="activity-section" data-section-id="activity">
             <div class="collapsible-header" onclick="toggleSection('activity-section')">
@@ -3212,6 +3443,110 @@
             </div>
         </section>
 
+        <!-- Block History (Last 5,000) — contributed by bkhuraijam -->
+        <section class="collapsible-section" style="margin-bottom: 1rem;">
+            <div class="collapsible-header" onclick="toggleSection('ba-history-section')">
+                <h3>Block History (Last 5,000)</h3>
+                <span class="collapsible-toggle">▼</span>
+            </div>
+            <div class="collapsible-content" id="ba-history-section">
+                <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.85rem; table-layout: auto;">
+                        <thead style="position: sticky; top: 0; background: var(--bg-card); z-index: 10;">
+                            <tr style="color: var(--text-muted); text-align: left; border-bottom: 2px solid rgba(255,255,255,0.1);">
+                                <th style="padding: 12px 8px; width: 80px;">Height</th>
+                                <th style="padding: 12px 8px; width: 140px;">Time</th>
+                                <th style="padding: 12px 8px; min-width: 250px;">Miner / Worker</th>
+                                <th style="padding: 12px 8px; width: 120px;">Net Diff</th>
+                                <th style="padding: 12px 8px; width: 120px;">Miner Diff</th>
+                                <th style="padding: 12px 8px; width: 80px;">Effort</th>
+                                <th style="padding: 12px 8px; width: 100px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ba-history-body">
+                            {% for block in blocks %}
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                                <td style="padding: 10px 8px;">
+                                    {% if block.coin|upper == 'BTC' %}
+                                        <a href="https://mempool.space/block/{{ block.blockHeight }}" target="_blank" style="color: #ff9500; text-decoration: none; font-weight: bold; border-bottom: 1px dotted #ff9500;">{{ block.blockHeight }}</a>
+                                    {% elif block.coin|upper == 'BCH' %}
+                                        <a href="https://blockchair.com/bitcoin-cash/block/{{ block.blockHeight }}" target="_blank" style="color: #8bc34a; text-decoration: none; border-bottom: 1px dotted #8bc34a;">{{ block.blockHeight }}</a>
+                                    {% elif block.coin|upper == 'DGB' %}
+                                        <a href="https://chainz.cryptoid.info/dgb/block.dws?{{ block.blockHeight }}.htm" target="_blank" style="color: var(--neon-cyan); text-decoration: none; border-bottom: 1px dotted var(--neon-cyan);">{{ block.blockHeight }}</a>
+                                    {% elif block.coin|upper == 'FBTC' %}
+                                        <a href="https://mempool.fractalbitcoin.io/block/{{ block.blockHeight }}" target="_blank" style="color: var(--neon-cyan);">{{ block.blockHeight }}</a>
+                                    {% elif block.coin|upper == 'QBX' %}
+                                        <a href="https://explorer.qbitx.org/block/{{ block.blockHeight }}" target="_blank" style="color: #a855f7; text-decoration: none; border-bottom: 1px dotted #a855f7;">{{ block.blockHeight }}</a>
+                                    {% else %}
+                                        <span style="color: var(--neon-cyan);">{{ block.blockHeight }}</span>
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 10px 8px; color: var(--text-dim); white-space: nowrap;">{{ block.created.split('.')[0].replace('T', ' ') }}</td>
+                                <td style="padding: 10px 8px; font-size: 0.8rem; word-break: break-all;">
+                                    <span style="
+                                        background: rgba(0,200,255,0.2);
+                                        color: var(--neon-cyan);
+                                        border: 1px solid var(--neon-cyan);
+                                        padding: 1px 5px; border-radius: 3px; font-size: 0.7rem; margin-right: 6px;">
+                                        {{ block.coin }}
+                                    </span>
+                                    <span style="color: var(--text-muted);">{{ block.miner[:12] }}...</span>
+                                    {% set worker = block.worker or block.source or "" %}
+                                    {% if worker %}
+                                        <span style="color: var(--neon-cyan); font-weight: bold;">.{{ worker }}</span>
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 10px 8px; color: var(--text-dim);">
+                                    {% if block.networkDifficulty >= 1000000000 %}
+                                        {{ "{:,.2f}G".format(block.networkDifficulty / 1000000000) }}
+                                    {% else %}
+                                        {{ "{:,.2f}M".format(block.networkDifficulty / 1000000) if block.networkDifficulty else 'N/A' }}
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 10px 8px; color: #ffcc00; font-weight: bold;">
+                                    {% if block.minerDifficulty > 0 %}
+                                        {% if block.minerDifficulty >= 1000000000000 %}
+                                            {{ "{:,.2f}T".format(block.minerDifficulty / 1000000000000) }}
+                                        {% elif block.minerDifficulty >= 1000000000 %}
+                                            {{ "{:,.2f}G".format(block.minerDifficulty / 1000000000) }}
+                                        {% elif block.minerDifficulty >= 1000000 %}
+                                            {{ "{:,.2f}M".format(block.minerDifficulty / 1000000) }}
+                                        {% elif block.minerDifficulty >= 1000 %}
+                                            {{ "{:,.2f}K".format(block.minerDifficulty / 1000) }}
+                                        {% else %}
+                                            {{ "{:,.0f}".format(block.minerDifficulty) }}
+                                        {% endif %}
+                                    {% else %}
+                                        <span style="color: var(--text-muted); font-size: 0.75rem;">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 10px 8px;">
+                                    {% if block.effort is not none and block.effort != 0 %}
+                                        {% set luck = block.effort * 100 %}
+                                        <span style="color: {% if luck <= 100 %}#00ff00{% else %}#ffaa00{% endif %}; font-weight: bold;">
+                                            {{ "{:,.2f}%".format(luck) }}
+                                        </span>
+                                    {% elif block.effort == 0 %}
+                                        <span style="color: #ffaa00; font-weight: bold;">0.00%</span>
+                                    {% else %}
+                                        <span style="color: var(--text-muted);">---</span>
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 10px 8px;">
+                                    <span class="status-badge-{{ block.status|lower }}" style="padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; border: 1px solid currentColor;">
+                                        {{ block.status|upper }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="7" style="padding: 40px; text-align: center; color: var(--text-muted);">NO BLOCKS RECORDED IN HISTORY</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <!-- Cumulative Blocks Chart -->
         <section class="collapsible-section" style="margin-bottom: 1rem;">
             <div class="collapsible-header" onclick="toggleSection('ba-cumulative-section')">
@@ -3266,6 +3601,14 @@
                 <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
                     <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Services</div>
                     <div id="mgmt-services" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                        <div style="color: var(--text-muted);">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Docker Containers — hidden until docker_containers API confirms Docker is running -->
+                <div id="mgmt-docker-card" style="display:none; background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Docker Containers</div>
+                    <div id="mgmt-docker" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
                         <div style="color: var(--text-muted);">Loading...</div>
                     </div>
                 </div>
@@ -3334,24 +3677,6 @@
                     </div>
                 </div>
 
-                <!-- Export Data -->
-                <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
-                    <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Export Data</div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
-                            <span style="color:var(--text-primary, #e2e8f0);">Block History</span>
-                            <span style="display:flex;gap:6px;"><a href="/api/export/blocks" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/blocks?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
-                        </div>
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
-                            <span style="color:var(--text-primary, #e2e8f0);">Earnings Summary</span>
-                            <span style="display:flex;gap:6px;"><a href="/api/export/earnings" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/earnings?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
-                        </div>
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
-                            <span style="color:var(--text-primary, #e2e8f0);">Hashrate History</span>
-                            <span style="display:flex;gap:6px;"><a href="/api/export/hashrate" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/hashrate?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
-                        </div>
-                    </div>
-                </div>
 
             </div>
 
@@ -3382,7 +3707,7 @@
                             </div>
                         </div>
                         <div style="margin-bottom: 0.5rem;">
-                            <span style="color: var(--text-muted); font-size: 0.75rem;">Port 16180 — auto coin rotation</span>
+                            <span id="smartport-subtitle" style="color: var(--text-muted); font-size: 0.75rem;">Port 16180 — auto coin rotation</span>
                         </div>
                         <div id="smartport-active-coin" style="margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 600; font-family: var(--font-mono, 'Share Tech Mono', monospace);">
                             <span id="smartport-inactive-msg" style="color: var(--text-muted); font-size: 0.8rem;">To enable Multi Coin Smart Port, go to <a href="/settings" style="color: var(--neon-purple, #a855f7); text-decoration: none;">/settings</a> or click the <a href="/settings" style="color: var(--neon-purple, #a855f7); text-decoration: none;">&#9881; gear</a> at the top right.</span>
@@ -3404,6 +3729,25 @@
                             </div>
                             <div id="device-type-legend" style="font-size: 0.75rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);"></div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Data (full width) -->
+            <div style="background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03)); margin-bottom: 1rem;">
+                <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280); margin-bottom: 0.75rem;">Export Data</div>
+                <div style="display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap;">
+                    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                        <span style="color:var(--text-primary, #e2e8f0);">Block History</span>
+                        <span style="display:flex;gap:6px;flex-shrink:0;"><a href="/api/export/blocks" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/blocks?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                        <span style="color:var(--text-primary, #e2e8f0);">Earnings Summary</span>
+                        <span style="display:flex;gap:6px;flex-shrink:0;"><a href="/api/export/earnings" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/earnings?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                        <span style="color:var(--text-primary, #e2e8f0);">Hashrate History</span>
+                        <span style="display:flex;gap:6px;flex-shrink:0;"><a href="/api/export/hashrate" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/hashrate?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
                     </div>
                 </div>
             </div>
@@ -3462,7 +3806,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.4.2</span>
+            <span>Spiral Pool Dashboard v2.5.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -3536,17 +3880,127 @@
 
         // Restore collapsed states on load
         function restoreCollapsedStates() {
-            const defaultCollapsed = ['earnings-section', 'health-section'];
-            const sections = ['charts-section', 'miners-section', 'earnings-section', 'health-section', 'activity-section', 'management-section'];
+            const defaultCollapsed = [];
+            const sections = ['charts-section', 'rotation', 'miners-section', 'earnings-section', 'health-section', 'activity-section', 'management-section', 'worker-stats-section'];
+            if (!localStorage.getItem('spiral_collapse_v2')) {
+                sections.forEach(s => localStorage.removeItem('section_' + s));
+                localStorage.setItem('spiral_collapse_v2', '1');
+            }
             sections.forEach(sectionId => {
-                const state = localStorage.getItem('section_' + sectionId);
                 const section = document.getElementById(sectionId);
                 if (!section) return;
+                const state = localStorage.getItem('section_' + sectionId);
                 if (state === 'collapsed' || (state === null && defaultCollapsed.includes(sectionId))) {
                     section.classList.add('collapsed');
                 }
             });
         }
+
+        // ── Worker Statistics ──────────────────────────────────────────────
+        // Coins receive explicit accent colors below; any coin not listed
+        // falls back to the cyan accent used elsewhere in the dashboard, so
+        // adding a new coin doesn't silently break the panel.
+        const WORKER_COIN_COLORS = {
+            FBTC: '#ff8c00', BTC: '#ff9500', BCH: '#8bc34a', BCH2: '#8bc34a',
+            BC2:  '#ffb700', BTCS: '#c0c0c0', DGB: 'var(--neon-cyan)',
+            'DGB-SCRYPT': 'var(--neon-cyan)', NMC: '#b8860b', QBX: '#9b59b6',
+            SYS:  '#1abc9c', XEC: '#00bcd4', XMY: '#e74c3c',
+            CAT:  '#ffd700', DOGE: '#c2a633', LTC: '#bdbdbd', PEP: '#7cb342',
+        };
+        const WORKER_COIN_BG = {
+            FBTC: 'rgba(255,140,0,0.2)',  BTC: 'rgba(255,149,0,0.2)',
+            BCH:  'rgba(139,195,74,0.2)', BCH2: 'rgba(139,195,74,0.2)',
+            BC2:  'rgba(255,183,0,0.2)',  BTCS: 'rgba(192,192,192,0.2)',
+            DGB:  'rgba(0,200,255,0.2)',  'DGB-SCRYPT': 'rgba(0,200,255,0.2)',
+            NMC:  'rgba(184,134,11,0.2)', QBX:  'rgba(155,89,182,0.2)',
+            SYS:  'rgba(26,188,156,0.2)', XEC:  'rgba(0,188,212,0.2)',
+            XMY:  'rgba(231,76,60,0.2)',  CAT:  'rgba(255,215,0,0.2)',
+            DOGE: 'rgba(194,166,51,0.2)', LTC:  'rgba(189,189,189,0.2)',
+            PEP:  'rgba(124,179,66,0.2)',
+        };
+        const WORKER_COIN_ORDER = [
+            'BTC','BCH','BCH2','BC2','BTCS','DGB','FBTC','NMC','QBX','SYS','XEC','XMY',
+            'CAT','DGB-SCRYPT','DOGE','LTC','PEP',
+        ];
+
+        let _currentWorkerWindow = 1440;
+
+        function fetchWorkerStats(minutes) {
+            _currentWorkerWindow = minutes;
+            [10, 60, 1440].forEach(m => {
+                const btn = document.getElementById('ws-btn-' + m);
+                if (btn) {
+                    btn.style.background  = m === minutes ? 'var(--accent-primary)' : 'var(--border-primary)';
+                    btn.style.color       = m === minutes ? 'var(--bg-body)'        : 'var(--text-muted)';
+                    btn.style.borderColor = m === minutes ? 'var(--accent-primary)' : 'var(--border-primary)';
+                }
+            });
+            const labels = {10: '10m', 60: '1h', 1440: '24h'};
+            const title  = document.getElementById('worker-stats-title');
+            if (title) title.textContent = 'Worker Statistics (' + (labels[minutes] || minutes + 'm') + ')';
+
+            fetch('/api/worker-stats?minutes=' + minutes)
+                .then(r => r.json())
+                .then(data => renderWorkerStats(data))
+                .catch(err => console.error('Worker stats fetch error:', err));
+        }
+
+        function renderWorkerStats(data) {
+            const body = document.getElementById('worker-stats-body');
+            if (!body) return;
+            const selCoin = document.querySelector('.coin-selector-badge.active')?.dataset.coin || '';
+            let html = '';
+            for (const coin of WORKER_COIN_ORDER) {
+                const workers = data[coin];
+                if (!workers || workers.length === 0) continue;
+                const color = WORKER_COIN_COLORS[coin] || 'var(--neon-cyan)';
+                const bg    = WORKER_COIN_BG[coin]     || 'rgba(0,200,255,0.2)';
+                const display = !selCoin || selCoin === coin ? '' : 'display:none;';
+                html += '<div data-coin="' + coin + '" class="worker-coin-group" style="margin-bottom:1rem;' + display + '">';
+                html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:0.5rem;">';
+                html += '<span style="background:' + bg + ';color:' + color + ';border:1px solid ' + color + ';padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:bold;">' + coin + '</span>';
+                html += '<span style="color:var(--text-muted);font-size:0.75rem;">' + workers.length + ' worker' + (workers.length !== 1 ? 's' : '') + '</span></div>';
+                html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.8rem;">';
+                html += '<thead><tr style="color:var(--text-muted);text-align:left;border-bottom:2px solid rgba(255,255,255,0.1);">';
+                html += '<th style="padding:8px;">Worker</th><th style="padding:8px;text-align:right;">Hashrate</th><th style="padding:8px;text-align:right;">Shares</th><th style="padding:8px;text-align:right;">Best Diff</th><th style="padding:8px;text-align:right;">Net Diff</th><th style="padding:8px;text-align:right;">Last Share</th>';
+                html += '</tr></thead><tbody>';
+                for (const w of workers) {
+                    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">';
+                    html += '<td style="padding:8px;color:' + color + ';font-weight:bold;">' + w.worker + '</td>';
+                    html += '<td style="padding:8px;text-align:right;color:var(--neon-cyan);">' + formatWorkerHashrate(w.hashrate) + '</td>';
+                    html += '<td style="padding:8px;text-align:right;">' + w.shares.toLocaleString() + '</td>';
+                    html += '<td style="padding:8px;text-align:right;color:#ffcc00;">' + formatWorkerDiff(w.best_diff) + '</td>';
+                    html += '<td style="padding:8px;text-align:right;color:var(--text-dim);">' + formatWorkerDiff(w.network_diff) + '</td>';
+                    html += '<td style="padding:8px;text-align:right;color:var(--text-dim);white-space:nowrap;">' + (w.last_share || '---') + '</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div></div>';
+            }
+            if (!html) html = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No worker data for this time window</div>';
+            body.innerHTML = html;
+        }
+
+        function formatWorkerHashrate(hr) {
+            if (!hr || hr <= 0) return '---';
+            if (hr >= 1e15) return (hr / 1e15).toLocaleString(undefined, {maximumFractionDigits:2}) + ' PH/s';
+            if (hr >= 1e12) return (hr / 1e12).toLocaleString(undefined, {maximumFractionDigits:2}) + ' TH/s';
+            if (hr >= 1e9)  return (hr / 1e9 ).toLocaleString(undefined, {maximumFractionDigits:2}) + ' GH/s';
+            if (hr >= 1e6)  return (hr / 1e6 ).toLocaleString(undefined, {maximumFractionDigits:2}) + ' MH/s';
+            if (hr >= 1e3)  return (hr / 1e3 ).toLocaleString(undefined, {maximumFractionDigits:2}) + ' KH/s';
+            return hr.toLocaleString(undefined, {maximumFractionDigits:0}) + ' H/s';
+        }
+
+        function formatWorkerDiff(d) {
+            if (!d || d <= 0) return '---';
+            if (d >= 1e15) return (d / 1e15).toLocaleString(undefined, {maximumFractionDigits:2}) + 'P';
+            if (d >= 1e12) return (d / 1e12).toLocaleString(undefined, {maximumFractionDigits:2}) + 'T';
+            if (d >= 1e9)  return (d / 1e9 ).toLocaleString(undefined, {maximumFractionDigits:2}) + 'G';
+            if (d >= 1e6)  return (d / 1e6 ).toLocaleString(undefined, {maximumFractionDigits:2}) + 'M';
+            if (d >= 1e3)  return (d / 1e3 ).toLocaleString(undefined, {maximumFractionDigits:2}) + 'K';
+            return d.toLocaleString(undefined, {maximumFractionDigits:0});
+        }
+
+        document.addEventListener('DOMContentLoaded', () => fetchWorkerStats(1440));
 
         // Configuration
         const REFRESH_INTERVAL = {{ config.refresh_interval or 30 }} * 1000;
@@ -3599,7 +4053,9 @@
                 'DGB-SCRYPT': 2,
                 'BTC': 8,
                 'BCH': 8,
+                'BCH2': 8,
                 'BC2': 8,
+                'BTCS': 8,
                 'NMC': 8,
                 'SYS': 8,
                 'XMY': 8,
@@ -4022,6 +4478,8 @@
         // Update all 4 chart displays with current period data
         function updateAllStatsCharts() {
             Object.entries(statsMetrics).forEach(([metricKey, cfg]) => {
+                // Skip blocks_found — managed by fetchDailyBlocks (daily bars, not time-series)
+                if (metricKey === 'blocks_found') return;
                 const chart = statsCharts[metricKey];
                 if (!chart) return;
 
@@ -4094,6 +4552,7 @@
         let _lastSharesRate = 0;
         let _selectedStatsCoin = 'all';
         let _lastPerCoinStats = {};  // cached per-coin data from API
+        let _lastLifetimeStats = {};  // cached lifetime stats from API
 
         function changeStatsCoin(value) {
             _selectedStatsCoin = value;
@@ -4345,7 +4804,9 @@
         const _coinDefaults = {
             'BTC': {coin_name:'Bitcoin', algorithm:'sha256d', block_time:600, block_reward:3.125},
             'BCH': {coin_name:'Bitcoin Cash', algorithm:'sha256d', block_time:600, block_reward:3.125},
+            'BCH2': {coin_name:'Bitcoin Cash II', algorithm:'sha256d', block_time:600, block_reward:50},
             'BC2': {coin_name:'Bitcoin II', algorithm:'sha256d', block_time:600, block_reward:50},
+            'BTCS': {coin_name:'Bitcoin Silver', algorithm:'sha256d', block_time:300, block_reward:50},
             'DGB': {coin_name:'DigiByte', algorithm:'sha256d', block_time:15, block_reward:277.38},
             'DGB-SCRYPT': {coin_name:'DigiByte Scrypt', algorithm:'scrypt', block_time:15, block_reward:277.38},
             'LTC': {coin_name:'Litecoin', algorithm:'scrypt', block_time:150, block_reward:6.25},
@@ -4353,7 +4814,7 @@
             'NMC': {coin_name:'Namecoin', algorithm:'sha256d', block_time:600, block_reward:6.25},
             'SYS': {coin_name:'Syscoin', algorithm:'sha256d', block_time:150, block_reward:1.25},
             'XMY': {coin_name:'Myriad', algorithm:'sha256d', block_time:300, block_reward:500},
-            'FBTC': {coin_name:'Fractal Bitcoin', algorithm:'sha256d', block_time:600, block_reward:25},
+            'FBTC': {coin_name:'Fractal Bitcoin', algorithm:'sha256d', block_time:30, block_reward:25},
             'QBX': {coin_name:'Q-BitX', algorithm:'sha256d', block_time:300, block_reward:12.5},
             'PEP': {coin_name:'PepeCoin', algorithm:'scrypt', block_time:60, block_reward:50},
             'CAT': {coin_name:'Catcoin', algorithm:'scrypt', block_time:60, block_reward:25},
@@ -4404,6 +4865,9 @@
                 if (hrValEl) hrValEl.textContent = formatHashrate(currentHashrateThs);
                 if (hrUnitEl) hrUnitEl.textContent = getHashrateUnit(currentHashrateThs);
                 if (hrSubEl) hrSubEl.textContent = 'Workers: ' + (coinData.miners || 0);
+
+                const minersOnlineEl = document.getElementById('miners-online');
+                if (minersOnlineEl) minersOnlineEl.textContent = coinData.miners || 0;
 
                 // Update network stats (Statistics chart labels)
                 const netHps = coinData.network_hashrate || 0;
@@ -4467,7 +4931,33 @@
                         const prob24h = (1 - Math.exp(-86400 / etbSec)) * 100;
                         etbProbEl.textContent = '24h odds: ' + prob24h.toFixed(2) + '%';
                     }
+                } else {
+                    const etbEl = document.getElementById('etb-time');
+                    if (etbEl) etbEl.textContent = '--';
+                    const etbProbEl = document.getElementById('etb-probability');
+                    if (etbProbEl) etbProbEl.textContent = '24h odds: --%';
                 }
+                const etbDiffEl = document.getElementById('etb-diff');
+                if (etbDiffEl) etbDiffEl.textContent = coinDiff > 0 ? 'Diff: ' + formatDifficultyValue(coinDiff) : 'Diff: --';
+
+                // Accepted shares (per-coin)
+                document.getElementById('total-shares').textContent = formatNumber(coinData.accepted_shares || 0);
+
+                // Rejected shares and reject rate (per-coin)
+                const coinAccepted = coinData.accepted_shares || 0;
+                const coinRejected = coinData.rejected_shares || 0;
+                const coinRejectRate = coinAccepted + coinRejected > 0
+                    ? ((coinRejected / (coinAccepted + coinRejected)) * 100).toFixed(2)
+                    : 0;
+                document.getElementById('reject-rate').textContent = `Rejected: ${coinRejectRate}%`;
+
+                // Best share diff — session best (per-coin from stratum)
+                document.getElementById('best-diff').textContent = formatDifficulty(coinData.best_share_diff || 0);
+
+                // All-time best share diff (per-coin from lifetime_stats)
+                const perCoinBest = _lastLifetimeStats.per_coin_best_diff || {};
+                const allTimeBest = perCoinBest[symbol] || 0;
+                document.getElementById('best-diff-alltime').textContent = formatDifficulty(allTimeBest);
             }
 
             // Update header badge active states
@@ -4488,6 +4978,12 @@
             _selectedStatsCoin = symbol;
             updateAllStatsCharts();
             applyStatsCoinFilter();
+            fetchDailyBlocks();
+
+            // Filter worker stats by selected coin
+            document.querySelectorAll('.worker-coin-group').forEach(group => {
+                group.style.display = (!symbol || group.dataset.coin === symbol) ? '' : 'none';
+            });
 
             // Update all coin symbol displays and earnings
             updateCoinSymbols();
@@ -4678,6 +5174,43 @@
             } catch (e) {
                 // Silently fail — management section is non-critical
             }
+
+            // Docker containers — independent fetch so a missing Docker daemon never breaks the rest of the panel
+            try {
+                const dockerResp = await fetch('/api/docker/containers');
+                if (dockerResp.ok) {
+                    const dockerData = await dockerResp.json();
+                    const dockerCard = document.getElementById('mgmt-docker-card');
+                    const dockerEl = document.getElementById('mgmt-docker');
+                    if (dockerData.available && dockerCard && dockerEl) {
+                        dockerCard.style.display = '';
+                        const btnStyle = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-muted);padding:1px 5px;border-radius:3px;cursor:pointer;font-size:0.65rem;font-family:inherit;';
+                        if (dockerData.containers && dockerData.containers.length > 0) {
+                            dockerEl.innerHTML = dockerData.containers.map(c => {
+                                const running = c.state === 'running';
+                                const color = running ? 'var(--neon-green, #4ade80)' : 'var(--text-muted, #6b7280)';
+                                const dot = running ? '&#x25CF;' : '&#x25CB;';
+                                const safeName = c.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                                const htmlName = escapeHtml(c.name);
+                                const startBtn = !running ? `<button onclick="dockerAction('${safeName}','start')" style="${btnStyle}" title="Start ${htmlName}">&#x25B6;</button>` : '';
+                                const stopBtn = running ? `<button onclick="dockerAction('${safeName}','stop')" style="${btnStyle}" title="Stop ${htmlName}">&#x25A0;</button>` : '';
+                                const restartBtn = `<button onclick="dockerAction('${safeName}','restart')" style="${btnStyle}" title="Restart ${htmlName}">&#x21BB;</button>`;
+                                return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">` +
+                                    `<span style="color:var(--text-primary)" title="${escapeHtml(c.image)}">${htmlName}</span>` +
+                                    `<span style="display:flex;align-items:center;gap:4px;">` +
+                                    `<span style="color:${color};font-size:0.8rem;">${dot} ${escapeHtml(c.status)}</span>` +
+                                    `${startBtn}${stopBtn}${restartBtn}</span></div>`;
+                            }).join('');
+                        } else {
+                            dockerEl.innerHTML = '<div style="color:var(--text-muted);">No containers found</div>';
+                        }
+                    } else if (dockerCard) {
+                        dockerCard.style.display = 'none';
+                    }
+                }
+            } catch (_) {
+                // Docker not available — card stays hidden
+            }
         }
 
         // =====================================================================
@@ -4696,6 +5229,22 @@
                 }
             } catch (e) {
                 alert(`Failed to ${action} ${service}: ${e.message}`);
+            }
+        }
+
+        async function dockerAction(name, action) {
+            if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} container ${name}?`)) return;
+            try {
+                const response = await fetch(`/api/docker/containers/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    lastMgmtUpdate = 0;
+                    updateManagementInfo();
+                } else {
+                    alert(result.error || `Failed to ${action} ${name}`);
+                }
+            } catch (e) {
+                alert(`Failed to ${action} ${name}: ${e.message}`);
             }
         }
 
@@ -7676,6 +8225,7 @@
             const miners = data.miners || {};
             const totals = data.totals || {};
             const lifetime = data.lifetime || {};
+            _lastLifetimeStats = lifetime;
             const blockReward = data.block_reward || {};
 
             // Merge per-miner tags into miner entries
@@ -7882,6 +8432,10 @@
                     _selectedStatsCoin = _userSelectedCoin;
                 }
             }
+            // Recompute resolved coin data after auto-select may have changed _userSelectedCoin
+            const resolvedCoin = _userSelectedCoin || apiPrimary;
+            const resolvedCoinData = pcs[resolvedCoin] || activeCoinData;
+
             // Always re-apply coin filter so selected coin stays current
             applyStatsCoinFilter();
 
@@ -7911,10 +8465,22 @@
             // Use POOL share counts (from Prometheus) instead of miner-reported shares
             // Pool counts are authoritative - they represent actual shares validated by the pool
             // Miner counts (totals.accepted_shares) are self-reported by mining devices
-            const poolAccepted = data.pool_accepted_shares || 0;
-            const poolRejected = data.pool_rejected_shares || 0;
+            // Use per-coin accepted shares when a specific coin is selected
+            const poolAccepted = (_userSelectedCoin && resolvedCoinData && resolvedCoinData.accepted_shares !== undefined)
+                ? resolvedCoinData.accepted_shares
+                : (data.pool_accepted_shares || 0);
+
+            // Use per-coin rejected shares when a specific coin is selected
+            const poolRejected = (_userSelectedCoin && resolvedCoinData && resolvedCoinData.rejected_shares !== undefined)
+                ? resolvedCoinData.rejected_shares
+                : (data.pool_rejected_shares || 0);
+
             const poolBlocks = data.pool_blocks_found || 0;
-            const poolBestDiff = data.pool_best_share_diff || 0;
+
+            // Use per-coin best diff when a specific coin is selected
+            const poolBestDiff = (_userSelectedCoin && resolvedCoinData && resolvedCoinData.best_share_diff > 0)
+                ? resolvedCoinData.best_share_diff
+                : (data.pool_best_share_diff || 0);
 
             document.getElementById('total-shares').textContent = formatNumber(poolAccepted);
             const rejectRate = poolAccepted + poolRejected > 0
@@ -7924,8 +8490,8 @@
 
             // Blocks Found: per-coin when a coin is selected, aggregate otherwise
             let currentBlocks;
-            if (_userSelectedCoin && activeCoinData) {
-                currentBlocks = activeCoinData.blocks || 0;
+            if (resolvedCoinData) {
+                currentBlocks = resolvedCoinData.blocks || 0;
             } else {
                 currentBlocks = poolBlocks > 0 ? poolBlocks : (totals.blocks_found || 0);
             }
@@ -7935,10 +8501,11 @@
 
             // Last Block Found: per-coin when a coin is selected, global otherwise
             let lastBlockTime, lastBlockFinder, lastBlockHeight;
-            if (_userSelectedCoin && activeCoinData && activeCoinData.last_block_time) {
-                lastBlockTime = activeCoinData.last_block_time;
-                lastBlockFinder = activeCoinData.last_block_finder;
-                lastBlockHeight = activeCoinData.last_block_height;
+            if (_userSelectedCoin && resolvedCoinData) {
+                // Specific coin selected — use its data only (no fallback to aggregate)
+                lastBlockTime = resolvedCoinData.last_block_time || null;
+                lastBlockFinder = resolvedCoinData.last_block_finder || null;
+                lastBlockHeight = resolvedCoinData.last_block_height || null;
             } else {
                 lastBlockTime = data.last_block_time;
                 lastBlockFinder = data.last_block_finder;
@@ -7965,12 +8532,20 @@
             }
 
             // Update all-time best difficulty
+            // All-time best: use per-coin value when a coin is selected
+            const allTimeBestDiff = (_userSelectedCoin && lifetime.per_coin_best_diff && lifetime.per_coin_best_diff[_userSelectedCoin])
+                ? lifetime.per_coin_best_diff[_userSelectedCoin]
+                : lifetime.best_share_difficulty;
             document.getElementById('best-diff-alltime').textContent =
-                formatDifficulty(lifetime.best_share_difficulty);
+                formatDifficulty(allTimeBestDiff);
 
             // Pool-connected miners (stratum only — actually submitting shares)
+            // Credit: kamakhu (github.com/bkhuraijam) — per-coin miner count fix
             const poolConnected = data.pool_connected_miners || 0;
-            document.getElementById('miners-online').textContent = poolConnected;
+            const minersToShow = (_userSelectedCoin && data.per_coin_stats && data.per_coin_stats[_userSelectedCoin])
+                ? (data.per_coin_stats[_userSelectedCoin].miners || 0)
+                : poolConnected;
+            document.getElementById("miners-online").textContent = minersToShow;
 
             // Fleet info (devices reachable on network, may not be mining on this pool)
             const fleetEl = document.getElementById('fleet-count');
@@ -8114,11 +8689,13 @@
                 document.getElementById('connection-status').style.color = 'var(--neon-red)';
             }
 
-            // Also fetch health data, ETB, leaderboard, and smart port status
+            // Also fetch health data, ETB, leaderboard, smart port, and rotation status
             fetchHealthData();
             fetchETBData();
+            fetchDailyBlocks();
             fetchLeaderboard();
             fetchSmartPortStatus();
+            fetchRotationStatus();
         }
 
         // Fetch and update Estimated Time to Block
@@ -8138,6 +8715,8 @@
                         const prob24h = (1 - Math.exp(-86400 / etbSec)) * 100;
                         etbProbEl.textContent = `24h odds: ${prob24h.toFixed(2)}%`;
                     }
+                    const etbDiffEl = document.getElementById('etb-diff');
+                    if (etbDiffEl) etbDiffEl.textContent = coinData.difficulty > 0 ? 'Diff: ' + formatDifficultyValue(coinData.difficulty) : 'Diff: --';
                     return;
                 }
 
@@ -8162,9 +8741,37 @@
                         const prob24h = prob['24h'] || 0;
                         etbProbEl.textContent = `24h odds: ${prob24h.toFixed(2)}%`;
                     }
+                    const etbDiffEl = document.getElementById('etb-diff');
+                    if (etbDiffEl) etbDiffEl.textContent = currentNetworkDifficulty > 0 ? 'Diff: ' + formatDifficultyValue(currentNetworkDifficulty) : 'Diff: --';
                 }
             } catch (e) {
                 console.error('Failed to fetch ETB data:', e);
+            }
+        }
+
+        async function fetchDailyBlocks() {
+            try {
+                const coinParam = _userSelectedCoin ? `?coin=${_userSelectedCoin}` : '';
+                const response = await fetch(`/api/blocks/daily${coinParam}`);
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!data.success || !data.daily) return;
+
+                const chart = statsCharts['blocks_found'];
+                if (!chart) return;
+
+                const labels = data.daily.map(d => d.date.slice(5)); // "MM-DD"
+                const values = data.daily.map(d => d.blocks);
+
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = values;
+                chart.update('none');
+
+                const total = values.reduce((a, b) => a + b, 0);
+                const el = document.getElementById('chart-val-blocks-found');
+                if (el) el.textContent = total;
+            } catch (e) {
+                console.warn('Failed to fetch daily blocks:', e);
             }
         }
 
@@ -8314,7 +8921,7 @@
                 if (nodesContainer && nodeSymbols.length > 0) {
                     // Coin icon map
                     const coinIcons = {
-                        'DGB': '🔷', 'BTC': '₿', 'BCH': '💚', 'BC2': '🟡',
+                        'DGB': '🔷', 'BTC': '₿', 'BCH': '💚', 'BCH2': '🟤', 'BC2': '🟡', 'BTCS': '⚪',
                         'LTC': '🪙', 'DOGE': '🐕', 'PEP': '🐸', 'CAT': '🐱',
                         'NMC': '📛', 'SYS': '⚙️', 'XMY': '💎', 'FBTC': '🔸',
                         'QBX': '🔐', 'DGB-SCRYPT': '🔷'
@@ -8509,29 +9116,73 @@
                     activeEl.innerHTML = `Mining: <span style="color:var(--neon-cyan,#00d4ff);">${escapeHtml(activeCoin)}</span>${extra}`;
                 }
 
-                // Schedule bars from schedule array [{symbol, weight, start_h, end_h}]
+                // Update subtitle based on routing mode
+                const subtitle = document.getElementById('smartport-subtitle');
+                if (subtitle) {
+                    const port = data.port || 16180;
+                    subtitle.textContent = data.mode === 'DIFFICULTY'
+                        ? `Port ${port} — difficulty routing`
+                        : `Port ${port} — auto coin rotation`;
+                }
+
+                // Schedule bars — TIME mode shows time windows, DIFFICULTY mode shows per-coin difficulty
                 const barsEl = document.getElementById('smartport-schedule-bars');
-                if (barsEl && data.schedule) {
-                    const colors = {'QBX': '#a855f7', 'BTC': '#f7931a', 'BCH': '#4caf50', 'BC2': '#2196f3',
+                if (barsEl) {
+                    const colors = {'QBX': '#a855f7', 'BTC': '#f7931a', 'BCH': '#4caf50', 'BCH2': '#8d6e63',
+                                    'BC2': '#2196f3', 'BTCS': '#9e9e9e',
                                     'FBTC': '#ff5722', 'DGB': '#006ad2', 'LTC': '#bfbbbb', 'DOGE': '#c3a634',
                                     'PEP': '#3cb043', 'CAT': '#e91e63', 'NMC': '#186ab4', 'SYS': '#0084c7',
                                     'XMY': '#e24f00'};
                     let html = '';
-                    for (const entry of data.schedule) {
-                        const coin = entry.symbol || '??';
-                        let rawH = (entry.end_h || 0) - (entry.start_h || 0);
-                        if (rawH < 0) rawH += 24;  // wraps midnight
-                        const hours = rawH.toFixed(1);
-                        const pct = (parseFloat(hours) / 24 * 100).toFixed(1);
-                        const clr = colors[coin] || '#888';
-                        const timeRange = `${formatHour(entry.start_h)}–${formatHour(entry.end_h)}`;
-                        html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
-                            <span style="width:3rem;text-align:right;font-weight:600;color:${clr};">${escapeHtml(coin)}</span>
-                            <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
-                                <div style="width:${pct}%;height:100%;background:${clr};border-radius:4px;transition:width 0.3s;"></div>
-                            </div>
-                            <span style="width:5rem;color:var(--text-muted);font-size:0.7rem;">${timeRange} (${hours}h)</span>
-                        </div>`;
+                    if (data.mode === 'DIFFICULTY' && data.coin_difficulties && Object.keys(data.coin_difficulties).length > 0) {
+                        const diffs = data.coin_difficulties;
+                        const activeCoin = (data.live || {}).active_coin;
+                        const excluded = new Set(data.exclude_coins || []);
+                        const activeDiffs = Object.fromEntries(Object.entries(diffs).filter(([c]) => !excluded.has(c)));
+                        const maxDiff = Math.max(...(Object.values(activeDiffs).length ? Object.values(activeDiffs) : [1]));
+                        const sorted = Object.entries(activeDiffs).sort((a, b) => a[1] - b[1]);
+                        for (const [coin, diff] of sorted) {
+                            const isActive = coin === activeCoin;
+                            const pct = (diff / maxDiff * 100).toFixed(1);
+                            const clr = colors[coin] || '#888';
+                            const diffStr = formatSmartPortDifficulty(diff);
+                            html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                                <span style="width:3rem;text-align:right;font-weight:600;color:${clr};">${escapeHtml(coin)}</span>
+                                <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                    <div style="width:${pct}%;height:100%;background:${clr};border-radius:4px;transition:width 0.3s;"></div>
+                                </div>
+                                <span style="width:5.5rem;text-align:right;color:${isActive ? 'var(--neon-green,#4ade80)' : 'var(--text-muted)'};font-size:0.7rem;">${diffStr}${isActive ? ' ✓' : ''}</span>
+                            </div>`;
+                        }
+                        // Excluded coins shown below active ones, greyed out
+                        for (const coin of [...excluded].sort()) {
+                            if (diffs[coin] === undefined) continue;
+                            const diffStr = formatSmartPortDifficulty(diffs[coin]);
+                            html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;opacity:0.35;" title="Excluded from rotation">
+                                <span style="width:3rem;text-align:right;font-weight:600;color:#888;">${escapeHtml(coin)}</span>
+                                <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                    <div style="width:20%;height:100%;background:#888;border-radius:4px;"></div>
+                                </div>
+                                <span style="width:5.5rem;text-align:right;color:var(--text-muted);font-size:0.7rem;">${diffStr} ✗</span>
+                            </div>`;
+                        }
+                    } else if (data.schedule) {
+                        for (const entry of data.schedule) {
+                            const coin = entry.symbol || '??';
+                            let rawH = (entry.end_h || 0) - (entry.start_h || 0);
+                            if (rawH < 0) rawH += 24;
+                            const hours = rawH.toFixed(1);
+                            const pct = (parseFloat(hours) / 24 * 100).toFixed(1);
+                            const clr = colors[coin] || '#888';
+                            const timeRange = `${formatHour(entry.start_h)}–${formatHour(entry.end_h)}`;
+                            html += `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                                <span style="width:3rem;text-align:right;font-weight:600;color:${clr};">${escapeHtml(coin)}</span>
+                                <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                    <div style="width:${pct}%;height:100%;background:${clr};border-radius:4px;transition:width 0.3s;"></div>
+                                </div>
+                                <span style="width:5rem;color:var(--text-muted);font-size:0.7rem;">${timeRange} (${hours}h)</span>
+                            </div>`;
+                        }
                     }
                     barsEl.innerHTML = html;
                 }
@@ -8545,6 +9196,216 @@
             const hh = Math.floor(h);
             const mm = Math.round((h - hh) * 60);
             return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+        }
+        function formatSmartPortDifficulty(d) {
+            if (d >= 1e12) return (d / 1e12).toFixed(2) + 'T';
+            if (d >= 1e9)  return (d / 1e9).toFixed(2) + 'G';
+            if (d >= 1e6)  return (d / 1e6).toFixed(2) + 'M';
+            if (d >= 1e3)  return (d / 1e3).toFixed(2) + 'K';
+            return String(d);
+        }
+
+        // --- Multi-Coin Rotation Widget ---
+        const _rotationCoinColors = {
+            'FBTC': '#00d4ff',
+            'BCH':  '#4ade80',
+            'BCH2': '#8d6e63',
+            'BTC':  '#fb923c',
+            'BTCS': '#9e9e9e',
+            'DGB':  '#a78bfa',
+            'QBX':  '#f472b6',
+            'BC2':  '#facc15',
+            'DGB-SCRYPT': '#a78bfa',
+            'LTC':  '#bfbbbb',
+            'DOGE': '#c4a747',
+            'NMC':  '#0ea5e9',
+            'SYS':  '#6366f1',
+            'XMY':  '#e879f9',
+            'PEP':  '#34d399',
+            'CAT':  '#f97316',
+        };
+
+        function getRotationCoinColor(symbol) {
+            return _rotationCoinColors[symbol] || '#6b7280';
+        }
+
+        async function fetchRotationStatus() {
+            try {
+                const response = await fetch('/api/multiport');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                const widget = document.getElementById('rotation-widget');
+                if (!widget) return;
+
+                if (!data.enabled) {
+                    widget.style.display = 'none';
+                    return;
+                }
+                widget.style.display = '';
+
+                const live = data.live || {};
+                const schedule = data.schedule || [];
+                const activeCoin = live.active_coin || '--';
+
+                // Active coin + badge (same for both modes)
+                const activeEl = document.getElementById('rotation-active-coin');
+                if (activeEl) { activeEl.textContent = activeCoin; activeEl.style.color = getRotationCoinColor(activeCoin); }
+                const activeBadge = document.getElementById('rotation-active-badge');
+                if (activeBadge) {
+                    activeBadge.textContent = activeCoin;
+                    activeBadge.style.display = '';
+                    activeBadge.style.borderColor = getRotationCoinColor(activeCoin);
+                    activeBadge.style.color = getRotationCoinColor(activeCoin);
+                }
+                const remainEl = document.getElementById('rotation-time-remaining');
+                if (remainEl) remainEl.textContent = live.time_remaining || '--';
+                const nextEl = document.getElementById('rotation-next-switch');
+                if (nextEl) { nextEl.textContent = live.next_switch || '--'; nextEl.style.color = getRotationCoinColor(live.next_switch || ''); }
+                const portEl = document.getElementById('rotation-port');
+                if (portEl) portEl.textContent = data.port || 16180;
+
+                const timeline   = document.getElementById('rotation-timeline');
+                const timeLabels = document.querySelector('.rotation-timeline-labels');
+                const tbody      = document.getElementById('rotation-schedule-body');
+                const tzLabel    = document.getElementById('rotation-meta-tz-label');
+                const tzEl       = document.getElementById('rotation-timezone');
+
+                if (data.mode === 'DIFFICULTY' && data.coin_difficulties && Object.keys(data.coin_difficulties).length > 0) {
+                    if (timeLabels) timeLabels.style.display = 'none';
+                    if (tzLabel) tzLabel.textContent = 'Mode:';
+                    if (tzEl) tzEl.textContent = 'Difficulty';
+
+                    const diffs = data.coin_difficulties;
+                    const excluded = new Set(data.exclude_coins || []);
+                    const activeDiffs = Object.fromEntries(Object.entries(diffs).filter(([c]) => !excluded.has(c)));
+                    const maxDiff = Math.max(...Object.values(activeDiffs).length ? Object.values(activeDiffs) : [1]);
+                    const sorted = Object.entries(activeDiffs).sort((a, b) => a[1] - b[1]);
+                    const excludedEntries = [...excluded].filter(c => diffs[c] !== undefined)
+                        .map(c => [c, diffs[c]])
+                        .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
+                    if (timeline) {
+                        timeline.className = '';
+                        timeline.style.cssText = 'margin-bottom:0.5rem;';
+                        const activeRows = sorted.map(([coin, diff]) => {
+                            const isActive = coin === activeCoin;
+                            const pct = (diff / maxDiff * 100).toFixed(1);
+                            const clr = getRotationCoinColor(coin);
+                            const diffStr = formatSmartPortDifficulty(diff);
+                            return `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;margin-bottom:4px;">
+                                <span style="width:3.5rem;text-align:right;font-weight:600;color:${clr};">${escapeHtml(coin)}</span>
+                                <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                    <div style="width:${pct}%;height:100%;background:${clr};border-radius:4px;"></div>
+                                </div>
+                                <span style="width:5.5rem;text-align:right;color:${isActive ? 'var(--neon-green,#4ade80)' : 'var(--text-muted)'};font-size:0.7rem;">${diffStr}${isActive ? ' ✓' : ''}</span>
+                            </div>`;
+                        });
+                        const excludedRows = excludedEntries.map(([coin, diff]) => {
+                            const diffStr = formatSmartPortDifficulty(diff);
+                            return `<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;margin-bottom:4px;opacity:0.4;" title="Excluded from difficulty rotation">
+                                <span style="width:3.5rem;text-align:right;font-weight:600;color:var(--text-muted);">${escapeHtml(coin)}</span>
+                                <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:14px;overflow:hidden;">
+                                    <div style="width:30%;height:100%;background:var(--text-muted,#888);border-radius:4px;opacity:0.4;"></div>
+                                </div>
+                                <span style="width:5.5rem;text-align:right;color:var(--text-muted);font-size:0.7rem;">${diffStr} ✗</span>
+                            </div>`;
+                        });
+                        timeline.innerHTML = activeRows.concat(excludedRows).join('');
+                    }
+
+                    if (tbody) {
+                        const activeTableRows = sorted.map(([coin, diff]) => {
+                            const isActive = coin === activeCoin;
+                            const color = getRotationCoinColor(coin);
+                            const diffStr = formatSmartPortDifficulty(diff);
+                            return `<tr${isActive ? ' class="active-row"' : ''}>
+                                <td><span class="rotation-coin-dot" style="background:${color}"></span>${escapeHtml(coin)}</td>
+                                <td colspan="3" style="color:${isActive ? 'var(--neon-green,#4ade80)' : 'inherit'}">${diffStr}${isActive ? ' — active (lowest)' : ''}</td>
+                            </tr>`;
+                        });
+                        const excludedTableRows = excludedEntries.map(([coin, diff]) => {
+                            const diffStr = formatSmartPortDifficulty(diff);
+                            return `<tr style="opacity:0.4;" title="Excluded from difficulty rotation">
+                                <td><span class="rotation-coin-dot" style="background:var(--text-muted,#888)"></span>${escapeHtml(coin)}</td>
+                                <td colspan="3" style="color:var(--text-muted)">${diffStr} — excluded</td>
+                            </tr>`;
+                        });
+                        tbody.innerHTML = activeTableRows.concat(excludedTableRows).join('');
+                    }
+
+                } else {
+                    // TIME mode
+                    if (timeLabels) timeLabels.style.display = '';
+                    if (tzLabel) tzLabel.textContent = 'Timezone:';
+                    if (tzEl) tzEl.textContent = data.timezone || 'UTC';
+
+                    if (timeline && schedule.length > 0) {
+                        timeline.className = 'rotation-timeline';
+                        timeline.style.cssText = '';
+                        timeline.innerHTML = '';
+                        schedule.forEach(slot => {
+                            const pct = (slot.end_h - slot.start_h + (slot.end_h < slot.start_h ? 24 : 0)) / 24 * 100;
+                            const left = slot.start_h / 24 * 100;
+                            const isActive = slot.symbol === activeCoin;
+                            const seg = document.createElement('div');
+                            seg.className = 'rotation-timeline-segment' + (isActive ? '' : ' dimmed');
+                            seg.style.left = left + '%';
+                            seg.style.width = pct + '%';
+                            seg.style.background = getRotationCoinColor(slot.symbol);
+                            if (pct > 4) seg.textContent = slot.symbol;
+                            seg.title = slot.symbol + ' - ' + slot.start_h.toFixed(2) + 'h to ' + slot.end_h.toFixed(2) + 'h (' + slot.weight + '%)';
+                            timeline.appendChild(seg);
+                        });
+                        const now = new Date();
+                        const tz = data.timezone || 'UTC';
+                        let nowH;
+                        try {
+                            const parts = new Intl.DateTimeFormat('en-US', {
+                                hour: 'numeric', minute: 'numeric', second: 'numeric',
+                                hour12: false, timeZone: tz
+                            }).formatToParts(now);
+                            const h = parseInt(parts.find(p => p.type === 'hour').value);
+                            const m = parseInt(parts.find(p => p.type === 'minute').value);
+                            const s = parseInt(parts.find(p => p.type === 'second').value);
+                            nowH = h + m / 60 + s / 3600;
+                        } catch (e) {
+                            nowH = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+                        }
+                        const marker = document.createElement('div');
+                        marker.className = 'rotation-timeline-now';
+                        marker.style.left = (nowH / 24 * 100) + '%';
+                        timeline.appendChild(marker);
+                    }
+
+                    if (tbody) {
+                        tbody.innerHTML = '';
+                        schedule.forEach(slot => {
+                            const isActive = slot.symbol === activeCoin;
+                            const durationH = slot.end_h - slot.start_h;
+                            const hours = durationH > 0 ? durationH : durationH + 24;
+                            const tr = document.createElement('tr');
+                            if (isActive) tr.className = 'active-row';
+                            const color = getRotationCoinColor(slot.symbol);
+                            tr.innerHTML =
+                                '<td><span class="rotation-coin-dot" style="background:' + color + '"></span>' + slot.symbol + '</td>' +
+                                '<td>' + slot.weight + '%</td>' +
+                                '<td>' + hours.toFixed(2) + 'h</td>' +
+                                '<td>' + formatRotationTime(slot.start_h) + ' - ' + formatRotationTime(slot.end_h) + '</td>';
+                            tbody.appendChild(tr);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('[ROTATION] Failed to fetch multiport status:', e);
+            }
+        }
+
+        function formatRotationTime(h) {
+            const hh = ((h % 24) + 24) % 24;
+            const hours = Math.floor(hh);
+            const minutes = Math.round((hh - hours) * 60);
+            return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
         }
 
         // Force refresh
@@ -9733,6 +10594,7 @@
             restoreCollapsedStates();  // Restore collapsed section states
             updateViewToggleButton(); // Restore miner view mode (flat/grouped)
             initStatsCharts();
+            fetchDailyBlocks();
             loadSavedHistory();   // Seed charts with server-saved history
             updateCoinSymbols();  // Set initial coin symbols
             fetchCurrencyConfig(); // Load currency display preferences
@@ -9742,6 +10604,8 @@
             initSortableSections();
             fetchAlgoBadges();
             fetchActivityFeed();
+            fetchRotationStatus();
+            setInterval(fetchRotationStatus, 60000);
             // Refresh activity feed, algo badges, and health (node/network hashrate) every 30s
             setInterval(fetchActivityFeed, 30000);
             setInterval(fetchAlgoBadges, 30000);

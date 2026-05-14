@@ -1531,6 +1531,13 @@ func (s *Sentinel) checkMultiPortDifficultySpike(ctx context.Context) {
 			continue
 		}
 
+		// Skip when either difficulty is outside normal mining range.
+		// FBTC rotates between mining (~6G), indexing (1), and merged mining (~14T).
+		// These swings are by design, not anomalies.
+		if prev <= 1 || state.NetworkDiff <= 1 || prev > 1e12 || state.NetworkDiff > 1e12 {
+			continue
+		}
+
 		changePct := ((state.NetworkDiff - prev) / prev) * 100
 		diffThreshold := float64(s.cfg.DiffSpikePercent)
 		if diffThreshold <= 0 {

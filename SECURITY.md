@@ -50,7 +50,7 @@ Spiral Pool is mining pool software that:
 ### Deployment Recommendations
 
 1. **Operator-controlled infrastructure preferred**: Deploy on bare metal servers under your physical control, or VMs on hypervisors you own. Cloud/VPS deployments are supported but carry serious risks (provider ToS violations, bandwidth billing, provider access to wallet credentials) — the installer requires written risk acknowledgment. See [WARNINGS.md](WARNINGS.md) and [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md).
-2. **x86_64 architecture only**: All packages and binaries target x86_64 (amd64). ARM/Raspberry Pi has not been tested.
+2. **x86_64 architecture only**: All packages and binaries target x86_64 (amd64).
 3. **Network Isolation**: Run database and internal services on private networks
 4. **Firewall Configuration**: Only expose stratum ports for your enabled coins (see [docs/reference/REFERENCE.md](docs/reference/REFERENCE.md) for port list) and necessary API ports
 5. **TLS/SSL**: Use TLS for API endpoints if exposed externally
@@ -178,5 +178,5 @@ See [OPERATIONS.md Section 10](docs/setup/OPERATIONS.md#10-operator-legal-protec
 
 *Security is a shared responsibility. This policy describes how to report vulnerabilities and provides general security guidance. You are responsible for securing your deployment.*
 
-*Spiral Pool v2.4.2 - Security Policy*
+*Spiral Pool v2.5.0 - Security Policy*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

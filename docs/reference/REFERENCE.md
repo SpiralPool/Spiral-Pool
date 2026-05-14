@@ -14,6 +14,7 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | DigiByte (Scrypt) | DGB-SCRYPT | 3336 | 3337 | 3338 |
 | Bitcoin | BTC | 4333 | 4334 | 4335 |
 | Bitcoin Cash | BCH | 5333 | 5334 | 5335 |
+| Bitcoin Cash II | BCH2 | 5336 | 5337 | 5338 |
 | Bitcoin II | BC2 | 6333 | 6334 | 6335 |
 | Litecoin | LTC | 7333 | 7334 | 7335 |
 | Dogecoin | DOGE | 8335 | 8337 | 8342 |
@@ -23,13 +24,36 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Syscoin | SYS | 15335 | 15336 | 15337 |
 | Myriad | XMY | 17335 | 17336 | 17337 |
 | Fractal Bitcoin | FBTC | 18335 | 18336 | 18337 |
+| eCash | XEC | 18338 | 18339 | 18340 |
+| Bitcoin Silver | BTCS | 11335 | 11336 | 11337 |
 | Q-BitX | QBX | 20335 | 20336 | 20337 |
+
+## Daemon RPC Ports
+
+| Coin | Symbol | RPC Port | P2P Port | ZMQ Port |
+|------|--------|----------|----------|----------|
+| DigiByte | DGB | 14022 | 12024 | 28532 |
+| Bitcoin | BTC | 8332 | 8333 | 28332 |
+| Bitcoin Cash | BCH | 8432 | 8434 | 28432 |
+| Bitcoin Cash II | BCH2 | 8533 | 8534 | 28533 |
+| Bitcoin II | BC2 | 8339 | 8338 | 28338 |
+| Bitcoin Silver | BTCS | 10567 | 10566 | 28567 |
+| Litecoin | LTC | 9332 | 9333 | 28933 |
+| Dogecoin | DOGE | 22555 | 22556 | 28555 |
+| PepeCoin | PEP | 33873 | 33872 | 28873 |
+| Catcoin | CAT | 9932 | 9933 | 28932 |
+| Namecoin | NMC | 8336 | 8334 | 28336 |
+| Syscoin | SYS | 8370 | 8369 | 28370 |
+| Myriad | XMY | 10889 | 10888 | 28889 |
+| Fractal Bitcoin | FBTC | 8340 | 8341 | 28340 |
+| eCash | XEC | 9004 | 8343 | 28335 |
+| Q-BitX | QBX | 8344 | 8345 | N/A |
 
 ## Multi Coin Smart Port
 
 | Feature | Port | Notes |
 |---------|------|-------|
-| Multi-Coin Stratum | 16180 | Weighted 24h timezone-aware schedule across SHA-256d coins. See [MULTI_COIN_PORT.md](MULTI_COIN_PORT.md) |
+| Multi-Coin Stratum | 16180 | Routes SHA-256d coins via TIME mode (weighted 24h timezone-aware schedule) or DIFFICULTY mode (lowest current network difficulty wins). See [MULTI_COIN_PORT.md](MULTI_COIN_PORT.md) |
 
 ## Service Ports
 
@@ -451,4 +475,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2*
+*Spiral Pool — Phi Hash Reactor 2.5.0*

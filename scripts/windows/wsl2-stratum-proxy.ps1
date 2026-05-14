@@ -17,20 +17,25 @@ $ErrorActionPreference = 'Stop'
 # ─── Spiral Pool coin port table ────────────────────────────────────────────
 # Ports must match the Spiral Pool installer. Do not change these.
 $COIN_PORTS = @(
-    [pscustomobject]@{ Num=1;  Code='DGB';       Name='DigiByte (SHA-256d)';        V1=3333;  V2=3334;  TLS=3335  },
-    [pscustomobject]@{ Num=2;  Code='DGB-SCRYPT'; Name='DigiByte (Scrypt)';         V1=3336;  V2=3337;  TLS=3338  },
-    [pscustomobject]@{ Num=3;  Code='BTC';       Name='Bitcoin (SHA-256d)';         V1=4333;  V2=4334;  TLS=4335  },
-    [pscustomobject]@{ Num=4;  Code='BCH';       Name='Bitcoin Cash (SHA-256d)';    V1=5333;  V2=5334;  TLS=5335  },
-    [pscustomobject]@{ Num=5;  Code='BC2';       Name='Bitcoin II (SHA-256d)';      V1=6333;  V2=6334;  TLS=6335  },
-    [pscustomobject]@{ Num=6;  Code='LTC';       Name='Litecoin (Scrypt)';          V1=7333;  V2=7334;  TLS=7335  },
-    [pscustomobject]@{ Num=7;  Code='DOGE';      Name='Dogecoin (Scrypt)';          V1=8335;  V2=8337;  TLS=8342  },
-    [pscustomobject]@{ Num=8;  Code='PEP';       Name='Pepecoin (Scrypt)';          V1=10335; V2=10336; TLS=10337 },
-    [pscustomobject]@{ Num=9;  Code='CAT';       Name='Catcoin (Scrypt)';           V1=12335; V2=12336; TLS=12337 },
-    [pscustomobject]@{ Num=10; Code='NMC';       Name='Namecoin (SHA-256d)';        V1=14335; V2=14336; TLS=14337 },
-    [pscustomobject]@{ Num=11; Code='SYS';       Name='Syscoin (SHA-256d)';         V1=15335; V2=15336; TLS=15337 },
-    [pscustomobject]@{ Num=12; Code='XMY';       Name='Myriadcoin (SHA-256d)';      V1=17335; V2=17336; TLS=17337 },
-    [pscustomobject]@{ Num=13; Code='FBTC';      Name='Fractal Bitcoin (SHA-256d)'; V1=18335; V2=18336; TLS=18337 },
-    [pscustomobject]@{ Num=14; Code='QBX';       Name='Q-BitX (SHA-256d)';          V1=20335; V2=20336; TLS=20337 }
+    [pscustomobject]@{ Num=1;  Code='DGB';       Name='DigiByte (SHA-256d)';            V1=3333;  V2=3334;  TLS=3335  },
+    [pscustomobject]@{ Num=2;  Code='DGB-SCRYPT'; Name='DigiByte (Scrypt)';             V1=3336;  V2=3337;  TLS=3338  },
+    [pscustomobject]@{ Num=3;  Code='BTC';       Name='Bitcoin (SHA-256d)';             V1=4333;  V2=4334;  TLS=4335  },
+    [pscustomobject]@{ Num=4;  Code='BCH';       Name='Bitcoin Cash (SHA-256d)';        V1=5333;  V2=5334;  TLS=5335  },
+    [pscustomobject]@{ Num=5;  Code='BCH2';      Name='Bitcoin Cash II (SHA-256d)';     V1=5336;  V2=5337;  TLS=5338  },
+    [pscustomobject]@{ Num=6;  Code='BC2';       Name='Bitcoin II (SHA-256d)';          V1=6333;  V2=6334;  TLS=6335  },
+    [pscustomobject]@{ Num=7;  Code='BTCS';      Name='Bitcoin Silver (SHA-256d)';      V1=11335; V2=11336; TLS=11337 },
+    [pscustomobject]@{ Num=8;  Code='LTC';       Name='Litecoin (Scrypt)';              V1=7333;  V2=7334;  TLS=7335  },
+    [pscustomobject]@{ Num=9;  Code='DOGE';      Name='Dogecoin (Scrypt)';              V1=8335;  V2=8337;  TLS=8342  },
+    [pscustomobject]@{ Num=10; Code='PEP';       Name='Pepecoin (Scrypt)';              V1=10335; V2=10336; TLS=10337 },
+    [pscustomobject]@{ Num=11; Code='CAT';       Name='Catcoin (Scrypt)';               V1=12335; V2=12336; TLS=12337 },
+    [pscustomobject]@{ Num=12; Code='NMC';       Name='Namecoin (SHA-256d)';            V1=14335; V2=14336; TLS=14337 },
+    [pscustomobject]@{ Num=13; Code='SYS';       Name='Syscoin (SHA-256d)';             V1=15335; V2=15336; TLS=15337 },
+    [pscustomobject]@{ Num=14; Code='XMY';       Name='Myriadcoin (SHA-256d)';          V1=17335; V2=17336; TLS=17337 },
+    [pscustomobject]@{ Num=15; Code='FBTC';      Name='Fractal Bitcoin (SHA-256d)';     V1=18335; V2=18336; TLS=18337 },
+    [pscustomobject]@{ Num=16; Code='QBX';       Name='Q-BitX (SHA-256d)';              V1=20335; V2=20336; TLS=20337 },
+    # Smart Multi-Coin Stratum port — used when install.sh was run in multi-coin mode.
+    # Routes all coins through a single entry-point; miners connect to port 16180.
+    [pscustomobject]@{ Num=17; Code='MULTI';     Name='Smart Multi-Coin Stratum';       V1=16180; V2=0;     TLS=0     }
 )
 
 # ─── Banner ──────────────────────────────────────────────────────────────────
@@ -137,9 +142,12 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
     $wslList = & wsl -l -q 2>&1
     [Console]::OutputEncoding = $origEncoding
-    # Filter out blank lines and the "Windows Subsystem for Linux Distributions:" header
+    # Filter out blank lines and the "Windows Subsystem for Linux Distributions:" header.
+    # Strip trailing '*' (default marker), ' (Default)', and any ' (WSL 2)' version suffixes
+    # so the distro name passed to wsl -d matches exactly what WSL has registered.
     $distros = @($wslList | Where-Object { $_ -match '\S' -and $_ -notmatch 'Windows Subsystem' } |
-                 ForEach-Object { $_.Trim().TrimEnd('*') })
+                 ForEach-Object { $_.Trim().TrimEnd('*') -replace '\s*\(Default\)', '' -replace '\s*\(WSL \d\)', '' } |
+                 Where-Object { $_ -match '\S' })
     if ($distros.Count -gt 0) {
         $wslReady = $true
         if ($distros.Count -eq 1) {
@@ -165,6 +173,13 @@ try {
     }
 } catch {
     Write-Host "  [!] WSL2 detection error: $_" -ForegroundColor Yellow
+}
+
+# Persist the selected distro so wsl2-shutdown-hook.ps1 uses the same one.
+if ($selectedDistro) {
+    $appDataDir = "$env:APPDATA\SpiralPool"
+    if (-not (Test-Path $appDataDir)) { New-Item -ItemType Directory -Path $appDataDir | Out-Null }
+    Set-Content -Path "$appDataDir\distro.conf" -Value $selectedDistro -Encoding UTF8
 }
 
 if (-not $wslReady) {
@@ -335,8 +350,8 @@ if ($sel -match '^[Cc]$') {
 } elseif ($sel -match '^[Aa][Ll][Ll]$') {
     foreach ($c in $COIN_PORTS) {
         $selectedPorts += $c.V1
-        $selectedPorts += $c.V2
-        $selectedPorts += $c.TLS
+        if ($c.V2  -gt 0) { $selectedPorts += $c.V2 }
+        if ($c.TLS -gt 0) { $selectedPorts += $c.TLS }
     }
     $selectedLabel = 'All coins'
 } else {
@@ -348,9 +363,19 @@ if ($sel -match '^[Cc]$') {
         exit 1
     }
     $selectedPorts += $coin.V1
-    $selectedPorts += $coin.V2
-    $selectedPorts += $coin.TLS
+    if ($coin.V2  -gt 0) { $selectedPorts += $coin.V2 }
+    if ($coin.TLS -gt 0) { $selectedPorts += $coin.TLS }
     $selectedLabel = "$($coin.Code) - $($coin.Name)"
+}
+
+# ─── Remove stale portproxy rules for all Spiral Pool ports ─────────────────
+# Clears rules left behind by a previous script run (different coin selection,
+# WSL2 IP change after a reboot, or session that exited via the window X-button).
+$allSpiralPorts = $COIN_PORTS | ForEach-Object {
+    @($_.V1; if ($_.V2  -gt 0) { $_.V2  }; if ($_.TLS -gt 0) { $_.TLS })
+}
+foreach ($port in $allSpiralPorts) {
+    netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>&1 | Out-Null
 }
 
 # ─── Add portproxy rules ──────────────────────────────────────────────────────
@@ -382,7 +407,7 @@ foreach ($port in $selectedPorts) {
         try {
             New-NetFirewallRule -DisplayName $ruleName `
                 -Direction Inbound -Protocol TCP -LocalPort $port `
-                -Action Allow -Profile "Private,Domain" | Out-Null
+                -Action Allow -Profile "Any" | Out-Null
             Write-Host "  +  Firewall: allowed TCP $port (inbound)" -ForegroundColor Green
         } catch {
             Write-Host ("  [!] Firewall rule failed for port {0}: {1}" -f $port, $_) -ForegroundColor Yellow
@@ -486,8 +511,10 @@ if ($setupAutoStart -match '^[Yy]') {
 
     if ($setupAutoStart -match '^[Yy]') {
         # Start WSL2 and bring up all Spiral Pool systemd services.
-        # The sleep gives systemd time to initialise before the service start commands run.
-        $startServices = "sleep 15 && systemctl start spiralstratum spiralsentinel spiraldash spiralpool-health"
+        # Steps: (1) wait for systemd, (2) resync clock to fix drift after sleep/reboot,
+        # (3) start pool services. spiralpool-ha-watcher starts silently if installed;
+        # on standard WSL2 installs it is disabled and the command is a no-op.
+        $startServices = "sleep 15 && (chronyc -a makestep 2>/dev/null || systemctl restart systemd-timesyncd 2>/dev/null; sleep 1) && systemctl start spiralstratum spiralsentinel spiraldash spiralpool-health && systemctl start spiralpool-ha-watcher 2>/dev/null; true"
         $distroArg = if ($selectedDistro) { "-d `"$selectedDistro`" " } else { "" }
         $action    = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "${distroArg}--user root --exec bash -c `"$startServices`""
         $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -514,6 +541,12 @@ if ($setupAutoStart -match '^[Yy]') {
             Write-Host ""
             Write-Host "  Notes:" -ForegroundColor White
             Write-Host "  - Task runs at logon, not at startup — you must be logged in." -ForegroundColor Gray
+            Write-Host "  - For headless / unattended reboots add a [boot] command to /etc/wsl.conf" -ForegroundColor Gray
+            Write-Host "    inside WSL2 instead. This starts services without requiring a login:" -ForegroundColor DarkGray
+            Write-Host "        [boot]" -ForegroundColor DarkGray
+            Write-Host "        systemd=true" -ForegroundColor DarkGray
+            Write-Host "        command = bash -c 'systemctl start spiralstratum spiralsentinel spiraldash spiralpool-health'" -ForegroundColor DarkGray
+            Write-Host "    Then run: wsl --shutdown  (takes effect on next WSL2 start)" -ForegroundColor DarkGray
             Write-Host "  - Requires systemd enabled in WSL2 (/etc/wsl.conf: [boot] systemd=true)." -ForegroundColor Gray
             Write-Host "  - install.sh enables all services automatically (spiralstratum, spiralsentinel," -ForegroundColor Gray
             Write-Host "    spiraldash, spiralpool-health). If you re-installed, re-enable with:" -ForegroundColor Gray
@@ -574,6 +607,9 @@ while (-not `$wslIP -and `$attempts -lt 6) {
 }
 if (-not `$wslIP) { exit 1 }
 
+foreach (`$port in `$ports) {
+    netsh interface portproxy delete v4tov4 listenport=`$port listenaddress=0.0.0.0 2>&1 | Out-Null
+}
 foreach (`$port in `$ports) {
     `$r = netsh interface portproxy add v4tov4 listenport=`$port listenaddress=0.0.0.0 connectport=`$port connectaddress=`$wslIP 2>&1
     if (`$LASTEXITCODE -ne 0) { [System.Console]::Error.WriteLine("portproxy failed port `$port: `$r") }

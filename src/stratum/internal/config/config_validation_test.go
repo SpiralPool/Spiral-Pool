@@ -858,6 +858,8 @@ func TestGetCoinAddressPrefixes_KnownCoins(t *testing.T) {
 		{"SYS", 1, 0x3F},  // S prefix
 		{"XMY", 1, 0x32},  // M prefix
 		{"FBTC", 2, 0x00}, // Same as BTC
+		{"BCH2", 2, 0x00}, // Bitcoin Cash II — same legacy bytes as BCH/BTC; use CashAddr to distinguish
+		{"BTCS", 2, 0x1A}, // Bitcoin Silver — B prefix (0x1A=26)
 	}
 
 	for _, tc := range tests {

@@ -144,7 +144,7 @@ install_etcd() {
     fi
 
     # Install etcd from package manager
-    # Ubuntu 24.04 split the 'etcd' package into 'etcd-server' + 'etcd-client'
+    # Ubuntu 24.04+ split the 'etcd' package into 'etcd-server' + 'etcd-client' (applies to 24.04 and 26.04)
     add-apt-repository -y universe > /dev/null 2>&1 || true
     apt-get update -qq
     apt-get install -y -qq etcd-server etcd-client
@@ -201,7 +201,7 @@ EOF
 install_patroni() {
     log "Installing Patroni..."
 
-    # Install Patroni in a virtual environment (PEP 668 compliant for Ubuntu 24.04)
+    # Install Patroni in a virtual environment (PEP 668 compliant for Ubuntu 24.04 and 26.04)
     local patroni_venv="/opt/patroni/venv"
     mkdir -p /opt/patroni
     python3 -m venv "$patroni_venv"

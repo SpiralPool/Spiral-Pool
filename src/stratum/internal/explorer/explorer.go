@@ -38,7 +38,9 @@ const (
 	CoinDigiByte       CoinType = "digibyte"
 	CoinBitcoin        CoinType = "bitcoin"
 	CoinBitcoinCash    CoinType = "bitcoincash"
+	CoinBitcoinCashII  CoinType = "bitcoincashii"
 	CoinBitcoinII      CoinType = "bitcoinii"
+	CoinBitcoinSilver  CoinType = "bitcoinsilver"
 	CoinLitecoin       CoinType = "litecoin"
 	CoinDogecoin       CoinType = "dogecoin"
 	CoinDigiByteScrypt CoinType = "digibyte-scrypt"
@@ -183,6 +185,19 @@ func DefaultConfig() *ExplorerConfig {
 					Priority:    1,
 				},
 			},
+			CoinBitcoinCashII: {
+				{
+					Type:        ExplorerBlockCypher,
+					Name:        "BCH2 Explorer",
+					BaseURL:     "https://bch2explorer.com",
+					BlockPath:   "/block/{hash}",
+					TxPath:      "/tx/{hash}",
+					AddressPath: "/address/{address}",
+					HeightPath:  "/block/{height}",
+					Enabled:     true,
+					Priority:    0,
+				},
+			},
 			CoinBitcoinII: {
 				{
 					Type:        ExplorerBlockCypher,
@@ -194,6 +209,19 @@ func DefaultConfig() *ExplorerConfig {
 					HeightPath:  "/block/{height}",
 					Enabled:     true,
 					Priority:    0, // Primary for BC2
+				},
+			},
+			CoinBitcoinSilver: {
+				{
+					Type:        ExplorerBlockCypher,
+					Name:        "Bitcoin Silver Explorer",
+					BaseURL:     "https://explorer.bitcoinsilver.top",
+					BlockPath:   "/block/{hash}",
+					TxPath:      "/tx/{hash}",
+					AddressPath: "/address/{address}",
+					HeightPath:  "/block/{height}",
+					Enabled:     true,
+					Priority:    0,
 				},
 			},
 			CoinLitecoin: {
@@ -514,8 +542,12 @@ func CoinFromString(s string) CoinType {
 	switch strings.ToLower(s) {
 	case "digibyte", "dgb":
 		return CoinDigiByte
+	case "bitcoincashii", "bitcoin-cash-ii", "bch2":
+		return CoinBitcoinCashII
 	case "bitcoinii", "bitcoin-ii", "bitcoin2", "bc2", "bcii":
 		return CoinBitcoinII
+	case "bitcoinsilver", "bitcoin-silver", "btcs":
+		return CoinBitcoinSilver
 	case "bitcoincash", "bitcoin-cash", "bch":
 		return CoinBitcoinCash
 	case "bitcoin", "btc":

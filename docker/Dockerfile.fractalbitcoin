@@ -13,7 +13,7 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Fractal Bitcoin Node for Spiral Pool"
@@ -40,14 +40,15 @@ RUN useradd -r -m -s /bin/bash fractal \
     && chown -R fractal:fractal /home/fractal
 
 # Download and install Fractal Bitcoin
+# NOTE: Only x86_64 (amd64) is supported.
 # NOTE: Archive contains bitcoind/bitcoin-cli, we symlink as fractald/fractal-cli
-# NOTE: Fractal Bitcoin only provides x86_64 binaries — no ARM64 releases available upstream.
 WORKDIR /tmp
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" != "amd64" ]; then \
         echo "ERROR: Fractal Bitcoin only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
     fi && \
     wget -q --max-redirect=5 "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${FBTC_VERSION}/fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && tar -tzf "fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "fractald-${FBTC_VERSION}-x86_64-linux-gnu/bin/"* /usr/local/bin/ \
     && ln -sf /usr/local/bin/bitcoind /usr/local/bin/fractald \

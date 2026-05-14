@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.4.2-PHI_HASH_REACTOR
+#                   V2.5.0-PHI_HASH_REACTOR
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary.
 # Config files, wallets, blockchain data, and pool settings are NEVER modified.
@@ -53,19 +53,22 @@ fi
 
 # ── Target versions — keep in sync with install.sh lines 41-46 ────────────────
 declare -A COIN_TARGET=(
-    [BTC]="29.3.knots20260210"
+    [BTC]="29.3.knots20260508"
     [BCH]="29.0.0"
+    [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="29.1.0"
+    [BTCS]="source-ff5c3c3"  # Bitcoin Silver — built from source, pinned commit
     [DGB]="8.26.2"
-    [LTC]="0.21.4"
+    [LTC]="0.21.5.4"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
     [CAT]="2.1.1"
-    [NMC]="28.0"        # nc30.2 on GitHub has no binary assets yet — cannot upgrade
+    [NMC]="28.0"        # nc31.0 on GitHub has no binary assets yet — cannot upgrade
     [SYS]="5.0.5"
     [XMY]="0.18.1.0"
     [FBTC]="0.3.0"
     [QBX]="0.2.0"
+    [XEC]="0.31.12"   # ecash-node (Bitcoin ABC) — latest stable
 )
 
 # Risk classification for this upgrade cycle.
@@ -75,46 +78,52 @@ declare -A COIN_TARGET=(
 # MINOR  = may need reindex; check release notes
 # MAJOR  = reindex almost certainly required; use --reindex
 declare -A COIN_RISK=(
-    [BTC]="NONE"    # 29.3.knots20260210 — current
+    [BTC]="NONE"    # 29.3.knots20260508 — current
     [BCH]="NONE"    # 29.0.0 — current
+    [BCH2]="NONE"   # 27.0.2 — current
     [BC2]="NONE"    # 29.1.0 — current
+    [BTCS]="NONE"   # source build — pinned commit ff5c3c3
     [DGB]="NONE"    # 8.26.2 — current
-    [LTC]="NONE"    # 0.21.4 — current
+    [LTC]="NONE"    # 0.21.5.4 — current
     [DOGE]="NONE"   # 1.14.9 — current
     [PEP]="NONE"    # 1.1.0  — current
     [CAT]="NONE"    # 2.1.1  — current
-    [NMC]="NONE"    # 28.0   — nc30.2 has no binaries yet
+    [NMC]="NONE"    # 28.0   — nc31.0 has no binaries yet
     [SYS]="NONE"    # 5.0.5  — current
     [XMY]="NONE"    # 0.18.1.0 — current (project dormant since 2020)
     [FBTC]="NONE"   # 0.3.0  — current
     [QBX]="PATCH"   # 0.1.0 → 0.2.0: LevelDB static build only; no reindex expected
+    [XEC]="NONE"    # 0.31.12 — current (ecash-node / Bitcoin ABC)
 )
 
 # systemd service unit names
 declare -A COIN_SERVICE=(
-    [BTC]="bitcoind"        [BCH]="bitcoind-bch"    [BC2]="bitcoiniid"
+    [BTC]="bitcoind"        [BCH]="bitcoind-bch"    [BCH2]="bitcoincashIId"
+    [BC2]="bitcoiniid"      [BTCS]="bitcoinsilverd"
     [DGB]="digibyted"       [LTC]="litecoind"       [DOGE]="dogecoind"
     [PEP]="pepecoind"       [CAT]="catcoind"        [NMC]="namecoind"
     [SYS]="syscoind"        [XMY]="myriadcoind"     [FBTC]="fractald"
-    [QBX]="qbitxd"
+    [QBX]="qbitxd"          [XEC]="ecashd"
 )
 
 # /usr/local/bin daemon command (symlink name)
 declare -A COIN_DAEMON_CMD=(
-    [BTC]="bitcoind"        [BCH]="bitcoind-bch"    [BC2]="bitcoiniid"
+    [BTC]="bitcoind"        [BCH]="bitcoind-bch"    [BCH2]="bitcoincashIId"
+    [BC2]="bitcoiniid"      [BTCS]="bitcoinsilverd"
     [DGB]="digibyted"       [LTC]="litecoind"       [DOGE]="dogecoind"
     [PEP]="pepecoind"       [CAT]="catcoind"        [NMC]="namecoind"
     [SYS]="syscoind"        [XMY]="myriadcoind"     [FBTC]="fractald"
-    [QBX]="qbitx"
+    [QBX]="qbitx"           [XEC]="ecashd"
 )
 
 # /usr/local/bin CLI command (symlink name)
 declare -A COIN_CLI_CMD=(
-    [BTC]="bitcoin-cli"     [BCH]="bitcoin-cli-bch"  [BC2]="bitcoinii-cli"
-    [DGB]="digibyte-cli"    [LTC]="litecoin-cli"    [DOGE]="dogecoin-cli"
-    [PEP]="pepecoin-cli"    [CAT]="catcoin-cli"     [NMC]="namecoin-cli"
-    [SYS]="syscoin-cli"     [XMY]="myriadcoin-cli"  [FBTC]="fractal-cli"
-    [QBX]="qbitx-cli"
+    [BTC]="bitcoin-cli"     [BCH]="bitcoin-cli-bch"    [BCH2]="bitcoincashII-cli"
+    [BC2]="bitcoinii-cli"   [BTCS]="bitcoinsilver-cli"
+    [DGB]="digibyte-cli"    [LTC]="litecoin-cli"       [DOGE]="dogecoin-cli"
+    [PEP]="pepecoin-cli"    [CAT]="catcoin-cli"        [NMC]="namecoin-cli"
+    [SYS]="syscoin-cli"     [XMY]="myriadcoin-cli"     [FBTC]="fractal-cli"
+    [QBX]="qbitx-cli"      [XEC]="ecash-cli"
 )
 
 # Conf file path per coin (required for CLI calls — each coin uses a non-default RPC port)
@@ -130,7 +139,9 @@ _chain_dir() {
 declare -A COIN_CONF=(
     [BTC]="$(_chain_dir btc)/bitcoin.conf"
     [BCH]="$(_chain_dir bch)/bitcoin.conf"
+    [BCH2]="$(_chain_dir bch2)/bitcoincashii.conf"
     [BC2]="$(_chain_dir bc2)/bitcoinii.conf"
+    [BTCS]="$(_chain_dir btcs)/bitcoinsilver.conf"
     [DGB]="$(_chain_dir dgb)/digibyte.conf"
     [LTC]="$(_chain_dir ltc)/litecoin.conf"
     [DOGE]="$(_chain_dir doge)/dogecoin.conf"
@@ -141,6 +152,7 @@ declare -A COIN_CONF=(
     [XMY]="$(_chain_dir xmy)/myriadcoin.conf"
     [FBTC]="$(_chain_dir fbtc)/fractal.conf"
     [QBX]="$(_chain_dir qbx)/qbitx.conf"
+    [XEC]="$(_chain_dir xec)/bitcoin.conf"
 )
 
 # Build full CLI command with -conf flag
@@ -151,14 +163,15 @@ get_coin_cli() {
 
 # .env flag to check if a coin is enabled on this node
 declare -A COIN_ENV_FLAG=(
-    [BTC]="ENABLE_BTC"  [BCH]="ENABLE_BCH"  [BC2]="ENABLE_BC2"
-    [DGB]="ENABLE_DGB"  [LTC]="ENABLE_LTC"  [DOGE]="ENABLE_DOGE"
-    [PEP]="ENABLE_PEP"  [CAT]="ENABLE_CAT"  [NMC]="ENABLE_NMC"
-    [SYS]="ENABLE_SYS"  [XMY]="ENABLE_XMY"  [FBTC]="ENABLE_FBTC"
-    [QBX]="ENABLE_QBX"
+    [BTC]="ENABLE_BTC"   [BCH]="ENABLE_BCH"   [BCH2]="ENABLE_BCH2"
+    [BC2]="ENABLE_BC2"   [BTCS]="ENABLE_BTCS"
+    [DGB]="ENABLE_DGB"   [LTC]="ENABLE_LTC"   [DOGE]="ENABLE_DOGE"
+    [PEP]="ENABLE_PEP"   [CAT]="ENABLE_CAT"   [NMC]="ENABLE_NMC"
+    [SYS]="ENABLE_SYS"   [XMY]="ENABLE_XMY"   [FBTC]="ENABLE_FBTC"
+    [QBX]="ENABLE_QBX"   [XEC]="ENABLE_XEC"
 )
 
-ALL_COINS=(BTC BCH BC2 DGB LTC DOGE PEP CAT NMC SYS XMY FBTC QBX)
+ALL_COINS=(BTC BCH BCH2 BC2 BTCS DGB LTC DOGE PEP CAT NMC SYS XMY FBTC QBX XEC)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # COLORS
@@ -183,6 +196,7 @@ die() { log_error "$*"; cleanup; exit 1; }
 # ═══════════════════════════════════════════════════════════════════════════════
 cleanup() {
     rm -rf "$WORK_DIR" 2>/dev/null || true
+    rm -rf /tmp/btcs-build 2>/dev/null || true
     if [[ "$MAINTENANCE_ENABLED" == "true" ]]; then
         disable_maintenance 2>/dev/null || true
     fi
@@ -198,11 +212,7 @@ check_root() {
 }
 
 get_system_arch() {
-    case "$(uname -m)" in
-        x86_64)  echo "x86_64" ;;
-        aarch64) echo "aarch64" ;;
-        *)       die "Unsupported architecture: $(uname -m)" ;;
-    esac
+    echo "x86_64"
 }
 
 is_coin_enabled() {
@@ -305,7 +315,7 @@ _wget() {
 
 download_BTC() {
     local arch="$1" ver="${COIN_TARGET[BTC]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="bitcoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://bitcoinknots.org/files/29.x/${ver}/${fn}" 2>/dev/null \
@@ -317,7 +327,7 @@ download_BTC() {
 
 download_BCH() {
     local arch="$1" ver="${COIN_TARGET[BCH]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="bitcoin-cash-node-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v${ver}/${fn}" || return 1
@@ -325,9 +335,18 @@ download_BCH() {
     echo "bitcoin-cash-node-${ver}"
 }
 
+download_BCH2() {
+    local arch="$1" ver="${COIN_TARGET[BCH2]}"
+    local fn="bitcoincashII-v${ver}-linux-x86_64.tar.gz"
+    cd "$WORK_DIR"
+    _wget -O "$fn" "https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v${ver}/${fn}" || return 1
+    tar -xzf "$fn" || return 1
+    ls -d bitcoincashII-* 2>/dev/null | head -1 || echo "."
+}
+
 download_BC2() {
     local arch="$1" ver="${COIN_TARGET[BC2]}"
-    local sfx="x86_64-linux-CLI"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-CLI"
+    local sfx="x86_64-linux-CLI"
     local fn="BitcoinII-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${ver}/${fn}" || return 1
@@ -335,9 +354,23 @@ download_BC2() {
     ls -d BitcoinII-* 2>/dev/null | head -1 || echo "."
 }
 
+download_BTCS() {
+    # Bitcoin Silver must be built from source — pinned to verified commit
+    local commit="${COIN_TARGET[BTCS]##*-}"  # extract hash after "source-"
+    local build_dir="$WORK_DIR/bitcoinsilver"
+    mkdir -p "$build_dir"
+    cd "$build_dir"
+    git init && git remote add origin https://github.com/bitcoin-silver/core.git
+    git fetch --depth=1 origin "$commit" || return 1
+    git checkout FETCH_HEAD
+    ./autogen.sh && ./configure --disable-tests --disable-bench --without-gui --without-miniupnpc --prefix=/tmp/btcs-build
+    make -j"$(nproc)" && make install
+    echo "/tmp/btcs-build"
+}
+
 download_DGB() {
     local arch="$1" ver="${COIN_TARGET[DGB]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="digibyte-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/DigiByte-Core/digibyte/releases/download/v${ver}/${fn}" 2>/dev/null \
@@ -349,7 +382,7 @@ download_DGB() {
 
 download_LTC() {
     local arch="$1" ver="${COIN_TARGET[LTC]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="litecoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/litecoin-project/litecoin/releases/download/v${ver}/${fn}" || return 1
@@ -359,7 +392,7 @@ download_LTC() {
 
 download_DOGE() {
     local arch="$1" ver="${COIN_TARGET[DOGE]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="dogecoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/dogecoin/dogecoin/releases/download/v${ver}/${fn}" || return 1
@@ -369,7 +402,7 @@ download_DOGE() {
 
 download_PEP() {
     local arch="$1" ver="${COIN_TARGET[PEP]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="pepecoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/pepecoinppc/pepecoin/releases/download/v${ver}/${fn}" || return 1
@@ -380,7 +413,6 @@ download_PEP() {
 download_CAT() {
     local arch="$1" ver="${COIN_TARGET[CAT]}"
     local zip_name="Catcoin-Linux.zip"; local dir_name="Catcoin-Linux"
-    [[ "$arch" == "aarch64" ]] && zip_name="Catcoin-AArch.zip" && dir_name="Catcoin-AArch"
     cd "$WORK_DIR"
     _wget -O catcoin.zip "https://github.com/CatcoinCore/catcoincore/releases/download/v${ver}/${zip_name}" || return 1
     unzip -q catcoin.zip || return 1
@@ -389,7 +421,7 @@ download_CAT() {
 
 download_NMC() {
     local arch="$1" ver="${COIN_TARGET[NMC]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="namecoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://www.namecoin.org/files/namecoin-core/namecoin-core-${ver}/${fn}" || return 1
@@ -399,7 +431,7 @@ download_NMC() {
 
 download_SYS() {
     local arch="$1" ver="${COIN_TARGET[SYS]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="syscoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/syscoin/syscoin/releases/download/v${ver}/${fn}" || return 1
@@ -409,7 +441,7 @@ download_SYS() {
 
 download_XMY() {
     local arch="$1" ver="${COIN_TARGET[XMY]}"
-    local sfx="x86_64-linux-gnu"; [[ "$arch" == "aarch64" ]] && sfx="aarch64-linux-gnu"
+    local sfx="x86_64-linux-gnu"
     local fn="myriadcoin-${ver}-${sfx}.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/myriadteam/myriadcoin/releases/download/v${ver}/${fn}" || return 1
@@ -419,7 +451,6 @@ download_XMY() {
 
 download_FBTC() {
     local arch="$1" ver="${COIN_TARGET[FBTC]}"
-    [[ "$arch" == "aarch64" ]] && { log_error "Fractal Bitcoin has no ARM64 binaries"; return 1; }
     local fn="fractald-${ver}-x86_64-linux-gnu.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${ver}/${fn}" || return 1
@@ -429,12 +460,25 @@ download_FBTC() {
 
 download_QBX() {
     local arch="$1" ver="${COIN_TARGET[QBX]}"
-    [[ "$arch" == "aarch64" ]] && { log_error "Q-BitX has no ARM64 binaries"; return 1; }
     local fn="qbitx-linux-x86_64-v${ver}.zip"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/q-bitx/Source-/releases/download/v${ver}/${fn}" || return 1
     unzip -q "$fn" -d qbitx-extract || return 1
     echo "qbitx-extract"
+}
+
+download_XEC() {
+    local arch="$1" ver="${COIN_TARGET[XEC]}"
+    # ecash-node (Bitcoin ABC) — only x86_64 supported
+    if [[ "$arch" != "x86_64" ]]; then
+        log_error "XEC (ecash-node) only supports x86_64 — arm64 not available"
+        return 1
+    fi
+    local fn="bitcoin-abc-${ver}-x86_64-linux-gnu.tar.gz"
+    cd "$WORK_DIR"
+    _wget -O "$fn" "https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v${ver}/${fn}" || return 1
+    tar -xzf "$fn" || return 1
+    echo "bitcoin-abc-${ver}"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -463,13 +507,23 @@ install_binaries() {
                 sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$c" "$bin_dir/qbitx-cli"
             fi
             ;;
+        BCH2)
+            # Bitcoin Cash II: capital "II" in binary names
+            find "$extracted" -type f \( -name "bitcoincashIId" -o -name "bitcoincashII-cli" \) \
+                -exec sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" {} "$bin_dir/" \;
+            ;;
         BC2)
             # Bitcoin II: capital "II" in binary names
             find "$extracted" -type f \( -name "bitcoinIId" -o -name "bitcoinII-cli" \) \
                 -exec sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" {} "$bin_dir/" \;
             ;;
-        BCH|FBTC)
-            # These have bin/ subdir but daemon binary is named bitcoind (not bch/fbtc-specific)
+        BTCS)
+            # Bitcoin Silver: built from source — binaries installed to /tmp/btcs-build/bin
+            sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" /tmp/btcs-build/bin/bitcoinsilverd "$bin_dir/"
+            sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" /tmp/btcs-build/bin/bitcoinsilver-cli "$bin_dir/"
+            ;;
+        BCH|FBTC|XEC)
+            # These have bin/ subdir but daemon binary is named bitcoind (not coin-specific)
             local src_bin
             src_bin=$(find "$extracted" -maxdepth 3 -type d -name "bin" | head -1)
             [[ -z "$src_bin" ]] && die "No bin/ found in ${coin} archive"
@@ -610,7 +664,7 @@ upgrade_coin() {
     fi
 
     # ── Step 4: Download + install ────────────────────────────────────────────
-    log_step "Step 4/5 — Download ${coin} ${target_ver}"
+    log_step "Step 4a/5 — Download ${coin} ${target_ver}"
     local extracted_dir
     if ! extracted_dir=$(download_"${coin}" "$arch"); then
         log_error "Download failed for ${coin}"
@@ -619,7 +673,7 @@ upgrade_coin() {
         return 1
     fi
 
-    log_step "Step 4/5 — Install ${coin} binaries"
+    log_step "Step 4b/5 — Install ${coin} binaries"
     if ! install_binaries "$coin" "$extracted_dir"; then
         log_error "Binary installation failed for ${coin}"
         rollback_coin "$coin" "$backup_path"
@@ -854,7 +908,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.4.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.5.0-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

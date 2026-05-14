@@ -394,15 +394,18 @@ If you're running multiple coins, each typically uses a different stratum port. 
 | DigiByte (Scrypt) | Scrypt    | 3336         | `stratum+tcp://mypool.com:3336`     |
 | Bitcoin           | SHA-256d  | 4333         | `stratum+tcp://mypool.com:4333`     |
 | Bitcoin Cash      | SHA-256d  | 5333         | `stratum+tcp://mypool.com:5333`     |
+| Bitcoin Cash II   | SHA-256d  | 5336         | `stratum+tcp://mypool.com:5336`     |
 | Bitcoin II        | SHA-256d  | 6333         | `stratum+tcp://mypool.com:6333`     |
 | Litecoin          | Scrypt    | 7333         | `stratum+tcp://mypool.com:7333`     |
 | Dogecoin          | Scrypt    | 8335         | `stratum+tcp://mypool.com:8335`     |
 | PepeCoin          | Scrypt    | 10335        | `stratum+tcp://mypool.com:10335`    |
+| Bitcoin Silver    | SHA-256d  | 11335        | `stratum+tcp://mypool.com:11335`    |
 | Catcoin           | Scrypt    | 12335        | `stratum+tcp://mypool.com:12335`    |
 | Namecoin          | SHA-256d  | 14335        | `stratum+tcp://mypool.com:14335`    |
 | Syscoin           | SHA-256d  | 15335        | `stratum+tcp://mypool.com:15335`    |
 | Myriad            | SHA-256d  | 17335        | `stratum+tcp://mypool.com:17335`    |
 | Fractal Bitcoin   | SHA-256d  | 18335        | `stratum+tcp://mypool.com:18335`    |
+| eCash             | SHA-256d  | 18338        | `stratum+tcp://mypool.com:18338`    |
 | Q-BitX            | SHA-256d  | 20335        | `stratum+tcp://mypool.com:20335`    |
 
 **Note:** These are example ports. Use whatever ports you configured in your pool. Check `spiralctl status` to see your actual stratum ports.

@@ -8,11 +8,11 @@
 # ║   Separate container for Q-BitX node (SHA-256d mining)                    ║
 # ║   Standalone solo mining only — no merge mining support                   ║
 # ║   Supports post-quantum (pq) and legacy (1..., 3...) addresses            ║
-# ║   NOTE: Q-BitX distributes as ZIP — no arm64 releases available           ║
+# ║   NOTE: Only x86_64 (amd64) is supported                                  ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Q-BitX Node for Spiral Pool"
@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     unzip \
     ca-certificates \
-    libzmq3-dev \
     libevent-2.1-7 \
     libevent-pthreads-2.1-7t64 \
     libleveldb1d \
@@ -44,7 +43,7 @@ RUN useradd -r -m -s /bin/bash qbitx \
     && chown -R qbitx:qbitx /home/qbitx
 
 # Download and install Q-BitX
-# NOTE: Q-BitX only provides x86_64 binaries — no ARM64 releases available upstream.
+# NOTE: Only x86_64 (amd64) is supported.
 # NOTE: Q-BitX distributes as a ZIP file (not tar.gz)
 WORKDIR /tmp
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -52,6 +51,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
         echo "ERROR: Q-BitX only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
     fi && \
     wget -q --max-redirect=5 "https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86_64-v${QBX_VERSION}.zip" \
+    && unzip -t "qbitx-linux-x86_64-v${QBX_VERSION}.zip" > /dev/null \
     && unzip -q "qbitx-linux-x86_64-v${QBX_VERSION}.zip" \
     && cp qbitx /usr/local/bin/qbitx \
     && ln -sf /usr/local/bin/qbitx /usr/local/bin/qbitxd \
@@ -83,8 +83,7 @@ exec gosu qbitx qbitxd -printtoconsole "$@"\n\
 EXPOSE 8345
 # RPC
 EXPOSE 8344
-# ZMQ
-EXPOSE 28344
+# NOTE: No ZMQ — binary compiled without ZMQ support
 
 # Data volume
 VOLUME ["/home/qbitx/.qbitx"]

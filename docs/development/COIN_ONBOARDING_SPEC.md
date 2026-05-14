@@ -199,7 +199,8 @@ Stratum ports follow this pattern:
 |-------|-----------|-------|
 | 3333-3335 | SHA-256d | DGB |
 | 3336-3338 | Scrypt | DGB-SCRYPT |
-| 4333-6335 | SHA-256d | BTC, BCH, BC2 |
+| 4333-6335 | SHA-256d | BTC, BCH, BCH2, BC2 |
+| 11335-11337 | SHA-256d | BTCS |
 | 7333-7335 | Scrypt | LTC |
 | 8335-8342 | Scrypt | DOGE |
 | 10335-12337 | Scrypt | PEP, CAT |
@@ -296,6 +297,8 @@ LTC ──┬── DOGE (Dogecoin)
 ```
 BC2 (Bitcoin II)
 BCH (Bitcoin Cash)
+BCH2 (Bitcoin Cash II)
+BTCS (Bitcoin Silver)
 DGB (DigiByte)
 QBX (Q-BitX)
 ```
@@ -319,4 +322,4 @@ QBX (Q-BitX)
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.4.2 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Phi Hash Reactor 2.5.0 — Built on what came before. Growing toward phi.*

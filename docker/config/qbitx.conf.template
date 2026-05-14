@@ -29,12 +29,8 @@ rpcport=8344
 rpcworkqueue=64
 rpcthreads=4
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ZMQ BLOCK NOTIFICATIONS (for instant job updates)
-# ═══════════════════════════════════════════════════════════════════════════════
-zmqpubhashblock=tcp://0.0.0.0:28344
-zmqpubrawtx=tcp://0.0.0.0:28344
-zmqpubrawblock=tcp://0.0.0.0:28344
+# NOTE: ZMQ is NOT enabled — QBX binary was compiled without ZMQ support.
+# The stratum uses RPC polling for block notifications instead.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE TUNING

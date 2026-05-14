@@ -51,7 +51,7 @@ func TestValidatorV2_Coin(t *testing.T) {
 		return nil, false
 	}
 
-	coins := []string{"DGB", "BTC", "BCH", "BC2"}
+	coins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS"}
 	for _, symbol := range coins {
 		t.Run(symbol, func(t *testing.T) {
 			if !coin.IsRegistered(symbol) {
@@ -81,7 +81,7 @@ func TestValidatorV2_ShareDifficultyMultiplier(t *testing.T) {
 		return nil, false
 	}
 
-	coins := []string{"DGB", "BTC", "BCH", "BC2"}
+	coins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS"}
 	for _, symbol := range coins {
 		t.Run(symbol, func(t *testing.T) {
 			if !coin.IsRegistered(symbol) {
@@ -257,7 +257,7 @@ func TestValidatorV2_MultipleCoinInstances(t *testing.T) {
 		return nil, false
 	}
 
-	coins := []string{"DGB", "BTC", "BCH", "BC2"}
+	coins := []string{"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS"}
 	validators := make(map[string]*ValidatorV2)
 
 	for _, symbol := range coins {

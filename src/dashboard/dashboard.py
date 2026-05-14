@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.4.2-PHI_HASH_REACTOR"
+__version__ = "2.5.0"
 
 import os
 import json
@@ -59,6 +59,213 @@ except ImportError:
     BCRYPT_AVAILABLE = False
 
 app = Flask(__name__)
+
+# ─────────────────────────────────────────────
+# Block History — PostgreSQL-backed block querying
+# Contributed by bkhuraijam (https://github.com/bkhuraijam/Spiral-Pool)
+# ─────────────────────────────────────────────
+
+import psycopg2
+import psycopg2.extras
+
+def get_blocks_from_db(pool_ids: list, limit: int = 5000) -> list:
+    """Fetch blocks directly from DB with robust error handling.
+
+    Requires DB_PASSWORD to be set in the environment (via .env file).
+    Falls back gracefully to empty list if DB is unavailable.
+    """
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'postgres'),
+            port=int(os.getenv('POSTGRES_PORT', 5432)),
+            dbname=os.getenv('POSTGRES_DB', 'spiralstratum'),
+            user=os.getenv('POSTGRES_USER', 'spiralstratum'),
+            password=os.getenv('POSTGRES_PASSWORD', ''),
+        )
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        unions = []
+        for pool_id in pool_ids:
+            safe = ''.join(c for c in pool_id if c.isalnum() or c == '_')
+            table = f"blocks_{safe}"
+
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                ) AS table_exists;
+            """, (table,))
+            if not cursor.fetchone()['table_exists']:
+                continue
+
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s AND column_name = 'coin'
+                ) AS col_exists;
+            """, (table,))
+            has_coin_col = cursor.fetchone()['col_exists']
+
+            coin_expr = f"'{pool_id.split('_')[0].upper()}' AS coin"
+            if has_coin_col:
+                coin_expr = "coin"
+
+            unions.append(f"""
+                SELECT
+                    blockheight   AS "blockHeight",
+                    networkdifficulty AS "networkDifficulty",
+                    status,
+                    effort,
+                    miner,
+                    reward,
+                    source,
+                    hash,
+                    created,
+                    {coin_expr},
+                    confirmationprogress AS "confirmationProgress"
+                FROM {table}
+            """)
+
+        if not unions:
+            cursor.close()
+            conn.close()
+            return []
+
+        query = (
+            " UNION ALL ".join(unions)
+            + " ORDER BY created DESC"
+            + f" LIMIT {int(limit)}"
+        )
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        result = []
+        for row in rows:
+            d = dict(row)
+            if d.get('created'):
+                d['created'] = d['created'].strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+            if d.get('reward') is not None:
+                d['reward'] = float(d['reward'])
+            if d.get('networkDifficulty') is None:
+                d['networkDifficulty'] = 0.0
+            if d.get('effort') is None:
+                d['effort'] = 0.0
+            result.append(d)
+        return result
+
+    except Exception as e:
+        print(f"DB block fetch error: {e}")
+        return []
+
+def get_worker_stats_from_db(pool_ids: list, minutes: int = 1440) -> dict:
+    """Fetch per-worker stats from shares tables, grouped by coin and worker.
+
+    Args:
+        pool_ids: List of pool table IDs to query
+        minutes: Time window in minutes (default 1440 = 24h)
+    Returns: {pool_id: [{worker, shares, best_diff, network_diff, hashrate, ...}, ...]}
+    """
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'postgres'),
+            port=int(os.getenv('POSTGRES_PORT', 5432)),
+            dbname=os.getenv('POSTGRES_DB', 'spiralstratum'),
+            user=os.getenv('POSTGRES_USER', 'spiralstratum'),
+            password=os.getenv('POSTGRES_PASSWORD', ''),
+        )
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        result = {}
+        for pool_id in pool_ids:
+            safe = ''.join(c for c in pool_id if c.isalnum() or c == '_')
+            table = f"shares_{safe}"
+
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = %s
+                ) AS table_exists;
+            """, (table,))
+            if not cursor.fetchone()['table_exists']:
+                result[pool_id] = []
+                continue
+
+            cursor.execute(f"""
+                SELECT
+                    COALESCE(worker, 'unknown') AS worker,
+                    COUNT(*)                     AS shares,
+                    GREATEST(MAX(difficulty), MAX(actual_difficulty)) AS best_diff,
+                    AVG(difficulty)              AS avg_diff,
+                    MAX(networkdifficulty)       AS network_diff,
+                    EXTRACT(EPOCH FROM (MAX(created) - MIN(created))) AS elapsed_seconds,
+                    MIN(created)                 AS first_share,
+                    MAX(created)                 AS last_share
+                FROM {table}
+                WHERE created > NOW() - INTERVAL '{int(minutes)} minutes'
+                GROUP BY worker
+                ORDER BY shares DESC
+            """)
+            rows = cursor.fetchall()
+            for row in rows:
+                elapsed = float(row.get('elapsed_seconds') or 0)
+                avg_diff = float(row.get('avg_diff') or 0)
+                if elapsed > 0 and avg_diff > 0:
+                    row['hashrate'] = (row['shares'] / elapsed) * avg_diff * (2 ** 32)
+                else:
+                    row['hashrate'] = 0
+            result[pool_id] = rows
+
+        cursor.close()
+        conn.close()
+        return result
+
+    except Exception as e:
+        print(f"[ERROR] DB worker stats fetch failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+# Block cache file — persists across restarts for bare-metal deployments
+BLOCK_CACHE_FILE = Path("/spiralpool/dashboard/data/block_cache.json")
+
+def get_blocks(pool_ids: list, host: str, limit: int = 5000) -> list:
+    """Fetch blocks from Postgres DB first, fall back to API, cache locally."""
+    blocks = get_blocks_from_db(pool_ids, limit)
+    if blocks:
+        return blocks
+    all_blocks = []
+    for pid in pool_ids:
+        all_blocks.extend(get_blocks_for_pool(pid, host))
+    all_blocks.sort(key=lambda b: b.get('created', ''), reverse=True)
+    all_blocks = all_blocks[:limit]
+    try:
+        BLOCK_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        BLOCK_CACHE_FILE.write_text(json.dumps(all_blocks, default=str))
+    except Exception:
+        pass
+    if not all_blocks:
+        try:
+            if BLOCK_CACHE_FILE.exists():
+                all_blocks = json.loads(BLOCK_CACHE_FILE.read_text())
+        except Exception:
+            pass
+    return all_blocks
+
+def get_blocks_for_pool(pool_id, host):
+    try:
+        resp = requests.get(f"{host}/api/pools/{pool_id}/blocks?pageSize=5000", timeout=10)
+        blocks = resp.json() if resp.status_code == 200 else []
+        for block in blocks:
+            block['pool_id'] = pool_id
+            block['coin'] = block.get('coin', pool_id.split('_')[0].upper())
+        return blocks
+    except:
+        return []
+
+# ─────────────────────────────────────────────
 
 # Session secret key - persist across restarts for session continuity
 # Store in the same data directory as auth config
@@ -620,7 +827,7 @@ def safe_error_response(error: Exception, error_type: str = "internal", log_full
 # Must match frontend coinInfo/allCoins/validCoins arrays in setup.html
 VALID_COINS = {
     # SHA-256d coins
-    'BC2', 'BCH', 'BTC', 'DGB', 'FBTC', 'NMC', 'QBX', 'SYS', 'XMY',
+    'BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'DGB', 'FBTC', 'NMC', 'QBX', 'SYS', 'XEC', 'XMY',
     # Scrypt coins
     'CAT', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'
 }
@@ -688,7 +895,26 @@ WALLET_PATTERNS = {
     # PEP - Pepecoin: P prefix
     'PEP': re.compile(r'^P[a-km-zA-HJ-NP-Z1-9]{25,34}$'),
     # CAT - Catcoin: 9 prefix (like DOGE P2SH)
-    'CAT': re.compile(r'^9[a-km-zA-HJ-NP-Z1-9]{25,34}$')
+    'CAT': re.compile(r'^9[a-km-zA-HJ-NP-Z1-9]{25,34}$'),
+    # BCH2 - Bitcoin Cash II: CashAddr (bitcoincashii:q...) or legacy BTC-style (1.../3...)
+    # NOTE: legacy addresses are identical to BTC/BCH — verify network before sending
+    'BCH2': re.compile(
+        r'^bitcoincashii:[a-z0-9]+$|'          # Full CashAddr with prefix
+        r'^q[a-z0-9]{41}$|'                    # CashAddr without prefix (q-type P2PKH)
+        r'^p[a-z0-9]{41}$|'                    # CashAddr without prefix (p-type P2SH)
+        r'^(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}$' # Legacy Base58Check
+    ),
+    # XEC - eCash (Bitcoin ABC): CashAddr format ecash:q... (P2PKH) or ecash:p... (P2SH)
+    # 42-char payload in custom base32 (a-z0-9 excluding some chars) after prefix
+    'XEC': re.compile(r'^ecash:[qp][a-z0-9]{41,}$'),
+    # BTCS - Bitcoin Silver: B prefix P2PKH (0x1A), 3 prefix P2SH, bs1q/bs1p bech32
+    'BTCS': re.compile(
+        r'^B[a-km-zA-HJ-NP-Z1-9]{25,34}$|'    # P2PKH (version byte 0x1A = 'B')
+        r'^3[a-km-zA-HJ-NP-Z1-9]{25,34}$|'    # P2SH (version byte 0x05 = '3')
+        r'^bs1q[a-z0-9]{38}$|'                  # P2WPKH (Native SegWit)
+        r'^bs1q[a-z0-9]{58}$|'                  # P2WSH (SegWit Script)
+        r'^bs1p[a-z0-9]{58}$'                   # P2TR (Taproot)
+    )
 }
 
 # Rate limiting for sensitive endpoints
@@ -907,6 +1133,7 @@ lifetime_stats = {
     "total_pool_shares": 0,
     "total_blocks": 0,
     "best_share_difficulty": 0,
+    "per_coin_best_diff": {},  # {symbol: "difficulty_string"}
     "uptime_start": None,
     "total_runtime_seconds": 0
 }
@@ -1305,8 +1532,9 @@ pool_stats_cache = {
     "block_height": 0,
     "blocks_found": -1,
     "blocks_pending": 0,
+    "blocks_baseline": None,
     "last_block_time": None,
-    "last_block_finder": None,  # Miner that found the last block
+    "last_block_finder": None,
     "last_block_height": None,
     "last_block_coin": None,  # Coin symbol of the most recent block
     "status": "unknown",
@@ -1722,6 +1950,8 @@ def fetch_pool_stats():
         _pool_coin_map = {
             "digibyte": "DGB", "dgb": "DGB",
             "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
+            "bitcoincashii": "BCH2", "bitcoin-cash-ii": "BCH2", "bch2": "BCH2", "bitcoincashii": "BCH2",
+            "bitcoinsilver": "BTCS", "bitcoin-silver": "BTCS", "btcs": "BTCS",
             "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
             "bitcoin": "BTC", "btc": "BTC",
             "litecoin": "LTC", "ltc": "LTC",
@@ -1733,6 +1963,7 @@ def fetch_pool_stats():
             "myriadcoin": "XMY", "myriad": "XMY", "xmy": "XMY",
             "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
             "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
+            "ecash": "XEC", "xec": "XEC",
         }
 
         # Build per-coin block counts and last-block info from fetched blocks
@@ -1754,6 +1985,11 @@ def fetch_pool_stats():
         # Update all cache fields atomically under lock
         with _pool_stats_lock:
             got_pool_data = False
+            # Set per-coin block baseline on first poll so dashboard_blocks
+            # counts blocks found during the dashboard session.
+            if pool_stats_cache.get("blocks_baseline") is None:
+                pool_stats_cache["blocks_baseline"] = dict(_per_coin_blocks)
+            baseline = pool_stats_cache["blocks_baseline"] or {}
             if pools:
                 # Aggregate stats across ALL pools (multi-coin support)
                 total_miners = 0
@@ -1790,10 +2026,15 @@ def fetch_pool_stats():
                             "hashrate": hashrate,
                             "miners": miners,
                             "shares": shares,
+                            "accepted_shares": stats.get("acceptedShares", 0),
+                            "rejected_shares": stats.get("rejectedShares", 0),
+                            "best_share_diff": stats.get("bestShareDiff", 0),
                             "difficulty": pool_net.get("networkDifficulty", stats.get("networkDifficulty", 0)),
                             "network_hashrate": pool_net.get("networkHashrate", stats.get("networkHashrate", 0)),
                             "block_height": pool_net.get("blockHeight", stats.get("blockHeight", 0)),
                             "blocks": _per_coin_blocks.get(coin_symbol, 0),
+                            "session_blocks": stats.get("blocksFound", 0),
+                            "dashboard_blocks": max(0, _per_coin_blocks.get(coin_symbol, 0) - baseline.get(coin_symbol, 0)),
                             "pool_id": p.get("id", ""),
                             "last_block_time": _coin_last_blk.get("time"),
                             "last_block_finder": _coin_last_blk.get("finder"),
@@ -2263,7 +2504,9 @@ def load_stratum_ports_from_config():
                     coin_map = {
                         'DIGIBYTE': 'DGB', 'DGB': 'DGB',
                         'BITCOINCASH': 'BCH', 'BITCOIN-CASH': 'BCH', 'BCH': 'BCH',
+                        'BITCOINCASHII': 'BCH2', 'BITCOIN-CASH-II': 'BCH2', 'BCH2': 'BCH2',
                         'BITCOINII': 'BC2', 'BITCOIN-II': 'BC2', 'BITCOIN2': 'BC2', 'BC2': 'BC2', 'BCII': 'BC2',
+                        'BITCOINSILVER': 'BTCS', 'BITCOIN-SILVER': 'BTCS', 'BTCS': 'BTCS',
                         'BITCOIN': 'BTC', 'BTC': 'BTC',
                         'LITECOIN': 'LTC', 'LTC': 'LTC',
                         'DOGECOIN': 'DOGE', 'DOGE': 'DOGE',
@@ -2319,10 +2562,20 @@ def load_pool_config():
             "default_port": 8432,
             "name": "Bitcoin Cash"
         },
+        "BCH2": {
+            "conf_path": "/spiralpool/bch2/bitcoincashii.conf",
+            "default_port": 8533,
+            "name": "Bitcoin Cash II"
+        },
         "BC2": {
             "conf_path": "/spiralpool/bc2/bitcoinii.conf",
             "default_port": 8339,
             "name": "Bitcoin II"
+        },
+        "BTCS": {
+            "conf_path": "/spiralpool/btcs/bitcoinsilver.conf",
+            "default_port": 10567,
+            "name": "Bitcoin Silver"
         },
         "NMC": {
             "conf_path": "/spiralpool/nmc/namecoin.conf",
@@ -2348,6 +2601,11 @@ def load_pool_config():
             "conf_path": "/spiralpool/qbx/qbitx.conf",
             "default_port": 8344,
             "name": "Q-BitX"
+        },
+        "XEC": {
+            "conf_path": "/spiralpool/xec/bitcoin.conf",
+            "default_port": 9004,
+            "name": "eCash"
         },
         # Scrypt coins
         "LTC": {
@@ -2401,11 +2659,15 @@ def load_pool_config():
                 if pools:
                     coin_type = pools[0].get('coin', '').lower()
                     # SHA-256d coins (check order matters)
-                    if 'bitcoincash' in coin_type or 'bitcoin-cash' in coin_type or 'bch' in coin_type:
+                    if 'bitcoincashii' in coin_type or 'bitcoin-cash-ii' in coin_type or 'bch2' in coin_type:
+                        detected_coin = "BCH2"   # must be before 'bitcoincash' check
+                    elif 'bitcoinsilver' in coin_type or 'bitcoin-silver' in coin_type or 'btcs' in coin_type:
+                        detected_coin = "BTCS"   # must be before 'bitcoin' check
+                    elif 'bitcoincash' in coin_type or 'bitcoin-cash' in coin_type or 'bch' in coin_type:
                         detected_coin = "BCH"
                     elif 'bitcoinii' in coin_type or 'bitcoin-ii' in coin_type or 'bitcoin2' in coin_type or 'bc2' in coin_type or 'bcii' in coin_type:
                         detected_coin = "BC2"
-                    elif 'bitcoin' in coin_type and 'cash' not in coin_type and 'ii' not in coin_type:
+                    elif 'bitcoin' in coin_type and 'cash' not in coin_type and 'ii' not in coin_type and 'silver' not in coin_type:
                         detected_coin = "BTC"
                     elif 'digibyte-scrypt' in coin_type or 'dgb-scrypt' in coin_type or 'dgb_scrypt' in coin_type:
                         detected_coin = "DGB-SCRYPT"
@@ -2478,6 +2740,8 @@ def load_pool_config():
                         8332: "BTC",
                         8339: "BC2",
                         8432: "BCH",
+                        8533: "BCH2",  # Bitcoin Cash II RPC
+                        10567: "BTCS", # Bitcoin Silver RPC
                         14022: "DGB",  # Also used by DGB-SCRYPT
                         9332: "LTC",
                         22555: "DOGE",
@@ -2488,6 +2752,7 @@ def load_pool_config():
                         10889: "XMY",  # Myriadcoin RPC
                         8340: "FBTC",  # Fractal Bitcoin RPC
                         8344: "QBX",   # Q-BitX RPC
+                        9004: "XEC",   # eCash RPC
                     }
                     detected_coin = PORT_TO_COIN.get(daemon_port)
                     if not detected_coin:
@@ -2597,7 +2862,7 @@ def digibyte_rpc(method, params=None):
 # ============================================
 
 # Multi-coin node configuration
-# Supports 9 coins: DGB, BTC, BCH, BC2 (SHA-256d) and LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
+# Supports 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX (SHA-256d) and LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
 MULTI_COIN_NODES = {
     # === SHA-256d Coins ===
     # Bitcoin II (BC2) - "nearly 1:1 re-launch of Bitcoin" with new genesis block
@@ -2618,6 +2883,22 @@ MULTI_COIN_NODES = {
         "merge_mining": None,  # Solo only
         "enabled": False
     },
+    "BTCS": {
+        "name": "Bitcoin Silver",
+        "symbol": "BTCS",
+        "algorithm": "sha256d",
+        "rpc_host": "127.0.0.1",
+        "rpc_port": 10567,
+        "rpc_user": "",
+        "rpc_password": "",
+        "data_dir": "/spiralpool/btcs",
+        "config_file": "/spiralpool/btcs/bitcoinsilver.conf",
+        "service_name": "bitcoinsilverd",
+        "stratum_ports": {"v1": 11335, "v2": 11336, "tls": 11337},
+        "block_time": 300,  # 5 minutes
+        "merge_mining": None,  # Solo only
+        "enabled": False
+    },
     "BCH": {
         "name": "Bitcoin Cash",
         "symbol": "BCH",
@@ -2631,6 +2912,22 @@ MULTI_COIN_NODES = {
         "service_name": "bitcoind-bch",
         "stratum_ports": {"v1": 5333, "v2": 5334, "tls": 5335},
         "block_time": 600,  # 10 minutes
+        "merge_mining": None,  # Solo only
+        "enabled": False
+    },
+    "BCH2": {
+        "name": "Bitcoin Cash II",
+        "symbol": "BCH2",
+        "algorithm": "sha256d",
+        "rpc_host": "127.0.0.1",
+        "rpc_port": 8533,
+        "rpc_user": "",
+        "rpc_password": "",
+        "data_dir": "/spiralpool/bch2",
+        "config_file": "/spiralpool/bch2/bitcoincashii.conf",
+        "service_name": "bitcoincashIId",
+        "stratum_ports": {"v1": 5336, "v2": 5337, "tls": 5338},
+        "block_time": 600,  # 10 minutes (BCH-forked)
         "merge_mining": None,  # Solo only
         "enabled": False
     },
@@ -2735,6 +3032,23 @@ MULTI_COIN_NODES = {
         "stratum_ports": {"v1": 20335, "v2": 20336, "tls": 20337},
         "block_time": 150,  # 2.5 minutes
         "merge_mining": None,  # Standalone, NOT merge-mineable
+        "enabled": False
+    },
+    # eCash (Bitcoin ABC) - SHA-256d, CashAddr addressing
+    "XEC": {
+        "name": "eCash",
+        "symbol": "XEC",
+        "algorithm": "sha256d",
+        "rpc_host": "127.0.0.1",
+        "rpc_port": 9004,
+        "rpc_user": "",
+        "rpc_password": "",
+        "data_dir": "/spiralpool/xec",
+        "config_file": "/spiralpool/xec/bitcoin.conf",
+        "service_name": "ecashd",
+        "stratum_ports": {"v1": 18338, "v2": 18339, "tls": 18340},
+        "block_time": 600,  # 10 minutes (like Bitcoin)
+        "merge_mining": None,  # Standalone
         "enabled": False
     },
     # === Scrypt Coins ===
@@ -2860,12 +3174,15 @@ COINGECKO_IDS = {
     "DGB": "digibyte",
     "BTC": "bitcoin",
     "BCH": "bitcoin-cash",
+    "BCH2": None,         # Bitcoin Cash II - not listed on CoinGecko
     "BC2": "bitcoinii",  # Bitcoin II CoinGecko ID (confirmed listed)
+    "BTCS": None,        # Bitcoin Silver - not listed on CoinGecko
     "NMC": "namecoin",   # Namecoin - first AuxPoW coin
     "SYS": "syscoin",    # Syscoin - UTXO platform with AuxPoW
     "XMY": "myriadcoin", # Myriad - Multi-algo coin
     "FBTC": "fractal-bitcoin",  # Fractal Bitcoin - Bitcoin scaling with AuxPoW
     "QBX": None,  # Q-BitX - not listed on CoinGecko
+    "XEC": "ecash",  # eCash (Bitcoin ABC) - listed on CoinGecko as "ecash"
     # Scrypt coins
     "LTC": "litecoin",
     "DOGE": "dogecoin",
@@ -2873,6 +3190,125 @@ COINGECKO_IDS = {
     "PEP": "pepecoin",  # PepeCoin Scrypt fork
     "CAT": "catcoin"    # Catcoin (the 2013 one, not BEP20)
 }
+
+# ---- Alternative price sources for coins absent from CoinGecko ----
+# BTCS: CoinPaprika ticker ID
+# QBX:  Klingex exchange (GET https://api.klingex.io/api/markets, QBX/USDT entry)
+_COINPAPRIKA_IDS = {
+    "BTCS": "btcs-bitcoin-silver1",
+    "BCH2": "bch2-bitcoin-cash-ii",
+}
+
+_fx_rates_cache: dict = {"rates": {}, "last_update": 0}
+_fx_rates_lock = threading.Lock()
+
+
+def _fetch_fx_rates() -> dict:
+    """Return USD→fiat exchange rates for all DASHBOARD_VS_CURRENCIES. Cached 1 h."""
+    with _fx_rates_lock:
+        if time.time() - _fx_rates_cache["last_update"] < 3600 and _fx_rates_cache["rates"]:
+            return _fx_rates_cache["rates"]
+    rates: dict = {}
+    try:
+        resp = _http_session.get("https://open.er-api.com/v6/latest/USD", timeout=5)
+        data = resp.json()
+        if data.get("result") == "success":
+            raw = data.get("rates", {})
+            for code in DASHBOARD_VS_CURRENCIES.split(","):
+                key = code.upper()
+                if key in raw:
+                    rates[code] = float(raw[key])
+    except Exception:
+        pass
+    with _fx_rates_lock:
+        if rates:
+            _fx_rates_cache["rates"] = rates
+            _fx_rates_cache["last_update"] = time.time()
+    return rates
+
+
+_alt_prices_cache: dict = {"data": {}, "last_update": 0}
+_alt_prices_lock = threading.Lock()
+
+
+def _fetch_alternative_coin_prices() -> dict:
+    """Fetch USD spot prices for coins not listed on CoinGecko.
+
+    Sources:
+      BTCS → CoinPaprika  (api.coinpaprika.com)
+      QBX  → Klingex exchange  (api.klingex.io/api/markets, QBX/USDT entry;
+             last_price is an integer scaled by 10^price_decimals)
+
+    Returns {SYMBOL: usd_price_float}. Cached 300 s.
+    """
+    with _alt_prices_lock:
+        if time.time() - _alt_prices_cache["last_update"] < 300 and _alt_prices_cache["data"]:
+            return _alt_prices_cache["data"]
+
+    prices: dict = {}
+
+    # --- CoinPaprika coins (BTCS, etc.) ---
+    for sym, cp_id in _COINPAPRIKA_IDS.items():
+        try:
+            resp = _http_session.get(
+                f"https://api.coinpaprika.com/v1/tickers/{cp_id}",
+                timeout=5,
+            )
+            usd = resp.json().get("quotes", {}).get("USD", {}).get("price")
+            if usd is not None and float(usd) > 0:
+                prices[sym] = float(usd)
+        except Exception:
+            pass
+
+    # --- QBX via Klingex /api/markets ---
+    try:
+        resp = _http_session.get("https://api.klingex.io/api/markets", timeout=5)
+        for m in resp.json():
+            if (
+                str(m.get("base_asset_symbol", "")).upper() == "QBX"
+                and str(m.get("quote_asset_symbol", "")).upper() == "USDT"
+                and m.get("is_active")
+            ):
+                raw_price = m.get("last_price")
+                decimals = int(m.get("price_decimals", 6))
+                if raw_price is not None:
+                    usdt_price = float(raw_price) / (10 ** decimals)
+                    if usdt_price > 0:
+                        prices["QBX"] = usdt_price  # USDT ≈ USD
+                break
+    except Exception:
+        pass
+
+    with _alt_prices_lock:
+        _alt_prices_cache["data"] = prices
+        _alt_prices_cache["last_update"] = time.time()
+    return prices
+
+
+def _apply_alt_prices(result: dict, currency_codes: list) -> dict:
+    """Merge alternative-source USD prices (+ FX conversion) into *result*.
+
+    *result* is the {symbol: {cur_code: price}} dict built from CoinGecko.
+    Coins already present in *result* are NOT overwritten.
+    """
+    alt_usd = _fetch_alternative_coin_prices()
+    if not alt_usd:
+        return result
+    fx = _fetch_fx_rates()
+    for sym, usd_price in alt_usd.items():
+        if sym in result:
+            continue
+        coin_prices: dict = {}
+        for code in currency_codes:
+            if code == "usd":
+                coin_prices[code] = usd_price
+            elif code in fx:
+                coin_prices[code] = usd_price * fx[code]
+            else:
+                coin_prices[code] = 0.0
+        result[sym] = coin_prices
+    return result
+
 
 # Block explorer URLs per coin with fallback support
 # Each coin has a primary and list of fallback explorers
@@ -2903,11 +3339,23 @@ BLOCK_EXPLORERS = {
             {"api": "https://rest.bitcoin.com/v2", "url": "https://explorer.bitcoin.com/bch", "name": "Bitcoin.com"},
         ]
     },
+    "BCH2": {
+        "api": None,  # No public REST API — use RPC for block data
+        "url": "https://bch2explorer.com",
+        "name": "BCH2 Explorer",
+        "fallbacks": []
+    },
     "BC2": {
         "api": None,  # No public API yet - use RPC for block data
         "url": "https://bitcoin-ii.org",  # Official website
         "name": "Bitcoin II Explorer",
         "fallbacks": []  # New chain - limited explorer options
+    },
+    "BTCS": {
+        "api": None,  # No public REST API — use RPC for block data
+        "url": "https://explorer.bitcoinsilver.top",
+        "name": "Bitcoin Silver Explorer",
+        "fallbacks": []
     },
     "NMC": {
         "api": "https://namecha.in/api",
@@ -3035,13 +3483,16 @@ COIN_BLOCK_REWARDS = {
     "DGB": 277.38,      # DigiByte SHA256 block reward (Dec 2025, from whattomine.com)
     "BTC": 3.125,       # Bitcoin block reward after 2024 halving
     "BCH": 3.125,       # Bitcoin Cash block reward
+    "BCH2": 50.0,       # Bitcoin Cash II block reward (BCH-forked from BC2, young chain)
     "BC2": 50.0,        # Bitcoin II block reward (same as original Bitcoin, started Dec 2024)
+    "BTCS": 50.0,       # Bitcoin Silver block reward (young chain, Jul 2024)
     # SHA-256d merge-mineable coins
     "NMC": 6.25,        # Namecoin block reward (after multiple halvings)
     "SYS": 1.25,        # Syscoin block reward (approximate current)
     "XMY": 500,         # Myriad block reward per algo (approximate)
     "FBTC": 25,         # Fractal Bitcoin block reward (25 FB per block)
     "QBX": 12.5,        # Q-BitX block reward (12.5 QBX per block)
+    "XEC": 3125000,     # eCash block reward (3,125,000 XEC; note: 1 XEC = 1e-8 BCH denomination)
     # Scrypt coins
     "LTC": 6.25,        # Litecoin block reward after 2023 halving
     "DOGE": 10000,      # Dogecoin block reward (fixed at 10,000)
@@ -3056,13 +3507,16 @@ COIN_BLOCK_TIMES = {
     "DGB": 15,          # DigiByte SHA256d block time (15 seconds)
     "BTC": 600,         # Bitcoin 10-minute blocks
     "BCH": 600,         # Bitcoin Cash 10-minute blocks
+    "BCH2": 600,        # Bitcoin Cash II 10-minute blocks (BCH-forked)
     "BC2": 600,         # Bitcoin II 10-minute blocks (same as Bitcoin)
+    "BTCS": 300,        # Bitcoin Silver 5-minute blocks
     # SHA-256d merge-mineable coins
     "NMC": 600,         # Namecoin 10-minute blocks (same as Bitcoin)
     "SYS": 60,          # Syscoin 1-minute blocks
     "XMY": 60,          # Myriad 1-minute blocks per algo
     "FBTC": 30,         # Fractal Bitcoin 30-second blocks (NOT 600 like Bitcoin!)
     "QBX": 150,         # Q-BitX 2.5-minute blocks
+    "XEC": 600,         # eCash 10-minute blocks (same as Bitcoin)
     # Scrypt coins
     "LTC": 150,         # Litecoin 2.5-minute blocks
     "DOGE": 60,         # Dogecoin 1-minute blocks
@@ -3487,7 +3941,7 @@ def fetch_live_block_reward_bc2():
 def fetch_live_block_reward(coin):
     """Fetch live block reward for any supported coin.
 
-    Supports 14 coins: DGB, BTC, BCH, BC2, NMC, SYS, XMY, FBTC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
+    Supports 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
     """
     coin = coin.upper()
     # SHA-256d coins with live API lookup
@@ -3497,8 +3951,12 @@ def fetch_live_block_reward(coin):
         return fetch_live_block_reward_btc()
     elif coin == "BCH":
         return fetch_live_block_reward_bch()
+    elif coin == "BCH2":
+        return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("BCH2", 50.0), "symbol": "BCH2"}
     elif coin == "BC2":
         return fetch_live_block_reward_bc2()
+    elif coin == "BTCS":
+        return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("BTCS", 50.0), "symbol": "BTCS"}
     # Scrypt coins - use static block rewards (these coins have simpler reward schedules)
     elif coin == "LTC":
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("LTC", 6.25), "symbol": "LTC"}
@@ -3521,6 +3979,8 @@ def fetch_live_block_reward(coin):
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("FBTC", 25), "symbol": "FBTC"}
     elif coin == "QBX":
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("QBX", 12.5), "symbol": "QBX"}
+    elif coin == "XEC":
+        return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("XEC", 3125000), "symbol": "XEC"}
     else:
         return {"block_height": 0, "block_reward": 0, "symbol": coin}
 
@@ -4014,10 +4474,10 @@ def fetch_coin_node_health(symbol):
             health["network_hashrate"] = rpc_nhps
         elif health["difficulty"] > 0:
             coin_block_times = {
-                "DGB": 15, "BTC": 600, "BCH": 600, "BC2": 600,
+                "DGB": 15, "BTC": 600, "BCH": 600, "BCH2": 600, "BC2": 600, "BTCS": 300,
                 "LTC": 150, "DOGE": 60, "DGB-SCRYPT": 15,
                 "PEP": 60, "CAT": 600,
-                "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150
+                "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150, "XEC": 600
             }
             block_time = coin_block_times.get(symbol, 600)
             health["network_hashrate"] = health["difficulty"] * (2**32) / block_time
@@ -4270,10 +4730,10 @@ def fetch_health_data():
                 diff_val = node_health.get("difficulty", 0) or float(mining.get("difficulty", 0))
                 if diff_val > 0:
                     coin_block_times = {
-                        "DGB": 15, "BTC": 600, "BCH": 600, "BC2": 600,
+                        "DGB": 15, "BTC": 600, "BCH": 600, "BCH2": 600, "BC2": 600, "BTCS": 300,
                         "LTC": 150, "DOGE": 60, "DGB-SCRYPT": 15,
                         "PEP": 60, "CAT": 600,
-                        "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150
+                        "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150, "XEC": 600
                     }
                     bt = coin_block_times.get(primary_coin, 600)
                     node_health["network_hashrate"] = diff_val * (2**32) / bt
@@ -4344,7 +4804,7 @@ def fetch_health_data():
             else:
                 health_cache.pop("wallet_issues", None)
     except Exception:
-        pass  # Sentinel unreachable — don't show stale warnings
+        health_cache.pop("wallet_issues", None)  # Sentinel unreachable — clear stale banner
 
     return health_cache
 
@@ -5306,6 +5766,20 @@ def fetch_block_reward():
         except (requests.exceptions.RequestException, ValueError, KeyError):
             pass
 
+    # Fallback for coins not on CoinGecko (BTCS, QBX, …): alternative sources + FX conversion
+    if not coin_prices and primary_coin:
+        alt_usd = _fetch_alternative_coin_prices()
+        usd_price = alt_usd.get(primary_coin)
+        if usd_price:
+            fx = _fetch_fx_rates()
+            for cur_code in DASHBOARD_VS_CURRENCIES.split(","):
+                if cur_code == "usd":
+                    coin_prices[cur_code] = usd_price
+                elif cur_code in fx:
+                    coin_prices[cur_code] = usd_price * fx[cur_code]
+                else:
+                    coin_prices[cur_code] = 0.0
+
     # Update cache atomically with lock
     with _block_reward_lock:
         block_reward_cache["block_reward"] = round(block_reward, 8)
@@ -5349,6 +5823,22 @@ def _fetch_per_coin_prices(currency_code):
                 prices[sym] = price_val
     except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
         pass
+
+    # Fallback: apply alternative sources (CoinPaprika / Klingex) for no-CoinGecko coins
+    alt_usd = _fetch_alternative_coin_prices()
+    if alt_usd:
+        if currency_code == "usd":
+            for sym, usd_price in alt_usd.items():
+                if sym not in prices:
+                    prices[sym] = usd_price
+        else:
+            fx = _fetch_fx_rates()
+            rate = fx.get(currency_code)
+            if rate:
+                for sym, usd_price in alt_usd.items():
+                    if sym not in prices:
+                        prices[sym] = usd_price * rate
+
     return prices
 
 
@@ -5388,6 +5878,10 @@ def _fetch_per_coin_all_prices():
                 result[sym] = {cur_code: coin_data.get(cur_code, 0) for cur_code in DASHBOARD_VS_CURRENCIES.split(",")}
     except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
         pass
+
+    # Merge alternative-source prices for coins absent from CoinGecko (BTCS, QBX, …)
+    currency_codes = DASHBOARD_VS_CURRENCIES.split(",")
+    _apply_alt_prices(result, currency_codes)
 
     with _per_coin_all_prices_lock:
         _per_coin_all_prices_cache["data"] = result
@@ -9127,6 +9621,15 @@ def fetch_all_miners():
             if current_best > lifetime_best:
                 # Store as formatted string for display consistency
                 lifetime_stats["best_share_difficulty"] = str(current_best)
+
+            # Update per-coin all-time best share difficulty
+            _per_coin = pool_stats_cache.get("per_coin", {})
+            _per_coin_best = lifetime_stats.get("per_coin_best_diff", {})
+            for _coin_sym, _coin_data in _per_coin.items():
+                _coin_best = float(_coin_data.get("best_share_diff", 0))
+                if _coin_best > float(str(_per_coin_best.get(_coin_sym, "0")).replace(",", "")):
+                    _per_coin_best[_coin_sym] = str(_coin_best)
+            lifetime_stats["per_coin_best_diff"] = _per_coin_best
         except (ValueError, TypeError, AttributeError):
             pass
 
@@ -9351,13 +9854,83 @@ def service_worker():
 @app.route('/')
 @api_key_or_login_required
 def index():
-    """Main dashboard or setup wizard"""
-    config = load_config()
+    def hash_to_difficulty(block_hash: str) -> float:
+        try:
+            if not block_hash or len(block_hash) < 64:
+                return 0
+            hash_int = int(block_hash, 16)
+            if hash_int == 0:
+                return 0
+            diff1_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+            return diff1_target / hash_int
+        except:
+            return 0
 
+    config = load_config()
     if config.get("first_run", True):
         return redirect(url_for('setup'))
 
-    return render_template('dashboard.html', config=config)
+    host = POOL_API_URL
+
+    # Always include every supported coin's pool ID so historical blocks
+    # appear in Block History even for coins that are not currently running
+    # (the stratum API only reports active pools). get_blocks_from_db skips
+    # any pool ID whose blocks_<id> table does not exist.
+    pool_ids = [
+        # SHA-256d
+        'btc_sha256_1', 'bch_sha256_1', 'bch2_sha256_1', 'bc2_sha256_1',
+        'btcs_sha256_1', 'dgb_sha256_1', 'fbtc_sha256_1', 'nmc_sha256_1',
+        'qbx_sha256_1', 'sys_sha256_1', 'xec_sha256_1', 'xmy_sha256_1',
+        # Scrypt
+        'cat_scrypt_1', 'dgb_scrypt_1', 'doge_scrypt_1', 'ltc_scrypt_1',
+        'pep_scrypt_1',
+    ]
+    try:
+        pools_resp = requests.get(f"{host}/api/pools", timeout=5)
+        if pools_resp.status_code == 200:
+            pools_data = pools_resp.json()
+            for pool in pools_data.get("pools", []):
+                pool_id = pool.get("id", "")
+                if pool_id and isinstance(pool_id, str) and pool_id not in pool_ids:
+                    pool_ids.append(pool_id)
+    except Exception:
+        pass
+
+    # Fetch blocks: try DB first, fall back to API, cache locally
+    all_blocks = []
+    try:
+        all_blocks = get_blocks(pool_ids, host)
+    except Exception:
+        pass
+
+    for block in all_blocks:
+        actual_diff = hash_to_difficulty(block.get('hash', ''))
+        block['minerDifficulty'] = actual_diff
+        block['difficulty'] = actual_diff
+        # Effort is calculated and stored by the stratum at block-find time.
+        # Only set to None (displays as "---") for legacy blocks that predate
+        # stratum-side effort tracking (effort == 0 means not yet computed).
+        if block.get('effort') is None or block.get('effort', 0) == 0:
+            block['effort'] = None  # Template renders None as "---"
+        if not block.get('worker'):
+            block['worker'] = block.get('source', '')
+
+    try:
+        s_resp = requests.get(f"{host}/api/pools/{pool_ids[0]}", timeout=5)
+        pool_stats = s_resp.json() if s_resp.status_code == 200 else {}
+    except:
+        pool_stats = {}
+
+    if pool_stats:
+        pool_stats['totalBlocks'] = len(all_blocks)
+        if 'poolStats' in pool_stats:
+            pool_stats['poolStats']['totalBlocks'] = len(all_blocks)
+
+    return render_template('dashboard.html',
+                           config=config,
+                           stats=pool_stats,
+                           blocks=all_blocks,
+                           block_count=len(all_blocks))
 
 
 @app.route('/setup')
@@ -9406,16 +9979,19 @@ def get_server_mode():
     # SECURITY: Whitelist of valid coin symbols (SHA-256d + Scrypt) and their variants
     VALID_COINS = {
         # Standard symbols
-        "DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT",
-        "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX",
+        "DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
+        "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC",
         # Full names
         "DIGIBYTE", "BITCOIN", "BITCOINCASH", "BITCOIN-CASH",
+        "BITCOINCASHII", "BITCOIN-CASH-II",
         "BITCOINII", "BITCOIN-II", "BITCOIN2",
+        "BITCOINSILVER", "BITCOIN-SILVER",
         "LITECOIN", "DOGECOIN", "DIGIBYTE-SCRYPT",
         "PEPECOIN", "CATCOIN",
         "NAMECOIN", "SYSCOIN", "MYRIADCOIN", "MYRIAD",
         "FRACTALBITCOIN", "FRACTAL",
-        "QBITX", "Q-BITX"
+        "QBITX", "Q-BITX",
+        "ECASH", "BITCOIN-ABC"
     }
 
     def normalize_coin(coin_type):
@@ -9425,7 +10001,9 @@ def get_server_mode():
         coin_map = {
             "DIGIBYTE": "DGB", "DGB": "DGB",
             "BITCOINCASH": "BCH", "BITCOIN-CASH": "BCH", "BCH": "BCH",
+            "BITCOINCASHII": "BCH2", "BITCOIN-CASH-II": "BCH2", "BCH2": "BCH2",
             "BITCOINII": "BC2", "BITCOIN-II": "BC2", "BITCOIN2": "BC2", "BC2": "BC2", "BCII": "BC2",
+            "BITCOINSILVER": "BTCS", "BITCOIN-SILVER": "BTCS", "BTCS": "BTCS",
             "BITCOIN": "BTC", "BTC": "BTC",
             "LITECOIN": "LTC", "LTC": "LTC",
             "DOGECOIN": "DOGE", "DOGE": "DOGE",
@@ -9437,6 +10015,7 @@ def get_server_mode():
             "MYRIADCOIN": "XMY", "MYRIAD": "XMY", "XMY": "XMY",
             "FRACTALBITCOIN": "FBTC", "FRACTAL": "FBTC", "FBTC": "FBTC",
             "QBITX": "QBX", "Q-BITX": "QBX", "QBX": "QBX",
+            "ECASH": "XEC", "BITCOIN-ABC": "XEC", "XEC": "XEC",
         }
         return coin_map.get(coin_type, coin_type)
 
@@ -9482,7 +10061,7 @@ def get_server_mode():
         coins_config = []
         pool_addresses = {}
         merge_mining_info = None
-        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX"}
+        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC"}
 
         for pool in pools:
             if not isinstance(pool, dict):
@@ -9589,8 +10168,8 @@ def get_server_mode():
         fallback_coins = []
         fallback_config = []
         fallback_merge = None
-        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT",
-                          "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX"}
+        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
+                          "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC"}
         for symbol, node in MULTI_COIN_NODES.items():
             if node.get('enabled', False) and symbol in COIN_WHITELIST:
                 fallback_coins.append(symbol)
@@ -9664,7 +10243,7 @@ def update_config():
     # Validate coins if provided
     coins = new_config.get("coins", [])
     if coins:
-        if not isinstance(coins, list) or len(coins) > 3:
+        if not isinstance(coins, list) or len(coins) > len(MULTI_COIN_NODES):
             return jsonify({"success": False, "error": "Invalid coins configuration"}), 400
 
         # Validate each coin
@@ -9890,14 +10469,14 @@ def save_pool_coin_config(coins, multi_coin_enabled):
             existing_coins[sym] = existing_coin
 
     # Alphabetical order (no coin preference)
-    default_ports = {"BC2": 6333, "BCH": 5333, "BTC": 4333, "CAT": 12335,
-                     "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
+    default_ports = {"BC2": 6333, "BCH": 5333, "BCH2": 5336, "BTC": 4333, "BTCS": 11335,
+                     "CAT": 12335, "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
                      "FBTC": 18335, "LTC": 7333, "NMC": 14335,
-                     "PEP": 10335, "QBX": 20335, "SYS": 15335, "XMY": 17335}
-    default_rpc_ports = {"BC2": 8339, "BCH": 8432, "BTC": 8332, "CAT": 9932,
-                         "DGB": 14022, "DGB-SCRYPT": 14022, "DOGE": 22555,
+                     "PEP": 10335, "QBX": 20335, "SYS": 15335, "XEC": 18338, "XMY": 17335}
+    default_rpc_ports = {"BC2": 8339, "BCH": 8432, "BCH2": 8533, "BTC": 8332, "BTCS": 10567,
+                         "CAT": 9932, "DGB": 14022, "DGB-SCRYPT": 14022, "DOGE": 22555,
                          "FBTC": 8340, "LTC": 9332, "NMC": 8336,
-                         "PEP": 33873, "QBX": 8344, "SYS": 8370, "XMY": 10889}
+                         "PEP": 33873, "QBX": 8344, "SYS": 8370, "XEC": 9004, "XMY": 10889}
 
     # Scrypt coins need different algorithm suffix
     scrypt_coins = {"LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT"}
@@ -10172,7 +10751,7 @@ def get_miners():
                 _enriched["block_reward"] = COIN_BLOCK_REWARDS.get(_pcs, 0)
             _enriched["block_time"] = COIN_BLOCK_TIMES.get(_pcs, 600)
             _enriched["coin_name"] = MULTI_COIN_NODES.get(_pcs, {}).get("name", _pcs)
-            _enriched["algorithm"] = "scrypt" if _pcs in ("CAT", "DGB-SCRYPT", "DOGE", "LTC", "PEP") else "sha256d"
+            _enriched["algorithm"] = "scrypt" if _pcs in ("CAT", "DGB-SCRYPT", "DOGE", "LTC", "PEP") else MULTI_COIN_NODES.get(_pcs, {}).get("algorithm", "sha256d")
             # Use dynamic prices for primary coin (from fetch_block_reward), cached prices for others
             _coin_prices = _all_coin_prices.get(_pcs, {})
             if _pcs == primary_coin:
@@ -10354,6 +10933,61 @@ def reset_stats():
     except Exception as e:
         app.logger.error(f"Lifetime stats reset error: {e}")
         return jsonify({"success": False, "error": "Failed to reset lifetime stats"}), 500
+
+
+# Maps every supported pool ID to its coin symbol. Used by /api/worker-stats and
+# the dashboard's coin-keyed renderer so all 17 coins surface in the Worker
+# Statistics panel, not just the five sha256d coins listed in the upstream port.
+WORKER_STATS_POOL_MAP = {
+    # SHA-256d
+    'btc_sha256_1':  'BTC',
+    'bch_sha256_1':  'BCH',
+    'bch2_sha256_1': 'BCH2',
+    'bc2_sha256_1':  'BC2',
+    'btcs_sha256_1': 'BTCS',
+    'dgb_sha256_1':  'DGB',
+    'fbtc_sha256_1': 'FBTC',
+    'nmc_sha256_1':  'NMC',
+    'qbx_sha256_1':  'QBX',
+    'sys_sha256_1':  'SYS',
+    'xec_sha256_1':  'XEC',
+    'xmy_sha256_1':  'XMY',
+    # Scrypt
+    'cat_scrypt_1':  'CAT',
+    'dgb_scrypt_1':  'DGB-SCRYPT',
+    'doge_scrypt_1': 'DOGE',
+    'ltc_scrypt_1':  'LTC',
+    'pep_scrypt_1':  'PEP',
+}
+
+
+@app.route('/api/worker-stats', methods=['GET'])
+@admin_required
+def api_worker_stats():
+    """Return per-coin per-worker statistics for a given time window.
+
+    Query param: minutes (default 1440, options: 10/60/1440 for 10m/1h/24h)
+    """
+    minutes = request.args.get('minutes', type=int, default=1440)
+    if minutes not in [10, 60, 1440]:
+        minutes = 1440
+
+    worker_stats = get_worker_stats_from_db(list(WORKER_STATS_POOL_MAP.keys()), minutes=minutes)
+
+    result = {}
+    for pool_id, rows in worker_stats.items():
+        coin = WORKER_STATS_POOL_MAP.get(pool_id, pool_id)
+        result[coin] = []
+        for row in rows:
+            result[coin].append({
+                'worker':       row['worker'],
+                'shares':       row['shares'],
+                'hashrate':     row.get('hashrate', 0),
+                'best_diff':    float(row['best_diff']) if row['best_diff'] else 0,
+                'network_diff': float(row['network_diff']) if row['network_diff'] else 0,
+                'last_share':   row['last_share'].strftime('%m-%d %H:%M') if row['last_share'] else None,
+            })
+    return jsonify(result)
 
 
 @app.route('/api/miners/check-sentinel-db', methods=['GET'])
@@ -12095,6 +12729,8 @@ def get_multiport():
         "check_interval": "30s",
         "min_time_on_coin": "60s",
         "timezone": "UTC",
+        "mode": "TIME",
+        "exclude_coins": [],
         "live": None,
     }
 
@@ -12113,6 +12749,8 @@ def get_multiport():
                 result["min_time_on_coin"] = str(mp.get("min_time_on_coin", "60s"))
                 result["timezone"] = mp.get("timezone", "")
                 result["wallet_map"] = mp.get("wallet_map", {})
+                result["mode"] = (mp.get("mode") or "TIME").upper()
+                result["exclude_coins"] = [c.upper() for c in mp.get("exclude_coins", [])]
     except Exception as e:
         app.logger.error(f"Failed to read multiport config: {e}")
 
@@ -12147,8 +12785,23 @@ def get_multiport():
                 if dist:
                     active = max(dist, key=dist.get)
                     live["active_coin"] = active
+                elif result["mode"] == "DIFFICULTY":
+                    # No active sessions yet — infer from lowest network difficulty
+                    coin_diffs = {
+                        sym: pool_stats_cache.get("per_coin", {}).get(sym, {}).get("difficulty", 0)
+                        for sym in result.get("coins", {}).keys()
+                    }
+                    coin_diffs = {k: v for k, v in coin_diffs.items() if v > 0}
+                    if coin_diffs:
+                        live["active_coin"] = min(coin_diffs, key=coin_diffs.get)
+                    elif live.get("allowed_coins"):
+                        live["active_coin"] = live["allowed_coins"][0]
                 elif live.get("allowed_coins"):
                     live["active_coin"] = live["allowed_coins"][0]
+                # Sync live routing_mode back into result so UI always reflects
+                # the actually-running mode, not just what's in config.yaml.
+                if live.get("routing_mode"):
+                    result["mode"] = live["routing_mode"].upper()
                 result["live"] = live
         except Exception:
             pass  # stratum may not be running
@@ -12187,8 +12840,17 @@ def get_multiport():
             cursor += hours
     result["schedule"] = schedule
 
-    # Compute next_switch and time_remaining from schedule + timezone
-    if schedule and result.get("live") and result["live"].get("active_coin"):
+    # In DIFFICULTY mode expose per-coin network difficulty for the UI
+    if result["mode"] == "DIFFICULTY":
+        coin_diffs = {}
+        for sym in result.get("coins", {}).keys():
+            d = pool_stats_cache.get("per_coin", {}).get(sym, {}).get("difficulty", 0)
+            if d:
+                coin_diffs[sym] = d
+        result["coin_difficulties"] = coin_diffs
+
+    # Compute next_switch and time_remaining from schedule + timezone (TIME mode only)
+    if result["mode"] != "DIFFICULTY" and schedule and result.get("live") and result["live"].get("active_coin"):
         try:
             from datetime import datetime as _dt
             import pytz
@@ -12222,7 +12884,7 @@ def get_multiport():
     # Available SHA-256d coins (for the UI to show toggle options)
     sha256d_available = []
     for sym, node in MULTI_COIN_NODES.items():
-        if node.get("algorithm") == "sha256d" and sym not in ("NMC", "SYS", "XMY", "FBTC"):
+        if node.get("algorithm") == "sha256d" and not (node.get("merge_mining") or {}).get("role"):
             sha256d_available.append({
                 "symbol": sym,
                 "name": node.get("name", sym),
@@ -12251,13 +12913,25 @@ def update_multiport():
     coins = data.get("coins", {})
     prefer_coin = data.get("prefer_coin", "")
     wallet_map = data.get("wallet_map")  # None means "don't touch existing"
+    raw_exclude = data.get("exclude_coins", [])
+
+    # Validate and normalise routing mode ("TIME" or "DIFFICULTY", default "TIME")
+    raw_mode = str(data.get("mode", "TIME")).upper().strip()
+    if raw_mode not in ("TIME", "DIFFICULTY"):
+        return jsonify({"success": False, "error": f"Invalid mode '{raw_mode}'. Must be TIME or DIFFICULTY"}), 400
+    routing_mode = raw_mode
+
+    # Validate and normalise exclude_coins (list of uppercase coin symbols)
+    if not isinstance(raw_exclude, list):
+        return jsonify({"success": False, "error": "exclude_coins must be a list"}), 400
+    exclude_coins = [str(s).upper().strip() for s in raw_exclude if str(s).strip()]
 
     # Validate coins
     if enabled:
         if len(coins) < 2:
             return jsonify({"success": False, "error": "At least 2 coins required"}), 400
 
-        # Validate weights sum to 100 (coerce to int — JSON may send floats)
+        # Validate weights (coerce to int — JSON may send floats)
         total = 0
         for sym, cfg in coins.items():
             w = cfg.get("weight", 0) if isinstance(cfg, dict) else 0
@@ -12276,8 +12950,10 @@ def update_multiport():
             else:
                 return jsonify({"success": False, "error": f"Unknown coin: {sym_upper}"}), 400
 
-        if total != 100:
-            return jsonify({"success": False, "error": f"Weights must sum to 100, got {total}"}), 400
+        # Weights must sum to 100 in TIME mode. In DIFFICULTY mode they are
+        # unused for routing — accept any positive values or zero.
+        if routing_mode == "TIME" and total != 100:
+            return jsonify({"success": False, "error": f"Weights must sum to 100 in TIME mode, got {total}"}), 400
 
     # Serialize config read-modify-write to prevent concurrent overwrites
     with _config_file_lock:
@@ -12308,6 +12984,15 @@ def update_multiport():
             for sym in coins:
                 if sym.upper() not in pool_coins:
                     return jsonify({"success": False, "error": f"{sym.upper()} is not configured as a pool coin"}), 400
+
+        # Validate exclude_coins: each must be a configured multi-port coin
+        configured_mp_coins = {s.upper() for s in coins}
+        for sym in exclude_coins:
+            if sym not in configured_mp_coins:
+                return jsonify({"success": False, "error": f"Cannot exclude {sym}: not in configured multi-port coins"}), 400
+        # Guard: don't allow excluding ALL coins (would leave nothing to rotate to)
+        if exclude_coins and enabled and len(exclude_coins) >= len(configured_mp_coins):
+            return jsonify({"success": False, "error": "Cannot exclude all coins — at least one must remain eligible"}), 400
 
         # Update multi_port section
         # Normalize coin symbols to uppercase
@@ -12364,12 +13049,15 @@ def update_multiport():
         mp_cfg = {
             "enabled": enabled,
             "port": 16180,
+            "mode": routing_mode,
             "coins": normalized_coins,
             "check_interval": data.get("check_interval", "30s"),
             "prefer_coin": prefer_coin.upper() if prefer_coin else "",
             "min_time_on_coin": data.get("min_time_on_coin", "60s"),
             "timezone": tz,
         }
+        if exclude_coins:
+            mp_cfg["exclude_coins"] = exclude_coins
         # Preserve or update wallet_map
         if wallet_map is not None:
             # Validate: each worker entry must map coin symbols to non-empty addresses
@@ -12433,7 +13121,7 @@ def update_multiport():
         restart_msg = "Config saved but stratum restart failed — restart manually"
 
     action = "enabled" if enabled else "disabled"
-    app.logger.info(f"Multi-port {action} by {request.remote_addr}: coins={list(normalized_coins.keys())}")
+    app.logger.info(f"Multi-port {action} by {request.remote_addr}: mode={routing_mode}, coins={list(normalized_coins.keys())}")
 
     return jsonify({
         "success": True,
@@ -12844,7 +13532,13 @@ def generate_wallet(symbol):
     # exist yet — createwallet is only called during install.sh's wallet flow.
     # We attempt createwallet here if getnewaddress fails on the named wallet.
     wallet_name = f"pool-{symbol.lower()}"
-    address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name)
+    # BCH2 needs "legacy" to get CashAddr format (bitcoincashii:q...).
+    # BTCS needs "bech32" to get bs1q... SegWit address.
+    # Other coins use daemon default (usually bech32 for BTC-style).
+    _address_type_map = {"BCH2": "legacy", "BTCS": "bech32"}
+    _addr_type = _address_type_map.get(symbol.upper())
+    _gnw_params = [wallet_name, _addr_type] if _addr_type else [wallet_name]
+    address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name, params=_gnw_params)
     if not address:
         # Wallet may not exist yet (dashboard-added coins skip install.sh wallet flow).
         # Try creating it, then load it if it already exists, then retry getnewaddress.
@@ -12853,10 +13547,10 @@ def generate_wallet(symbol):
             # createwallet failed — maybe wallet already exists but isn't loaded
             coin_rpc(symbol, "loadwallet", params=[wallet_name])
         if create_result is not None or coin_rpc(symbol, "listwallets") is not None:
-            address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name)
+            address = coin_rpc(symbol, "getnewaddress", wallet=wallet_name, params=_gnw_params)
     if not address:
         # Try without wallet name (old daemons or default wallet setups)
-        address = coin_rpc(symbol, "getnewaddress")
+        address = coin_rpc(symbol, "getnewaddress", params=[wallet_name, _addr_type] if _addr_type else None)
     if not address:
         # Check if node is still loading blocks (HTTP 503 / error -28) vs truly down
         loading_check = coin_rpc(symbol, "getblockchaininfo")
@@ -13246,6 +13940,128 @@ def service_control(service, action):
         return jsonify({"success": False, "error": "Permission denied"})
 
 
+def _docker_available():
+    """Return True if the Docker daemon is reachable."""
+    import subprocess
+    try:
+        r = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+_DOCKER_MOCK_CONTAINERS = [
+    {"name": "spiralstratum",  "image": "spiral/stratum:latest",   "status": "Up 3 hours",          "state": "running"},
+    {"name": "spiraldash",     "image": "spiral/dashboard:latest", "status": "Up 3 hours",          "state": "running"},
+    {"name": "spiralsentinel", "image": "spiral/sentinel:latest",  "status": "Up 3 hours",          "state": "running"},
+    {"name": "bitcoind",       "image": "spiral/bitcoind:latest",  "status": "Up 1 hour",           "state": "running"},
+    {"name": "digibyted",      "image": "spiral/digibyted:latest", "status": "Exited (0) 5 min ago","state": "exited"},
+    {"name": "postgres",       "image": "postgres:18",             "status": "Up 3 hours",          "state": "running"},
+]
+
+
+@app.route('/api/docker/containers', methods=['GET'])
+@admin_required
+def docker_containers():
+    """List all Docker containers with their run state."""
+    import subprocess
+    import json as _json
+    import os
+
+    client_ip = request.remote_addr or "unknown"
+    if not check_rate_limit(client_ip, "docker_status"):
+        return jsonify({"success": False, "error": "Rate limit exceeded"}), 429
+
+    if os.environ.get("SPIRAL_DOCKER_MOCK") == "1":
+        return jsonify({"available": True, "containers": _DOCKER_MOCK_CONTAINERS})
+
+    if not _docker_available():
+        return jsonify({"available": False})
+
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{json .}}"],
+            capture_output=True, text=True, timeout=10
+        )
+        containers = []
+        for line in result.stdout.strip().splitlines():
+            if not line:
+                continue
+            try:
+                c = _json.loads(line)
+                containers.append({
+                    "name": c.get("Names", "").lstrip("/"),
+                    "image": c.get("Image", ""),
+                    "status": c.get("Status", ""),
+                    "state": c.get("State", ""),
+                })
+            except ValueError:
+                continue
+        return jsonify({"available": True, "containers": containers})
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": "Docker command timed out"}), 500
+
+
+@app.route('/api/docker/containers/<name>/<action>', methods=['POST'])
+@admin_required
+def docker_container_action(name, action):
+    """Start, stop, or restart a Docker container by name."""
+    import subprocess
+    import os
+
+    client_ip = request.remote_addr or "unknown"
+    if not check_rate_limit(client_ip, "docker_control"):
+        return jsonify({"success": False, "error": "Rate limit exceeded"}), 429
+
+    # SECURITY: validate action
+    if action not in ("start", "stop", "restart"):
+        return jsonify({"success": False, "error": "Invalid action"}), 400
+
+    # SECURITY: validate name format — alphanumeric, hyphens, underscores, dots only
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', name):
+        return jsonify({"success": False, "error": "Invalid container name"}), 400
+
+    if os.environ.get("SPIRAL_DOCKER_MOCK") == "1":
+        mock_names = {c["name"] for c in _DOCKER_MOCK_CONTAINERS}
+        if name not in mock_names:
+            return jsonify({"success": False, "error": f"Container not found: {name}"}), 404
+        app.logger.info(f"[MOCK] Docker container {name} {action}ed by {client_ip}")
+        return jsonify({"success": True, "message": f"[MOCK] {name} {action}ed successfully"})
+
+    if not _docker_available():
+        return jsonify({"success": False, "error": "Docker is not available"}), 503
+
+    # Confirm container exists before acting
+    try:
+        check = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Name}}", name],
+            capture_output=True, text=True, timeout=5
+        )
+        if check.returncode != 0:
+            return jsonify({"success": False, "error": f"Container not found: {name}"}), 404
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": "Docker inspect timed out"}), 503
+
+    try:
+        result = subprocess.run(
+            ["docker", action, name],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            app.logger.info(f"Docker container {name} {action}ed by {client_ip}")
+            record_activity("docker_control", f"container {name} {action}ed")
+            return jsonify({"success": True, "message": f"{name} {action}ed successfully"})
+        else:
+            app.logger.warning(f"Docker {action} {name} failed for {client_ip}: {result.stderr[:300]}")
+            return jsonify({"success": False, "error": f"Docker {action} failed: {result.stderr[:200]}"})
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "error": f"Docker {action} timed out"})
+    except FileNotFoundError:
+        return jsonify({"success": False, "error": "Docker not available"})
+    except PermissionError:
+        return jsonify({"success": False, "error": "Permission denied"})
+
+
 @app.route('/api/logs/<service>', methods=['GET'])
 @admin_required
 def get_service_logs(service):
@@ -13398,7 +14214,7 @@ def refresh_system_updates():
 @app.route('/api/system/updates/apply', methods=['POST'])
 @admin_required
 def apply_system_updates():
-    """Apply available system package updates (apt-get dist-upgrade)"""
+    """Apply available system package updates (apt full-upgrade, includes kernel upgrades)"""
     import subprocess
 
     client_ip = request.remote_addr or "unknown"
@@ -13407,13 +14223,13 @@ def apply_system_updates():
 
     try:
         # Refresh package cache first — stale cache is a common cause of
-        # dist-upgrade failures, especially on freshly installed systems.
+        # full-upgrade failures, especially on freshly installed systems.
         subprocess.run(
             ['sudo', _apt_wrapper, 'update', '-qq'],
             capture_output=True, text=True, timeout=120
         )
         result = subprocess.run(
-            ['sudo', _apt_wrapper, 'dist-upgrade', '-y', '-qq',
+            ['sudo', _apt_wrapper, 'full-upgrade', '-y', '-qq',
              '-o', 'Dpkg::Options::=--force-confold',
              '-o', 'Dpkg::Options::=--force-confdef'],
             capture_output=True,
@@ -13427,11 +14243,11 @@ def apply_system_updates():
         else:
             stderr_msg = (result.stderr or result.stdout or "").strip()
             app.logger.warning(f"Package upgrade failed for {client_ip}: {stderr_msg[:300]}")
-            return jsonify({"success": False, "error": f"apt-get dist-upgrade failed: {stderr_msg[:200]}"})
+            return jsonify({"success": False, "error": f"apt full-upgrade failed: {stderr_msg[:200]}"})
     except subprocess.TimeoutExpired:
         return jsonify({"success": False, "error": "Upgrade timed out (10 min limit)"})
     except FileNotFoundError:
-        return jsonify({"success": False, "error": "apt-get not available"})
+        return jsonify({"success": False, "error": "apt not available"})
 
 
 @app.route('/api/system/reboot', methods=['POST'])
@@ -13841,13 +14657,16 @@ def get_stratum_address():
     # Load wallet addresses from pool config
     # SECURITY: Uses global VALID_COINS and validate_wallet_address() for proper validation
     # Extended whitelist includes long-form names that get normalized to standard symbols
-    VALID_COIN_TYPES_EXTENDED = {"DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT",
-                                  "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX",
-                                  "DIGIBYTE", "BITCOIN", "BITCOINCASH", "BITCOINII", "BITCOIN2",
+    VALID_COIN_TYPES_EXTENDED = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
+                                  "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC",
+                                  "DIGIBYTE", "BITCOIN", "BITCOINCASH", "BITCOIN-CASH",
+                                  "BITCOINCASHII", "BITCOIN-CASH-II",
+                                  "BITCOINII", "BITCOIN-II", "BITCOIN2", "BC2",
+                                  "BITCOINSILVER", "BITCOIN-SILVER",
                                   "LITECOIN", "DOGECOIN", "DIGIBYTE-SCRYPT",
                                   "PEPECOIN", "CATCOIN",
                                   "NAMECOIN", "SYSCOIN", "MYRIADCOIN", "FRACTALBITCOIN", "FRACTAL",
-                                  "QBITX", "Q-BITX"}
+                                  "QBITX", "Q-BITX", "ECASH", "BITCOIN-ABC"}
 
     wallet_addresses = {}
     try:
@@ -13888,7 +14707,9 @@ def get_stratum_address():
                     coin_normalize_map = {
                         "DIGIBYTE": "DGB",
                         "BITCOINCASH": "BCH", "BITCOIN-CASH": "BCH",
+                        "BITCOINCASHII": "BCH2", "BITCOIN-CASH-II": "BCH2",
                         "BITCOINII": "BC2", "BITCOIN-II": "BC2", "BITCOIN2": "BC2", "BCII": "BC2",
+                        "BITCOINSILVER": "BTCS", "BITCOIN-SILVER": "BTCS",
                         "BITCOIN": "BTC",
                         "LITECOIN": "LTC",
                         "DOGECOIN": "DOGE",
@@ -13900,6 +14721,7 @@ def get_stratum_address():
                         "QBITX": "QBX", "Q-BITX": "QBX",
                         "PEPECOIN": "PEP",
                         "CATCOIN": "CAT",
+                        "ECASH": "XEC", "BITCOIN-ABC": "XEC",
                     }
                     coin_type = coin_normalize_map.get(coin_type, coin_type)
 
@@ -13988,6 +14810,15 @@ def get_stratum_address():
     # Add warnings for coins that need special attention
     warnings = []
     enabled_symbols = [c["symbol"] for c in coins]
+
+    # BCH2 address format confusion warning (legacy bytes identical to BCH/BTC)
+    if "BCH2" in enabled_symbols:
+        warnings.append({
+            "coin": "BCH2",
+            "severity": "warning",
+            "message": "BCH2 legacy addresses (1..., 3...) are identical to BCH/BTC. "
+                      "Use CashAddr format (bitcoincashii:q...) to avoid confusion."
+        })
 
     # BC2 address format confusion warning (identical to BTC addresses)
     if "BC2" in enabled_symbols:
@@ -14777,7 +15608,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.4.2 PHI HASH REACTOR"},
+        "footer": {"text": f"Spiral Pool v2.5.0"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -16283,6 +17114,46 @@ def get_block_history():
     })
 
 
+@app.route('/api/blocks/daily', methods=['GET'])
+@api_key_or_login_required
+def get_daily_blocks():
+    """Get daily block counts for chart display (all coins)."""
+    from collections import defaultdict
+
+    coins_info = get_enabled_coins()
+    enabled_coins = coins_info.get("enabled", [])
+    primary_coin = coins_info.get("primary", "")
+
+    all_blocks = []
+    for coin_symbol in enabled_coins:
+        pool_id = f"{coin_symbol.lower()}_sha256_1"
+        try:
+            resp = requests.get(f"{POOL_API_URL}/api/pools/{pool_id}/blocks", timeout=5)
+            if resp.status_code == 200:
+                blocks = resp.json()
+                for b in blocks:
+                    b["coin"] = coin_symbol
+                all_blocks.extend(blocks)
+        except Exception:
+            pass
+
+    coin_param = request.args.get('coin', '').upper()
+
+    daily_counts = defaultdict(int)
+    for block in all_blocks:
+        block_coin = block.get("coin", primary_coin).upper()
+        if coin_param and block_coin != coin_param:
+            continue
+        created = block.get("created", "")
+        date_str = str(created)[:10] if created else "unknown"
+        daily_counts[date_str] += 1
+
+    dates = sorted(daily_counts.keys(), reverse=True)[:30]
+    result = [{"date": d, "blocks": daily_counts[d]} for d in reversed(dates)]
+
+    return jsonify({"success": True, "daily": result})
+
+
 @app.route('/api/blocks/leaderboard', methods=['GET'])
 @api_key_or_login_required
 def get_block_leaderboard():
@@ -17149,10 +18020,10 @@ def batch_update_pool():
     pool_url = data.get("pool_url", "")
     # Get default port based on primary coin (alphabetical order)
     primary = get_primary_coin()
-    default_port = {"BC2": 6333, "BCH": 5333, "BTC": 4333, "CAT": 12335,
-                    "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
+    default_port = {"BC2": 6333, "BCH": 5333, "BCH2": 5336, "BTC": 4333, "BTCS": 11335,
+                    "CAT": 12335, "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
                     "FBTC": 18335, "LTC": 7333, "NMC": 14335,
-                    "PEP": 10335, "QBX": 20335, "SYS": 15335, "XMY": 17335}.get(primary, 3333) if primary else 3333
+                    "PEP": 10335, "QBX": 20335, "SYS": 15335, "XEC": 18338, "XMY": 17335}.get(primary, 3333) if primary else 3333
     pool_port = data.get("pool_port", default_port)
     worker_prefix = data.get("worker_prefix", "")
     password = data.get("password", "x")
@@ -18780,7 +19651,7 @@ def get_power_stats():
     # Calculate efficiency (J/TH)
     efficiency_jth = (total_watts / total_hashrate_ths) if total_hashrate_ths > 0 else 0
 
-    # Get current coin info for profitability (dynamic, supports all 14 coins)
+    # Get current coin info for profitability (dynamic, supports all 17 coins)
     # Use power_cost currency for profitability calculations (or CAD fallback)
     power_currency = power_config.get("currency", "CAD").upper()
     cur_meta = DASHBOARD_CURRENCIES.get(power_currency, DASHBOARD_CURRENCIES["CAD"])
@@ -19690,18 +20561,12 @@ def update_etb_calculation():
     if now - etb_calculator["last_update"] < 30:
         return
 
-    # Get current farm hashrate
-    farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
-    if farm_hashrate_ths <= 0:
-        return
-
     # Get network difficulty from pool stats
     network_difficulty = pool_stats_cache.get("network_difficulty", 0)
     if network_difficulty <= 0:
-        # Try to get from node using proper multi-algo extraction
         try:
             coins = get_enabled_coins()
-            primary_coin = coins.get("primary")  # No default - use detected coin
+            primary_coin = coins.get("primary")
             if primary_coin:
                 network_difficulty = get_sha256_difficulty(primary_coin)
         except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
@@ -19710,36 +20575,33 @@ def update_etb_calculation():
     if network_difficulty <= 0:
         return
 
-    etb_calculator["current_hashrate_ths"] = farm_hashrate_ths
+    # Prefer farm hashrate from miner detection, fall back to pool per-coin hashrate
+    farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
+    pool_hashrate_hs = pool_stats_cache.get("pool_hashrate", 0)
+    if farm_hashrate_ths > 0:
+        effective_hs = farm_hashrate_ths * 1e12
+    elif pool_hashrate_hs > 0:
+        effective_hs = pool_hashrate_hs
+    else:
+        return
+
+    etb_calculator["current_hashrate_ths"] = effective_hs / 1e12
     etb_calculator["network_difficulty"] = network_difficulty
 
-    # Convert to hashes per second
-    farm_hashrate_hs = farm_hashrate_ths * 1e12
-
-    # Expected hashes per block = difficulty * 2^32 (SHA256d) or 2^16 (Scrypt)
     coins = get_enabled_coins()
     algo = get_algorithm_for_coin(coins.get("primary", "BTC"))
     diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
     expected_hashes_per_block = network_difficulty * diff_multiplier
 
-    # Time to find one block = expected_hashes / hashrate
-    if farm_hashrate_hs > 0:
-        estimated_seconds = expected_hashes_per_block / farm_hashrate_hs
-    else:
-        estimated_seconds = float('inf')
+    estimated_seconds = expected_hashes_per_block / effective_hs if effective_hs > 0 else float('inf')
 
     etb_calculator["estimated_seconds"] = estimated_seconds
 
-    # Calculate probabilities for different time periods
-    # P(at least 1 block) = 1 - e^(-time/expected_time)
     import math
 
     if estimated_seconds > 0 and estimated_seconds != float('inf'):
-        # Probability of finding at least one block in 24 hours
         etb_calculator["probability_24h"] = round((1 - math.exp(-86400 / estimated_seconds)) * 100, 4)
-        # 7 days
         etb_calculator["probability_7d"] = round((1 - math.exp(-604800 / estimated_seconds)) * 100, 4)
-        # 30 days
         etb_calculator["probability_30d"] = round((1 - math.exp(-2592000 / estimated_seconds)) * 100, 4)
     else:
         etb_calculator["probability_24h"] = 0
@@ -19915,90 +20777,84 @@ def reset_session_stats():
 def update_luck_tracker():
     """Update luck calculation based on actual vs expected blocks.
 
-    Multi-coin aware: in multi-coin mode, calculates expected blocks per-coin
-    using each coin's own difficulty and algorithm, then sums.  This avoids the
-    bug where mixing BTC difficulty with QBX block counts gives wildly incorrect
-    luck percentages.
+    Uses per-coin block counts and per-coin difficulty/algorithm for accuracy.
+    For hashrate, prefers farm hashrate (local miner detection) but falls back
+    to pool hashrate per-coin (which on a private pool equals farm hashrate).
     """
     global luck_tracker
 
     now = time.time()
 
-    # Rate limit to every 60 seconds
     if now - luck_tracker["last_update"] < 60:
         return
 
-    # Get blocks found from pool stats
-    blocks_found = pool_stats_cache.get("blocks_found", 0)
+    mining_duration = now - session_stats.get("start_time", now)
+    if mining_duration < 3600:
+        return
+
+    # Prefer farm hashrate from miner detection, fall back to pool per-coin hashrate
+    farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
+    farm_available = farm_hashrate_ths > 0
+    pool_hashrate_hs = pool_stats_cache.get("pool_hashrate", 0)
+
+    per_coin = pool_stats_cache.get("per_coin", {})
+    blocks_found = 0
+    blocks_expected = 0
+    per_coin_found = {}
+    per_coin_expected = {}
+
+    for sym, coin_stats in per_coin.items():
+        coin_blk = coin_stats.get("dashboard_blocks", coin_stats.get("blocks", 0))
+        blocks_found += coin_blk
+        per_coin_found[sym] = coin_blk
+        coin_diff = coin_stats.get("difficulty", 0)
+        if coin_diff <= 0:
+            continue
+        algo = get_algorithm_for_coin(sym)
+        diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
+        expected_hashes = coin_diff * diff_multiplier
+        if expected_hashes <= 0:
+            continue
+        if farm_available:
+            effective_hs = farm_hashrate_ths * 1e12
+        else:
+            effective_hs = coin_stats.get("hashrate", 0)
+        if effective_hs <= 0:
+            continue
+        coin_exp = (effective_hs * mining_duration) / expected_hashes
+        blocks_expected += coin_exp
+        per_coin_expected[sym] = coin_exp
+
+    if blocks_found <= 0:
+        blocks_found = pool_stats_cache.get("blocks_found", 0)
     if blocks_found <= 0:
         return
-
-    # Calculate expected blocks based on hashrate and time
-    farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
-
-    if farm_hashrate_ths <= 0:
-        return
-
-    # How long have we been mining? Use session start or lifetime start
-    mining_duration = now - session_stats.get("start_time", now)
-    if mining_duration < 3600:  # Need at least 1 hour of data
-        return
-
-    farm_hashrate_hs = farm_hashrate_ths * 1e12
-    per_coin = pool_stats_cache.get("per_coin", {})
-
-    if len(per_coin) >= 2:
-        # Multi-coin mode: calculate expected blocks per-coin to avoid
-        # mixing different coins' difficulties (e.g. BTC diff vs QBX blocks).
-        # Each coin's expected blocks = (coin_hashrate / total_hashrate) * farm_hashrate * time / (diff * multiplier)
-        total_pool_hashrate = pool_stats_cache.get("pool_hashrate", 0)
+    if blocks_expected <= 0:
         blocks_expected = 0
-        for sym, coin_stats in per_coin.items():
-            coin_diff = coin_stats.get("difficulty", 0)
-            coin_hr = coin_stats.get("hashrate", 0)
-            if coin_diff <= 0 or coin_hr <= 0 or total_pool_hashrate <= 0:
-                continue
-            # Proportion of farm hashrate attributed to this coin
-            coin_fraction = coin_hr / total_pool_hashrate
-            coin_farm_hs = farm_hashrate_hs * coin_fraction
-            algo = get_algorithm_for_coin(sym)
-            diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
-            expected_hashes = coin_diff * diff_multiplier
-            if expected_hashes > 0:
-                blocks_expected += (coin_farm_hs * mining_duration) / expected_hashes
-    else:
-        # Single-coin mode: straightforward calculation
-        network_difficulty = pool_stats_cache.get("network_difficulty", 0)
-        if network_difficulty <= 0:
-            return
-        coins = get_enabled_coins()
-        algo = get_algorithm_for_coin(coins.get("primary", "BTC"))
-        diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
-        expected_hashes_per_block = network_difficulty * diff_multiplier
-        if expected_hashes_per_block > 0:
-            blocks_expected = (farm_hashrate_hs * mining_duration) / expected_hashes_per_block
-        else:
-            blocks_expected = 0
 
     luck_tracker["blocks_found"] = blocks_found
     luck_tracker["blocks_expected"] = round(blocks_expected, 4)
 
-    # Calculate luck percentage (100% = exactly as expected)
-    # >100% = lucky (found more than expected)
-    # <100% = unlucky (found fewer than expected)
     if blocks_expected > 0:
         luck_tracker["luck_percent"] = round((blocks_found / blocks_expected) * 100, 2)
     else:
         luck_tracker["luck_percent"] = 100.0
 
-    # Update history (keep last 30 days worth of hourly samples)
-    luck_tracker["luck_history"].append({
+    history_entry = {
         "timestamp": now,
         "blocks_found": blocks_found,
         "blocks_expected": round(blocks_expected, 4),
-        "luck_percent": luck_tracker["luck_percent"]
-    })
-    luck_tracker["luck_history"] = luck_tracker["luck_history"][-720:]  # 30 days * 24 hours
+        "luck_percent": luck_tracker["luck_percent"],
+        "per_coin": {
+            sym: {
+                "blocks_found": per_coin_found.get(sym, 0),
+                "blocks_expected": round(per_coin_expected.get(sym, 0), 4)
+            }
+            for sym in per_coin
+        }
+    }
+    luck_tracker["luck_history"].append(history_entry)
+    luck_tracker["luck_history"] = luck_tracker["luck_history"][-720:]
 
     luck_tracker["last_update"] = now
 
@@ -20038,31 +20894,47 @@ def get_luck_overview():
         status = "Very Unlucky 😢"
         status_emoji = "😢"
 
-    # Per-coin filtering: use per-coin hashrate/difficulty when a specific coin is requested
+    # Per-coin filtering: use per-coin hashrate/difficulty/blocks when a specific coin is requested
     requested_coin = request.args.get("coin", "").upper()
     per_coin = pool_stats_cache.get("per_coin", {})
     if requested_coin and requested_coin in per_coin:
         coin_stats = per_coin[requested_coin]
         pool_hps = coin_stats.get("hashrate", 0)
         network_hps = coin_stats.get("network_hashrate", 0)
-        coin_blocks = coin_stats.get("blocks", 0)
-        # Calculate per-coin expected blocks
+        coin_blocks = coin_stats.get("dashboard_blocks", coin_stats.get("blocks", 0))
+        # with fallback to pool per-coin hashrate (correct on private pools).
         coin_diff = coin_stats.get("difficulty", 0)
         mining_duration = time.time() - session_stats.get("start_time", time.time())
+        farm_hashrate_ths = miner_cache.get("totals", {}).get("hashrate_ths", 0)
+        if farm_hashrate_ths > 0:
+            effective_hs = farm_hashrate_ths * 1e12
+        else:
+            effective_hs = coin_stats.get("hashrate", 0)
         coin_expected = 0
-        if coin_diff > 0 and pool_hps > 0 and mining_duration > 0:
+        if coin_diff > 0 and effective_hs > 0 and mining_duration > 0:
             algo = get_algorithm_for_coin(requested_coin)
             diff_multiplier = (2 ** 16) if algo == "scrypt" else (2 ** 32)
             expected_hashes = coin_diff * diff_multiplier
             if expected_hashes > 0:
-                coin_expected = (pool_hps * mining_duration) / expected_hashes
+                coin_expected = (effective_hs * mining_duration) / expected_hashes
         coin_luck = round((coin_blocks / coin_expected) * 100, 2) if coin_expected > 0 else 100.0
+        # Filter history to only this coin's per-coin data for the chart
+        coin_history = []
+        for entry in luck_tracker["luck_history"]:
+            pc = entry.get("per_coin", {}).get(requested_coin, {})
+            coin_history.append({
+                "timestamp": entry["timestamp"],
+                "blocks_found": pc.get("blocks_found", 0),
+                "blocks_expected": pc.get("blocks_expected", 0),
+            })
+        history = coin_history
     else:
         pool_hps = pool_stats_cache.get("pool_hashrate", 0)
         network_hps = pool_stats_cache.get("node_networkhashps", 0)
         coin_blocks = luck_tracker["blocks_found"]
         coin_expected = luck_tracker["blocks_expected"]
         coin_luck = luck
+        history = luck_tracker["luck_history"]
 
     return jsonify({
         "success": True,
@@ -20073,7 +20945,7 @@ def get_luck_overview():
             "blocks_found": coin_blocks,
             "blocks_expected": round(coin_expected, 4)
         },
-        "history": luck_tracker["luck_history"],  # Aggregate history (not per-coin)
+        "history": history,
         "hashrate": {
             "pool_hps": pool_hps,
             "network_hps": network_hps,

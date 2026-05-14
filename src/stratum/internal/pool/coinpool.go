@@ -10,6 +10,7 @@ package pool
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
@@ -128,6 +129,23 @@ type CoinPool struct {
 	// Block stats (loaded from DB on startup, incremented on each block found)
 	cachedBlocksFound int64
 	blockStatsMu      sync.RWMutex
+
+	// Round difficulty accumulator for true pool effort calculation.
+	// Reset to 0 after each block; effort = (roundDiff / networkDiff) × 100.
+	currentRoundDifficulty float64
+	roundDiffMu            sync.Mutex
+
+	// Per-coin session stats (exposed via API)
+	acceptedShareCount atomic.Int64
+	bestShareDiffBits  atomic.Uint64 // stores float64 bits for lock-free CAS
+
+	// Last known good network difficulty (filters FBTC indexing/merged-mining cycles)
+	lastGoodNetworkDiff float64
+	lastGoodDiffMu      sync.Mutex
+
+	// Time-based effort tracking: timestamp of last block found
+	lastBlockTime   time.Time
+	lastBlockTimeMu sync.Mutex
 
 	// Multi-port job listener: called when job manager produces a new job,
 	// allowing the multi-port server to relay block templates to its miners.
@@ -579,7 +597,7 @@ func (cp *CoinPool) setupCallbacks() {
 			}()
 		}
 
-		cp.stratumServer.BroadcastJob(job)
+		go cp.stratumServer.BroadcastJob(job)
 	})
 
 	// Stratum server sends shares to pool for processing
@@ -881,6 +899,18 @@ func (cp *CoinPool) handleShare(share *protocol.Share) *protocol.ShareResult {
 			// This shows the true "best" share based on how hard the hash was to find
 			if result.Accepted && result.ActualDifficulty > 0 {
 				cp.metricsServer.UpdateBestShareDiff(result.ActualDifficulty)
+				// Update per-coin session best share difficulty (lock-free CAS loop)
+				for {
+					oldBits := cp.bestShareDiffBits.Load()
+					oldDiff := math.Float64frombits(oldBits)
+					if result.ActualDifficulty <= oldDiff {
+						break
+					}
+					newBits := math.Float64bits(result.ActualDifficulty)
+					if cp.bestShareDiffBits.CompareAndSwap(oldBits, newBits) {
+						break
+					}
+				}
 			}
 		}
 	}
@@ -898,11 +928,46 @@ func (cp *CoinPool) handleShare(share *protocol.Share) *protocol.ShareResult {
 	}
 
 	if result.Accepted {
+		// Accumulate round difficulty for pool effort tracking.
+		if result.ActualDifficulty > 0 {
+			cp.roundDiffMu.Lock()
+			cp.currentRoundDifficulty += result.ActualDifficulty
+			cp.roundDiffMu.Unlock()
+		}
+
+		// Log share difficulty details (debug level — suppressed in production)
+		cp.logger.Debugw("Share accepted",
+			"sessionId", share.SessionID,
+			"jobId", share.JobID,
+			"shareDiff", share.Difficulty,
+			"actualDiff", result.ActualDifficulty,
+			"nonce", share.Nonce,
+			"worker", share.WorkerName,
+			"coin", cp.coinSymbol,
+		)
+		// Near-miss detection: warn when actual difficulty exceeds 50% of network target
+		if result.ActualDifficulty > 0 && cp.lastGoodNetworkDiff > 0 {
+			networkDiff := cp.lastGoodNetworkDiff
+			if result.ActualDifficulty > networkDiff*0.5 {
+				cp.logger.Warnw("NEAR MISS: Share exceeded 50% of network difficulty",
+					"sessionId", share.SessionID,
+					"jobId", share.JobID,
+					"actualDiff", result.ActualDifficulty,
+					"networkDiff", networkDiff,
+					"percentOfNetwork", fmt.Sprintf("%.2f%%", result.ActualDifficulty/networkDiff*100),
+					"worker", share.WorkerName,
+					"coin", cp.coinSymbol,
+				)
+			}
+		}
+
 		// CRITICAL: Check for block FIRST, before ANY I/O operations
 		// Block submission is the most time-sensitive operation - every millisecond counts!
 		if result.IsBlock {
 			cp.handleBlock(share, result)
 		}
+
+		share.ActualDifficulty = result.ActualDifficulty
 
 		// Submit to pipeline for DB persistence (after block handling)
 		if cp.sharePipeline != nil {
@@ -1050,6 +1115,14 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 	// Convert satoshis to coin units (e.g., BTC/DGB) for storage
 	rewardCoins := float64(result.CoinbaseValue) / 1e8
 
+	// Capture and reset the round difficulty accumulator.
+	// Done here (before any status checks) so the new round starts clean
+	// regardless of whether this block turns out to be an orphan.
+	cp.roundDiffMu.Lock()
+	roundDiff := cp.currentRoundDifficulty
+	cp.currentRoundDifficulty = 0
+	cp.roundDiffMu.Unlock()
+
 	// ═══════════════════════════════════════════════════════════════════════════
 	// STALE RACE CHECK: Re-verify job state before submission.
 	// Between share validation and now, a ZMQ notification may have invalidated
@@ -1121,6 +1194,52 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 		if cp.blockLogger != nil {
 			cp.blockLogger.LogBlockOrphaned(share.BlockHeight, result.BlockHash, share.MinerAddress, "chain_tip_moved")
 		}
+	} else if cp.coinSymbol == "XEC" && jobFound && len(job.RTTPrevHeaderTime) >= 2 {
+		// ═══════════════════════════════════════════════════════════════════════════
+		// XEC REAL TIME TARGET (RTT) VALIDATION
+		// eCash blocks must satisfy BOTH the standard nBits PoW target AND the RTT
+		// target computed from recent block timing. A block failing RTT will be
+		// rejected by the network even if it meets the nBits target.
+		// ═══════════════════════════════════════════════════════════════════════════
+		blockHashBytes, hashDecodeErr := hex.DecodeString(result.BlockHash)
+		if hashDecodeErr == nil && len(blockHashBytes) == 32 {
+			// hex.DecodeString produces big-endian bytes; CheckRTTTargetRaw expects big-endian via SetBytes — no reversal needed.
+			rttData := &coin.RTTRawData{
+				PrevHeaderTime: job.RTTPrevHeaderTime,
+				PrevBits:       job.RTTPrevBits,
+				NextTarget:     job.RTTNextTarget,
+				Bits:           job.RTTBits,
+			}
+			meetsRTT, rttErr := coin.CheckRTTTargetRaw(blockHashBytes, rttData, time.Now().Unix())
+			if rttErr != nil {
+				cp.logger.Warnw("XEC RTT check error — submitting anyway (RTT data may be incomplete)",
+					"height", share.BlockHeight,
+					"hash", result.BlockHash,
+					"error", rttErr,
+				)
+			} else if !meetsRTT {
+				finalStatus = "orphaned"
+				orphanReason = "rtt_target_not_met"
+				lastErr = fmt.Errorf("XEC block does not meet RTT target — would be rejected by network")
+				submitTime = time.Now()
+				// finalStatus="orphaned" is sufficient — the submission block at line 1215
+				// is gated on finalStatus=="pending", so no explicit skipSubmission needed here.
+				cp.logger.Warnw("XEC block rejected: does not meet Real Time Target (RTT)",
+					"height", share.BlockHeight,
+					"hash", result.BlockHash,
+					"miner", share.MinerAddress,
+				)
+				if cp.metricsServer != nil {
+					cp.metricsServer.BlockRejectionsByReason.WithLabelValues("rtt_failed").Inc()
+				}
+				if cp.blockLogger != nil {
+					cp.blockLogger.LogBlockOrphaned(share.BlockHeight, result.BlockHash, share.MinerAddress, "rtt_target_not_met")
+				}
+			}
+		}
+	}
+	if finalStatus != "pending" {
+		// already handled above — fall through to finalisation
 	} else if result.BlockHex == "" {
 		// ═══════════════════════════════════════════════════════════════════════════
 		// BLOCK HEX REBUILD: Attempt recovery when serialization failed in validator
@@ -1227,10 +1346,39 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 			}
 		}
 
+		// Time-based effort: actual time elapsed since last block vs expected time.
+		// GetMiningDifficulty() filters FBTC indexing/merged-mining cycles.
+		netDiff := cp.GetMiningDifficulty()
+		poolHashrate := cp.GetHashrate()
+		now := time.Now().UTC()
+
+		cp.lastBlockTimeMu.Lock()
+		lastBlock := cp.lastBlockTime
+		cp.lastBlockTime = now
+		cp.lastBlockTimeMu.Unlock()
+
+		var effortPercent float64
+		if !lastBlock.IsZero() && netDiff > 0 && poolHashrate > 0 {
+			actualSeconds := now.Sub(lastBlock).Seconds()
+			// Expected time = (difficulty × 2^32) / hashrate
+			expectedSeconds := (netDiff * 4294967296) / poolHashrate
+			if expectedSeconds > 0 {
+				effortPercent = (actualSeconds / expectedSeconds) * 100
+			}
+		}
+		cp.logger.Infow("Block effort calculated",
+			"height", share.BlockHeight,
+			"netDiff", netDiff,
+			"poolHashrate", poolHashrate,
+			"roundDiff", roundDiff,
+			"effort", fmt.Sprintf("%.2f%%", effortPercent),
+		)
+
 		// CRASH SAFETY: Record block with status="submitting" in DB BEFORE submit
 		block := &database.Block{
 			Height:            share.BlockHeight,
-			NetworkDifficulty: share.NetworkDiff,
+			Effort:            effortPercent,
+			NetworkDifficulty: netDiff, // Uses corrected difficulty for FBTC
 			Status:            "submitting",
 			Type:              "block",
 			Miner:             share.MinerAddress,
@@ -2026,6 +2174,22 @@ func (cp *CoinPool) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize block notifications: %w", err)
 	}
 
+	// Fetch initial network difficulty synchronously BEFORE accepting miners.
+	// Without this, a block solved during the jitter window records
+	// networkdifficulty=1 (GetNetworkDifficulty returns 0 when uninitialized).
+	initialDiff, diffErr := cp.nodeManager.GetDifficulty(ctx)
+	if diffErr != nil {
+		cp.logger.Warnw("Failed to get initial network difficulty (will retry in loop)", "error", diffErr)
+	} else {
+		cp.shareValidator.SetNetworkDifficulty(initialDiff)
+		if initialDiff > 1 && initialDiff < 1e12 {
+			cp.lastGoodDiffMu.Lock()
+			cp.lastGoodNetworkDiff = initialDiff
+			cp.lastGoodDiffMu.Unlock()
+		}
+		cp.logger.Infow("Initial network difficulty set before stratum start", "difficulty", initialDiff, "coin", cp.coinSymbol)
+	}
+
 	// Start stratum server
 	if err := cp.stratumServer.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start stratum server: %w", err)
@@ -2503,6 +2667,11 @@ func (cp *CoinPool) difficultyLoop(ctx context.Context) {
 		cp.logger.Warnw("Failed to get initial network difficulty", "error", err)
 	} else {
 		cp.shareValidator.SetNetworkDifficulty(diff)
+		if diff > 1 && diff < 1e12 {
+			cp.lastGoodDiffMu.Lock()
+			cp.lastGoodNetworkDiff = diff
+			cp.lastGoodDiffMu.Unlock()
+		}
 		cp.logger.Infow("Initial network difficulty set", "difficulty", diff, "coin", cp.coinSymbol)
 	}
 
@@ -2520,6 +2689,11 @@ func (cp *CoinPool) difficultyLoop(ctx context.Context) {
 				continue
 			}
 			cp.shareValidator.SetNetworkDifficulty(diff)
+			if diff > 1 && diff < 1e12 {
+				cp.lastGoodDiffMu.Lock()
+				cp.lastGoodNetworkDiff = diff
+				cp.lastGoodDiffMu.Unlock()
+			}
 			cp.logger.Debugw("Network difficulty updated", "difficulty", diff, "coin", cp.coinSymbol)
 		}
 	}
@@ -2632,7 +2806,7 @@ func (cp *CoinPool) GetActiveConnections() []api.WorkerConnection {
 // Uses per-pool query to correctly partition hashrate in multi-coin setups where
 // a shared PostgresDB serves all CoinPools.
 func (cp *CoinPool) GetHashrate() float64 {
-	if cp.db == nil {
+	if cp.db == nil || cp.coin == nil {
 		return 0
 	}
 
@@ -2723,6 +2897,15 @@ func (cp *CoinPool) initBlockStats(ctx context.Context) {
 	cp.logger.Infow("Loaded block stats from database", "total", total,
 		"pending", blockStats.Pending, "confirmed", blockStats.Confirmed,
 		"orphaned", blockStats.Orphaned, "paid", blockStats.Paid)
+
+	// Initialize lastBlockTime from the most recent block in the database.
+	// This ensures time-based effort is accurate from the first block after restart.
+	if lastBlock, err := postgresDB.GetLastBlockFoundTimeForPool(ctx, cp.poolID); err == nil {
+		cp.lastBlockTimeMu.Lock()
+		cp.lastBlockTime = lastBlock
+		cp.lastBlockTimeMu.Unlock()
+		cp.logger.Infow("Initialized lastBlockTime from database", "lastBlockTime", lastBlock)
+	}
 }
 
 // GetBlockReward returns the current block reward from the job template.
@@ -2736,9 +2919,64 @@ func (cp *CoinPool) GetBlockReward() float64 {
 	return 0
 }
 
-// GetPoolEffort returns pool effort (V2 placeholder - returns 0).
+// GetPoolEffort returns current round effort as a percentage.
+// effort = (elapsed time since last block / expected time to find block) × 100
 func (cp *CoinPool) GetPoolEffort() float64 {
-	return 0
+	netDiff := cp.GetMiningDifficulty()
+	poolHashrate := cp.GetHashrate()
+	if netDiff <= 0 || poolHashrate <= 0 {
+		return 0
+	}
+	cp.lastBlockTimeMu.Lock()
+	lastBlock := cp.lastBlockTime
+	cp.lastBlockTimeMu.Unlock()
+	if lastBlock.IsZero() {
+		return 0
+	}
+	elapsedSeconds := time.Since(lastBlock).Seconds()
+	expectedSeconds := (netDiff * 4294967296) / poolHashrate
+	if expectedSeconds <= 0 {
+		return 0
+	}
+	return (elapsedSeconds / expectedSeconds) * 100
+}
+
+// GetMiningDifficulty returns the correct mining-cycle network difficulty.
+// For FBTC: filters out indexing provider (≤1) and merged-mining (>1T) cycles,
+// falling back to the last known good difficulty.
+// For all other coins: returns the network difficulty directly.
+func (cp *CoinPool) GetMiningDifficulty() float64 {
+	if cp.shareValidator == nil {
+		return 0
+	}
+	diff := cp.shareValidator.GetNetworkDifficulty()
+	if cp.coinSymbol == "FBTC" {
+		if diff <= 1 || diff > 1e12 {
+			cp.lastGoodDiffMu.Lock()
+			if cp.lastGoodNetworkDiff > 1 {
+				diff = cp.lastGoodNetworkDiff
+			}
+			cp.lastGoodDiffMu.Unlock()
+		}
+	}
+	return diff
+}
+
+// GetAcceptedShares returns the total accepted shares for this coin pool since startup.
+func (cp *CoinPool) GetAcceptedShares() int64 {
+	stats := cp.shareValidator.Stats()
+	return int64(stats.Accepted)
+}
+
+// GetRejectedShares returns the total rejected shares for this coin pool since startup.
+func (cp *CoinPool) GetRejectedShares() int64 {
+	stats := cp.shareValidator.Stats()
+	return int64(stats.Rejected)
+}
+
+// GetBestShareDiff returns the highest share difficulty for this coin pool since startup.
+func (cp *CoinPool) GetBestShareDiff() float64 {
+	return math.Float64frombits(cp.bestShareDiffBits.Load())
 }
 
 // GetStratumPort returns the stratum port for this coin pool.
@@ -2897,6 +3135,18 @@ func (cp *CoinPool) HandleMultiPortShare(share *protocol.Share) *protocol.ShareR
 			cp.metricsServer.RecordShare(result.Accepted, result.RejectReason)
 			if result.Accepted && result.ActualDifficulty > 0 {
 				cp.metricsServer.UpdateBestShareDiff(result.ActualDifficulty)
+				// Update per-coin session best share difficulty (lock-free CAS loop)
+				for {
+					oldBits := cp.bestShareDiffBits.Load()
+					oldDiff := math.Float64frombits(oldBits)
+					if result.ActualDifficulty <= oldDiff {
+						break
+					}
+					newBits := math.Float64bits(result.ActualDifficulty)
+					if cp.bestShareDiffBits.CompareAndSwap(oldBits, newBits) {
+						break
+					}
+				}
 			}
 		}
 	}
@@ -2910,9 +3160,43 @@ func (cp *CoinPool) HandleMultiPortShare(share *protocol.Share) *protocol.ShareR
 	// CRITICAL: Check for block FIRST, before ANY I/O operations
 	// Block submission is the most time-sensitive operation - every millisecond counts!
 	if result.Accepted {
+		// Accumulate round difficulty for pool effort tracking.
+		if result.ActualDifficulty > 0 {
+			cp.roundDiffMu.Lock()
+			cp.currentRoundDifficulty += result.ActualDifficulty
+			cp.roundDiffMu.Unlock()
+		}
+
+		// Log multi-port share difficulty details (debug level — suppressed in production)
+		cp.logger.Debugw("Multi-port share accepted",
+			"sessionId", share.SessionID,
+			"jobId", share.JobID,
+			"shareDiff", share.Difficulty,
+			"actualDiff", result.ActualDifficulty,
+			"nonce", share.Nonce,
+			"worker", share.WorkerName,
+			"coin", cp.coinSymbol,
+		)
+		// Near-miss detection: warn when actual difficulty exceeds 50% of network target
+		if result.ActualDifficulty > 0 && cp.lastGoodNetworkDiff > 0 {
+			networkDiff := cp.lastGoodNetworkDiff
+			if result.ActualDifficulty > networkDiff*0.5 {
+				cp.logger.Warnw("NEAR MISS: Multi-port share exceeded 50% of network difficulty",
+					"sessionId", share.SessionID,
+					"jobId", share.JobID,
+					"actualDiff", result.ActualDifficulty,
+					"networkDiff", networkDiff,
+					"percentOfNetwork", fmt.Sprintf("%.2f%%", result.ActualDifficulty/networkDiff*100),
+					"worker", share.WorkerName,
+					"coin", cp.coinSymbol,
+				)
+			}
+		}
+
 		if result.IsBlock {
 			cp.handleBlock(share, result)
 		}
+		share.ActualDifficulty = result.ActualDifficulty
 		if cp.sharePipeline != nil {
 			cp.sharePipeline.Submit(share)
 		}

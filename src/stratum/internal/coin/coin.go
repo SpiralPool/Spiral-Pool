@@ -57,8 +57,8 @@ type BlockHeader struct {
 // Each supported cryptocurrency implements this interface.
 type Coin interface {
 	// Identity returns basic coin information.
-	Symbol() string // Ticker symbol: "DGB", "BTC", "BCH", "BC2"
-	Name() string   // Full name: "DigiByte", "Bitcoin", "Bitcoin Cash"
+	Symbol() string // Ticker symbol: "DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "XEC"
+	Name() string   // Full name: "DigiByte", "Bitcoin", "Bitcoin Cash", "Bitcoin Cash II", "Bitcoin II", "Bitcoin Silver"
 
 	// Address validation and decoding.
 	// ValidateAddress checks if an address is valid for this coin.
@@ -464,7 +464,7 @@ func AlgorithmFromCoinSymbol(symbol string) string {
 		return "scrypt"
 	case "CAT", "CATCOIN":
 		return "scrypt"
-	case "DGB", "DIGIBYTE", "BTC", "BITCOIN", "BCH", "BITCOINCASH", "BC2", "BITCOINII", "NMC", "NAMECOIN", "SYS", "SYSCOIN", "XMY", "MYRIAD", "MYRIADCOIN", "FBTC", "FB", "FRACTALBTC", "FRACTAL", "QBX", "QBITX":
+	case "DGB", "DIGIBYTE", "BTC", "BITCOIN", "BCH", "BITCOINCASH", "BCH2", "BITCOINCASHII", "BC2", "BITCOINII", "BTCS", "BITCOINSILVER", "NMC", "NAMECOIN", "SYS", "SYSCOIN", "XMY", "MYRIAD", "MYRIADCOIN", "FBTC", "FB", "FRACTALBTC", "FRACTAL", "QBX", "QBITX", "XEC", "ECASH", "BITCOIN-ABC":
 		return "sha256d"
 	default:
 		return "sha256d" // Default to SHA-256d

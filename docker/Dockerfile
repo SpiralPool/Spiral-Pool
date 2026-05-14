@@ -9,11 +9,11 @@
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Base: Ubuntu 24.04 LTS                                                   ║
+# ║   Base: Ubuntu 26.04 LTS                                                   ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool - Multi-Coin Solo Mining Pool"
@@ -75,12 +75,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GO INSTALLATION
-# WARNING: ARM64 (aarch64) support is EXPERIMENTAL and UNTESTED.
-# Go cross-compilation and stratum binary compatibility are not verified on ARM.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-RUN ARCH=$(dpkg --print-architecture) \
-    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz \
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
     && rm /tmp/go.tar.gz \
     && go version

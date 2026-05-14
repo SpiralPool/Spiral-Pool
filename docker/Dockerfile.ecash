@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                                                                            ║
+# ║                  ECASH NODE (Bitcoin ABC) - DOCKER IMAGE                   ║
+# ║                                                                            ║
+# ║   ecash-node (Bitcoin ABC) provides getblocktemplate with RTT fields,      ║
+# ║   MinerFund, and StakingRewards required for eCash (XEC) mining.          ║
+# ║                                                                            ║
+# ║   P2P:  8343  (non-default — avoids BTC 8333 conflict)                    ║
+# ║   RPC:  9004  (ecash-node default)                                        ║
+# ║   ZMQ:  28335                                                              ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+FROM ubuntu:26.04
+
+LABEL maintainer="Spiral Miner"
+LABEL description="eCash (XEC) Node for Spiral Pool"
+LABEL version="0.31.12"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+ARG ECASH_VERSION=0.31.12
+
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    ca-certificates \
+    libzmq3-dev \
+    gosu \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create ecash user and data directory
+RUN useradd -r -m -s /bin/bash ecash \
+    && mkdir -p /home/ecash/.bitcoin \
+    && chown -R ecash:ecash /home/ecash
+
+# Download and install ecash-node (Bitcoin ABC)
+# NOTE: Only x86_64 (amd64) is supported.
+WORKDIR /tmp
+RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
+        echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
+    fi \
+    && wget -q --max-redirect=5 \
+        "https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v${ECASH_VERSION}/bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && tar -tzf "bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
+    && tar -xzf "bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && install -m 755 "bitcoin-abc-${ECASH_VERSION}/bin/bitcoind" /usr/local/bin/bitcoind \
+    && install -m 755 "bitcoin-abc-${ECASH_VERSION}/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli \
+    && ln -sf /usr/local/bin/bitcoind /usr/local/bin/ecashd \
+    && ln -sf /usr/local/bin/bitcoin-cli /usr/local/bin/ecash-cli \
+    && rm -rf /tmp/*
+
+# Create entrypoint script
+# ecash-node uses the standard Bitcoin bitcoin.conf naming convention
+RUN printf '#!/bin/bash\nset -e\n\n\
+# Process config template (replace env vars) — skip if user-provided config exists\n\
+if [ -f /home/ecash/.bitcoin/bitcoin.conf ] && [ -s /home/ecash/.bitcoin/bitcoin.conf ]; then\n\
+    echo "Using existing bitcoin.conf (skipping template generation)"\n\
+elif [ -f /config/ecash.conf.template ]; then\n\
+    envsubst < /config/ecash.conf.template > /home/ecash/.bitcoin/bitcoin.conf\n\
+    chmod 600 /home/ecash/.bitcoin/bitcoin.conf\n\
+fi\n\n\
+# Ensure proper ownership of data directory\n\
+chown -R ecash:ecash /home/ecash/.bitcoin\n\n\
+# Start ecash node daemon\n\
+exec gosu ecash bitcoind -printtoconsole "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# P2P port (non-standard to avoid BTC conflict)
+EXPOSE 8343
+# RPC port (ecash-node default)
+EXPOSE 9004
+# ZMQ port
+EXPOSE 28335
+
+# Blockchain data volume
+VOLUME ["/home/ecash/.bitcoin"]
+
+USER root
+ENTRYPOINT ["/entrypoint.sh"]

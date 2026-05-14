@@ -489,8 +489,7 @@ From `src/dashboard/requirements.txt`:
 | flask-login | 0.6.3 | Session authentication |
 | requests | 2.32.5 | HTTP client (pool API, miner APIs) |
 | werkzeug | 3.1.5 | WSGI utilities |
-| gunicorn | 25.1.0 | Production WSGI server |
-| gevent | 25.9.1 | Async networking |
+| gunicorn | 25.1.0 | Production WSGI server (gthread worker) |
 | pyyaml | 6.0.3 | YAML parsing (stratum config) |
 | bcrypt | 4.1.2 | Password hashing (optional, fallback to SHA-256) |
 
@@ -533,4 +532,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Phi Hash Reactor 2.4.2*
+*Spiral Dash &mdash; Phi Hash Reactor 2.5.0*

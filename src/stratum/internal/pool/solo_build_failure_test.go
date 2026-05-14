@@ -22,9 +22,9 @@ import (
 // preserves all raw block components so that an operator can manually reconstruct
 // and submit the block. This prevents permanent loss of solved blocks.
 //
-// Coins tested (13 total):
-//   SHA-256d: BTC(600s), BCH(600s), DGB(15s), BC2(600s), NMC(600s,aux),
-//             SYS(60s,aux), XMY(60s,aux), FBTC(30s,aux)
+// Coins tested (17 total):
+//   SHA-256d: BTC(600s), BCH(600s), BCH2(600s), DGB(15s), BC2(600s), BTCS(300s),
+//             XEC(600s), NMC(600s,aux), SYS(60s,aux), XMY(60s,aux), FBTC(30s,aux), QBX(150s)
 //   Scrypt:   LTC(150s), DOGE(60s,aux), DGB-SCRYPT(15s),
 //             PEP(60s,aux), CAT(600s)
 //
@@ -48,18 +48,21 @@ type coinConfig struct {
 	NBits         string // difficulty encoding
 }
 
-// allCoins returns the full set of 14 coins with inline configuration.
+// allCoins returns the full set of 17 coins with inline configuration.
 func allCoins() []coinConfig {
 	return []coinConfig{
 		// SHA-256d coins
 		{Coin: "BTC", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "bc1qsolominer", Height: 880001, CoinbaseValue: 312500000, NBits: "1703255b"},
 		{Coin: "BCH", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "bitcoincash:qpsolominer", Height: 880002, CoinbaseValue: 312500000, NBits: "18034287"},
+		{Coin: "BCH2", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "qbch2solominer", Height: 53201, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 		{Coin: "DGB", Algorithm: "SHA-256d", BlockInterval: 15, AuxPow: false, MinerAddress: "dgb1qsolominer", Height: 20000001, CoinbaseValue: 27700000000, NBits: "1a0377ae"},
 		{Coin: "BC2", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "bc2solo1qminer", Height: 100001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
+		{Coin: "BTCS", Algorithm: "SHA-256d", BlockInterval: 300, AuxPow: false, MinerAddress: "bs1qsolominer", Height: 1001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 		{Coin: "NMC", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: true, MinerAddress: "N1soloMiner", Height: 700001, CoinbaseValue: 5000000000, NBits: "1a06b4be"},
 		{Coin: "SYS", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "sys1qsolominer", Height: 1500001, CoinbaseValue: 606060606, NBits: "1c00d2d1"},
 		{Coin: "XMY", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "MsoloMiner1addr", Height: 3000001, CoinbaseValue: 250000000, NBits: "1c0d3142"},
 		{Coin: "FBTC", Algorithm: "SHA-256d", BlockInterval: 30, AuxPow: true, MinerAddress: "FsoloMiner1addr", Height: 200001, CoinbaseValue: 2500000000, NBits: "1d00ffff"},
+		{Coin: "XEC", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "ecash:qsolominer", Height: 951001, CoinbaseValue: 312500000, NBits: "18034287"},
 		{Coin: "QBX", Algorithm: "SHA-256d", BlockInterval: 150, AuxPow: false, MinerAddress: "1QBXsoloMiner1addr", Height: 500001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 
 		// Scrypt coins
@@ -436,8 +439,10 @@ func TestSOLO_BuildFailure_AllSHA256d_StatusAndComponentsPreserved(t *testing.T)
 	sha256dCoins := []coinConfig{
 		{Coin: "BTC", Algorithm: "SHA-256d", BlockInterval: 600, MinerAddress: "bc1qsolominer", Height: 880001, CoinbaseValue: 312500000, NBits: "1703255b"},
 		{Coin: "BCH", Algorithm: "SHA-256d", BlockInterval: 600, MinerAddress: "bitcoincash:qpsolominer", Height: 880002, CoinbaseValue: 312500000, NBits: "18034287"},
+		{Coin: "BCH2", Algorithm: "SHA-256d", BlockInterval: 600, MinerAddress: "qbch2solominer", Height: 53201, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 		{Coin: "DGB", Algorithm: "SHA-256d", BlockInterval: 15, MinerAddress: "dgb1qsolominer", Height: 20000001, CoinbaseValue: 27700000000, NBits: "1a0377ae"},
 		{Coin: "BC2", Algorithm: "SHA-256d", BlockInterval: 600, MinerAddress: "bc2solo1qminer", Height: 100001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
+		{Coin: "BTCS", Algorithm: "SHA-256d", BlockInterval: 300, MinerAddress: "bs1qsolominer", Height: 1001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 		{Coin: "NMC", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: true, MinerAddress: "N1soloMiner", Height: 700001, CoinbaseValue: 5000000000, NBits: "1a06b4be"},
 		{Coin: "SYS", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "sys1qsolominer", Height: 1500001, CoinbaseValue: 606060606, NBits: "1c00d2d1"},
 		{Coin: "XMY", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "MsoloMiner1addr", Height: 3000001, CoinbaseValue: 250000000, NBits: "1c0d3142"},
@@ -666,7 +671,7 @@ func TestSOLO_BuildFailure_DGB_RecoveryShowsBuildFailedWithComponents(t *testing
 // =============================================================================
 
 // TestSOLO_BuildFailure_AllCoins_MultipleBuildFailuresPreserved writes build_failed
-// WAL entries for all 14 coins in a single WAL and verifies that every single
+// WAL entries for all 17 coins in a single WAL and verifies that every single
 // entry's raw components survive the roundtrip. This is the most comprehensive
 // test: if a miner running multiple coins has buildFullBlock fail for several
 // coins simultaneously, no solved block is lost.
@@ -1286,7 +1291,7 @@ func TestSOLO_BuildFailure_SYS_RebuildFromWALComponents(t *testing.T) {
 // =============================================================================
 
 // TestSOLO_BuildFailure_All14Coins_EndToEndRecovery is the comprehensive test
-// that writes build_failed entries for all 14 coins, closes the WAL, reopens
+// that writes build_failed entries for all 17 coins, closes the WAL, reopens
 // it, and verifies every coin's raw components are intact for manual
 // reconstruction. This is the "no block left behind" test.
 //

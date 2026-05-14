@@ -14,6 +14,7 @@ package pool
 
 import (
 	"context"
+	"time"
 
 	"github.com/spiralpool/stratum/internal/daemon"
 	"github.com/spiralpool/stratum/internal/database"
@@ -72,4 +73,5 @@ type coinPoolDB interface {
 	GetPoolHashrateForPool(ctx context.Context, poolID string, windowMinutes int, algorithm string) (float64, error)
 	UpdatePoolStatsForPool(ctx context.Context, poolID string, stats *database.PoolStats) error
 	CleanupStaleSharesForPool(ctx context.Context, poolID string, retentionMinutes int) (int64, error)
+	GetLastBlockFoundTimeForPool(ctx context.Context, poolID string) (time.Time, error)
 }

@@ -11,7 +11,7 @@
     Tests installation prerequisites, Docker configuration, container health,
     network connectivity, and basic pool functionality.
 
-    Supports all 14 coins via the -Coin parameter.
+    Supports all 17 coins via the -Coin parameter.
 
 .NOTES
     Version: 1.2
@@ -38,7 +38,7 @@ param(
     [ValidateSet("All", "Prerequisites", "Docker", "Containers", "Network", "Health", "Performance")]
     [string]$Category = "All",
 
-    [ValidateSet("DGB", "BTC", "BCH", "BC2", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX")]
+    [ValidateSet("DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX")]
     [string]$Coin = "DGB",
 
     [switch]$NonInteractive,
@@ -61,20 +61,22 @@ $Script:SkipCount = 0
 
 # Coin configuration table (mirrors install-windows.ps1)
 $Script:CoinConfig = @{
-    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; StratumPort=3333;  TlsPort=3335;  Profile="dgb";        CliName="digibyte-cli";    ContainerName="spiralpool-digibyte" }
-    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  StratumPort=4333;  TlsPort=4335;  Profile="btc";        CliName="bitcoin-cli";     ContainerName="spiralpool-bitcoin" }
-    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  StratumPort=5333;  TlsPort=5335;  Profile="bch";        CliName="bitcoin-cli";     ContainerName="spiralpool-bitcoincash" }
-    BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  StratumPort=6333;  TlsPort=6335;  Profile="bc2";        CliName="bitcoinii-cli";   ContainerName="spiralpool-bitcoinii" }
-    NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  StratumPort=14335; TlsPort=14337; Profile="nmc";        CliName="namecoin-cli";    ContainerName="spiralpool-namecoin" }
-    SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  StratumPort=15335; TlsPort=15337; Profile="sys";        CliName="syscoin-cli";     ContainerName="spiralpool-syscoin" }
-    XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; StratumPort=17335; TlsPort=17337; Profile="xmy";        CliName="myriadcoin-cli";  ContainerName="spiralpool-myriadcoin" }
-    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  StratumPort=18335; TlsPort=18337; Profile="fbtc";       CliName="bitcoin-cli";     ContainerName="spiralpool-fractalbitcoin" }
-    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  StratumPort=20335; TlsPort=20337; Profile="qbx";         CliName="qbitx-cli";       ContainerName="spiralpool-qbitx" }
-    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  StratumPort=7333;  TlsPort=7335;  Profile="ltc";        CliName="litecoin-cli";    ContainerName="spiralpool-litecoin" }
-    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; StratumPort=8335;  TlsPort=8342;  Profile="doge";       CliName="dogecoin-cli";    ContainerName="spiralpool-dogecoin" }
-    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; StratumPort=3336;  TlsPort=3338;  Profile="dgb-scrypt"; CliName="digibyte-cli";    ContainerName="spiralpool-digibyte" }
-    PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; StratumPort=10335; TlsPort=10337; Profile="pep";        CliName="pepecoin-cli";    ContainerName="spiralpool-pepecoin" }
-    CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  StratumPort=12335; TlsPort=12337; Profile="cat";        CliName="catcoin-cli";     ContainerName="spiralpool-catcoin" }
+    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; StratumPort=3333;  TlsPort=3335;  Profile="dgb";        CliName="digibyte-cli";         ContainerName="spiralpool-digibyte" }
+    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  StratumPort=4333;  TlsPort=4335;  Profile="btc";        CliName="bitcoin-cli";          ContainerName="spiralpool-bitcoin" }
+    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  StratumPort=5333;  TlsPort=5335;  Profile="bch";        CliName="bitcoin-cli";          ContainerName="spiralpool-bitcoincash" }
+    BCH2         = @{ Container="bitcoincashii";  RpcPort=8533;  P2pPort=8534;  StratumPort=5336;  TlsPort=5338;  Profile="bch2";       CliName="bitcoincashII-cli";    ContainerName="spiralpool-bitcoincashii" }
+    BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  StratumPort=6333;  TlsPort=6335;  Profile="bc2";        CliName="bitcoinii-cli";        ContainerName="spiralpool-bitcoinii" }
+    BTCS         = @{ Container="bitcoinsilver";  RpcPort=10567; P2pPort=10566; StratumPort=11335; TlsPort=11337; Profile="btcs";       CliName="bitcoin-silver-cli";   ContainerName="spiralpool-bitcoinsilver" }
+    NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  StratumPort=14335; TlsPort=14337; Profile="nmc";        CliName="namecoin-cli";         ContainerName="spiralpool-namecoin" }
+    SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  StratumPort=15335; TlsPort=15337; Profile="sys";        CliName="syscoin-cli";          ContainerName="spiralpool-syscoin" }
+    XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; StratumPort=17335; TlsPort=17337; Profile="xmy";        CliName="myriadcoin-cli";       ContainerName="spiralpool-myriadcoin" }
+    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  StratumPort=18335; TlsPort=18337; Profile="fbtc";       CliName="bitcoin-cli";          ContainerName="spiralpool-fractalbitcoin" }
+    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  StratumPort=20335; TlsPort=20337; Profile="qbx";        CliName="qbitx-cli";            ContainerName="spiralpool-qbitx" }
+    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  StratumPort=7333;  TlsPort=7335;  Profile="ltc";        CliName="litecoin-cli";         ContainerName="spiralpool-litecoin" }
+    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; StratumPort=8335;  TlsPort=8342;  Profile="doge";       CliName="dogecoin-cli";         ContainerName="spiralpool-dogecoin" }
+    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; StratumPort=3336;  TlsPort=3338;  Profile="dgb-scrypt"; CliName="digibyte-cli";         ContainerName="spiralpool-digibyte" }
+    PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; StratumPort=10335; TlsPort=10337; Profile="pep";        CliName="pepecoin-cli";         ContainerName="spiralpool-pepecoin" }
+    CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  StratumPort=12335; TlsPort=12337; Profile="cat";        CliName="catcoin-cli";          ContainerName="spiralpool-catcoin" }
 }
 
 $coinInfo = $Script:CoinConfig[$Coin]

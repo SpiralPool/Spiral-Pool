@@ -1,0 +1,82 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# ECASH NODE (Bitcoin ABC) - SPIRAL POOL CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# eCash (XEC) node configuration for solo mining.
+# This config enables the RTT (Real Time Target) and MinerFund/StakingRewards
+# fields in getblocktemplate responses required by Spiral Pool's XEC support.
+#
+# CREDENTIALS: All credentials (rpcuser, rpcpassword) are injected via
+# environment variables at container startup — never hardcoded here.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NETWORK SETTINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+# Non-standard P2P port to avoid conflict with Bitcoin (8333)
+listen=1
+port=8343
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RPC CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+server=1
+rpcuser=${RPC_USER}
+rpcpassword=${RPC_PASSWORD}
+rpcallowip=127.0.0.1
+rpcallowip=172.17.0.0/16
+rpcallowip=10.0.0.0/8
+rpcallowip=192.168.0.0/16
+rpcbind=0.0.0.0
+# ecash-node default RPC port is 9004 (different from BTC 8332)
+rpcport=9004
+
+# RPC work queue for mining (increase for high hashrate)
+rpcworkqueue=128
+rpcthreads=8
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZMQ BLOCK NOTIFICATIONS (for instant job updates)
+# ═══════════════════════════════════════════════════════════════════════════════
+zmqpubhashblock=tcp://0.0.0.0:${ZMQ_PORT}
+zmqpubrawtx=tcp://0.0.0.0:${ZMQ_PORT}
+zmqpubrawblock=tcp://0.0.0.0:${ZMQ_PORT}
+zmqpubhashblockhwm=1000
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERFORMANCE TUNING
+# ═══════════════════════════════════════════════════════════════════════════════
+# Database cache in MB (4096 = 4GB)
+dbcache=4096
+
+# Script verification threads (0 = auto-detect CPU cores)
+par=0
+
+# Mempool size limit in MB
+maxmempool=300
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WALLET (required for solo mining address validation)
+# ═══════════════════════════════════════════════════════════════════════════════
+disablewallet=0
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOGGING
+# ═══════════════════════════════════════════════════════════════════════════════
+printtoconsole=1
+debug=0
+logtimestamps=1
+shrinkdebugfile=1
+debuglogfile=debug.log
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STORAGE (full node — no pruning for mining)
+# ═══════════════════════════════════════════════════════════════════════════════
+prune=0
+txindex=1
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DNS SEEDS (verified against Bitcoin ABC chainparams.cpp)
+# ═══════════════════════════════════════════════════════════════════════════════
+dnsseed=1
+addnode=seed.bitcoinabc.org
+addnode=seeder.status.cash
+addnode=seeder.fabien.cash

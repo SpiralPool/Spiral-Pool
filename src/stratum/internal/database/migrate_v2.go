@@ -52,17 +52,20 @@ func (m *MigratorV2) RunV2Migrations(ctx context.Context) error {
 				);
 
 				-- Insert default supported coins (SHA-256d and Scrypt)
-				-- FIX: Removed XVG/JKC/LKY (deleted coins), added NMC/SYS/XMY/FBTC (aux chains), QBX
+				-- FIX: Removed XVG/JKC/LKY (deleted coins), added NMC/SYS/XMY/FBTC (aux chains), QBX, XEC
 				INSERT INTO coins (symbol, name, algorithm) VALUES
 					('BTC', 'Bitcoin', 'sha256d'),
 					('BCH', 'Bitcoin Cash', 'sha256d'),
+					('BCH2', 'Bitcoin Cash II', 'sha256d'),
 					('BC2', 'Bitcoin II', 'sha256d'),
+					('BTCS', 'Bitcoin Silver', 'sha256d'),
 					('DGB', 'DigiByte', 'sha256d'),
 					('NMC', 'Namecoin', 'sha256d'),
 					('SYS', 'Syscoin', 'sha256d'),
 					('XMY', 'Myriadcoin', 'sha256d'),
 					('FBTC', 'Fractal Bitcoin', 'sha256d'),
 					('QBX', 'Q-BitX', 'sha256d'),
+					('XEC', 'eCash', 'sha256d'),
 					('LTC', 'Litecoin', 'scrypt'),
 					('DOGE', 'Dogecoin', 'scrypt'),
 					('DGB-SCRYPT', 'DigiByte (Scrypt)', 'scrypt'),
@@ -202,6 +205,16 @@ func (m *MigratorV2) RunV2Migrations(ctx context.Context) error {
 				);
 
 				CREATE INDEX IF NOT EXISTS idx_pool_nodes_pool ON pool_nodes(pool_id);
+			`,
+		},
+		{
+			version: 107,
+			name:    "v2_coins_backfill_xec",
+			sql: `
+				-- Backfill XEC for installs that ran v100 before eCash was added
+				INSERT INTO coins (symbol, name, algorithm) VALUES
+					('XEC', 'eCash', 'sha256d')
+				ON CONFLICT (symbol) DO NOTHING;
 			`,
 		},
 	}
