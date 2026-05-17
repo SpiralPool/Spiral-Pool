@@ -11,11 +11,16 @@
 //   - SHA-256d algorithm (same as Bitcoin)
 //   - 150 second block time (2.5 minutes)
 //   - 12.5 QBX initial block reward, halving every 840,000 blocks
-//   - No SegWit support
+//   - No standard SegWit; uses native PQ witness (Dilithium) from block 230,000
 //   - No AuxPoW (standalone mining only)
 //   - Post-quantum "pq" address type (Dilithium signatures)
 //   - P2PKH addresses start with 'M' (version byte 0x32)
 //   - P2SH addresses start with 'P' (version byte 0x37)
+//
+// v0.3.0 hard fork changes (activation heights on mainnet):
+//   - Block 200,001: LWMA difficulty adjustment (18-block window)
+//   - Block 230,000: PQ sigops counting (nPQSigopsHeight)
+//   - Block 230,000: Native PQ witness for Dilithium signatures (PQ_WITNESS_SCALE_FACTOR=16)
 //
 // References:
 //   - https://qbitx.org/
@@ -49,12 +54,24 @@ const (
 //   - 8344: QBX RPC (new allocation)
 //   - 8345: QBX P2P (new allocation)
 const (
-	QBXDefaultP2PPort   = 8345  // P2P network port (unique, no conflict)
-	QBXDefaultRPCPort   = 8344  // RPC port (unique, no conflict)
-	QBXBlockTime        = 150   // Target block time: 150 seconds (2.5 minutes)
-	QBXCoinbaseMaturity = 100   // Blocks before coinbase is spendable
+	QBXDefaultP2PPort   = 8345 // P2P network port (unique, no conflict)
+	QBXDefaultRPCPort   = 8344 // RPC port (unique, no conflict)
+	QBXBlockTime        = 150  // Target block time: 150 seconds (2.5 minutes)
+	QBXCoinbaseMaturity = 100  // Blocks before coinbase is spendable
 	// Genesis block hash for chain verification
 	QBXGenesisBlockHash = "407cdbc2ca102bd9e69069f25cebc2ef363a427166edba7580b41031b68549d9"
+
+	// v0.3.0 hard fork activation heights (mainnet)
+	QBXLWMAActivationHeight     = 200_001 // LWMA difficulty adjustment (nLWMAHeight), 18-block window
+	QBXPQSigopsActivationHeight = 230_000 // PQ-aware sigop counting activates (nPQSigopsHeight)
+	QBXPQWitnessActivationHeight = 230_000 // Native PQ witness / Dilithium spend path (nPQWitnessHeight)
+
+	// PQ_WITNESS_SCALE_FACTOR from v0.3.0 consensus — replaces SegWit's factor-of-4 for PQ txns.
+	// Affects weight/vsize in getblock, getrawtransaction, getmempoolentry after block 230,000.
+	QBXPQWitnessScaleFactor = 16
+
+	// LWMA difficulty window (nLWMAWindow): number of prior inter-block intervals used.
+	QBXLWMAWindow = 18
 )
 
 // QBXCoin implements the Coin interface for Q-BitX.
@@ -312,9 +329,16 @@ func (c *QBXCoin) Bech32HRP() string {
 }
 
 // GBTRules returns the rules for getblocktemplate.
-// QBX does not support SegWit — passing ["segwit"] causes the daemon to return
+// QBX does not support standard SegWit — passing ["segwit"] causes the daemon to return
 // SegWit-serialized transactions and a witness commitment, which results in
-// "unexpected-witness" block rejection. Empty rules = legacy-only template.
+// "unexpected-witness" block rejection.
+//
+// v0.3.0: Native PQ witness (Dilithium) activates at block 230,000 (QBXPQWitnessActivationHeight).
+// PQ witness is NOT standard SegWit; the block template path for PQ witness transactions uses a
+// different rule. Passing no rules returns a legacy-compatible template that mines safely both
+// before and after activation. PQ witness transactions will be excluded from templates (fee loss
+// post-230k), but blocks will not be rejected. Full PQ witness template support requires verifying
+// the exact rule string from the v0.3.0 daemon before enabling here.
 func (c *QBXCoin) GBTRules() []string {
 	return []string{}
 }
@@ -333,8 +357,9 @@ func (c *QBXCoin) MultiAlgoGBTParam() string {
 	return ""
 }
 
-// SupportsSegWit returns whether the coin supports SegWit.
-// Q-BitX does NOT support SegWit.
+// SupportsSegWit returns whether the coin supports standard Bitcoin SegWit.
+// Q-BitX does NOT support standard SegWit. v0.3.0 introduces native PQ witness
+// (Dilithium) at block 230,000, which is a distinct spend path — not SegWit.
 func (c *QBXCoin) SupportsSegWit() bool {
 	return false
 }

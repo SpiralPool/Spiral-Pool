@@ -386,3 +386,38 @@ func TestQBXShareDiffMultiplier(t *testing.T) {
 		t.Errorf("expected share diff multiplier 1.0, got %.2f", c.ShareDifficultyMultiplier())
 	}
 }
+
+// TestQBXV030ActivationHeights verifies the v0.3.0 hard fork constants are correct.
+// These must match the values in src/consensus/params.h (nLWMAHeight, nPQSigopsHeight, nPQWitnessHeight).
+func TestQBXV030ActivationHeights(t *testing.T) {
+	if QBXLWMAActivationHeight != 200_001 {
+		t.Errorf("LWMA activation height: expected 200001, got %d", QBXLWMAActivationHeight)
+	}
+	if QBXPQSigopsActivationHeight != 230_000 {
+		t.Errorf("PQ sigops activation height: expected 230000, got %d", QBXPQSigopsActivationHeight)
+	}
+	if QBXPQWitnessActivationHeight != 230_000 {
+		t.Errorf("PQ witness activation height: expected 230000, got %d", QBXPQWitnessActivationHeight)
+	}
+	if QBXPQWitnessScaleFactor != 16 {
+		t.Errorf("PQ witness scale factor: expected 16, got %d", QBXPQWitnessScaleFactor)
+	}
+	if QBXLWMAWindow != 18 {
+		t.Errorf("LWMA window: expected 18, got %d", QBXLWMAWindow)
+	}
+}
+
+// TestQBXNoStandardSegWit verifies that standard SegWit is still disabled post-v0.3.0.
+// v0.3.0 introduces PQ witness (Dilithium) which is NOT standard SegWit.
+func TestQBXNoStandardSegWit(t *testing.T) {
+	c := NewQBXCoin()
+	if c.SupportsSegWit() {
+		t.Error("QBX must NOT report standard SegWit support — PQ witness is a separate spend path")
+	}
+	rules := c.GBTRules()
+	for _, r := range rules {
+		if r == "segwit" {
+			t.Error("GBTRules must not include 'segwit' — would cause unexpected-witness block rejection")
+		}
+	}
+}
