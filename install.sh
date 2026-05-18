@@ -3063,6 +3063,21 @@ check_prerequisites() {
         log_success "NTP synchronized"
     fi
 
+    # Configure chrony for immediate clock correction after VM/machine sleep or resume.
+    # Ubuntu's default "makestep 1 3" only allows stepping for the first 3 NTP updates.
+    # After that chrony slews (slowly adjusts), causing hours of drift post-suspend.
+    # "makestep 1.0 -1" allows stepping whenever offset exceeds 1s, with no update limit.
+    if command -v chronyc &>/dev/null && [[ -f /etc/chrony/chrony.conf ]]; then
+        if ! grep -q "^makestep 1\.0 -1" /etc/chrony/chrony.conf; then
+            sudo sed -i '/^makestep /d' /etc/chrony/chrony.conf
+            echo "makestep 1.0 -1" | sudo tee -a /etc/chrony/chrony.conf >/dev/null
+            sudo systemctl restart chrony 2>/dev/null || true
+            log_success "Chrony configured: makestep 1.0 -1 (immediate correction after sleep/resume)"
+        else
+            log_success "Chrony: makestep already configured correctly"
+        fi
+    fi
+
     # Time drift detection (compare against HTTP header from known server)
     local time_drift_ok="true"
     if command -v curl &>/dev/null; then

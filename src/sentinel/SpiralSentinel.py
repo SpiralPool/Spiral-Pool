@@ -19044,6 +19044,38 @@ def monitor_loop(state):
     SENTINEL_STARTUP_TIME = startup_time
     logger.info(f"Alert suppression: {STARTUP_ALERT_SUPPRESSION_MINUTES} min (non-critical alerts suppressed during startup)")
 
+    # Clock sync sanity check — detect post-sleep drift before Sentinel starts reporting.
+    # Machines/VMs that suspend accumulate clock drift if chrony uses slew-only mode.
+    # A drifted clock causes intel reports to fire at the wrong real-world time.
+    try:
+        import subprocess as _sp_clock
+        _ct = _sp_clock.run(["chronyc", "tracking"], capture_output=True, text=True, timeout=5)
+        if _ct.returncode == 0:
+            for _cline in _ct.stdout.splitlines():
+                if "System time" in _cline:
+                    _cparts = _cline.split()
+                    try:
+                        _off = abs(float(_cparts[_cparts.index("seconds") - 1]))
+                        if _off > 60:
+                            logger.warning(
+                                f"Clock drift detected at startup: {_off:.0f}s from NTP. "
+                                f"Run 'sudo chronyc makestep' to correct immediately. "
+                                f"Reports may fire at wrong times until the clock is synced."
+                            )
+                        else:
+                            logger.info(f"Clock sync: OK (offset {_off * 1000:.0f}ms)")
+                    except (ValueError, IndexError):
+                        pass
+        else:
+            _td = _sp_clock.run(["timedatectl", "show"], capture_output=True, text=True, timeout=5)
+            if _td.returncode == 0 and "NTPSynchronized=no" in _td.stdout:
+                logger.warning(
+                    "NTP not synchronized at startup — clock may be drifted after system sleep. "
+                    "Intel reports may fire at wrong times."
+                )
+    except Exception:
+        pass
+
     # Wait for blockchain to be FULLY synced before starting monitoring
     # Sentinel should not run until the blockchain is ready - there's no point monitoring
     # miners if the pool can't provide accurate block/difficulty data
@@ -19492,10 +19524,21 @@ def monitor_loop(state):
     # Initialize variables used by infrastructure checks before first assignment
     prices = None
     bri = None
+    _last_loop_wall = time.time()  # For suspend/sleep detection
 
     while True:
         try:
             now = local_now()
+            _now_wall = time.time()
+            _loop_gap = _now_wall - _last_loop_wall
+            _expected_interval = get_check_interval(primary_coin)
+            if _loop_gap > _expected_interval + 300:
+                logger.warning(
+                    f"Suspend/freeze detected: loop gap {_loop_gap:.0f}s "
+                    f"(expected ~{_expected_interval}s). System may have slept. "
+                    f"Run 'sudo chronyc makestep' if reports misfired after wake."
+                )
+            _last_loop_wall = _now_wall
             in_startup_grace = (time.time() - startup_time) < STARTUP_GRACE_PERIOD
 
             # Retry any block alerts that failed to send in a previous cycle.
