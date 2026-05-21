@@ -310,13 +310,16 @@ func (m *MigratorV2) CreatePoolTablesV2(ctx context.Context, poolID string, coin
 		return fmt.Errorf("failed to create V2 shares table: %w", err)
 	}
 
-	// Add 'coin' column - works for both fresh installs and V1->V2 upgrades
-	// Using ADD COLUMN IF NOT EXISTS (PostgreSQL 9.6+) for idempotency
+	// Add missing columns - works for both fresh installs and V1->V2 upgrades.
+	// actual_difficulty was added in V1 migration 11 but CreatePoolTablesV2 predates it,
+	// so aux-pool tables and any table created before that migration was applied would
+	// be missing the column.  Using ADD COLUMN IF NOT EXISTS for idempotency.
 	_, err = m.pool.Exec(ctx, fmt.Sprintf(`
+		ALTER TABLE %s ADD COLUMN IF NOT EXISTS actual_difficulty DOUBLE PRECISION NOT NULL DEFAULT 0;
 		ALTER TABLE %s ADD COLUMN IF NOT EXISTS coin VARCHAR(10) NOT NULL DEFAULT '%s';
-	`, sharesTable, coinSymbol))
+	`, sharesTable, sharesTable, coinSymbol))
 	if err != nil {
-		return fmt.Errorf("failed to add coin column to shares table: %w", err)
+		return fmt.Errorf("failed to add columns to shares table: %w", err)
 	}
 
 	// Now create the coin index (safe to run even if column was just added)

@@ -362,6 +362,16 @@ func (m *Migrator) runMigrations(ctx context.Context, pool *pgxpool.Pool) error 
 			sql:     "", // Per-pool table - handled below
 		},
 		{
+			version: 6,
+			name:    "fix_worker_hashrate_history_column",
+			sql:     "", // Per-pool table - handled below
+		},
+		{
+			version: 7,
+			name:    "add_blocks_unique_constraint",
+			sql:     "", // Per-pool table - handled below
+		},
+		{
 			version: 8,
 			name:    "add_orphan_mismatch_count",
 			sql:     "", // Per-pool table - handled below
