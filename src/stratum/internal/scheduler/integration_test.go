@@ -50,6 +50,12 @@ type mockCoinPool struct {
 
 	nextShareResult *protocol.ShareResult
 
+	// blockSessions maps a sessionID to a block hash it should produce on its
+	// NEXT share. Each entry is one-shot (deleted when consumed). Unlike
+	// nextShareResult, this is keyed per-session, so concurrent block finds
+	// across goroutines can't clobber each other — see ArmBlockForSession.
+	blockSessions map[uint64]string
+
 	// Multi-port job listener (captured by SetMultiPortJobListener)
 	jobListener atomic.Value // stores func(*protocol.Job)
 }
@@ -103,6 +109,24 @@ func (p *mockCoinPool) fireJobUpdate(job *protocol.Job) {
 func (p *mockCoinPool) HandleMultiPortShare(share *protocol.Share) *protocol.ShareResult {
 	p.mu.Lock()
 	p.receivedShares = append(p.receivedShares, share)
+
+	// Per-session block arming takes priority. The arm → handle → record
+	// sequence happens entirely under this lock with a one-shot map delete, so
+	// concurrent block finds from multiple goroutines can't drop each other.
+	if hash, armed := p.blockSessions[share.SessionID]; armed {
+		delete(p.blockSessions, share.SessionID)
+		p.blocksFound = append(p.blocksFound, share)
+		p.mu.Unlock()
+		p.shareCount.Add(1)
+		p.blockCount.Add(1)
+		return &protocol.ShareResult{
+			Accepted:      true,
+			IsBlock:       true,
+			BlockHash:     hash,
+			CoinbaseValue: 1000_000_000,
+		}
+	}
+
 	result := p.nextShareResult
 	p.mu.Unlock()
 	p.shareCount.Add(1)
@@ -136,6 +160,18 @@ func (p *mockCoinPool) SetBlockResult(hash string) {
 		BlockHash:     hash,
 		CoinbaseValue: 1000_000_000,
 	}
+}
+
+// ArmBlockForSession marks a session so that its next share is treated as a
+// block exactly once. Safe to call for many sessions before launching
+// concurrent miners — each find is independent and cannot be clobbered.
+func (p *mockCoinPool) ArmBlockForSession(sessionID uint64, hash string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.blockSessions == nil {
+		p.blockSessions = make(map[uint64]string)
+	}
+	p.blockSessions[sessionID] = hash
 }
 
 func (p *mockCoinPool) ClearBlockResult() {

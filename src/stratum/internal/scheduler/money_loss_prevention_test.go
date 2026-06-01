@@ -380,6 +380,15 @@ func TestMoneyLoss_ConcurrentBlockFindsUnderLoad(t *testing.T) {
 	// Every 10th miner will find a block
 	expectedBlocks := numMiners / 10
 
+	// Arm each block-finding session up front. Per-session arming is one-shot
+	// and independent, so concurrent finds can't clobber one another (unlike a
+	// shared SetBlockResult/ClearBlockResult toggle, which races under load).
+	for i := 0; i < numMiners; i++ {
+		if i%10 == 0 {
+			h.dgb.ArmBlockForSession(uint64(i+1), fmt.Sprintf("block-by-miner-%d", i))
+		}
+	}
+
 	var wg sync.WaitGroup
 	var blocksFound atomic.Int64
 	var sharesAccepted atomic.Int64
@@ -400,22 +409,12 @@ func TestMoneyLoss_ConcurrentBlockFindsUnderLoad(t *testing.T) {
 					SubmittedAt:  time.Now(),
 				}
 
-				// On share #10, every 10th miner gets a block result
-				if j == 10 && minerIdx%10 == 0 {
-					h.dgb.SetBlockResult(fmt.Sprintf("block-by-miner-%d", minerIdx))
-				}
-
 				result := h.dgb.HandleMultiPortShare(share)
 				if result.Accepted {
 					sharesAccepted.Add(1)
 				}
 				if result.IsBlock {
 					blocksFound.Add(1)
-				}
-
-				// Clear block result after the block share
-				if j == 10 && minerIdx%10 == 0 {
-					h.dgb.ClearBlockResult()
 				}
 			}
 		}(i)
