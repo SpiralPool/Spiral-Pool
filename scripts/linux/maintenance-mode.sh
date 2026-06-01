@@ -336,6 +336,11 @@ EOF
 
     # SECURITY: Restrict file permissions to pool user only
     chmod 600 "${MAINTENANCE_FILE}"
+    # Ensure the file is owned by the pool user so the Sentinel (which runs as the
+    # pool user) can read it. Without this, invoking the script as root (sudo, or via
+    # the automated upgrade hooks) leaves a root:root 0600 file the Sentinel cannot
+    # read — it then fails open and alerts fire during the maintenance window.
+    chown "$(get_pool_user):$(get_pool_user)" "${MAINTENANCE_FILE}" 2>/dev/null || true
 
     log "SUCCESS" "Maintenance mode ENABLED for ${duration_minutes} minutes"
     log "INFO" "Reason: ${reason}"
@@ -482,6 +487,10 @@ extend_maintenance() {
         # Fallback to sed with validated numeric value
         sed -i "s/\"end_time\": *[0-9]*/\"end_time\": ${new_end}/" "${MAINTENANCE_FILE}"
     fi
+
+    # Keep ownership with the pool user (mv from mktemp / sed -i can change it when
+    # run as root) so the Sentinel can still read the file after an extend.
+    chown "$(get_pool_user):$(get_pool_user)" "${MAINTENANCE_FILE}" 2>/dev/null || true
 
     log "SUCCESS" "Maintenance extended by ${additional_minutes} minutes"
     log "INFO" "New end time: $(date -d "@${new_end}" '+%Y-%m-%d %H:%M:%S')"

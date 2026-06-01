@@ -17267,6 +17267,54 @@ maintenance_mode = {
 }
 
 
+def _unified_maintenance_file():
+    """Path to the maintenance file the Sentinel reads (see SpiralSentinel
+    check_ha_maintenance_propagation / maintenance-mode.sh)."""
+    install_dir = os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")
+    return Path(install_dir) / "config" / ".maintenance-mode"
+
+
+def write_unified_maintenance_file(duration_minutes, reason):
+    """Persist maintenance state to the unified file so the Sentinel suppresses
+    alerts. Without this the dashboard toggle only sets in-process state that the
+    separate Sentinel process never sees. Written atomically as the pool user
+    (the dashboard service user), so the Sentinel — same user — can read it."""
+    target = _unified_maintenance_file()
+    now = time.time()
+    payload = {
+        "enabled": True,
+        "start_time": now,
+        "end_time": now + (duration_minutes * 60),
+        "duration_minutes": duration_minutes,
+        "reason": reason,
+        "started_by": "dashboard",
+        "node_uuid": "dashboard",
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(suffix=".tmp", prefix=".maintenance-mode_", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def clear_unified_maintenance_file():
+    """Remove the unified maintenance file so the Sentinel resumes alerting."""
+    try:
+        _unified_maintenance_file().unlink(missing_ok=True)
+    except OSError as e:
+        app.logger.warning("Could not remove maintenance file: %s", e)
+
+
 def load_miner_groups():
     """Load miner groups from config"""
     global miner_groups
@@ -18263,16 +18311,43 @@ def set_maintenance_mode():
     global maintenance_mode
     data = request.json or {}
     enabled = bool(data.get("enabled", False))
-    reason = str(data.get("reason", "Scheduled maintenance"))[:256].strip()
+    reason = str(data.get("reason", "Scheduled maintenance"))[:256].strip() or "Scheduled maintenance"
+    pause_alerts = bool(data.get("pause_alerts", True))
+
+    # Duration for the unified maintenance file the Sentinel reads. Clamp to the
+    # same 1 min .. 1 week bounds enforced by maintenance-mode.sh.
+    try:
+        duration_minutes = int(data.get("duration_minutes", 60))
+    except (TypeError, ValueError):
+        duration_minutes = 60
+    duration_minutes = max(1, min(duration_minutes, 10080))
 
     maintenance_mode["enabled"] = enabled
     maintenance_mode["reason"] = reason
-    maintenance_mode["paused_alerts"] = bool(data.get("pause_alerts", True))
+    maintenance_mode["paused_alerts"] = pause_alerts
 
-    if enabled:
-        maintenance_mode["started_at"] = datetime.utcnow().isoformat()
-    else:
-        maintenance_mode["started_at"] = None
+    # Propagate to the unified maintenance file so the Sentinel (a separate process)
+    # actually suppresses alerts. Only do so when the operator wants alerts paused;
+    # otherwise maintenance is informational only and alerts should keep flowing.
+    try:
+        if enabled:
+            maintenance_mode["started_at"] = datetime.utcnow().isoformat()
+            if pause_alerts:
+                write_unified_maintenance_file(duration_minutes, reason)
+            else:
+                clear_unified_maintenance_file()
+        else:
+            maintenance_mode["started_at"] = None
+            clear_unified_maintenance_file()
+    except Exception as e:
+        app.logger.error("Failed to update maintenance file: %s", e)
+        return jsonify({
+            "success": False,
+            "error": "Maintenance state updated in dashboard but could not be "
+                     "propagated to the Sentinel (file write failed). Alerts may "
+                     "not be suppressed.",
+            "maintenance": maintenance_mode
+        }), 500
 
     return jsonify({
         "success": True,

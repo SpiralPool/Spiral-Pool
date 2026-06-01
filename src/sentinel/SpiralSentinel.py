@@ -919,9 +919,24 @@ def check_ha_maintenance_propagation() -> tuple:
                         reason = str(data.get("reason", "Scheduled maintenance"))[:200]  # Limit length
                         source_node = str(data.get("node_uuid", "unknown"))[:16]  # Limit length
                         return True, mins_remaining, reason, f"node-{source_node[:8]}"
+        except PermissionError as e:
+            # FAIL SAFE: the maintenance file exists but we cannot read it (almost
+            # always a root:root 0600 file created when maintenance-mode.sh was run as
+            # root, while the Sentinel runs as the pool user). Treat maintenance as
+            # ACTIVE rather than letting alerts fire during a maintenance window.
+            # Log at WARNING so the ownership problem is visible, not swallowed.
+            logger.warning(
+                "Maintenance file %s exists but is not readable (%s) — "
+                "assuming maintenance is ACTIVE and suppressing alerts. "
+                "Fix ownership so the pool user can read it (e.g. "
+                "chown <pool_user>:<pool_user> %s).",
+                unified_file, e, unified_file,
+            )
+            return True, 0, "maintenance file unreadable (failing safe)", "local"
         except (json.JSONDecodeError, IOError, OSError, TypeError) as e:
-            # Log but don't fail - maintenance check should be resilient
-            logger.debug("Error reading maintenance file: %s", e)
+            # Log but don't fail - maintenance check should be resilient.
+            # (Corrupt/garbage file: fail open so a bad file can't mute alerts forever.)
+            logger.warning("Error reading maintenance file %s: %s", unified_file, e)
 
     # If HA mode, check if cluster has maintenance mode
     if _ha_manager and _HA_AVAILABLE:
