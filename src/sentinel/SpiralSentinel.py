@@ -20689,7 +20689,7 @@ def monitor_loop(state):
             # One alert per "high odds episode": fires once when sustained, then stays silent
             # until odds drop below threshold and come back up. 6h report covers ongoing visibility.
             HIGH_ODDS_SUSTAIN = 3600    # Must be sustained for 1 hour (3600 seconds)
-            if not in_startup_grace:
+            if not in_startup_grace and CONFIG.get("high_odds_enabled", True):
                 # Build list: primary coin (data already fetched) + other enabled coins
                 _ho_coins = [(primary_coin, net_phs, odds)]
                 for _ho_cfg in get_enabled_coins():
@@ -20730,7 +20730,7 @@ def monitor_loop(state):
 
             # === NETWORK HASHRATE CRASH DETECTION ===
             # Alert if: 25%+ drop sustained for 2 hours
-            if not in_startup_grace:
+            if not in_startup_grace and CONFIG.get("hashrate_crash_enabled", True):
                 # Check for crash conditions first, then update baseline
                 # (baseline must NOT adapt during a crash or it self-resolves)
                 if state.network_baseline_phs is None:

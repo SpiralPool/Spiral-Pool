@@ -14485,6 +14485,8 @@ collect_configuration() {
     SENTINEL_BACKUP_STALE_ENABLED="true"
     SENTINEL_SATS_SURGE_ENABLED="true"
     SENTINEL_WALLET_DROP_ENABLED="true"
+    SENTINEL_HIGH_ODDS_ENABLED="true"
+    SENTINEL_HASHRATE_CRASH_ENABLED="true"
     if [[ "$INSTALL_MODE" == "full" ]]; then
         configure_notifications
         echo ""
@@ -14581,6 +14583,8 @@ collect_configuration() {
         local _s_backup="true"
         local _s_sats_surge="true"
         local _s_wallet_drop="true"
+        local _s_high_odds="true"
+        local _s_hashrate_crash="true"
         local _s_health="true"
         local _s_reports="6h"
         local _s_updates="notify"
@@ -14611,12 +14615,14 @@ collect_configuration() {
                 echo -e "   6  $(_badge "$_s_backup")  Backup staleness     ${DIM}newest backup older than 2 days${NC}"
                 echo -e "   7  $(_badge "$_s_sats_surge")  Sats surge           ${DIM}coin up 25%+ vs BTC over 7 days${NC}"
                 echo -e "   8  $(_badge "$_s_wallet_drop")  Wallet drop          ${DIM}wallet loses funds unexpectedly${NC}"
+                echo -e "   9  $(_badge "$_s_high_odds")  High odds            ${DIM}block-finding odds favorable for 1h+${NC}"
+                echo -e "  10  $(_badge "$_s_hashrate_crash")  Network hashrate drop${DIM} network drops 25%+ for 2h+${NC}"
             else
-                echo -e "   ${DIM}2-8  (muted — master alerts is OFF)${NC}"
+                echo -e "   ${DIM}2-10 (muted — master alerts is OFF)${NC}"
             fi
             echo ""
             echo -e "  ${WHITE}── MONITORING ──────────────────────────────────────────────────────────${NC}"
-            echo -e "   9  $(_badge "$_s_health")  Health monitoring    ${DIM}auto-restart, zombie detection${NC}"
+            echo -e "  11  $(_badge "$_s_health")  Health monitoring    ${DIM}auto-restart, zombie detection${NC}"
             echo ""
             echo -e "  ${WHITE}── REPORTS ─────────────────────────────────────────────────────────────${NC}"
             local _reports_label
@@ -14625,7 +14631,7 @@ collect_configuration() {
                 daily) _reports_label="${WHITE}[1x Daily] ${NC}" ;;
                 off)   _reports_label="${RED}[Off]      ${NC}" ;;
             esac
-            echo -e "  10  ${_reports_label}  Intel reports        ${DIM}cycle: 4x daily → 1x daily → off${NC}"
+            echo -e "  12  ${_reports_label}  Intel reports        ${DIM}cycle: 4x daily → 1x daily → off${NC}"
             echo ""
             echo -e "  ${WHITE}── UPDATES ─────────────────────────────────────────────────────────────${NC}"
             local _updates_label
@@ -14634,28 +14640,30 @@ collect_configuration() {
                 auto)     _updates_label="${YELLOW}[Auto-Update]  ${NC}" ;;
                 disabled) _updates_label="${RED}[Disabled]     ${NC}" ;;
             esac
-            echo -e "  11  ${_updates_label}  Update mode          ${DIM}cycle: notify → auto → disabled${NC}"
+            echo -e "  13  ${_updates_label}  Update mode          ${DIM}cycle: notify → auto → disabled${NC}"
             echo ""
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
-            prompt_input "  Toggle [1-11] or Enter to confirm: "; read _s_choice
+            prompt_input "  Toggle [1-13] or Enter to confirm: "; read _s_choice
 
             case "$_s_choice" in
-                1)  [[ "$_s_alerts"      == "true" ]] && _s_alerts="false"      || _s_alerts="true" ;;
-                2)  [[ "$_s_dry_streak"  == "true" ]] && _s_dry_streak="false"  || _s_dry_streak="true" ;;
-                3)  [[ "$_s_difficulty"  == "true" ]] && _s_difficulty="false"  || _s_difficulty="true" ;;
-                4)  [[ "$_s_disk"        == "true" ]] && _s_disk="false"        || _s_disk="true" ;;
-                5)  [[ "$_s_mempool"     == "true" ]] && _s_mempool="false"     || _s_mempool="true" ;;
-                6)  [[ "$_s_backup"      == "true" ]] && _s_backup="false"      || _s_backup="true" ;;
-                7)  [[ "$_s_sats_surge"  == "true" ]] && _s_sats_surge="false"  || _s_sats_surge="true" ;;
-                8)  [[ "$_s_wallet_drop" == "true" ]] && _s_wallet_drop="false" || _s_wallet_drop="true" ;;
-                9)  [[ "$_s_health"      == "true" ]] && _s_health="false"      || _s_health="true" ;;
-                10) case "$_s_reports" in
+                1)  [[ "$_s_alerts"         == "true" ]] && _s_alerts="false"         || _s_alerts="true" ;;
+                2)  [[ "$_s_dry_streak"     == "true" ]] && _s_dry_streak="false"     || _s_dry_streak="true" ;;
+                3)  [[ "$_s_difficulty"     == "true" ]] && _s_difficulty="false"     || _s_difficulty="true" ;;
+                4)  [[ "$_s_disk"           == "true" ]] && _s_disk="false"           || _s_disk="true" ;;
+                5)  [[ "$_s_mempool"        == "true" ]] && _s_mempool="false"        || _s_mempool="true" ;;
+                6)  [[ "$_s_backup"         == "true" ]] && _s_backup="false"         || _s_backup="true" ;;
+                7)  [[ "$_s_sats_surge"     == "true" ]] && _s_sats_surge="false"     || _s_sats_surge="true" ;;
+                8)  [[ "$_s_wallet_drop"    == "true" ]] && _s_wallet_drop="false"    || _s_wallet_drop="true" ;;
+                9)  [[ "$_s_high_odds"      == "true" ]] && _s_high_odds="false"      || _s_high_odds="true" ;;
+                10) [[ "$_s_hashrate_crash" == "true" ]] && _s_hashrate_crash="false" || _s_hashrate_crash="true" ;;
+                11) [[ "$_s_health"         == "true" ]] && _s_health="false"         || _s_health="true" ;;
+                12) case "$_s_reports" in
                         6h)    _s_reports="daily" ;;
                         daily) _s_reports="off" ;;
                         off)   _s_reports="6h" ;;
                     esac ;;
-                11) case "$_s_updates" in
+                13) case "$_s_updates" in
                         notify)   _s_updates="auto" ;;
                         auto)     _s_updates="disabled" ;;
                         disabled) _s_updates="notify" ;;
@@ -14673,6 +14681,8 @@ collect_configuration() {
         SENTINEL_BACKUP_STALE_ENABLED="$_s_backup"
         SENTINEL_SATS_SURGE_ENABLED="$_s_sats_surge"
         SENTINEL_WALLET_DROP_ENABLED="$_s_wallet_drop"
+        SENTINEL_HIGH_ODDS_ENABLED="$_s_high_odds"
+        SENTINEL_HASHRATE_CRASH_ENABLED="$_s_hashrate_crash"
         SENTINEL_HEALTH_ENABLED="$_s_health"
         REPORT_FREQUENCY="$_s_reports"
         if [[ "$_s_updates" == "auto" ]]; then
@@ -26756,6 +26766,8 @@ with open('$SENTINEL_CONFIG', 'w') as f:
   "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
   "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
   "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
+  "high_odds_enabled": ${SENTINEL_HIGH_ODDS_ENABLED:-true},
+  "hashrate_crash_enabled": ${SENTINEL_HASHRATE_CRASH_ENABLED:-true},
   "backup_stale_days": 2,
   "ha_role_change_confirm_secs": 90,
   "scheduled_maintenance_windows": [],
@@ -27103,6 +27115,8 @@ EOF
   "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
   "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
   "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
+  "high_odds_enabled": ${SENTINEL_HIGH_ODDS_ENABLED:-true},
+  "hashrate_crash_enabled": ${SENTINEL_HASHRATE_CRASH_ENABLED:-true},
   "backup_stale_days": 2,
   "ha_role_change_confirm_secs": 90,
   "scheduled_maintenance_windows": [],
