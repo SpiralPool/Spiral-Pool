@@ -7,6 +7,17 @@ Versioning follows `MAJOR.MINOR.PATCH`  -  patch releases are applied in-place o
 
 ---
 
+## [v2.5.1]  -  2026-06-04 -  Phi Hash Reactor
+
+Consolidation patch release. Promotes the bug fixes and minor improvements applied in-place on the v2.5.0 line into a single tagged version (2.5.1). Drop-in upgrade from v2.5.0 — no database migrations, no config format changes, and no manual steps required.
+
+### Fixed
+- **Sentinel metrics-token auto-discovery on V1-schema configs**  -  `SpiralSentinel.py` only auto-discovered the Prometheus bearer token from the V2 key `metrics_auth_token:`, never the V1 layout where it lives nested as `metrics.authToken`. On V1 installs the token stayed empty, so every `/metrics` fetch returned HTTP 401 and silently disabled the best-share milestone alert, rejection-spike pool-side cross-referencing, and the Prometheus-derived infrastructure-health signals — with no user-visible error, since the dashboard reads the token correctly (`metrics.authToken`) and was unaffected. The auto-discovery loop is now section-aware: it reads `metrics.authToken` only when inside the `metrics:` block (matching the dashboard's long-standing behavior) and ignores an `authToken` found under any other section. The existing V2 `metrics_auth_token:` path is unchanged.
+
+Also consolidated under this tag (applied in-place on the v2.5.0 line): the toggleable high-odds and network-hashrate-drop Sentinel alerts (`high_odds_enabled` / `hashrate_crash_enabled`, both default `true`); the fix for maintenance mode silently failing to suppress alerts when enabled as root; the fix for the missing `actual_difficulty` column on fresh installs; the fix for Sentinel intel-report delays caused by system clock drift after VM suspend; the flaky `TestMoneyLoss_ConcurrentBlockFindsUnderLoad` test-mock race fix; and the Q-BitX (QBX) v0.3.0 hard-fork update.
+
+---
+
 ## [v2.5.0]  -  2026-05-14 -  Phi Hash Reactor
 
 ### Added

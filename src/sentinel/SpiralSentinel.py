@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.5.0 - PHI HASH REACTOR EDITION                            ║
+║  Spiral Sentinel v2.5.1 - PHI HASH REACTOR EDITION                            ║
 ║  Autonomous Solo Mining Monitor (17 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 __codename__ = "PHI_HASH_REACTOR"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -1675,8 +1675,21 @@ def load_config():
         if stratum_config_path.exists():
             try:
                 with open(stratum_config_path) as f:
-                    for line in f:
-                        line = line.strip()
+                    # Track the current top-level YAML section so we can disambiguate
+                    # generic keys. The V1 config schema stores the metrics bearer token
+                    # as `authToken:` nested under `metrics:`, while V2 uses the flat
+                    # `metrics_auth_token:`. We only honour the bare `authToken:` when it
+                    # appears inside the `metrics:` block, so we never grab an unrelated
+                    # authToken from another section.
+                    _current_section = None
+                    for raw_line in f:
+                        # An unindented (column-0) line starts a new top-level key.
+                        # A mapping header (`name:`) sets the section; any other
+                        # top-level key clears the section context.
+                        if raw_line[:1] not in ("", " ", "\t", "#", "\n", "\r"):
+                            _header = raw_line.split("#", 1)[0].strip()
+                            _current_section = _header[:-1].strip() if _header.endswith(":") else None
+                        line = raw_line.strip()
                         # Admin API key — V1 camelCase or V2 snake_case
                         if _need_api_key and line.startswith("adminApiKey:"):
                             key = line.split(":", 1)[1].strip().strip('"').strip("'")
@@ -1690,12 +1703,20 @@ def load_config():
                                 config["pool_admin_api_key"] = key
                                 logger.info("Auto-discovered pool_admin_api_key from stratum config.yaml")
                                 _need_api_key = False
-                        # Prometheus metrics bearer token
+                        # Prometheus metrics bearer token — V2 flat `metrics_auth_token:`
                         elif _need_metrics_token and line.startswith("metrics_auth_token:"):
                             tok = line.split(":", 1)[1].strip().strip('"').strip("'")
                             if tok and len(tok) >= 16:
                                 config["metrics_token"] = tok
                                 logger.info("Auto-discovered metrics_token from stratum config.yaml")
+                                _need_metrics_token = False
+                        # Prometheus metrics bearer token — V1 `metrics.authToken`
+                        elif (_need_metrics_token and _current_section == "metrics"
+                              and line.startswith("authToken:")):
+                            tok = line.split(":", 1)[1].strip().strip('"').strip("'")
+                            if tok and len(tok) >= 16:
+                                config["metrics_token"] = tok
+                                logger.info("Auto-discovered metrics_token from stratum config.yaml (metrics.authToken)")
                                 _need_metrics_token = False
                         if not _need_api_key and not _need_metrics_token:
                             break
@@ -6023,7 +6044,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.5.0-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.1-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6042,7 +6063,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.5.0-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.1-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
