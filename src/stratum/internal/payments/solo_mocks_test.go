@@ -52,7 +52,6 @@ var allTestCoins = []testCoinConfig{
 	{Symbol: "XMY", Algorithm: "sha256d", BlockTimeSec: 60, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "FBTC", Algorithm: "sha256d", BlockTimeSec: 30, IsAux: true, ParentChain: "BTC"},
 	{Symbol: "XEC", Algorithm: "sha256d", BlockTimeSec: 600}, // eCash — Bitcoin ABC fork, CashAddr
-	{Symbol: "QBX", Algorithm: "sha256d", BlockTimeSec: 150},
 
 	// Scrypt coins
 	{Symbol: "LTC", Algorithm: "scrypt", BlockTimeSec: 150, IsParent: true},

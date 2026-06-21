@@ -87,7 +87,7 @@ The installer will:
 | 8 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
 | 9 | FBTC | Fractal Bitcoin | SHA256d | ~10 GB | 18335 |
 | 10 | XEC | eCash | SHA256d | ~20 GB | 18338 |
-| 11 | QBX | Q-BitX | SHA256d | ~5 GB | 20335 |
+| 11 | SHA256d | ~5 GB | 20335 |
 | 12 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
 | 13 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
 | 14 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |

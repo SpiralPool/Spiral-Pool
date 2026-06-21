@@ -500,9 +500,9 @@ type AuxChainConfig struct {
 }
 
 // SupportedCoins defines the coins supported by this pool.
-// V2.5.1-PHI_HASH_REACTOR: Supports SHA-256d and Scrypt algorithms.
+// V2.5.2-PHI_HASH_REACTOR: Supports SHA-256d and Scrypt algorithms.
 //
-// SHA-256d coins: BTC, BCH, BCH2, BC2, BTCS, DGB, NMC, SYS, XMY, FBTC, QBX, XEC
+// SHA-256d coins: BTC, BCH, BCH2, BC2, BTCS, DGB, NMC, SYS, XMY, FBTC, XEC
 // Scrypt coins:   LTC, DOGE, DGB-SCRYPT, PEP, CAT
 var SupportedCoins = map[string]CoinInfo{
 	// === SHA-256d Coins ===
@@ -641,16 +641,6 @@ var SupportedCoins = map[string]CoinInfo{
 		P2PPort:       8341,
 		AddressPrefix: []byte{0x00}, // Same as Bitcoin - addresses start with 1
 		BlockTime:     30,           // 30 seconds (NOT 600 like Bitcoin!)
-	},
-	// Q-BitX (QBX) - standalone SHA-256d coin (NOT merge-mineable)
-	"qbitx": {
-		Name:          "Q-BitX",
-		Symbol:        "QBX",
-		Algorithm:     "sha256d",
-		DefaultPort:   8344,
-		P2PPort:       8345,
-		AddressPrefix: []byte{0x32}, // M prefix (50 decimal) — Dilithium-derived, NOT Bitcoin's 0x00
-		BlockTime:     150,          // 2.5 minutes
 	},
 	// eCash (XEC) - Bitcoin ABC fork, CashAddr addressing (ecash:q.../ecash:p...)
 	// Binary: bitcoind (symlinked as ecashd); service: ecashd; conf: bitcoin.conf
@@ -1652,7 +1642,6 @@ func (c *Config) SetDefaults() {
 			15335, 15336, // SYS + V2
 			17335, 17336, // XMY + V2
 			18335, 18336, // FBTC + V2
-			20335, 20336, // QBX + V2
 		}
 	}
 	if c.Failover.Discovery.ScanTimeout == 0 {
@@ -2013,9 +2002,6 @@ func extractSymbolFromCoin(coinConfig string) string {
 		"fractalbitcoin":  "FBTC",
 		"fractal-bitcoin": "FBTC",
 		"fbtc":            "FBTC",
-		"qbitx":           "QBX",
-		"q-bitx":          "QBX",
-		"qbx":             "QBX",
 		"syscoin":         "SYS",
 		"sys":             "SYS",
 		"myriadcoin":      "XMY",
@@ -2271,8 +2257,6 @@ func getCoinAddressPrefixes(coinSymbol string) []byte {
 		// All share legacy bytes (0x00 P2PKH, 0x05 P2SH).
 		// BCH/BCH2 use CashAddr at the application layer to distinguish from BTC.
 		return []byte{0x00, 0x05}
-	case "QBX":
-		return []byte{0x32, 0x37} // P2PKH (M..., 0x32=50), P2SH (P..., 0x37=55) — Dilithium-derived
 	case "BTCS":
 		return []byte{0x1A, 0x05} // B prefix (0x1A=26) P2PKH, 3 prefix P2SH
 	case "DGB", "DGB-SCRYPT", "DGB_SCRYPT":

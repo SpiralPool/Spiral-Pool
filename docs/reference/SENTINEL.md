@@ -89,7 +89,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `pool_id` | string | `"dgb_sha256_1"` | Legacy single-coin pool ID |
 | `wallet_address` | string | `""` | Legacy single-coin wallet address |
 | `push_device_hints` | bool | `true` | Push device info to pool for difficulty hints |
-| `pool_url` | string | `""` | Expected stratum URL for mismatch detection (e.g. `stratum+tcp://192.168.1.21:20335`) |
+| `pool_url` | string | `""` | Expected stratum URL for mismatch detection (e.g. `stratum+tcp://192.168.1.21:3333`) |
 | `fallback_pool_urls` | list | `[]` | Additional valid pool URLs (HA failover, VIP, etc.) |
 | `firmware_auto_detect` | bool | `true` | Probe BraiinsOS/Vnish on port 80 when CGMiner probe fails on antminer devices |
 | `update_check_enabled` | bool | `true` | Periodically check for Spiral Pool updates |
@@ -477,7 +477,6 @@ If all configured channels fail (Discord, Telegram, ntfy, email, XMPP): retries 
 |--------|----------|-------|
 | DGB / DGB-SCRYPT | 30s | Fast block time (15s) |
 | FBTC | 20s | Fast block time (30s) |
-| QBX | 60s | Block time (150s) |
 | DOGE / SYS / XMY | 45s | |
 | LTC / PEP / CAT | 60s | |
 | BTC / BCH / BCH2 / BC2 / NMC / XEC | 120s | Slow block time (10 min) |
@@ -590,7 +589,6 @@ New achievements are announced via Discord embed when unlocked.
 | SYS | `syscoin` |
 | XMY | `myriadcoin` |
 | FBTC | `fractal-bitcoin` |
-| QBX | `q-bitx` |
 | XEC | `ecash` |
 | PEP | `pepecoin` |
 | CAT | `catcoin` |
@@ -803,4 +801,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Phi Hash Reactor 2.5.1*
+*Spiral Sentinel &mdash; Phi Hash Reactor 2.5.2*

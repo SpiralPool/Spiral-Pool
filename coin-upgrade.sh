@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.5.1-PHI_HASH_REACTOR
+#                   V2.5.2-PHI_HASH_REACTOR
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary.
 # Config files, wallets, blockchain data, and pool settings are NEVER modified.
@@ -15,11 +15,10 @@
 # Usage:
 #   sudo ./coin-upgrade.sh                    # Interactive mode
 #   sudo ./coin-upgrade.sh --check            # Show version status only, no changes
-#   sudo ./coin-upgrade.sh --coin QBX         # Upgrade specific coin
 #   sudo ./coin-upgrade.sh --coin NMC --reindex   # Upgrade + start with -reindex
 #
 # Risk levels:
-#   PATCH   Binary swap only — reindex not expected (e.g. QBX 0.1.0 → 0.2.0)
+#   PATCH   Binary swap only — reindex not expected
 #   MINOR   Reindex may be needed — check release notes
 #   MAJOR   Reindex almost certainly required — use --reindex flag
 #
@@ -67,7 +66,6 @@ declare -A COIN_TARGET=(
     [SYS]="5.0.5"
     [XMY]="0.18.1.0"
     [FBTC]="0.3.0"
-    [QBX]="0.2.0"
     [XEC]="0.31.12"   # ecash-node (Bitcoin ABC) — latest stable
 )
 
@@ -92,7 +90,6 @@ declare -A COIN_RISK=(
     [SYS]="NONE"    # 5.0.5  — current
     [XMY]="NONE"    # 0.18.1.0 — current (project dormant since 2020)
     [FBTC]="NONE"   # 0.3.0  — current
-    [QBX]="PATCH"   # 0.1.0 → 0.2.0: LevelDB static build only; no reindex expected
     [XEC]="NONE"    # 0.31.12 — current (ecash-node / Bitcoin ABC)
 )
 
@@ -103,7 +100,7 @@ declare -A COIN_SERVICE=(
     [DGB]="digibyted"       [LTC]="litecoind"       [DOGE]="dogecoind"
     [PEP]="pepecoind"       [CAT]="catcoind"        [NMC]="namecoind"
     [SYS]="syscoind"        [XMY]="myriadcoind"     [FBTC]="fractald"
-    [QBX]="qbitxd"          [XEC]="ecashd"
+    [XEC]="ecashd"
 )
 
 # /usr/local/bin daemon command (symlink name)
@@ -113,7 +110,7 @@ declare -A COIN_DAEMON_CMD=(
     [DGB]="digibyted"       [LTC]="litecoind"       [DOGE]="dogecoind"
     [PEP]="pepecoind"       [CAT]="catcoind"        [NMC]="namecoind"
     [SYS]="syscoind"        [XMY]="myriadcoind"     [FBTC]="fractald"
-    [QBX]="qbitx"           [XEC]="ecashd"
+    [XEC]="ecashd"
 )
 
 # /usr/local/bin CLI command (symlink name)
@@ -123,7 +120,7 @@ declare -A COIN_CLI_CMD=(
     [DGB]="digibyte-cli"    [LTC]="litecoin-cli"       [DOGE]="dogecoin-cli"
     [PEP]="pepecoin-cli"    [CAT]="catcoin-cli"        [NMC]="namecoin-cli"
     [SYS]="syscoin-cli"     [XMY]="myriadcoin-cli"     [FBTC]="fractal-cli"
-    [QBX]="qbitx-cli"      [XEC]="ecash-cli"
+    [XEC]="ecash-cli"
 )
 
 # Conf file path per coin (required for CLI calls — each coin uses a non-default RPC port)
@@ -151,7 +148,6 @@ declare -A COIN_CONF=(
     [SYS]="$(_chain_dir sys)/syscoin.conf"
     [XMY]="$(_chain_dir xmy)/myriadcoin.conf"
     [FBTC]="$(_chain_dir fbtc)/fractal.conf"
-    [QBX]="$(_chain_dir qbx)/qbitx.conf"
     [XEC]="$(_chain_dir xec)/bitcoin.conf"
 )
 
@@ -168,10 +164,10 @@ declare -A COIN_ENV_FLAG=(
     [DGB]="ENABLE_DGB"   [LTC]="ENABLE_LTC"   [DOGE]="ENABLE_DOGE"
     [PEP]="ENABLE_PEP"   [CAT]="ENABLE_CAT"   [NMC]="ENABLE_NMC"
     [SYS]="ENABLE_SYS"   [XMY]="ENABLE_XMY"   [FBTC]="ENABLE_FBTC"
-    [QBX]="ENABLE_QBX"   [XEC]="ENABLE_XEC"
+    [XEC]="ENABLE_XEC"
 )
 
-ALL_COINS=(BTC BCH BCH2 BC2 BTCS DGB LTC DOGE PEP CAT NMC SYS XMY FBTC QBX XEC)
+ALL_COINS=(BTC BCH BCH2 BC2 BTCS DGB LTC DOGE PEP CAT NMC SYS XMY FBTC XEC)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # COLORS
@@ -242,7 +238,7 @@ get_installed_version() {
     bin_path=$(get_binary_path "$coin")
     [[ -z "$bin_path" || ! -x "$bin_path" ]] && echo "not_installed" && return
 
-    # Check version cache first — used for daemons whose --version omits the number (e.g. QBX)
+    # Check version cache first — used for daemons whose --version omits the number
     local cache_file="${VERSION_CACHE_DIR}/${coin}.ver"
     if [[ -f "$cache_file" ]]; then
         cat "$cache_file"
@@ -458,15 +454,6 @@ download_FBTC() {
     echo "fractald-${ver}-x86_64-linux-gnu"
 }
 
-download_QBX() {
-    local arch="$1" ver="${COIN_TARGET[QBX]}"
-    local fn="qbitx-linux-x86_64-v${ver}.zip"
-    cd "$WORK_DIR"
-    _wget -O "$fn" "https://github.com/q-bitx/Source-/releases/download/v${ver}/${fn}" || return 1
-    unzip -q "$fn" -d qbitx-extract || return 1
-    echo "qbitx-extract"
-}
-
 download_XEC() {
     local arch="$1" ver="${COIN_TARGET[XEC]}"
     # ecash-node (Bitcoin ABC) — only x86_64 supported
@@ -497,16 +484,6 @@ install_binaries() {
     log_info "Installing to ${bin_dir}..."
 
     case "$coin" in
-        QBX)
-            # QBX has no bin/ subdir — binaries at root of extract
-            local d; d=$(find "$extracted" -name "qbitx" -not -name "*-cli" -type f | head -1)
-            local c; c=$(find "$extracted" -name "qbitx-cli" -type f | head -1)
-            [[ -z "$d" ]] && die "qbitx binary not found in archive"
-            sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$d" "$bin_dir/qbitx"
-            if [[ -n "$c" ]]; then
-                sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" "$c" "$bin_dir/qbitx-cli"
-            fi
-            ;;
         BCH2)
             # Bitcoin Cash II: capital "II" in binary names
             find "$extracted" -type f \( -name "bitcoincashIId" -o -name "bitcoincashII-cli" \) \
@@ -726,7 +703,7 @@ DROPIN
 
     # ── Version verify ────────────────────────────────────────────────────────
     # Update cache FIRST — the binary was just installed, so the cache should
-    # reflect the target version. This is essential for daemons like QBX whose
+    # reflect the target version. This is essential for daemons whose
     # --version output has no parseable version number.
     write_version_cache "$coin" "$target_ver"
     sleep 3
@@ -743,7 +720,7 @@ DROPIN
         # Binary confirms the target version
         log_success "${coin}: ${installed_ver} → ${target_ver} ✓"
     elif [[ -z "$bin_ver" ]]; then
-        # Daemon doesn't report a version number (e.g. QBX) — trust the install
+        # Daemon doesn't report a version number — trust the install
         log_success "${coin}: ${installed_ver} → ${target_ver} ✓ (version cached — daemon has no version output)"
     else
         # Binary reports a different version than expected
@@ -908,7 +885,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.5.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.5.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"
@@ -941,13 +918,12 @@ main() {
                 echo "  Options:"
                 echo "    --check           Show version status table only, no changes"
                 echo "    --list            Machine-readable upgrade list (COIN VER TARGET RISK)"
-                echo "    --coin TICKER     Upgrade a specific coin (e.g. QBX, DGB, LTC)"
+                echo "    --coin TICKER     Upgrade a specific coin (e.g. DGB, LTC)"
                 echo "    --reindex         Start daemon with -reindex after upgrade"
                 echo "    --help            Show this help"
                 echo ""
                 echo "  Examples:"
                 echo "    sudo ./coin-upgrade.sh --check"
-                echo "    sudo ./coin-upgrade.sh --coin QBX"
                 echo "    sudo ./coin-upgrade.sh --coin NMC --reindex"
                 echo ""
                 echo "  Note: This tool upgrades existing coin daemon binaries only."

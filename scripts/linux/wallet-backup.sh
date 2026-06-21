@@ -86,7 +86,7 @@ backup_coin() {
 # Read enabled coins from config.yaml
 ENABLE_DGB=false; ENABLE_BTC=false; ENABLE_BCH=false; ENABLE_BCH2=false
 ENABLE_BC2=false; ENABLE_BTCS=false; ENABLE_NMC=false; ENABLE_SYS=false
-ENABLE_XMY=false; ENABLE_FBTC=false; ENABLE_QBX=false; ENABLE_LTC=false
+ENABLE_XMY=false; ENABLE_FBTC=false; ENABLE_LTC=false
 ENABLE_DOGE=false; ENABLE_PEP=false; ENABLE_XEC=false
 # CAT is intentionally excluded: Catcoin uses an operator-provided external address,
 # not a pool-managed wallet — there is no pool-cat wallet to back up.
@@ -103,7 +103,6 @@ while IFS= read -r line; do
         *"coin: syscoin"*)                                 ENABLE_SYS=true ;;
         *"coin: myriadcoin"*)                              ENABLE_XMY=true ;;
         *"coin: fractalbitcoin"*|*"coin: fractal"*)        ENABLE_FBTC=true ;;
-        *"coin: qbitx"*)                                   ENABLE_QBX=true ;;
         *"coin: litecoin"*)                                ENABLE_LTC=true ;;
         *"coin: dogecoin"*)                                ENABLE_DOGE=true ;;
         *"coin: pepecoin"*)                                ENABLE_PEP=true ;;
@@ -121,7 +120,6 @@ done < "$CONFIG"
 [[ "$ENABLE_SYS"  == true ]] && backup_coin "sys"  "syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf -rpcwallet=pool-sys"
 [[ "$ENABLE_XMY"  == true ]] && backup_coin "xmy"  "myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf -rpcwallet=pool-xmy"
 [[ "$ENABLE_FBTC" == true ]] && backup_coin "fbtc" "fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf -rpcwallet=pool-fbtc"
-[[ "$ENABLE_QBX"  == true ]] && backup_coin "qbx"  "qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf -rpcwallet=pool-qbx"
 [[ "$ENABLE_LTC"  == true ]] && backup_coin "ltc"  "litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf -rpcwallet=pool-ltc"
 [[ "$ENABLE_DOGE" == true ]] && backup_coin "doge" "dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf -rpcwallet=pool-doge"
 [[ "$ENABLE_PEP"  == true ]] && backup_coin "pep"  "pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf -rpcwallet=pool-pep"

@@ -24,7 +24,7 @@ import (
 //
 // Coins tested (17 total):
 //   SHA-256d: BTC(600s), BCH(600s), BCH2(600s), DGB(15s), BC2(600s), BTCS(300s),
-//             XEC(600s), NMC(600s,aux), SYS(60s,aux), XMY(60s,aux), FBTC(30s,aux), QBX(150s)
+// XEC(600s), NMC(600s,aux), SYS(60s,aux), XMY(60s,aux), FBTC(30s,aux)(150s)
 //   Scrypt:   LTC(150s), DOGE(60s,aux), DGB-SCRYPT(15s),
 //             PEP(60s,aux), CAT(600s)
 //
@@ -63,7 +63,6 @@ func allCoins() []coinConfig {
 		{Coin: "XMY", Algorithm: "SHA-256d", BlockInterval: 60, AuxPow: true, MinerAddress: "MsoloMiner1addr", Height: 3000001, CoinbaseValue: 250000000, NBits: "1c0d3142"},
 		{Coin: "FBTC", Algorithm: "SHA-256d", BlockInterval: 30, AuxPow: true, MinerAddress: "FsoloMiner1addr", Height: 200001, CoinbaseValue: 2500000000, NBits: "1d00ffff"},
 		{Coin: "XEC", Algorithm: "SHA-256d", BlockInterval: 600, AuxPow: false, MinerAddress: "ecash:qsolominer", Height: 951001, CoinbaseValue: 312500000, NBits: "18034287"},
-		{Coin: "QBX", Algorithm: "SHA-256d", BlockInterval: 150, AuxPow: false, MinerAddress: "1QBXsoloMiner1addr", Height: 500001, CoinbaseValue: 5000000000, NBits: "1d00ffff"},
 
 		// Scrypt coins
 		{Coin: "LTC", Algorithm: "Scrypt", BlockInterval: 150, AuxPow: false, MinerAddress: "ltc1qsolominer", Height: 2800001, CoinbaseValue: 625000000, NBits: "1a01cc46"},
@@ -677,7 +676,7 @@ func TestSOLO_BuildFailure_DGB_RecoveryShowsBuildFailedWithComponents(t *testing
 // coins simultaneously, no solved block is lost.
 //
 // Risk vector: #4 - Multiple build failures across different coins
-// Coins: All 14 (BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC, QBX,
+// Coins: All 14 (BTC, BCH, DGB, BC2, NMC, SYS, XMY, FBTC,
 //         LTC, DOGE, DGB-SCRYPT, PEP, CAT)
 // Algorithms: SHA-256d, Scrypt
 func TestSOLO_BuildFailure_AllCoins_MultipleBuildFailuresPreserved(t *testing.T) {

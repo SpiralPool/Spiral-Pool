@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.5.1                                                         ║
+# ║   Version: 2.5.2                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.5.1"
+    VERSION="2.5.2"
 fi
 INSTALL_DIR="/spiralpool"
 DIGIBYTE_VERSION="8.26.2"
@@ -47,7 +47,6 @@ NAMECOIN_VERSION="28.0"
 SYSCOIN_VERSION="5.0.5"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.3.0"
-QBX_VERSION="0.2.0"
 ECASH_VERSION="0.31.12"
 GO_VERSION="1.26.1"
 POSTGRES_VERSION="18"
@@ -102,12 +101,6 @@ FBTC_RPC_PORT=8340
 FBTC_P2P_PORT=8341
 FBTC_ZMQ_PORT=28340
 
-# Q-BitX ports (SHA-256d standalone, post-quantum Bitcoin fork)
-# NOTE: QBX defaults to P2P 8334 which conflicts with NMC — using unique ports
-QBX_RPC_PORT=8344
-QBX_P2P_PORT=8345
-QBX_ZMQ_PORT=28344
-
 # eCash (XEC) ports — ecash-node (Bitcoin ABC), non-standard P2P to avoid BTC 8333 conflict
 XEC_RPC_PORT=9004
 XEC_P2P_PORT=8343
@@ -150,7 +143,6 @@ NMC_ADDRESS=""  # Namecoin address for merge mining
 SYS_ADDRESS=""  # Syscoin address for merge mining
 XMY_ADDRESS=""  # Myriad address for merge mining
 FBTC_ADDRESS=""  # Fractal Bitcoin address for merge mining
-QBX_ADDRESS=""   # Q-BitX address
 XEC_ADDRESS=""   # eCash address
 COINBASE_TEXT="Mined by Spiral Pool 🍁"
 RPC_USER=""  # Legacy - deprecated, use coin-specific variables below
@@ -175,8 +167,6 @@ PEP_RPC_USER="spiralpep"
 PEP_RPC_PASSWORD=""
 CAT_RPC_USER="spiralcat"
 CAT_RPC_PASSWORD=""
-QBX_RPC_USER="spiralqbx"
-QBX_RPC_PASSWORD=""
 XEC_RPC_USER="spiralxec"
 XEC_RPC_PASSWORD=""
 DB_PASSWORD=""
@@ -190,7 +180,6 @@ ENABLE_BCH="false"
 ENABLE_BC2="false"
 ENABLE_BCH2="false"  # Bitcoin Cash II - BCH consensus fork of BC2 (SHA-256d standalone)
 ENABLE_BTCS="false"  # Bitcoin Silver - BTC-style fork, 5-min blocks (SHA-256d standalone)
-ENABLE_QBX="false"   # Q-BitX - post-quantum Bitcoin fork (SHA-256d standalone)
 ENABLE_XEC="false"   # eCash - Bitcoin ABC fork with RTT difficulty and CashAddr (SHA-256d standalone)
 
 # Multi-coin enablement - Scrypt coins (all disabled by default)
@@ -256,7 +245,6 @@ GENERATE_NMC_WALLET="false"  # NMC wallet (merge mining)
 GENERATE_SYS_WALLET="false"  # SYS wallet (merge mining)
 GENERATE_XMY_WALLET="false"  # XMY wallet (merge mining)
 GENERATE_FBTC_WALLET="false" # FBTC wallet (merge mining)
-GENERATE_QBX_WALLET="false"  # QBX wallet (Q-BitX)
 GENERATE_XEC_WALLET="false"  # XEC wallet (eCash)
 GENERATE_PEP_WALLET="false"  # PEP wallet
 # CAT wallet generation not supported — user must provide their own address
@@ -698,7 +686,6 @@ ENABLE_BCH="$ENABLE_BCH"
 ENABLE_BCH2="$ENABLE_BCH2"
 ENABLE_BC2="$ENABLE_BC2"
 ENABLE_BTCS="$ENABLE_BTCS"
-ENABLE_QBX="$ENABLE_QBX"
 ENABLE_XEC="$ENABLE_XEC"
 ENABLE_LTC="$ENABLE_LTC"
 ENABLE_DOGE="$ENABLE_DOGE"
@@ -727,7 +714,6 @@ NMC_RPC_PASSWORD="$NMC_RPC_PASSWORD"
 SYS_RPC_PASSWORD="$SYS_RPC_PASSWORD"
 XMY_RPC_PASSWORD="$XMY_RPC_PASSWORD"
 FBTC_RPC_PASSWORD="$FBTC_RPC_PASSWORD"
-QBX_RPC_PASSWORD="$QBX_RPC_PASSWORD"
 XEC_RPC_PASSWORD="$XEC_RPC_PASSWORD"
 ADMIN_API_KEY="$ADMIN_API_KEY"
 METRICS_TOKEN="$METRICS_TOKEN"
@@ -778,7 +764,6 @@ LTC_POOL_ADDRESS="$LTC_POOL_ADDRESS"
 DOGE_POOL_ADDRESS="$DOGE_POOL_ADDRESS"
 PEP_POOL_ADDRESS="$PEP_POOL_ADDRESS"
 CAT_POOL_ADDRESS="$CAT_POOL_ADDRESS"
-QBX_POOL_ADDRESS="$QBX_POOL_ADDRESS"
 XEC_POOL_ADDRESS="$XEC_POOL_ADDRESS"
 GRAFANA_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
 MULTI_DISK_CONFIGURED="$MULTI_DISK_CONFIGURED"
@@ -1044,7 +1029,7 @@ cleanup_on_failure() {
         sudo systemctl stop syscoind 2>/dev/null || true
         sudo systemctl stop myriadcoind 2>/dev/null || true
         sudo systemctl stop fractald 2>/dev/null || true
-        sudo systemctl stop qbitxd 2>/dev/null || true
+ sudo systemctl stop 2>/dev/null || true
         sudo systemctl stop ecashd 2>/dev/null || true
         # Disable all services
         sudo systemctl disable spiralstratum 2>/dev/null || true
@@ -1065,7 +1050,6 @@ cleanup_on_failure() {
         sudo systemctl disable syscoind 2>/dev/null || true
         sudo systemctl disable myriadcoind 2>/dev/null || true
         sudo systemctl disable fractald 2>/dev/null || true
-        sudo systemctl disable qbitxd 2>/dev/null || true
         sudo systemctl disable ecashd 2>/dev/null || true
         # Remove service files
         sudo rm -f /etc/systemd/system/spiralstratum.service 2>/dev/null || true
@@ -1086,7 +1070,6 @@ cleanup_on_failure() {
         sudo rm -f /etc/systemd/system/syscoind.service 2>/dev/null || true
         sudo rm -f /etc/systemd/system/myriadcoind.service 2>/dev/null || true
         sudo rm -f /etc/systemd/system/fractald.service 2>/dev/null || true
-        sudo rm -f /etc/systemd/system/qbitxd.service 2>/dev/null || true
         sudo rm -f /etc/systemd/system/ecashd.service 2>/dev/null || true
         sudo rm -f /etc/systemd/system/ecashd.service 2>/dev/null || true
         sudo systemctl daemon-reload 2>/dev/null || true
@@ -1241,15 +1224,6 @@ cleanup_on_failure() {
         sudo rm -rf "/home/$POOL_USER/.fractal" 2>/dev/null || true
     fi
 
-    # Remove Q-BitX
-    if [[ "$INSTALL_PROGRESS" == *"qbx"* ]]; then
-        log "Removing Q-BitX..."
-        sudo systemctl stop qbitxd 2>/dev/null || true
-        sudo systemctl disable qbitxd 2>/dev/null || true
-        sudo rm -f /etc/systemd/system/qbitxd.service 2>/dev/null || true
-        sudo rm -rf "$_cmp/qbx" 2>/dev/null || true
-    fi
-
     # Remove eCash
     if [[ "$INSTALL_PROGRESS" == *"ecash"* ]]; then
         log "Removing eCash..."
@@ -1345,7 +1319,6 @@ cleanup_on_failure() {
     sudo rm -f /etc/systemd/system/syscoind.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/myriadcoind.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/fractald.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/qbitxd.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/ecashd.service 2>/dev/null || true
     sudo systemctl daemon-reload 2>/dev/null || true
 
@@ -4212,11 +4185,6 @@ collect_docker_multicoin_configuration() {
         log_success "Generated secure FBTC RPC password"
     fi
 
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        QBX_RPC_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
-        log_success "Generated secure QBX RPC password"
-    fi
-
     if [[ "$ENABLE_XEC" == "true" ]]; then
         XEC_RPC_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
         log_success "Generated secure XEC RPC password"
@@ -4552,24 +4520,7 @@ collect_docker_coin_addresses() {
         echo ""
     fi
 
-    # QBX Address
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        echo -e "${WHITE}⚛️ Q-BitX Wallet Address${NC}"
-        echo -e "${CYAN}   ──────────────────────────${NC}"
-        echo -e "   Addresses start with ${GREEN}M${NC} (P2PKH), ${GREEN}P${NC} (P2SH), or ${GREEN}pq${NC} (post-quantum)"
-        echo ""
-        while true; do
-            prompt_input "QBX Address: "; read QBX_POOL_ADDRESS
-            if [[ "$QBX_POOL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$ ]]; then
-                log_success "Valid QBX address"
-                break
-            else
-                echo -e "  ${RED}Invalid QBX address. Must start with M (P2PKH), P (P2SH), or pq (post-quantum).${NC}"
-            fi
-        done
-        echo ""
-    fi
-
+ # Address
     # XEC Address
     if [[ "$ENABLE_XEC" == "true" ]]; then
         echo -e "${WHITE}💚 eCash Wallet Address${NC}"
@@ -4688,7 +4639,6 @@ detect_existing_docker_install() {
         EXISTING_ENABLE_SYS=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
         EXISTING_ENABLE_XMY=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
         EXISTING_ENABLE_FBTC=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
-        EXISTING_ENABLE_QBX=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
         EXISTING_ENABLE_XEC=$(grep -oP '^ENABLE_XEC=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
 
         # Build list of existing coins
@@ -4708,7 +4658,7 @@ detect_existing_docker_install() {
         [[ "$EXISTING_ENABLE_SYS" == "true" ]] && existing_coins="${existing_coins}SYS "
         [[ "$EXISTING_ENABLE_XMY" == "true" ]] && existing_coins="${existing_coins}XMY "
         [[ "$EXISTING_ENABLE_FBTC" == "true" ]] && existing_coins="${existing_coins}FBTC "
-        [[ "$EXISTING_ENABLE_QBX" == "true" ]] && existing_coins="${existing_coins}QBX "
+ [[ "$EXISTING_
         [[ "$EXISTING_ENABLE_XEC" == "true" ]] && existing_coins="${existing_coins}XEC "
 
         if [[ -n "$existing_coins" ]]; then
@@ -4750,7 +4700,7 @@ detect_existing_docker_install() {
                         [[ "$EXISTING_ENABLE_SYS" == "true" ]] && SYS_RPC_PASSWORD=$(grep -oP '^SYS_RPC_PASSWORD=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
                         [[ "$EXISTING_ENABLE_XMY" == "true" ]] && XMY_RPC_PASSWORD=$(grep -oP '^XMY_RPC_PASSWORD=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
                         [[ "$EXISTING_ENABLE_FBTC" == "true" ]] && FBTC_RPC_PASSWORD=$(grep -oP '^FBTC_RPC_PASSWORD=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
-                        [[ "$EXISTING_ENABLE_QBX" == "true" ]] && QBX_RPC_PASSWORD=$(grep -oP '^QBX_RPC_PASSWORD=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
+ [[ "$EXISTING_
                         [[ "$EXISTING_ENABLE_XEC" == "true" ]] && XEC_RPC_PASSWORD=$(grep -oP '^XEC_RPC_PASSWORD=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
 
                         # Preserve existing addresses - SHA256d coins
@@ -4773,7 +4723,7 @@ detect_existing_docker_install() {
                         [[ "$EXISTING_ENABLE_SYS" == "true" ]] && SYS_POOL_ADDRESS=$(grep -oP '^SYS_POOL_ADDRESS=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
                         [[ "$EXISTING_ENABLE_XMY" == "true" ]] && XMY_POOL_ADDRESS=$(grep -oP '^XMY_POOL_ADDRESS=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
                         [[ "$EXISTING_ENABLE_FBTC" == "true" ]] && FBTC_POOL_ADDRESS=$(grep -oP '^FBTC_POOL_ADDRESS=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
-                        [[ "$EXISTING_ENABLE_QBX" == "true" ]] && QBX_POOL_ADDRESS=$(grep -oP '^QBX_POOL_ADDRESS=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
+ [[ "$EXISTING_
                         [[ "$EXISTING_ENABLE_XEC" == "true" ]] && XEC_POOL_ADDRESS=$(grep -oP '^XEC_POOL_ADDRESS=\K.+$' "$ENV_FILE" 2>/dev/null || echo "")
 
                         # Use existing DB password if available
@@ -4804,7 +4754,6 @@ detect_existing_docker_install() {
                         [[ "$ENABLE_SYS"  == "true" && -z "$SYS_RPC_PASSWORD"  ]] && { SYS_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new SYS RPC password (new coin)";  }
                         [[ "$ENABLE_XMY"  == "true" && -z "$XMY_RPC_PASSWORD"  ]] && { XMY_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new XMY RPC password (new coin)";  }
                         [[ "$ENABLE_FBTC" == "true" && -z "$FBTC_RPC_PASSWORD" ]] && { FBTC_RPC_PASSWORD=$(_gen_rpc_pass); log "Generated new FBTC RPC password (new coin)"; }
-                        [[ "$ENABLE_QBX"  == "true" && -z "$QBX_RPC_PASSWORD"  ]] && { QBX_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new QBX RPC password (new coin)";  }
                         [[ "$ENABLE_XEC"  == "true" && -z "$XEC_RPC_PASSWORD"  ]] && { XEC_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new XEC RPC password (new coin)";  }
 
                         return 0
@@ -4837,7 +4786,6 @@ detect_existing_native_install() {
     ex_solo_coin=$(grep -oP '^SOLO_COIN=\K\S+$' "$COINS_ENV" 2>/dev/null || echo "")
 
     local ex_dgb ex_btc ex_bch ex_bch2 ex_bc2 ex_btcs ex_ltc ex_doge ex_pep ex_cat
-    local ex_nmc ex_sys ex_xmy ex_fbtc ex_qbx ex_xec ex_dgb_scrypt
     ex_dgb=$(grep -oP '^ENABLE_DGB=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_btc=$(grep -oP '^ENABLE_BTC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_bch=$(grep -oP '^ENABLE_BCH=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
@@ -4852,7 +4800,6 @@ detect_existing_native_install() {
     ex_sys=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_xmy=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_fbtc=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
-    ex_qbx=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_xec=$(grep -oP '^ENABLE_XEC=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
     ex_dgb_scrypt=$(grep -oP '^ENABLE_DGB_SCRYPT=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
 
@@ -4873,7 +4820,6 @@ detect_existing_native_install() {
     [[ "$ex_sys" == "true" ]]       && existing_coins="${existing_coins}SYS "
     [[ "$ex_xmy" == "true" ]]       && existing_coins="${existing_coins}XMY "
     [[ "$ex_fbtc" == "true" ]]      && existing_coins="${existing_coins}FBTC "
-    [[ "$ex_qbx" == "true" ]]       && existing_coins="${existing_coins}QBX "
     [[ "$ex_xec" == "true" ]]       && existing_coins="${existing_coins}XEC "
 
     [[ -z "$existing_coins" ]] && NATIVE_UPGRADE_MODE="fresh" && return 0
@@ -4913,7 +4859,6 @@ detect_existing_native_install() {
                 SYS_RPC_PASSWORD=$(grep -oP '^SYS_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 XMY_RPC_PASSWORD=$(grep -oP '^XMY_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 FBTC_RPC_PASSWORD=$(grep -oP '^FBTC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
-                QBX_RPC_PASSWORD=$(grep -oP '^QBX_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 XEC_RPC_PASSWORD=$(grep -oP '^XEC_RPC_PASSWORD=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 # DGB also uses the generic RPC_PASSWORD for single-coin mode
                 [[ -n "$DGB_RPC_PASSWORD" ]] && RPC_PASSWORD="$DGB_RPC_PASSWORD"
@@ -4953,7 +4898,6 @@ detect_existing_native_install() {
                     [SYS]="sys:syscoin.conf"
                     [XMY]="xmy:myriadcoin.conf"
                     [FBTC]="fbtc:fractal.conf"
-                    [QBX]="qbx:qbitx.conf"
                     [XEC]="xec:bitcoin.conf"
                 )
                 for _coin_sym in "${!_PASS_RECOVERY[@]}"; do
@@ -4993,7 +4937,6 @@ detect_existing_native_install() {
                 [[ "$ENABLE_SYS"  == "true" && -z "$SYS_RPC_PASSWORD"  ]] && { SYS_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new SYS RPC password (new coin)";  }
                 [[ "$ENABLE_XMY"  == "true" && -z "$XMY_RPC_PASSWORD"  ]] && { XMY_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new XMY RPC password (new coin)";  }
                 [[ "$ENABLE_FBTC" == "true" && -z "$FBTC_RPC_PASSWORD" ]] && { FBTC_RPC_PASSWORD=$(_gen_rpc_pass); log "Generated new FBTC RPC password (new coin)"; }
-                [[ "$ENABLE_QBX"  == "true" && -z "$QBX_RPC_PASSWORD"  ]] && { QBX_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new QBX RPC password (new coin)";  }
                 [[ "$ENABLE_XEC"  == "true" && -z "$XEC_RPC_PASSWORD"  ]] && { XEC_RPC_PASSWORD=$(_gen_rpc_pass);  log "Generated new XEC RPC password (new coin)";  }
                 [[ -n "$DGB_RPC_PASSWORD" ]] && RPC_PASSWORD="$DGB_RPC_PASSWORD"
 
@@ -5012,7 +4955,6 @@ detect_existing_native_install() {
                 SYS_POOL_ADDRESS=$(grep -oP '^SYS_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 XMY_POOL_ADDRESS=$(grep -oP '^XMY_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 FBTC_POOL_ADDRESS=$(grep -oP '^FBTC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
-                QBX_POOL_ADDRESS=$(grep -oP '^QBX_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 XEC_POOL_ADDRESS=$(grep -oP '^XEC_POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
                 # POOL_ADDRESS is the generic DGB address used in single-coin and multi-coin DGB prompts
                 POOL_ADDRESS=$(grep -oP '^POOL_ADDRESS=\K.+$' "$COINS_ENV" 2>/dev/null || echo "")
@@ -5031,7 +4973,6 @@ detect_existing_native_install() {
                 [[ -n "$SYS_POOL_ADDRESS" ]]  && SYS_ADDRESS="$SYS_POOL_ADDRESS"
                 [[ -n "$XMY_POOL_ADDRESS" ]]  && XMY_ADDRESS="$XMY_POOL_ADDRESS"
                 [[ -n "$FBTC_POOL_ADDRESS" ]] && FBTC_ADDRESS="$FBTC_POOL_ADDRESS"
-                [[ -n "$QBX_POOL_ADDRESS" ]]  && QBX_ADDRESS="$QBX_POOL_ADDRESS"
                 [[ -n "$XEC_POOL_ADDRESS" ]]  && XEC_ADDRESS="$XEC_POOL_ADDRESS"
 
                 # Preserve DB password and admin API key
@@ -5395,21 +5336,17 @@ merge_docker_configuration() {
             echo ""
         fi
 
-        if [[ "$ENABLE_QBX" == "true" && "$EXISTING_ENABLE_QBX" != "true" ]]; then
-            echo -e "${WHITE}⚛️ Q-BitX Wallet Address${NC}"
+ if [[ "$
             echo -e "${CYAN}   ──────────────────────────${NC}"
             echo -e "   Addresses start with ${GREEN}M${NC} (P2PKH), ${GREEN}P${NC} (P2SH), or ${GREEN}pq${NC} (post-quantum)"
             echo ""
             while true; do
-                prompt_input "QBX Address: "; read QBX_POOL_ADDRESS
-                if [[ "$QBX_POOL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$ ]]; then
-                    log_success "Valid QBX address format"
+ log_success "Valid address format"
                     break
                 else
-                    echo -e "  ${RED}Invalid QBX address format.${NC}"
+ echo -e " ${RED}Invalid address format.${NC}"
                 fi
             done
-            QBX_RPC_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
             echo ""
         fi
 
@@ -5500,11 +5437,6 @@ select_docker_compose_profile() {
         coin_list+="FBTC "
         ((coin_count++)) || true
     fi
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        DOCKER_PROFILE_ARGS+=" --profile qbx"
-        coin_list+="QBX "
-        ((coin_count++)) || true
-    fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         DOCKER_PROFILE_ARGS+=" --profile xec"
         coin_list+="XEC "
@@ -5584,7 +5516,6 @@ ENABLE_BCH=$ENABLE_BCH
 ENABLE_BCH2=$ENABLE_BCH2
 ENABLE_BC2=$ENABLE_BC2
 ENABLE_BTCS=$ENABLE_BTCS
-ENABLE_QBX=$ENABLE_QBX
 ENABLE_XEC=$ENABLE_XEC
 # Scrypt coins
 ENABLE_LTC=$ENABLE_LTC
@@ -5617,7 +5548,6 @@ LTC_POOL_ADDRESS=${LTC_POOL_ADDRESS:-}
 DOGE_POOL_ADDRESS=${DOGE_POOL_ADDRESS:-}
 PEP_POOL_ADDRESS=${PEP_POOL_ADDRESS:-}
 CAT_POOL_ADDRESS=${CAT_POOL_ADDRESS:-}
-QBX_POOL_ADDRESS=${QBX_POOL_ADDRESS:-}
 XEC_POOL_ADDRESS=${XEC_POOL_ADDRESS:-}
 # DGB-SCRYPT uses same address format as DGB (can be separate or same)
 DGB_SCRYPT_ADDRESS=${DGB_SCRYPT_ADDRESS:-}
@@ -5663,8 +5593,6 @@ XMY_RPC_USER=spiralxmy
 XMY_RPC_PASSWORD=${XMY_RPC_PASSWORD:-}
 FBTC_RPC_USER=spiralfbtc
 FBTC_RPC_PASSWORD=${FBTC_RPC_PASSWORD:-}
-QBX_RPC_USER=spiralqbx
-QBX_RPC_PASSWORD=${QBX_RPC_PASSWORD:-}
 XEC_RPC_USER=spiralxec
 XEC_RPC_PASSWORD=${XEC_RPC_PASSWORD:-}
 # Scrypt coins
@@ -5756,10 +5684,6 @@ EOF
         generate_docker_fbtc_config
     fi
 
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        generate_docker_qbx_config
-    fi
-
     if [[ "$ENABLE_XEC" == "true" ]]; then
         generate_docker_xec_config
     fi
@@ -5796,7 +5720,6 @@ EOF
     [[ "$ENABLE_SYS" == "true" ]] && mkdir -p "$DOCKER_DIR/data/syscoin"
     [[ "$ENABLE_XMY" == "true" ]] && mkdir -p "$DOCKER_DIR/data/myriadcoin"
     [[ "$ENABLE_FBTC" == "true" ]] && mkdir -p "$DOCKER_DIR/data/fractalbitcoin"
-    [[ "$ENABLE_QBX" == "true" ]] && mkdir -p "$DOCKER_DIR/data/qbitx"
     [[ "$ENABLE_XEC" == "true" ]] && mkdir -p "$DOCKER_DIR/data/ecash"
     [[ "$ENABLE_LTC" == "true" ]] && mkdir -p "$DOCKER_DIR/data/litecoin"
     [[ "$ENABLE_DOGE" == "true" ]] && mkdir -p "$DOCKER_DIR/data/dogecoin"
@@ -6263,41 +6186,6 @@ generate_docker_stratum_config_multicoin() {
         zmq:
           enabled: true
           endpoint: \"tcp://fractalbitcoin:28340\"
-    payments:
-      enabled: true
-      interval: 600s
-      minimum_payment: 0.01
-      scheme: \"SOLO\""
-    fi
-
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        coins_yaml="${coins_yaml}
-  # Q-BitX (SHA256d) - 2.5 min blocks, standalone (not merge-mineable)
-  - symbol: \"QBX\"
-    pool_id: \"qbx_sha256_1\"
-    enabled: true
-    address: \"$QBX_POOL_ADDRESS\"
-    coinbase_text: \"${COINBASE_TEXT:-SpiralPool}\"
-    stratum:
-      port: 20335
-      difficulty:
-        varDiff:
-          enabled: true
-          minDiff: 0.001
-          maxDiff: 100000000
-          targetTime: 8
-          retargetTime: 90
-          variancePercent: 30
-          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
-    nodes:
-      - id: \"primary\"
-        host: \"qbitx\"
-        port: 8344
-        user: \"spiralqbx\"
-        password: \"$QBX_RPC_PASSWORD\"
-        zmq:
-          enabled: false
-          endpoint: \"tcp://qbitx:28344\"
     payments:
       enabled: true
       interval: 600s
@@ -7431,62 +7319,6 @@ EOF
     log_success "Generated catcoin.conf"
 }
 
-generate_docker_qbx_config() {
-    local CONFIG_DIR="$SCRIPT_DIR/docker/config"
-
-    cat > "$CONFIG_DIR/qbitx.conf" << EOF
-# Q-BitX Configuration
-# Docker Multi-Coin - Generated $(date)
-# SHA-256d Post-Quantum Bitcoin Fork (standalone, not merge-mineable)
-
-# Network
-server=1
-daemon=0
-$PRUNE_CONF_TXINDEX
-$PRUNE_CONF_PRUNE
-listen=1
-# P2P port remapped from default 8334 to 8345 to avoid NMC conflict
-port=8345
-
-# RPC Configuration
-rpcuser=spiralqbx
-rpcpassword=$QBX_RPC_PASSWORD
-rpcbind=0.0.0.0
-rpcallowip=127.0.0.1
-rpcport=8344
-rpcthreads=8
-
-# NOTE: ZMQ not enabled — QBX binary compiled without ZMQ support.
-# Stratum uses RPC polling for block notifications.
-
-# Performance
-dbcache=2048
-maxmempool=300
-par=0
-maxconnections=100
-
-# Wallet
-disablewallet=0
-
-# Logging
-printtoconsole=1
-logtimestamps=1
-
-# Force DNS seed queries on every startup (verified: qbitx 0.2.0)
-forcednsseed=1
-
-# Seed node (extracted from qbitx binary via strings 2026-03-30)
-seednode=seed.qbitx.org
-
-# Hardcoded fallback peers (resolved + connectivity verified 2026-03-30)
-# NOTE: QBX public network uses default port 8334
-addnode=89.110.93.248:8334
-addnode=83.217.213.118:8334
-EOF
-    chmod 640 "$CONFIG_DIR/qbitx.conf"
-    log_success "Generated qbitx.conf"
-}
-
 generate_docker_xec_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
@@ -7561,7 +7393,6 @@ validate_docker_disk_requirements() {
     [[ "$ENABLE_SYS" == "true" ]] && ((REQUIRED_GB+=50))   # SYS: ~40GB + buffer
     [[ "$ENABLE_XMY" == "true" ]] && ((REQUIRED_GB+=5))    # XMY: ~3GB + buffer
     [[ "$ENABLE_FBTC" == "true" ]] && ((REQUIRED_GB+=10))  # FBTC: ~5GB + buffer
-    [[ "$ENABLE_QBX" == "true" ]] && ((REQUIRED_GB+=5))    # QBX: ~2GB + buffer
     [[ "$ENABLE_XEC" == "true" ]] && ((REQUIRED_GB+=25))   # XEC: ~20GB + buffer
     # Scrypt coins
     [[ "$ENABLE_LTC" == "true" ]] && ((REQUIRED_GB+=120))  # LTC: ~100GB + buffer
@@ -7592,7 +7423,6 @@ validate_docker_disk_requirements() {
         [[ "$ENABLE_SYS" == "true" ]] && echo -e "    • Syscoin:           ~40 GB"
         [[ "$ENABLE_XMY" == "true" ]] && echo -e "    • Myriad:            ~3 GB"
         [[ "$ENABLE_FBTC" == "true" ]] && echo -e "    • Fractal Bitcoin:   ~5 GB"
-        [[ "$ENABLE_QBX" == "true" ]] && echo -e "    • Q-BitX:            ~2 GB"
         [[ "$ENABLE_XEC" == "true" ]] && echo -e "    • eCash:             ~20 GB"
         [[ "$ENABLE_LTC" == "true" ]] && echo -e "    • Litecoin:          ~100 GB"
         [[ "$ENABLE_DOGE" == "true" ]] && echo -e "    • Dogecoin:          ~70 GB"
@@ -7642,7 +7472,6 @@ validate_docker_disk_requirements() {
     [[ "$ENABLE_XMY" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
     [[ "$ENABLE_PEP" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
     [[ "$ENABLE_CAT" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
-    [[ "$ENABLE_QBX" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 5 ))  && peak_sync_gb=5;  ((post_sync_ram_mb+=100)); }
     [[ "$ENABLE_XEC" == "true" ]]  && { ((coin_count++)); (( peak_sync_gb < 20 )) && peak_sync_gb=20; ((post_sync_ram_mb+=400)); }
 
     local post_sync_ram_gb=$(( (post_sync_ram_mb + 1024) / 1024 ))  # round up to GB
@@ -7733,9 +7562,6 @@ check_docker_port_availability() {
     fi
     if [[ "$ENABLE_FBTC" == "true" ]]; then
         ports_to_check+=(18335 18336 8340 8341)
-    fi
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        ports_to_check+=(20335 20336 8344 8345)
     fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         ports_to_check+=(18338 18339 9004 8343)
@@ -8013,7 +7839,6 @@ print_docker_completion_multicoin() {
     [[ "$ENABLE_SYS" == "true" ]] && coins_str="${coins_str:+$coins_str + }SYS"
     [[ "$ENABLE_XMY" == "true" ]] && coins_str="${coins_str:+$coins_str + }XMY"
     [[ "$ENABLE_FBTC" == "true" ]] && coins_str="${coins_str:+$coins_str + }FBTC"
-    [[ "$ENABLE_QBX" == "true" ]] && coins_str="${coins_str:+$coins_str + }QBX"
     [[ "$ENABLE_XEC" == "true" ]] && coins_str="${coins_str:+$coins_str + }XEC"
     [[ "$ENABLE_LTC" == "true" ]] && coins_str="${coins_str:+$coins_str + }LTC"
     [[ "$ENABLE_DOGE" == "true" ]] && coins_str="${coins_str:+$coins_str + }DOGE"
@@ -8118,14 +7943,6 @@ print_docker_completion_multicoin() {
         echo ""
     fi
 
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        echo -e "  ${WHITE}⚛️ Q-BitX (QBX)${NC}"
-        echo -e "     Stratum V1:    stratum+tcp://${HOST_IP}:20335"
-        echo -e "     Stratum V2:    stratum+tcp://${HOST_IP}:20336"
-        echo -e "     Username:      YOUR_QBX_ADDRESS.WORKER_NAME"
-        echo ""
-    fi
-
     if [[ "$ENABLE_XEC" == "true" ]]; then
         echo -e "  ${WHITE}💚 eCash (XEC)${NC}"
         echo -e "     Stratum V1:    stratum+tcp://${HOST_IP}:18338"
@@ -8207,7 +8024,6 @@ print_docker_completion_multicoin() {
     [[ "$ENABLE_SYS" == "true" ]] && echo -e "  ${WHITE}SYS data:${NC}         $SCRIPT_DIR/docker/data/syscoin"
     [[ "$ENABLE_XMY" == "true" ]] && echo -e "  ${WHITE}XMY data:${NC}         $SCRIPT_DIR/docker/data/myriadcoin"
     [[ "$ENABLE_FBTC" == "true" ]] && echo -e "  ${WHITE}FBTC data:${NC}        $SCRIPT_DIR/docker/data/fractalbitcoin"
-    [[ "$ENABLE_QBX" == "true" ]] && echo -e "  ${WHITE}QBX data:${NC}         $SCRIPT_DIR/docker/data/qbitx"
     [[ "$ENABLE_XEC" == "true" ]] && echo -e "  ${WHITE}XEC data:${NC}         $SCRIPT_DIR/docker/data/ecash"
     [[ "$ENABLE_LTC" == "true" ]] && echo -e "  ${WHITE}LTC data:${NC}         $SCRIPT_DIR/docker/data/litecoin"
     [[ "$ENABLE_DOGE" == "true" ]] && echo -e "  ${WHITE}DOGE data:${NC}        $SCRIPT_DIR/docker/data/dogecoin"
@@ -8345,18 +8161,6 @@ Address:  $FBTC_POOL_ADDRESS
 RPC User: spiralfbtc
 RPC Pass: $FBTC_RPC_PASSWORD
 Stratum:  stratum+tcp://${HOST_IP}:18335
-EOF
-    fi
-
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        cat >> "$CREDS_FILE" << EOF
-
-Q-BITX (QBX)
-─────────────
-Address:  $QBX_POOL_ADDRESS
-RPC User: spiralqbx
-RPC Pass: $QBX_RPC_PASSWORD
-Stratum:  stratum+tcp://${HOST_IP}:20335
 EOF
     fi
 
@@ -8529,7 +8333,7 @@ select_install_mode() {
     echo ""
     echo -e "     ${WHITE}Core Components:${NC}"
     echo -e "       • Blockchain Node(s)    - 17 coins supported (choose next)"
-    echo -e "       •   SHA256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC, QBX, SYS, XMY, XEC"
+ echo -e " • SHA256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC,, SYS, XMY, XEC"
     echo -e "       •   Scrypt:  LTC, DOGE, DGB-SCRYPT, PEP, CAT"
     echo -e "       • Spiral Stratum        - High-performance mining pool server"
     echo -e "       • PostgreSQL 18         - Database for shares and blocks"
@@ -8548,7 +8352,7 @@ select_install_mode() {
     echo ""
     echo -e "     ${WHITE}Installs:${NC}"
     echo -e "       • Blockchain Node(s)    - 17 coins supported (choose next)"
-    echo -e "       •   SHA256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC, QBX, SYS, XMY, XEC"
+ echo -e " • SHA256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC,, SYS, XMY, XEC"
     echo -e "       •   Scrypt:  LTC, DOGE, DGB-SCRYPT, PEP, CAT"
     echo -e "       • Spiral Stratum        - The pool server"
     echo -e "       • PostgreSQL 18         - Required database"
@@ -8807,7 +8611,6 @@ select_merge_mining_parent() {
         ENABLE_BTC="false"
         ENABLE_BCH="false"
         ENABLE_BC2="false"
-        ENABLE_QBX="false"
         ENABLE_LTC="false"
         ENABLE_DOGE="false"
         ENABLE_PEP="false"
@@ -9066,7 +8869,6 @@ select_solo_coin_no_merge() {
     echo -e "  ${GREEN} 4)${NC} 🔷 ${WHITE}Bitcoin II (BC2)${NC}          ~5 GB   | 4+ GB RAM | Port: 6333"
     echo -e "  ${GREEN} 5)${NC} ⚪ ${WHITE}Bitcoin Silver (BTCS)${NC}     ~5 GB   | 4+ GB RAM | Port: 11335"
     echo -e "  ${GREEN} 6)${NC} 💎 ${WHITE}DigiByte (DGB)${NC}            ~60 GB  | 4+ GB RAM | Port: 3333"
-    echo -e "  ${GREEN} 7)${NC} ⚛️ ${WHITE}Q-BitX (QBX)${NC}              ~2 GB   | 2+ GB RAM | Port: 20335"
     echo -e "  ${GREEN} 8)${NC} 💚 ${WHITE}eCash (XEC)${NC}              ~20 GB  | 4+ GB RAM | Port: 18338"
     echo ""
     echo ""
@@ -9110,7 +8912,6 @@ select_solo_coin_no_merge() {
         ENABLE_BCH2="false"
         ENABLE_BC2="false"
         ENABLE_BTCS="false"
-        ENABLE_QBX="false"
         ENABLE_XEC="false"
         ENABLE_LTC="false"
         ENABLE_DOGE="false"
@@ -9190,14 +8991,8 @@ select_solo_coin_no_merge() {
                 break
                 ;;
             7)
-                ENABLE_QBX="true"
-                SOLO_COIN="QBX"
-                STRATUM_PORT=20335
-                STRATUM_V2_PORT=20336
-                log "Selected: Solo Mining - Q-BitX (QBX)"
+ SOLO_COIN=""
                 echo ""
-                echo -e "  ${GREEN}✓${NC} Will install: Q-BitX Node (SHA-256d)"
-                echo -e "  ${WHITE}  Stratum port: 20335${NC}"
                 break
                 ;;
             8)
@@ -9484,7 +9279,6 @@ select_multi_coins() {
     echo -e "  🔶 ${WHITE}Fractal Bitcoin (FBTC)${NC}     Port: 18335 |  ~10 GB"
     echo -e "  🌀 ${WHITE}Myriad (XMY)${NC}              Port: 17335 |  ~3 GB"
     echo -e "  🔷 ${WHITE}Namecoin (NMC)${NC}             Port: 14335 |  ~12 GB"
-    echo -e "  ⚛️ ${WHITE}Q-BitX (QBX)${NC}               Port: 20335 |  ~2 GB"
     echo -e "  ⚡ ${WHITE}Syscoin (SYS)${NC}              Port: 15335 |  ~8 GB"
     echo ""
     echo ""
@@ -9521,7 +9315,6 @@ select_multi_coins() {
     local sel_fbtc="false"
     local sel_xmy="false"
     local sel_nmc="false"
-    local sel_qbx="false"
     local sel_xec="false"
     local sel_sys="false"
     local sel_cat="false"
@@ -9539,7 +9332,6 @@ select_multi_coins() {
         [[ "$sel_bc2" == "true" ]]   && echo -e "    ${GREEN}[✓]${NC}  4) Bitcoin II (BC2)"           || echo -e "    ${DIM}[ ]${NC}  4) Bitcoin II (BC2)"
         [[ "$sel_btcs" == "true" ]]  && echo -e "    ${GREEN}[✓]${NC}  5) Bitcoin Silver (BTCS)"      || echo -e "    ${DIM}[ ]${NC}  5) Bitcoin Silver (BTCS)"
         [[ "$sel_dgb" == "true" ]]   && echo -e "    ${GREEN}[✓]${NC}  6) DigiByte (DGB)"             || echo -e "    ${DIM}[ ]${NC}  6) DigiByte (DGB)"
-        [[ "$sel_qbx" == "true" ]]  && echo -e "    ${GREEN}[✓]${NC}  7) Q-BitX (QBX)"             || echo -e "    ${DIM}[ ]${NC}  7) Q-BitX (QBX)"
         [[ "$sel_fbtc" == "true" ]] && echo -e "    ${GREEN}[✓]${NC}  8) Fractal Bitcoin (FBTC)"   || echo -e "    ${DIM}[ ]${NC}  8) Fractal Bitcoin (FBTC)"
         [[ "$sel_xmy" == "true" ]]  && echo -e "    ${GREEN}[✓]${NC}  9) Myriad (XMY)"             || echo -e "    ${DIM}[ ]${NC}  9) Myriad (XMY)"
         [[ "$sel_nmc" == "true" ]]  && echo -e "    ${GREEN}[✓]${NC} 10) Namecoin (NMC)"           || echo -e "    ${DIM}[ ]${NC} 10) Namecoin (NMC)"
@@ -9566,7 +9358,6 @@ select_multi_coins() {
         [[ "$sel_fbtc" == "true" ]] && est_disk=$((est_disk + 10))
         [[ "$sel_xmy" == "true" ]]  && est_disk=$((est_disk + 3))
         [[ "$sel_nmc" == "true" ]]  && est_disk=$((est_disk + 12))
-        [[ "$sel_qbx" == "true" ]]  && est_disk=$((est_disk + 2))
         [[ "$sel_xec" == "true" ]]  && { est_disk=$((est_disk + 25)); [[ $est_ram -lt 4 ]] && est_ram=4; }
         [[ "$sel_sys" == "true" ]]  && est_disk=$((est_disk + 8))
         [[ "$sel_cat" == "true" ]]  && est_disk=$((est_disk + 8))
@@ -9588,7 +9379,6 @@ select_multi_coins() {
             4)  [[ "$sel_bc2"  == "true" ]] && sel_bc2="false"  || sel_bc2="true"  ;;
             5)  [[ "$sel_btcs" == "true" ]] && sel_btcs="false" || sel_btcs="true" ;;
             6)  [[ "$sel_dgb"  == "true" ]] && sel_dgb="false"  || sel_dgb="true"  ;;
-            7)  [[ "$sel_qbx"  == "true" ]] && sel_qbx="false"  || sel_qbx="true"  ;;
             8)  [[ "$sel_fbtc" == "true" ]] && sel_fbtc="false" || sel_fbtc="true" ;;
             9)  [[ "$sel_xmy"  == "true" ]] && sel_xmy="false"  || sel_xmy="true"  ;;
             10) [[ "$sel_nmc"  == "true" ]] && sel_nmc="false"  || sel_nmc="true"  ;;
@@ -9611,7 +9401,6 @@ select_multi_coins() {
                 if [[ "$sel_bc2"  == "false" ]] && [[ "$sel_bch"  == "false" ]] && [[ "$sel_bch2" == "false" ]] && \
                    [[ "$sel_btc"  == "false" ]] && [[ "$sel_btcs" == "false" ]] && [[ "$sel_dgb"  == "false" ]] && \
                    [[ "$sel_fbtc" == "false" ]] && [[ "$sel_xmy"  == "false" ]] && [[ "$sel_nmc"  == "false" ]] && \
-                   [[ "$sel_qbx"  == "false" ]] && [[ "$sel_xec"  == "false" ]] && [[ "$sel_sys"  == "false" ]] && \
                    [[ "$sel_cat"  == "false" ]] && [[ "$sel_dgb_scrypt" == "false" ]] && \
                    [[ "$sel_doge" == "false" ]] && [[ "$sel_ltc"  == "false" ]] && [[ "$sel_pep"  == "false" ]]; then
                     echo -e "  ${RED}Please select at least one coin!${NC}"
@@ -9646,7 +9435,6 @@ select_multi_coins() {
     ENABLE_FBTC="$sel_fbtc"
     ENABLE_LTC="$sel_ltc"
     ENABLE_NMC="$sel_nmc"
-    ENABLE_QBX="$sel_qbx"
     ENABLE_XEC="$sel_xec"
     ENABLE_PEP="$sel_pep"
     ENABLE_SYS="$sel_sys"
@@ -9665,7 +9453,6 @@ select_multi_coins() {
     [[ "$ENABLE_FBTC" == "true" ]] && echo -e "     🔶 Fractal Bitcoin Node    (SHA-256d, port 18335)"
     [[ "$ENABLE_XMY" == "true" ]]  && echo -e "     🌀 Myriad Node             (SHA-256d, port 17335)"
     [[ "$ENABLE_NMC" == "true" ]]  && echo -e "     🔷 Namecoin Node           (SHA-256d, port 14335)"
-    [[ "$ENABLE_QBX" == "true" ]]  && echo -e "     ⚛️ Q-BitX Node              (SHA-256d, port 20335)"
     [[ "$ENABLE_XEC" == "true" ]]  && echo -e "     💚 eCash Node               (SHA-256d, port 18338)"
     [[ "$ENABLE_SYS" == "true" ]]  && echo -e "     ⚡ Syscoin Node             (SHA-256d, port 15335)"
     # Scrypt coins
@@ -9685,7 +9472,6 @@ select_multi_coins() {
     [[ "$ENABLE_BTCS" == "true" ]]       && selected_coins+="BTCS "
     [[ "$ENABLE_DGB" == "true" ]]        && selected_coins+="DGB "
     [[ "$ENABLE_FBTC" == "true" ]]       && selected_coins+="FBTC "
-    [[ "$ENABLE_QBX" == "true" ]]        && selected_coins+="QBX "
     [[ "$ENABLE_XEC" == "true" ]]        && selected_coins+="XEC "
     [[ "$ENABLE_XMY" == "true" ]]        && selected_coins+="XMY "
     [[ "$ENABLE_NMC" == "true" ]]        && selected_coins+="NMC "
@@ -9712,7 +9498,6 @@ prompt_multi_port() {
     [[ "$ENABLE_BCH2" == "true" ]] && sha256d_coins+=("BCH2")
     [[ "$ENABLE_BC2" == "true" ]]  && sha256d_coins+=("BC2")
     [[ "$ENABLE_BTCS" == "true" ]] && sha256d_coins+=("BTCS")
-    [[ "$ENABLE_QBX" == "true" ]]  && sha256d_coins+=("QBX")
     [[ "$ENABLE_XEC" == "true" ]]  && sha256d_coins+=("XEC")
 
     if [[ ${#sha256d_coins[@]} -lt 2 ]]; then
@@ -11362,9 +11147,6 @@ _set_synced_address() {
             FBTC_ADDRESS="$addr"
             FBTC_POOL_ADDRESS="$addr"
             ;;
-        QBX|QBITX|Q-BITX)
-            QBX_ADDRESS="$addr"
-            QBX_POOL_ADDRESS="$addr"
             ;;
         XEC|ECASH|BITCOIN-ABC)
             XEC_ADDRESS="$addr"
@@ -11390,7 +11172,6 @@ _display_synced_addresses() {
     [[ -n "$SYS_POOL_ADDRESS" ]] && echo -e "    SYS:  ${GREEN}$SYS_POOL_ADDRESS${NC}" && any=true
     [[ -n "$XMY_POOL_ADDRESS" ]] && echo -e "    XMY:  ${GREEN}$XMY_POOL_ADDRESS${NC}" && any=true
     [[ -n "$FBTC_POOL_ADDRESS" ]] && echo -e "    FBTC: ${GREEN}$FBTC_POOL_ADDRESS${NC}" && any=true
-    [[ -n "$QBX_POOL_ADDRESS" ]] && echo -e "    QBX:  ${GREEN}$QBX_POOL_ADDRESS${NC}" && any=true
     [[ -n "$XEC_POOL_ADDRESS" ]] && echo -e "    XEC:  ${GREEN}$XEC_POOL_ADDRESS${NC}" && any=true
     if [[ "$any" != "true" ]]; then
         echo -e "    ${YELLOW}No addresses found on primary${NC}"
@@ -11416,7 +11197,6 @@ _verify_synced_coverage() {
             NMC)             [[ -z "$NMC_POOL_ADDRESS" ]] && missing+=("NMC") ;;
             XMY)             [[ -z "$XMY_POOL_ADDRESS" ]] && missing+=("XMY") ;;
             FBTC)            [[ -z "$FBTC_POOL_ADDRESS" ]] && missing+=("FBTC") ;;
-            QBX)             [[ -z "$QBX_POOL_ADDRESS" ]] && missing+=("QBX") ;;
             XEC)             [[ -z "$XEC_POOL_ADDRESS" ]] && missing+=("XEC") ;;
         esac
     else
@@ -11435,7 +11215,6 @@ _verify_synced_coverage() {
         [[ "$ENABLE_SYS" == "true" ]]  && [[ -z "$SYS_POOL_ADDRESS" ]]  && missing+=("SYS")
         [[ "$ENABLE_XMY" == "true" ]]  && [[ -z "$XMY_POOL_ADDRESS" ]]  && missing+=("XMY")
         [[ "$ENABLE_FBTC" == "true" ]] && [[ -z "$FBTC_POOL_ADDRESS" ]] && missing+=("FBTC")
-        [[ "$ENABLE_QBX" == "true" ]] && [[ -z "$QBX_POOL_ADDRESS" ]] && missing+=("QBX")
         [[ "$ENABLE_XEC" == "true" ]] && [[ -z "$XEC_POOL_ADDRESS" ]] && missing+=("XEC")
     fi
 
@@ -11864,7 +11643,7 @@ configure_notifications() {
 prompt_prune_option() {
     # Only ask if at least one coin is enabled
     local any_coin="false"
-    for var in ENABLE_DGB ENABLE_BTC ENABLE_BCH ENABLE_BCH2 ENABLE_BC2 ENABLE_BTCS ENABLE_XEC ENABLE_LTC ENABLE_DOGE ENABLE_NMC ENABLE_SYS ENABLE_XMY ENABLE_FBTC ENABLE_QBX ENABLE_PEP ENABLE_CAT ENABLE_DGB_SCRYPT; do
+ for var in ENABLE_DGB ENABLE_BTC ENABLE_BCH ENABLE_BCH2 ENABLE_BC2 ENABLE_BTCS ENABLE_XEC ENABLE_LTC ENABLE_DOGE ENABLE_NMC ENABLE_SYS ENABLE_XMY ENABLE_FBTC
         if [[ "${!var}" == "true" ]]; then
             any_coin="true"
             break
@@ -12022,7 +11801,6 @@ collect_configuration() {
             NMC)       echo -e "    🔗 NMC         V1: ${GREEN}14335${NC}   V2: ${GREEN}14336${NC}" ;;
             XMY)       echo -e "    🌀 XMY         V1: ${GREEN}17335${NC}   V2: ${GREEN}17336${NC}" ;;
             FBTC)      echo -e "    🔶 FBTC        V1: ${GREEN}18335${NC}   V2: ${GREEN}18336${NC}" ;;
-            QBX)       echo -e "    ⚛️ QBX         V1: ${GREEN}20335${NC}   V2: ${GREEN}20336${NC}" ;;
             XEC)       echo -e "    💚 XEC         V1: ${GREEN}18338${NC}   V2: ${GREEN}18339${NC}" ;;
         esac
     else
@@ -12042,7 +11820,6 @@ collect_configuration() {
         [[ "$ENABLE_SYS" == "true" ]]        && echo -e "    ⚙️ SYS         V1: ${GREEN}15335${NC}   V2: ${GREEN}15336${NC}"
         [[ "$ENABLE_XMY" == "true" ]]        && echo -e "    🌀 XMY         V1: ${GREEN}17335${NC}   V2: ${GREEN}17336${NC}"
         [[ "$ENABLE_FBTC" == "true" ]]       && echo -e "    🔶 FBTC        V1: ${GREEN}18335${NC}   V2: ${GREEN}18336${NC}"
-        [[ "$ENABLE_QBX" == "true" ]]        && echo -e "    ⚛️ QBX         V1: ${GREEN}20335${NC}   V2: ${GREEN}20336${NC}"
         [[ "$ENABLE_XEC" == "true" ]]        && echo -e "    💚 XEC         V1: ${GREEN}18338${NC}   V2: ${GREEN}18339${NC}"
     fi
 
@@ -13100,11 +12877,9 @@ collect_configuration() {
                 log_success "Generated secure FBTC RPC password"
                 ;;
 
-            QBX)
-                echo -e "${WHITE}⚛️  Q-BitX Wallet Address${NC}"
+)
                 echo -e "${CYAN}   ─────────────────────────${NC}"
                 echo ""
-                echo "Block rewards go to a Q-BitX wallet address. You have two options:"
                 echo ""
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
@@ -13122,25 +12897,20 @@ collect_configuration() {
                             echo -e "  • P2SH:              ${GREEN}P${NC}... (26-35 chars)"
                             echo -e "  • Post-Quantum (PQ): ${GREEN}pq${NC}... (variable length)"
                             echo ""
-                            echo -e "  ${DIM}To create an address: qbitx-cli getnewaddress \"\" pq${NC}"
+ echo -e " ${DIM}To create an address: -cli getnewaddress \"\" pq${NC}"
                             echo ""
                             while true; do
-                                prompt_input "QBX Address: "; read QBX_ADDRESS
-                                if [[ "$QBX_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$ ]]; then
-                                    log_success "Valid QBX address format"
+ log_success "Valid address format"
                                     break
                                 else
-                                    log_error "Invalid QBX address format. Must start with M (P2PKH), P (P2SH), or pq (post-quantum)."
+ log_error "Invalid address format. Must start with M (P2PKH), P (P2SH), or pq (post-quantum)."
                                 fi
                             done
                             break
                             ;;
                         2)
-                            GENERATE_QBX_WALLET="true"
-                            QBX_ADDRESS="PENDING_GENERATION"
                             echo ""
-                            log_warn "QBX wallet generation deferred until blockchain sync completes"
-                            echo -e "    Run: ${GREEN}spiralpool-wallet --coin qbx${NC}"
+ log_warn "wallet generation deferred until blockchain sync completes"
                             break
                             ;;
                         *)
@@ -13148,8 +12918,7 @@ collect_configuration() {
                             ;;
                     esac
                 done
-                QBX_RPC_PASSWORD=$(generate_password)
-                log_success "Generated secure QBX RPC password"
+ log_success "Generated secure RPC password"
                 ;;
 
             XEC)
@@ -14057,69 +13826,6 @@ collect_configuration() {
             echo ""
         fi
 
-        # Q-BitX (QBX) - Post-quantum Bitcoin fork (SHA-256d standalone)
-        if [[ "$ENABLE_QBX" == "true" ]]; then
-            if [[ -n "$QBX_ADDRESS" ]]; then
-                log_success "QBX: preserving existing address from previous installation"
-            else
-            echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-            echo -e "${WHITE}Q-BitX (QBX) Wallet Address${NC}"
-            echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
-            echo ""
-            echo "Q-BitX rewards go to a Q-BitX wallet (post-quantum addresses supported)."
-            echo ""
-            echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
-            echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
-            echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
-            echo -e "      ${YELLOW}If generation fails, create an address externally.${NC}"
-            echo ""
-
-            while true; do
-                prompt_input "Choose [1] or [2]: "; read wallet_choice
-                case "$wallet_choice" in
-                    1)
-                        echo ""
-                        echo "Supported formats:"
-                        echo -e "  • Legacy (P2PKH):    ${GREEN}M${NC}... (26-35 chars)"
-                        echo -e "  • P2SH:              ${GREEN}P${NC}... (26-35 chars)"
-                        echo -e "  • Post-Quantum (PQ): ${GREEN}pq${NC}... (variable length)"
-                        echo ""
-                        echo -e "  ${DIM}To create an address, use: qbitx-cli createwallet \"pqwallet\"${NC}"
-                        echo -e "  ${DIM}then: qbitx-cli getnewaddress \"\" pq${NC}"
-                        echo ""
-                        while true; do
-                            prompt_input "QBX Address: "; read QBX_ADDRESS
-                            if [[ "$QBX_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$ ]]; then
-                                log_success "Valid QBX address format"
-                                QBX_POOL_ADDRESS="$QBX_ADDRESS"
-                                break
-                            else
-                                log_error "Invalid QBX address format. Must start with M (P2PKH), P (P2SH), or pq (post-quantum)."
-                            fi
-                        done
-                        break
-                        ;;
-                    2)
-                        GENERATE_QBX_WALLET="true"
-                        QBX_ADDRESS="PENDING_GENERATION"
-                        QBX_POOL_ADDRESS="PENDING_GENERATION"
-                        echo ""
-                        log_warn "QBX wallet generation deferred until blockchain sync completes"
-                        echo -e "    Run: ${GREEN}spiralpool-wallet --coin qbx${NC}"
-                        echo -e "    ${YELLOW}If wallet generation fails, create an address externally.${NC}"
-                        break
-                        ;;
-                    *)
-                        echo "Please enter 1 or 2"
-                        ;;
-                esac
-            done
-            echo ""
-            fi
-            [[ -z "$QBX_RPC_PASSWORD" ]] && QBX_RPC_PASSWORD=$(generate_password) && log_success "Generated secure QBX RPC password"
-            echo ""
-        fi
-
         # eCash (XEC) - Bitcoin ABC SHA-256d fork with CashAddr addressing
         if [[ "$ENABLE_XEC" == "true" ]]; then
             if [[ -n "$XEC_ADDRESS" ]]; then
@@ -14218,7 +13924,6 @@ collect_configuration() {
                 NMC)  NMC_RPC_PASSWORD=$(generate_password); log_success "Generated NMC RPC password" ;;
                 XMY)  XMY_RPC_PASSWORD=$(generate_password); log_success "Generated XMY RPC password" ;;
                 FBTC) FBTC_RPC_PASSWORD=$(generate_password); log_success "Generated FBTC RPC password" ;;
-                QBX)  QBX_RPC_PASSWORD=$(generate_password); log_success "Generated QBX RPC password" ;;
                 XEC)  XEC_RPC_PASSWORD=$(generate_password); log_success "Generated XEC RPC password" ;;
                 # DGB/DGB-SCRYPT: handled by RPC_PASSWORD -> DGB_RPC_PASSWORD mapping later
             esac
@@ -14238,7 +13943,6 @@ collect_configuration() {
             [[ "$ENABLE_SYS" == "true" ]]  && SYS_RPC_PASSWORD=$(generate_password) && log_success "Generated SYS RPC password"
             [[ "$ENABLE_XMY" == "true" ]]  && XMY_RPC_PASSWORD=$(generate_password) && log_success "Generated XMY RPC password"
             [[ "$ENABLE_FBTC" == "true" ]] && FBTC_RPC_PASSWORD=$(generate_password) && log_success "Generated FBTC RPC password"
-            [[ "$ENABLE_QBX" == "true" ]]  && QBX_RPC_PASSWORD=$(generate_password) && log_success "Generated QBX RPC password"
             [[ "$ENABLE_XEC" == "true" ]]  && XEC_RPC_PASSWORD=$(generate_password) && log_success "Generated XEC RPC password"
         fi
         echo ""
@@ -15101,11 +14805,7 @@ collect_configuration() {
                 display_stratum_port="18335"
                 display_wallet="$FBTC_ADDRESS"
                 ;;
-            QBX)
-                display_coin="Q-BitX (QBX)"
-                display_rpc_user="$QBX_RPC_USER"
-                display_stratum_port="20335"
-                display_wallet="$QBX_ADDRESS"
+)
                 ;;
             XEC)
                 display_coin="eCash (XEC)"
@@ -15157,7 +14857,6 @@ collect_configuration() {
         [[ "$ENABLE_SYS" == "true" ]] && show_coin_addr "SYS" "15335" "${SYS_ADDRESS:-$SYS_POOL_ADDRESS}"
         [[ "$ENABLE_XMY" == "true" ]] && show_coin_addr "XMY" "17335" "${XMY_ADDRESS:-$XMY_POOL_ADDRESS}"
         [[ "$ENABLE_FBTC" == "true" ]] && show_coin_addr "FBTC" "18335" "${FBTC_ADDRESS:-$FBTC_POOL_ADDRESS}"
-        [[ "$ENABLE_QBX" == "true" ]] && show_coin_addr "QBX" "20335" "${QBX_ADDRESS:-$QBX_POOL_ADDRESS}"
         [[ "$ENABLE_XEC" == "true" ]] && show_coin_addr "XEC" "18338" "${XEC_ADDRESS:-$XEC_POOL_ADDRESS}"
         [[ "$ENABLE_LTC" == "true" ]] && show_coin_addr "LTC" "7333" "$LTC_ADDRESS"
         [[ "$ENABLE_DOGE" == "true" ]] && show_coin_addr "DOGE" "8335" "$DOGE_ADDRESS"
@@ -15449,7 +15148,6 @@ JAILEOF
         [[ "$ENABLE_PEP"  == "true" ]] && stratum_ports+=(10335 10336 10337)
         [[ "$ENABLE_CAT"  == "true" ]] && stratum_ports+=(12335 12336 12337)
         [[ "$ENABLE_FBTC" == "true" ]] && stratum_ports+=(18335 18336 18337)
-        [[ "$ENABLE_QBX"  == "true" ]] && stratum_ports+=(20335 20336 20337)
         [[ "$ENABLE_XEC"  == "true" ]] && stratum_ports+=(18338 18339 18340)
         [[ "$MULTIPORT_ENABLED" == "true" ]] && stratum_ports+=(16180)
 
@@ -16482,13 +16180,6 @@ MINERDBEOF
         sudo ufw allow 8341/tcp > /dev/null 2>&1         # FBTC P2P
         log "Fractal Bitcoin ports opened: 18335-18337/tcp (stratum V1/V2/TLS), 8341/tcp (P2P)"
     fi
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        sudo ufw allow 20335/tcp > /dev/null 2>&1        # QBX Stratum V1
-        sudo ufw allow 20336/tcp > /dev/null 2>&1        # QBX Stratum V2
-        sudo ufw allow 20337/tcp > /dev/null 2>&1        # QBX Stratum TLS
-        sudo ufw allow 8345/tcp > /dev/null 2>&1         # QBX P2P
-        log "Q-BitX ports opened: 20335-20337/tcp (stratum V1/V2/TLS), 8345/tcp (P2P)"
-    fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         sudo ufw allow 18338/tcp > /dev/null 2>&1        # XEC Stratum V1
         sudo ufw allow 18339/tcp > /dev/null 2>&1        # XEC Stratum V2
@@ -16662,7 +16353,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.5.1 — PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.5.2 — PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -16682,7 +16373,7 @@ echo -e "  ${YELLOW}$(C 'spiralctl test')${NC}  $(D 'Connectivity')  ${YELLOW}$(
 echo ""
 echo -e "  ${CYAN}▶  spiralctl help${NC}   —  Full command reference"
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BCH2  BC2  BTCS  DGB  QBX  XEC    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
+echo -e " ${GREEN}SHA-256d:${NC} BTC BCH BCH2 BC2 BTCS DGB XEC ${GREEN}Scrypt:${NC} LTC DOGE DGB-S PEP CAT"
 echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 # Detect HTTPS at runtime from the service file
@@ -20574,223 +20265,6 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Q-BITX (QBX) INSTALLATION — Post-Quantum Bitcoin Fork (SHA-256d)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-install_qbx() {
-    if [[ "$ENABLE_QBX" != "true" ]]; then
-        return 0
-    fi
-
-    log_step "Installing Q-BitX"
-
-    # Stop any running QBX daemon before reconfiguring (prevents port conflicts,
-    # stale PID files, and LevelDB lock contention on reinstall)
-    if systemctl is-active --quiet qbitxd 2>/dev/null; then
-        log "Stopping existing QBX daemon before reconfiguration..."
-        sudo systemctl stop qbitxd 2>/dev/null || true
-        sleep 2
-    fi
-    sudo systemctl reset-failed qbitxd 2>/dev/null || true
-    # Remove stale PID file that can prevent daemon from starting
-    local _qbx_pid_dir
-    _qbx_pid_dir=$(get_blockchain_dir "qbx")
-    [[ -f "$_qbx_pid_dir/qbitxd.pid" ]] && sudo rm -f "$_qbx_pid_dir/qbitxd.pid"
-
-    # Use multi-disk storage path if configured, otherwise standard location
-    local QBX_DIR
-    QBX_DIR=$(get_blockchain_dir "qbx")
-    local QBX_BIN_DIR="$INSTALL_DIR/qbx-bin"
-
-    # Try copying binaries from source node (HA primary or user-specified) before downloading
-    local qbx_download_needed=true
-    if [[ -f "$QBX_BIN_DIR/qbitx" ]]; then
-        # Detect installed version: try --version output first (future-proof),
-        # fall back to installer-written cache for binaries that omit the number.
-        local _qbx_installed_ver
-        _qbx_installed_ver=$("$QBX_BIN_DIR/qbitx" --version 2>/dev/null \
-            | grep -oP '(?i)(?:version\s+v?|^v)\K[\d]+\.[\d]+[\w.]*' | head -1 \
-            || cat "$INSTALL_DIR/config/coin-versions/QBX.ver" 2>/dev/null \
-            || echo "unknown")
-        if [[ "$_qbx_installed_ver" == "$QBX_VERSION" ]]; then
-            log "Q-BitX ${QBX_VERSION} already installed — skipping download, regenerating config"
-            qbx_download_needed=false
-        else
-            log "Q-BitX binary found (version: ${_qbx_installed_ver}) — re-downloading to upgrade to ${QBX_VERSION}"
-        fi
-    fi
-    if [[ "$qbx_download_needed" == "true" ]] && copy_binaries_from_primary "Q-BitX" "$QBX_BIN_DIR" "$QBX_BIN_DIR"; then
-        sudo mkdir -p "$QBX_BIN_DIR" "$QBX_DIR"
-        sudo chown -R "$POOL_USER:$POOL_USER" "$QBX_BIN_DIR" "$QBX_DIR"
-        if [[ -f "$QBX_BIN_DIR/qbitx" ]]; then
-            qbx_download_needed=false
-        else
-            log_warn "Replicated files missing expected daemon binary — falling back to download"
-        fi
-    fi
-
-    # Install required runtime dependencies (needed regardless of download vs replication)
-    log "Installing Q-BitX dependencies..."
-    wait_for_apt_lock
-    sudo apt-get install -y -qq unzip libevent-2.1-7 libleveldb1d libevent-pthreads-2.1-7t64 2>/dev/null \
-        || sudo apt-get install -y -qq unzip libevent-2.1-7 libleveldb1 libevent-pthreads-2.1-7 2>/dev/null \
-        || log_warn "Some QBX runtime dependencies could not be installed — Q-BitX may not start (install manually if needed)"
-
-    if [[ "$qbx_download_needed" == "true" ]]; then
-
-    cd /tmp
-
-    # Q-BitX download from GitHub releases
-    local QBX_URL="https://github.com/q-bitx/Source-/releases/download/v${QBX_VERSION}/qbitx-linux-x86_64-v${QBX_VERSION}.zip"
-
-    log "Downloading Q-BitX..."
-    local QBX_FILENAME="qbitx-linux-x86_64-v${QBX_VERSION}.zip"
-    if ! download_with_retry "$QBX_FILENAME" "$QBX_URL"; then
-        log_error "Failed to download Q-BitX"
-        log_error "Please download manually from: https://github.com/q-bitx/Source-/releases"
-        return 1
-    fi
-
-    log "Extracting Q-BitX..."
-    if ! unzip -o "$QBX_FILENAME" -d qbitx-extract; then
-        log_error "Failed to extract Q-BitX archive"
-        rm -f "$QBX_FILENAME"
-        return 1
-    fi
-
-    sudo mkdir -p "$QBX_BIN_DIR"
-    # Copy binaries (qbitx and qbitx-cli)
-    sudo cp qbitx-extract/qbitx "$QBX_BIN_DIR/" 2>/dev/null || sudo cp qbitx-extract/*/qbitx "$QBX_BIN_DIR/" 2>/dev/null || true
-    sudo cp qbitx-extract/qbitx-cli "$QBX_BIN_DIR/" 2>/dev/null || sudo cp qbitx-extract/*/qbitx-cli "$QBX_BIN_DIR/" 2>/dev/null || true
-    sudo chmod +x "$QBX_BIN_DIR/qbitx" "$QBX_BIN_DIR/qbitx-cli"
-    sudo chown -R "$POOL_USER:$POOL_USER" "$QBX_BIN_DIR"
-    rm -rf "$QBX_FILENAME" qbitx-extract
-
-    # Create symlink for daemon binary
-    sudo ln -sf "$QBX_BIN_DIR/qbitx" /usr/local/bin/qbitx
-
-    # Record installed version for future upgrade detection
-    sudo mkdir -p "$INSTALL_DIR/config/coin-versions"
-    echo "$QBX_VERSION" | sudo tee "$INSTALL_DIR/config/coin-versions/QBX.ver" > /dev/null
-
-    fi  # end qbx_download_needed
-
-    # Create data directory
-    sudo mkdir -p "$QBX_DIR"
-    sudo chown -R "$POOL_USER:$POOL_USER" "$QBX_DIR"
-
-    # Create configuration
-    log "Creating Q-BitX configuration..."
-    sudo -u "$POOL_USER" tee "$QBX_DIR/qbitx.conf" > /dev/null << EOF
-# Q-BitX Configuration for Spiral Pool
-# Generated by installer v$VERSION
-# SHA-256d Post-Quantum Bitcoin Fork
-
-# === CORE SETTINGS ===
-server=1
-daemon=1
-$PRUNE_CONF_TXINDEX
-$PRUNE_CONF_PRUNE
-
-# RPC Settings
-rpcuser=$QBX_RPC_USER
-rpcpassword=$QBX_RPC_PASSWORD
-rpcallowip=127.0.0.1
-rpcbind=127.0.0.1
-rpcport=$QBX_RPC_PORT
-
-# ZMQ for block notifications
-zmqpubhashblock=tcp://127.0.0.1:$QBX_ZMQ_PORT
-zmqpubrawtx=tcp://127.0.0.1:$QBX_ZMQ_PORT
-
-# P2P port (remapped from default 8334 to avoid NMC conflict)
-port=$QBX_P2P_PORT
-
-# === NETWORK CONFIGURATION ===
-maxconnections=100
-listen=1
-
-# Performance
-dbcache=2048
-maxmempool=300
-
-# Wallet (enabled for address generation)
-disablewallet=0
-
-# Logging
-shrinkdebugfile=1
-printtoconsole=0
-
-# PID file
-pid=$QBX_DIR/qbitxd.pid
-
-# Force DNS seed queries on every startup (verified: qbitx 0.2.0 -help confirms support)
-forcednsseed=1
-
-# === SEED NODES (extracted from qbitx binary via strings 2026-03-30) ===
-seednode=seed.qbitx.org
-
-# Hardcoded fallback peers (resolved from seed.qbitx.org + binary strings 2026-03-30)
-# NOTE: QBX public network uses default port 8334, our install remaps to $QBX_P2P_PORT
-addnode=89.110.93.248:8334
-addnode=83.217.213.118:8334
-EOF
-
-    sudo chmod 640 "$QBX_DIR/qbitx.conf"
-    sudo chown "$POOL_USER:$POOL_USER" "$QBX_DIR/qbitx.conf"
-
-    # Create systemd service
-    sudo tee /etc/systemd/system/qbitxd.service > /dev/null << EOF
-[Unit]
-Description=Q-BitX Daemon (Post-Quantum Bitcoin Fork, SHA-256d)
-Documentation=https://qbitx.org
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=600
-StartLimitBurst=5
-
-[Service]
-Type=forking
-User=$POOL_USER
-Group=$POOL_USER
-# Daemon may SIGABRT on shutdown — fix data dir ownership before start
-ExecStartPre=/bin/chown -R $POOL_USER:$POOL_USER $QBX_DIR
-ExecStart=$QBX_BIN_DIR/qbitx -daemon -conf=$QBX_DIR/qbitx.conf -datadir=$QBX_DIR
-ExecStop=$QBX_BIN_DIR/qbitx-cli -conf=$QBX_DIR/qbitx.conf -datadir=$QBX_DIR stop
-PIDFile=$QBX_DIR/qbitxd.pid
-
-# === SELF-HEALING / AUTO-RESTART ===
-Restart=always
-RestartSec=30
-TimeoutStartSec=infinity
-TimeoutStopSec=600
-LimitNOFILE=65536
-
-# NOTE: Systemd security hardening intentionally omitted.
-# Some blockchain daemons crash with SIGABRT under modern systemd
-# hardening options (PrivateTmp, ProtectSystem, etc.)
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload || true
-    sudo systemctl enable qbitxd || true
-
-    # Create qbitx-cli wrapper (QBX is a Bitcoin fork, defaults to port 8332 without -conf=)
-    sudo tee /usr/local/bin/qbitx-cli > /dev/null << CLIWRAPPER
-#!/bin/bash
-exec "$QBX_BIN_DIR/qbitx-cli" -conf="$QBX_DIR/qbitx.conf" -datadir="$QBX_DIR" "\$@"
-CLIWRAPPER
-    sudo chmod +x /usr/local/bin/qbitx-cli
-
-    log_success "Q-BitX installed"
-    log "Data directory: $QBX_DIR"
-    log "RPC Port: $QBX_RPC_PORT, P2P Port: $QBX_P2P_PORT, ZMQ Port: $QBX_ZMQ_PORT"
-    mark_progress "qbx"
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.31.12 (SHA-256d)
 # ═══════════════════════════════════════════════════════════════════════════════
 # eCash uses the Bitcoin ABC client. The binary is named bitcoind/bitcoin-cli
@@ -23407,7 +22881,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.5.1"
+    local BUILD_VERSION="2.5.2"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -24251,42 +23725,6 @@ configure_stratum_single() {
             target_time="6"
             max_diff="100000000"
             ;;
-        QBX)
-            pool_id="qbx_sha256_1"
-            coin_type="qbitx"
-            rpc_port="$QBX_RPC_PORT"
-            zmq_port="$QBX_ZMQ_PORT"
-            zmq_enabled="false"  # QBX daemon compiled without ZMQ support
-            rpc_user="$QBX_RPC_USER"
-            # CRITICAL: Read password from daemon config to ensure consistency
-            local qbx_conf="$(get_blockchain_dir qbx)/qbitx.conf"
-            if [[ -f "$qbx_conf" ]]; then
-                rpc_password=$(grep -E "^rpcpassword=" "$qbx_conf" 2>/dev/null | head -1 | cut -d= -f2)
-                if [[ -n "$rpc_password" ]]; then
-                    log "Read QBX RPC password from existing node config"
-                else
-                    log_warn "QBX node config exists but password not found, using generated password"
-                    rpc_password="$QBX_RPC_PASSWORD"
-                    if [[ -n "$rpc_password" ]]; then
-                        sudo sed -i "s/^rpcpassword=.*/rpcpassword=$rpc_password/" "$qbx_conf"
-                        log "Updated QBX node config with correct password"
-                    fi
-                fi
-            else
-                rpc_password="$QBX_RPC_PASSWORD"
-            fi
-            if [[ -z "$rpc_password" ]]; then
-                log_warn "No QBX RPC password available, generating new one"
-                rpc_password=$(generate_password)
-                QBX_RPC_PASSWORD="$rpc_password"
-            fi
-            daemon_service="qbitxd"
-            pool_address="$QBX_ADDRESS"
-            # QBX: 150s blocks - SHA256d with post-quantum features
-            initial_diff="5000"
-            target_time="6"
-            max_diff="100000000"
-            ;;
         XEC)
             pool_id="xec_sha256_1"
             coin_type="ecash"
@@ -24325,7 +23763,7 @@ configure_stratum_single() {
         *)
             # Unknown coin - error out instead of defaulting to DGB
             log_error "Unknown coin type: $SOLO_COIN"
-            log_error "Supported coins: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XMY, QBX, XEC"
+ log_error "Supported coins: BC2, BCH, BTC, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XMY,, XEC"
             exit 1
             ;;
     esac
@@ -24607,7 +24045,6 @@ configure_stratum_multicoin() {
     local sys_rpc_pass=""
     local xmy_rpc_pass=""
     local fbtc_rpc_pass=""
-    local qbx_rpc_pass=""
     local xec_rpc_pass=""
 
     if [[ -f "$(get_blockchain_dir nmc)/namecoin.conf" ]]; then
@@ -24650,29 +24087,6 @@ configure_stratum_multicoin() {
             [[ -n "$btcs_rpc_pass" ]] && log "Read BTCS RPC password from node config"
         fi
         [[ -z "$btcs_rpc_pass" ]] && btcs_rpc_pass="$BTCS_RPC_PASSWORD"
-    fi
-
-    local _qbx_conf_path
-    _qbx_conf_path="$(get_blockchain_dir qbx)/qbitx.conf"
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        if [[ -f "$_qbx_conf_path" ]]; then
-            qbx_rpc_pass=$(grep -E "^rpcpassword=" "$_qbx_conf_path" 2>/dev/null | head -1 | cut -d= -f2)
-            if [[ -n "$qbx_rpc_pass" ]]; then
-                log "Read QBX RPC password from node config"
-            else
-                log_warn "QBX node config exists but rpcpassword not found — using generated password and patching config"
-                qbx_rpc_pass="$QBX_RPC_PASSWORD"
-                [[ -n "$qbx_rpc_pass" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$_qbx_conf_path"
-            fi
-        else
-            qbx_rpc_pass="$QBX_RPC_PASSWORD"
-        fi
-        if [[ -z "$qbx_rpc_pass" ]]; then
-            log_warn "No QBX RPC password available — generating new one and patching qbitx.conf"
-            qbx_rpc_pass=$(generate_password)
-            QBX_RPC_PASSWORD="$qbx_rpc_pass"
-            [[ -f "$_qbx_conf_path" ]] && sudo sed -i "s/^rpcpassword=.*/rpcpassword=$qbx_rpc_pass/" "$_qbx_conf_path"
-        fi
     fi
 
     local _xec_conf_path
@@ -25168,53 +24582,6 @@ configure_stratum_multicoin() {
 "
     fi
 
-    # Add Q-BitX if enabled
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        COINS_CONFIG="$COINS_CONFIG
-  # Q-BitX (SHA256d) - 2.5 min blocks, standalone (not merge-mineable)
-  - symbol: \"QBX\"
-    pool_id: \"qbx_sha256_1\"
-    enabled: true
-    address: \"$QBX_POOL_ADDRESS\"
-    coinbase_text: \"$COINBASE_TEXT\"
-    stratum:
-      port: 20335
-      port_v2: 20336
-      port_tls: 20337
-      tls:
-        cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
-        key_file: \"$INSTALL_DIR/tls/stratum.key\"
-      difficulty:
-        initial: 5000          # ~2.5 TH/s @ 4s target, vardiff adjusts
-        varDiff:
-          enabled: true
-          minDiff: 0.001       # Support tiny miners (ESP32)
-          maxDiff: 100000000   # Support large ASICs (S19/S21)
-          targetTime: 4        # 4 seconds
-          retargetTime: 90     # Adjust every 90 seconds
-          variancePercent: 30
-          # useConfigDifficulty: true  # Uncomment to use these values instead of auto-detected miner profiles
-      version_rolling:
-        enabled: true
-        mask: 536862720
-    nodes:
-      - id: \"primary\"
-        host: \"127.0.0.1\"
-        port: $QBX_RPC_PORT
-        user: \"$QBX_RPC_USER\"
-        password: \"$qbx_rpc_pass\"
-        priority: 0
-        zmq:
-          enabled: false
-          endpoint: \"tcp://127.0.0.1:$QBX_ZMQ_PORT\"
-    payments:
-      enabled: true
-      interval: 600s
-      minimum_payment: 0.01
-      scheme: \"SOLO\"
-"
-    fi
-
     # Add eCash if enabled
     if [[ "$ENABLE_XEC" == "true" ]]; then
         COINS_CONFIG="$COINS_CONFIG
@@ -25525,7 +24892,7 @@ configure_stratum_multicoin() {
 # Spiral Stratum Pool Configuration
 # Generated by installer v$VERSION
 # Mode: Multi-Coin (Config V2)
-# Enabled:$(if [[ "$ENABLE_DGB" == "true" ]]; then echo " DGB"; fi)$(if [[ "$ENABLE_BTC" == "true" ]]; then echo " + BTC"; fi)$(if [[ "$ENABLE_BCH" == "true" ]]; then echo " + BCH"; fi)$(if [[ "$ENABLE_BCH2" == "true" ]]; then echo " + BCH2"; fi)$(if [[ "$ENABLE_BC2" == "true" ]]; then echo " + BC2"; fi)$(if [[ "$ENABLE_BTCS" == "true" ]]; then echo " + BTCS"; fi)$(if [[ "$ENABLE_NMC" == "true" ]]; then echo " + NMC"; fi)$(if [[ "$ENABLE_SYS" == "true" ]]; then echo " + SYS"; fi)$(if [[ "$ENABLE_XMY" == "true" ]]; then echo " + XMY"; fi)$(if [[ "$ENABLE_FBTC" == "true" ]]; then echo " + FBTC"; fi)$(if [[ "$ENABLE_QBX" == "true" ]]; then echo " + QBX"; fi)$(if [[ "$ENABLE_XEC" == "true" ]]; then echo " + XEC"; fi)$(if [[ "$ENABLE_LTC" == "true" ]]; then echo " + LTC"; fi)$(if [[ "$ENABLE_DOGE" == "true" ]]; then echo " + DOGE"; fi)$(if [[ "$ENABLE_DGB_SCRYPT" == "true" ]]; then echo " + DGB-Scrypt"; fi)$(if [[ "$ENABLE_PEP" == "true" ]]; then echo " + PEP"; fi)$(if [[ "$ENABLE_CAT" == "true" ]]; then echo " + CAT"; fi)
+# Enabled:$(if [[ "$ENABLE_DGB" == "true" ]]; then echo " DGB"; fi)$(if [[ "$ENABLE_BTC" == "true" ]]; then echo " + BTC"; fi)$(if [[ "$ENABLE_BCH" == "true" ]]; then echo " + BCH"; fi)$(if [[ "$ENABLE_BCH2" == "true" ]]; then echo " + BCH2"; fi)$(if [[ "$ENABLE_BC2" == "true" ]]; then echo " + BC2"; fi)$(if [[ "$ENABLE_BTCS" == "true" ]]; then echo " + BTCS"; fi)$(if [[ "$ENABLE_NMC" == "true" ]]; then echo " + NMC"; fi)$(if [[ "$ENABLE_SYS" == "true" ]]; then echo " + SYS"; fi)$(if [[ "$ENABLE_XMY" == "true" ]]; then echo " + XMY"; fi)$(if [[ "$ENABLE_FBTC" == "true" ]]; then echo " + FBTC"; fi)$(if [[ "$
 
 # V2 multi-coin configuration format
 version: 2
@@ -25706,9 +25073,6 @@ EOF
     if [[ "$ENABLE_FBTC" == "true" ]]; then
         WANTS_DEPS="$WANTS_DEPS fractald.service"
     fi
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        WANTS_DEPS="$WANTS_DEPS qbitxd.service"
-    fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         WANTS_DEPS="$WANTS_DEPS ecashd.service"
     fi
@@ -25819,9 +25183,6 @@ EOF
     fi
     if [[ "$ENABLE_FBTC" == "true" ]]; then
         log "  FBTC Stratum: port 18335 (V1), 18336 (V2)"
-    fi
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        log "  QBX Stratum: port 20335 (V1), 20336 (V2)"
     fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         log "  XEC Stratum: port 18338 (V1), 18339 (V2)"
@@ -26155,7 +25516,7 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed namecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed syscoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed myriadcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed fractald
-$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed qbitxd
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed 
 
 # Pool service control (stratum + sentinel) - start, stop, restart, enable
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start spiralstratum
@@ -26181,7 +25542,7 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart namecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart syscoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart myriadcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart fractald
-$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart qbitxd
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart 
 
 # Health monitor - start/stop services and process control
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start spiraldash
@@ -26217,8 +25578,8 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start myriadcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop myriadcoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start fractald
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop fractald
-$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start qbitxd
-$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop qbitxd
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start 
+$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop 
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl start postgresql
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl stop postgresql
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart postgresql
@@ -26283,7 +25644,7 @@ $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u namecoind *
 $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u syscoind *
 $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u myriadcoind *
 $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u fractald *
-$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u qbitxd *
+$POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u *
 
 # System package updates - wrapper script sets DEBIAN_FRONTEND=noninteractive
 # inside the root process so it never needs to cross sudo's env_reset barrier
@@ -26439,7 +25800,6 @@ install_sentinel() {
     [[ -n "$SYS_POOL_ADDRESS" ]] && SYS_ADDRESS="$SYS_POOL_ADDRESS"
     [[ -n "$XMY_POOL_ADDRESS" ]] && XMY_ADDRESS="$XMY_POOL_ADDRESS"
     [[ -n "$FBTC_POOL_ADDRESS" ]] && FBTC_ADDRESS="$FBTC_POOL_ADDRESS"
-    [[ -n "$QBX_POOL_ADDRESS" ]] && QBX_ADDRESS="$QBX_POOL_ADDRESS"
 
     # Set POOL_ADDRESS to primary coin's wallet if not already set (for non-DGB installs)
     # This determines which wallet fills the legacy singular wallet_address field
@@ -26486,7 +25846,6 @@ install_sentinel() {
             local _sentinel_update_safe=true
             for _addr_var in POOL_ADDRESS ADMIN_API_KEY BTC_ADDRESS BCH_ADDRESS BCH2_ADDRESS BC2_ADDRESS BTCS_ADDRESS \
                              LTC_ADDRESS DOGE_ADDRESS DGB_SCRYPT_ADDRESS PEP_ADDRESS CAT_ADDRESS \
-                             NMC_ADDRESS SYS_ADDRESS XMY_ADDRESS FBTC_ADDRESS QBX_ADDRESS DISPLAY_TIMEZONE; do
                 local _addr_val="${!_addr_var:-}"
                 if [[ "$_addr_val" =~ [\'\"\\\`\$] ]]; then
                     log_error "Variable $_addr_var contains unsafe characters — skipping sentinel config update"
@@ -26530,9 +25889,7 @@ enable_nmc = '${ENABLE_NMC:-false}' == 'true'
 enable_sys = '${ENABLE_SYS:-false}' == 'true'
 enable_xmy = '${ENABLE_XMY:-false}' == 'true'
 enable_fbtc = '${ENABLE_FBTC:-false}' == 'true'
-enable_qbx = '${ENABLE_QBX:-false}' == 'true'
 
-enabled_count = sum([enable_dgb, enable_btc, enable_bch, enable_bch2, enable_bc2, enable_btcs, enable_nmc, enable_sys, enable_xmy, enable_fbtc, enable_qbx, enable_ltc, enable_doge, enable_dgb_scrypt, enable_pep, enable_cat])
 is_multi_coin = enabled_count > 1
 
 cfg['multi_coin_enabled'] = is_multi_coin
@@ -26566,8 +25923,6 @@ elif enable_xmy:
     cfg['pool_id'] = 'xmy_sha256_1'
 elif enable_fbtc:
     cfg['pool_id'] = 'fbtc_sha256_1'
-elif enable_qbx:
-    cfg['pool_id'] = 'qbx_sha256_1'
 elif enable_pep:
     cfg['pool_id'] = 'pep_scrypt_1'
 elif enable_dgb_scrypt:
@@ -26639,10 +25994,6 @@ for coin in coins:
         coin['enabled'] = enable_fbtc
         if '${FBTC_ADDRESS:-}' and '${FBTC_ADDRESS:-}' != 'PENDING_GENERATION':
             coin['wallet_address'] = '${FBTC_ADDRESS:-}'
-    elif sym == 'QBX':
-        coin['enabled'] = enable_qbx
-        if '${QBX_ADDRESS:-}' and '${QBX_ADDRESS:-}' != 'PENDING_GENERATION':
-            coin['wallet_address'] = '${QBX_ADDRESS:-}'
     elif sym == 'XEC':
         coin['enabled'] = ${ENABLE_XEC:-false}
         if '${XEC_ADDRESS:-}' and '${XEC_ADDRESS:-}' != 'PENDING_GENERATION':
@@ -26675,7 +26026,7 @@ with open('$SENTINEL_CONFIG', 'w') as f:
             [[ "${ENABLE_SYS:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
             [[ "${ENABLE_XMY:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
             [[ "${ENABLE_FBTC:-false}" == "true" ]] && ((ENABLED_COUNT++)) || true
-            [[ "${ENABLE_QBX:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
+ [[ "${
             [[ "${ENABLE_XEC:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
             [[ $ENABLED_COUNT -gt 1 ]] && IS_MULTI_COIN="true"
 
@@ -26705,8 +26056,6 @@ with open('$SENTINEL_CONFIG', 'w') as f:
                 PRIMARY_POOL_ID="xmy_sha256_1"
             elif [[ "${ENABLE_FBTC:-false}" == "true" ]]; then
                 PRIMARY_POOL_ID="fbtc_sha256_1"
-            elif [[ "${ENABLE_QBX:-false}" == "true" ]]; then
-                PRIMARY_POOL_ID="qbx_sha256_1"
             elif [[ "${ENABLE_LTC:-false}" == "true" ]]; then
                 PRIMARY_POOL_ID="ltc_scrypt_1"
             elif [[ "${ENABLE_DOGE:-false}" == "true" ]]; then
@@ -26975,18 +26324,6 @@ with open('$SENTINEL_CONFIG', 'w') as f:
       "zmq_port": 28340
     },
     {
-      "symbol": "QBX",
-      "name": "Q-BitX",
-      "algorithm": "sha256d",
-      "enabled": ${ENABLE_QBX:-false},
-      "pool_id": "qbx_sha256_1",
-      "wallet_address": "${QBX_ADDRESS:-}",
-      "stratum_port": 20335,
-      "stratum_v2_port": 20336,
-      "rpc_port": 8344,
-      "zmq_port": 0
-    },
-    {
       "symbol": "XEC",
       "name": "eCash",
       "algorithm": "sha256d",
@@ -27024,7 +26361,7 @@ EOF
         [[ "${ENABLE_SYS:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
         [[ "${ENABLE_XMY:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
         [[ "${ENABLE_FBTC:-false}" == "true" ]] && ((ENABLED_COUNT++)) || true
-        [[ "${ENABLE_QBX:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
+ [[ "${
         [[ "${ENABLE_XEC:-false}" == "true" ]]  && ((ENABLED_COUNT++)) || true
         [[ $ENABLED_COUNT -gt 1 ]] && IS_MULTI_COIN="true"
 
@@ -27054,8 +26391,6 @@ EOF
             PRIMARY_POOL_ID="xmy_sha256_1"
         elif [[ "${ENABLE_FBTC:-false}" == "true" ]]; then
             PRIMARY_POOL_ID="fbtc_sha256_1"
-        elif [[ "${ENABLE_QBX:-false}" == "true" ]]; then
-            PRIMARY_POOL_ID="qbx_sha256_1"
         elif [[ "${ENABLE_LTC:-false}" == "true" ]]; then
             PRIMARY_POOL_ID="ltc_scrypt_1"
         elif [[ "${ENABLE_DOGE:-false}" == "true" ]]; then
@@ -27324,18 +26659,6 @@ EOF
       "zmq_port": 28340
     },
     {
-      "symbol": "QBX",
-      "name": "Q-BitX",
-      "algorithm": "sha256d",
-      "enabled": ${ENABLE_QBX:-false},
-      "pool_id": "qbx_sha256_1",
-      "wallet_address": "${QBX_ADDRESS:-}",
-      "stratum_port": 20335,
-      "stratum_v2_port": 20336,
-      "rpc_port": 8344,
-      "zmq_port": 0
-    },
-    {
       "symbol": "XEC",
       "name": "eCash",
       "algorithm": "sha256d",
@@ -27492,7 +26815,7 @@ for ha_svc in etcd keepalived redis-server; do
 done
 
 # Blockchain daemon services (added if enabled)
-for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ; do
     if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
         CORE_SERVICES+=("$daemon")
     fi
@@ -27624,7 +26947,6 @@ is_blockchain_synced() {
     if service_enabled "fractald" && is_daemon_synced "fractal-cli" "$(get_blockchain_dir fbtc)/fractal.conf"; then
         return 0
     fi
-    if service_enabled "qbitxd" && is_daemon_synced "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf"; then
         return 0
     fi
     return 1
@@ -27685,7 +27007,6 @@ check_stratum_health() {
         ENABLE_SYS=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
         ENABLE_XMY=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
         ENABLE_FBTC=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
-        ENABLE_QBX=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
         ENABLE_XEC=$(grep -oP '^ENABLE_XEC=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
         MULTIPORT_ENABLED=$(grep -oP '^MULTIPORT_ENABLED=\K(true|false)$' "$INSTALL_DIR/config/coins.env" 2>/dev/null || echo "false")
 
@@ -27709,7 +27030,6 @@ check_stratum_health() {
             [[ "$ENABLE_SYS" == "true" ]] && ports_to_check+=(15335)
             [[ "$ENABLE_XMY" == "true" ]] && ports_to_check+=(17335)
             [[ "$ENABLE_FBTC" == "true" ]] && ports_to_check+=(18335)
-            [[ "$ENABLE_QBX" == "true" ]] && ports_to_check+=(20335)
             [[ "$ENABLE_XEC" == "true" ]] && ports_to_check+=(18338)
         else
             # Single-coin mode: use configured port (no default)
@@ -27750,8 +27070,7 @@ check_stratum_health() {
     # CRITICAL: Test actual stratum protocol handshake on a port that is LISTENING.
     # BUG FIX: Previously used ports_to_check[0] (always the first coin, e.g. DGB=3333),
     # which fails during partial startup when that coin's daemon is still syncing.
-    # Now uses the first port confirmed listening above, so partial startup (e.g. QBX
-    # online while DGB syncs) doesn't trigger a false "protocol failure" restart.
+ # Now uses the first port confirmed listening above, so partial startup (e.g.     # online while DGB syncs) doesn't trigger a false "protocol failure" restart.
     # NOTE: Do NOT pipe through head -1 — that causes nc to exit while stratum is still
     # writing its job notification, producing "broken pipe" spam in stratum logs.
     # Instead let nc drain all output until the idle timeout, then stratum gets a clean EOF.
@@ -27893,7 +27212,6 @@ check_blockchain_health() {
     check_blockchain_daemon_health "syscoind" "syscoin-cli" "$(get_blockchain_dir sys)/syscoin.conf" "Syscoin"
     check_blockchain_daemon_health "myriadcoind" "myriadcoin-cli" "$(get_blockchain_dir xmy)/myriadcoin.conf" "Myriadcoin"
     check_blockchain_daemon_health "fractald" "fractal-cli" "$(get_blockchain_dir fbtc)/fractal.conf" "Fractal Bitcoin"
-    check_blockchain_daemon_health "qbitxd" "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf" "Q-BitX"
 }
 
 check_disk_space() {
@@ -28078,7 +27396,6 @@ if [[ -f "$ENV_FILE" ]] && [[ ! -L "$ENV_FILE" ]]; then
     ENABLE_SYS=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
     ENABLE_XMY=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
     ENABLE_FBTC=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
-    ENABLE_QBX=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
     ENABLE_XEC=$(grep -oP '^ENABLE_XEC=\K(true|false)$' "$ENV_FILE" 2>/dev/null || echo "false")
 
     if [[ "$COIN_MODE" == "multi" ]]; then
@@ -28098,7 +27415,6 @@ if [[ -f "$ENV_FILE" ]] && [[ ! -L "$ENV_FILE" ]]; then
         [[ "$ENABLE_SYS" == "true" ]] && ports_to_check+=(15335)
         [[ "$ENABLE_XMY" == "true" ]] && ports_to_check+=(17335)
         [[ "$ENABLE_FBTC" == "true" ]] && ports_to_check+=(18335)
-        [[ "$ENABLE_QBX" == "true" ]] && ports_to_check+=(20335)
         [[ "$ENABLE_XEC" == "true" ]] && ports_to_check+=(18338)
     else
         # Single-coin mode
@@ -28405,7 +27721,7 @@ for ha_svc in etcd keepalived redis-server; do
 done
 
 # Blockchain daemon services (only show if installed)
-for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ; do
     if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
         status=$(systemctl is-active "$daemon" 2>/dev/null || echo "inactive")
         case $status in
@@ -28511,8 +27827,7 @@ if systemctl is-enabled --quiet fractald 2>/dev/null; then
     SHOWED_BLOCKCHAIN=true
 fi
 
-if systemctl is-enabled --quiet qbitxd 2>/dev/null; then
-    check_blockchain_sync "Q-BitX" "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf" "qbitxd"
+if systemctl is-enabled --quiet 2>/dev/null; then
     SHOWED_BLOCKCHAIN=true
 fi
 
@@ -28571,7 +27886,7 @@ RESTARTEOF
 #!/bin/bash
 #
 # Multi-Coin Blockchain Sync Status with Pretty Progress Display
-# Supports: BTC, BCH, BC2, DGB, NMC, QBX, XEC, SYS, XMY, FBTC (SHA256d) | LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
+# Supports: BTC, BCH, BC2, DGB, NMC,, XEC, SYS, XMY, FBTC (SHA256d) | LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
 #
 # Usage:
 #   spiralpool-sync                  - Show status for all enabled coins
@@ -28616,7 +27931,6 @@ detect_pool_user() {
 
     # Method 2: Fallback to directory ownership (use get_blockchain_dir for multi-disk support)
     if [[ -z "$pool_user" ]] || [[ "$pool_user" == "root" ]]; then
-        for dir in "$(get_blockchain_dir dgb)" "$(get_blockchain_dir btc)" "$(get_blockchain_dir bch)" "$(get_blockchain_dir bc2)" "$(get_blockchain_dir bch2)" "$(get_blockchain_dir btcs)" "$(get_blockchain_dir fbtc)" "$(get_blockchain_dir qbx)" "$(get_blockchain_dir nmc)" "$(get_blockchain_dir sys)" "$(get_blockchain_dir xmy)" "$(get_blockchain_dir ltc)" "$(get_blockchain_dir doge)" "$(get_blockchain_dir pep)" "$(get_blockchain_dir cat)"; do
             if [[ -d "$dir" ]]; then
                 pool_user=$(stat -c '%U' "$dir" 2>/dev/null)
                 [[ -n "$pool_user" ]] && [[ "$pool_user" != "root" ]] && break
@@ -28717,7 +28031,6 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: spiralpool-sync [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --coin, -c COIN   Check specific coin (btc, bch, bc2, bch2, btcs, dgb, nmc, sys, xmy, fbtc, qbx, xec, ltc, doge, pep, cat)"
             echo "  --watch, -w       Live progress display"
             echo "  --multi, -m       Show all coins in multi-coin mode"
             echo "  --test, -t        Test/debug mode - show paths and test CLI"
@@ -28844,14 +28157,10 @@ setup_coin() {
             DATADIR="$(get_blockchain_dir fbtc)"
             CLI="fractal-cli -conf=$CONF -datadir=$DATADIR"
             ;;
-        qbx|qbitx)
-            COIN_NAME="Q-BitX"
-            COIN_SYMBOL="QBX"
+ COIN_SYMBOL=""
             COIN_EMOJI="⚛️"
-            SERVICE_NAME="qbitxd"
-            CONF="$(get_blockchain_dir qbx)/qbitx.conf"
-            DATADIR="$(get_blockchain_dir qbx)"
-            CLI="qbitx-cli -conf=$CONF -datadir=$DATADIR"
+ SERVICE_NAME=""
+ CLI="-cli -conf=$CONF -datadir=$DATADIR"
             ;;
         xec|ecash)
             COIN_NAME="eCash"
@@ -28964,7 +28273,6 @@ detect_coins() {
         if [[ -n "$yaml_coins" ]]; then
             for c in $yaml_coins; do
                 case "$c" in
-                    dgb|btc|bch|bc2|bch2|btcs|xec|ltc|doge|dgb-scrypt|pep|cat|fbtc|qbx|nmc|sys|xmy) coins+=("$c") ;;
                 esac
             done
         fi
@@ -28985,7 +28293,6 @@ detect_coins() {
         [[ "$ENABLE_PEP" == "true" ]] && coins+=("pep")
         [[ "$ENABLE_CAT" == "true" ]] && coins+=("cat")
         [[ "$ENABLE_FBTC" == "true" ]] && coins+=("fbtc")
-        [[ "$ENABLE_QBX" == "true" ]] && coins+=("qbx")
         [[ "$ENABLE_XEC" == "true" ]] && coins+=("xec")
         [[ "$ENABLE_NMC" == "true" ]] && coins+=("nmc")
         [[ "$ENABLE_SYS" == "true" ]] && coins+=("sys")
@@ -29005,7 +28312,6 @@ detect_coins() {
         systemctl is-active --quiet pepecoind 2>/dev/null && coins+=("pep")
         systemctl is-active --quiet catcoind 2>/dev/null && coins+=("cat")
         systemctl is-active --quiet fractald 2>/dev/null && coins+=("fbtc")
-        systemctl is-active --quiet qbitxd 2>/dev/null && coins+=("qbx")
         systemctl is-active --quiet ecashd 2>/dev/null && coins+=("xec")
         systemctl is-active --quiet namecoind 2>/dev/null && coins+=("nmc")
         systemctl is-active --quiet syscoind 2>/dev/null && coins+=("sys")
@@ -29023,7 +28329,6 @@ detect_coins() {
         [[ -f "$(get_blockchain_dir ltc)/litecoin.conf" ]] && coins+=("ltc")
         [[ -f "$(get_blockchain_dir doge)/dogecoin.conf" ]] && coins+=("doge")
         [[ -f "$(get_blockchain_dir fbtc)/fractal.conf" ]] && coins+=("fbtc")
-        [[ -f "$(get_blockchain_dir qbx)/qbitx.conf" ]] && coins+=("qbx")
         [[ -f "$(get_blockchain_dir xec)/bitcoin.conf" ]] && coins+=("xec")
         [[ -f "$(get_blockchain_dir nmc)/namecoin.conf" ]] && coins+=("nmc")
         [[ -f "$(get_blockchain_dir sys)/syscoin.conf" ]] && coins+=("sys")
@@ -29040,7 +28345,7 @@ if [[ -z "$COIN" ]]; then
     detected=($(detect_coins))
     if [[ ${#detected[@]} -eq 0 ]]; then
         echo -e "${RED}ERROR: No blockchain configurations found.${NC}"
-        echo "Make sure at least one daemon is installed (DGB, BTC, BCH, BC2, BCH2, BTCS, XEC, LTC, DOGE, PEP, CAT, FBTC, QBX, NMC, SYS, or XMY)."
+ echo "Make sure at least one daemon is installed (DGB, BTC, BCH, BC2, BCH2, BTCS, XEC, LTC, DOGE, PEP, CAT, FBTC,, NMC, SYS, or XMY)."
         exit 1
     elif [[ ${#detected[@]} -eq 1 ]]; then
         COIN="${detected[0]}"
@@ -29057,7 +28362,6 @@ fi
 # Setup the selected coin (if not multi mode)
 if [[ "$COIN" != "multi" ]]; then
     if ! setup_coin "$COIN"; then
-        echo -e "${RED}ERROR: Unknown coin '$COIN'. Use dgb, dgb-scrypt, btc, bch, bch2, bc2, btcs, xec, ltc, doge, pep, cat, nmc, sys, xmy, fbtc, or qbx.${NC}"
         exit 1
     fi
 
@@ -29090,7 +28394,7 @@ check_network() {
         return 0
     fi
     # Distinguish RPC auth failure from real network/daemon outage.
-    # An auth error means the daemon IS running but qbitx.conf rpcpassword
+ # An auth error means the daemon IS running but .conf rpcpassword
     # does not match what the daemon started with — this is a config issue,
     # not a network outage. Surface it clearly instead of masking it.
     if echo "$cli_out" | grep -qi "incorrect\|unauthorized\|forbidden\|wrong password\|error code: -32\|error code: -1"; then
@@ -29360,7 +28664,7 @@ get_coin_sync_status() {
             local BLOCKS=$(echo "$INFO" | grep -o '"blocks":[^,]*' | cut -d: -f2 | tr -d ' ')
             local HEADERS=$(echo "$INFO" | grep -o '"headers":[^,]*' | cut -d: -f2 | tr -d ' ')
             # Prefer blocks/headers for sync percentage — verificationprogress can be
-            # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
+ # wildly inaccurate on low-chain-work coins (, BC2, FBTC, PEP, CAT, etc.)
             local PCT
             if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
                 PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
@@ -29522,7 +28826,7 @@ show_status() {
     local CHAIN=$(echo "$INFO" | grep -o '"chain":"[^"]*' | cut -d'"' -f4)
 
     # Prefer blocks/headers for sync percentage — verificationprogress can be
-    # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
+ # wildly inaccurate on low-chain-work coins (, BC2, FBTC, PEP, CAT, etc.)
     local PCT
     if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
         PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
@@ -29887,12 +29191,12 @@ watch_sync() {
             local NET_CHECK_RC=$?
 
             if [[ "$DAEMON_RUNNING" == "active" ]] && [[ $NET_CHECK_RC -eq 2 ]] || echo "$NET_CHECK_OUTPUT" | grep -q "RPC_AUTH_FAILURE"; then
-                # RPC auth failure — password mismatch between qbitx.conf and running daemon
+ # RPC auth failure — password mismatch between .conf and running daemon
                 echo -e "  ${RED}⚠ RPC AUTH FAILURE — password mismatch${NC}                               "
                 echo -e "                                                                            "
                 echo -e "  ${YELLOW}The daemon is running but rejecting the CLI password.${NC}                  "
                 echo -e "  ${WHITE}Fix:${NC} ${CYAN}sudo systemctl restart $SERVICE_NAME${NC}                             "
-                echo -e "  ${DIM}This reloads qbitx.conf and syncs the password with the CLI.${NC}           "
+ echo -e " ${DIM}This reloads .conf and syncs the password with the CLI.${NC} "
                 echo -e "                                                                            "
             elif [[ "$DAEMON_RUNNING" == "active" ]] && [[ $CONSECUTIVE_FAILURES -gt 0 ]]; then
                 # Daemon running but CLI failing - likely network or temporary issue
@@ -29977,7 +29281,7 @@ watch_sync() {
         fi
 
         # Prefer blocks/headers for sync percentage — verificationprogress can be
-        # wildly inaccurate on low-chain-work coins (QBX, BC2, FBTC, PEP, CAT, etc.)
+ # wildly inaccurate on low-chain-work coins (, BC2, FBTC, PEP, CAT, etc.)
         local PCT
         if [[ -n "$BLOCKS" ]] && [[ -n "$HEADERS" ]] && [[ "$HEADERS" -gt 0 ]]; then
             PCT=$(echo "scale=4; $BLOCKS / $HEADERS * 100" | bc 2>/dev/null | awk '{printf "%.2f", $1}')
@@ -30128,7 +29432,6 @@ watch_sync() {
                     syscoin) STRATUM_V1_PORT=15335 ;;
                     myriad|myriadcoin) STRATUM_V1_PORT=17335 ;;
                     fractal|fractalbitcoin) STRATUM_V1_PORT=18335 ;;
-                    qbitx|qbx) STRATUM_V1_PORT=20335 ;;
                     *) STRATUM_V1_PORT=3333 ;;
                 esac
             fi
@@ -30273,7 +29576,6 @@ watch_sync() {
                         sys|syscoin) coin_lower="sys" ;;
                         xmy|myriadcoin) coin_lower="xmy" ;;
                         fbtc|fractalbitcoin|fractal) coin_lower="fbtc" ;;
-                        qbx|qbitx) coin_lower="qbx" ;;
                         ltc|litecoin) coin_lower="ltc" ;;
                         doge|dogecoin) coin_lower="doge" ;;
                         pep|pepecoin) coin_lower="pep" ;;
@@ -30605,7 +29907,6 @@ run_test() {
     echo -e "   ${DIM}Looking for config files...${NC}"
 
     # Check each coin (SHA-256d and Scrypt)
-    for coin_check in dgb btc bch bch2 bc2 btcs nmc sys xmy fbtc qbx ltc doge pep cat; do
         case $coin_check in
             dgb) conf_path="$(get_blockchain_dir dgb)/digibyte.conf"; label="DGB" ;;
             btc) conf_path="$(get_blockchain_dir btc)/bitcoin.conf"; label="BTC" ;;
@@ -30617,7 +29918,6 @@ run_test() {
             sys) conf_path="$(get_blockchain_dir sys)/syscoin.conf"; label="SYS" ;;
             xmy) conf_path="$(get_blockchain_dir xmy)/myriadcoin.conf"; label="XMY" ;;
             fbtc) conf_path="$(get_blockchain_dir fbtc)/fractal.conf"; label="FBTC" ;;
-            qbx) conf_path="$(get_blockchain_dir qbx)/qbitx.conf"; label="QBX" ;;
             ltc) conf_path="$(get_blockchain_dir ltc)/litecoin.conf"; label="LTC" ;;
             doge) conf_path="$(get_blockchain_dir doge)/dogecoin.conf"; label="DOGE" ;;
             pep) conf_path="$(get_blockchain_dir pep)/pepecoin.conf"; label="PEP" ;;
@@ -30717,9 +30017,8 @@ SYNCSTATUSEOF
 # Spiral Pool Wallet Generator
 # Creates a wallet in the blockchain node and generates a legacy address for pool payouts
 #
-# Supports: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX (SHA256d) and LTC, DOGE, PEP, CAT (Scrypt)
+# Supports: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, (SHA256d) and LTC, DOGE, PEP, CAT (Scrypt)
 #
-# Usage: spiralpool-wallet [--coin dgb|btc|bch|bch2|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|pep|cat]
 #
 # This script will WAIT for the blockchain to fully sync before generating the wallet.
 # It can take several hours to a few days depending on your connection speed.
@@ -30781,7 +30080,6 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            echo "Usage: spiralpool-wallet [--coin dgb|btc|bch|bch2|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|pep|cat] [--auto] [--nowait]"
             echo ""
             echo "Options:"
             echo "  --coin, -c    Coin to generate wallet for (auto-detected if not specified)"
@@ -30802,7 +30100,6 @@ while [[ $# -gt 0 ]]; do
             echo "  sys     Syscoin"
             echo "  xmy     Myriad"
             echo "  fbtc    Fractal Bitcoin"
-            echo "  qbx     Q-BitX"
             echo ""
             echo "Scrypt Coins:"
             echo "  ltc     Litecoin"
@@ -30846,7 +30143,6 @@ INSTALLED_COINS=()
 [[ -f "$(get_blockchain_dir sys)/syscoin.conf" ]] && INSTALLED_COINS+=("sys")
 [[ -f "$(get_blockchain_dir xmy)/myriadcoin.conf" ]] && INSTALLED_COINS+=("xmy")
 [[ -f "$(get_blockchain_dir fbtc)/fractal.conf" ]] && INSTALLED_COINS+=("fbtc")
-[[ -f "$(get_blockchain_dir qbx)/qbitx.conf" ]] && INSTALLED_COINS+=("qbx")
 # Scrypt coins
 [[ -f "$(get_blockchain_dir ltc)/litecoin.conf" ]] && INSTALLED_COINS+=("ltc")
 [[ -f "$(get_blockchain_dir doge)/dogecoin.conf" ]] && INSTALLED_COINS+=("doge")
@@ -30885,7 +30181,6 @@ if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
                 syscoin) current_coin="sys" ;;
                 myriadcoin) current_coin="xmy" ;;
                 fractalbitcoin|fractal) current_coin="fbtc" ;;
-                qbitx) current_coin="qbx" ;;
                 pepecoin) current_coin="pep" ;;
                 catcoin) current_coin="cat" ;;
                 *) current_coin="${coin_type,,}" ;;
@@ -30906,7 +30201,6 @@ fi
 coin_emoji() {
     case "$1" in
         dgb) echo "💎" ;; btc) echo "🟠" ;; bch) echo "🟢" ;; bch2) echo "🟤" ;; bc2) echo "🔵" ;; btcs) echo "⚪" ;;
-        nmc) echo "🔶" ;; sys) echo "🔷" ;; xmy) echo "🔴" ;; fbtc) echo "🔶" ;; qbx) echo "•" ;; xec) echo "💚" ;;
         ltc) echo "🪙" ;; doge) echo "🐕" ;; pep) echo "🐸" ;; cat) echo "🐱" ;;
         *) echo "•" ;;
     esac
@@ -30916,7 +30210,6 @@ coin_emoji() {
 coin_name() {
     case "$1" in
         dgb) echo "DigiByte" ;; btc) echo "Bitcoin" ;; bch) echo "Bitcoin Cash" ;; bch2) echo "Bitcoin Cash II" ;; bc2) echo "Bitcoin II" ;; btcs) echo "Bitcoin Silver" ;;
-        nmc) echo "Namecoin" ;; sys) echo "Syscoin" ;; xmy) echo "Myriad" ;; fbtc) echo "Fractal Bitcoin" ;; qbx) echo "Q-BitX" ;; xec) echo "eCash" ;;
         ltc) echo "Litecoin" ;; doge) echo "Dogecoin" ;; pep) echo "PepeCoin" ;; cat) echo "Catcoin" ;;
         *) echo "$1" ;;
     esac
@@ -31279,17 +30572,12 @@ case "$COIN" in
         ADDRESS_TYPE="bech32"
         WALLET_DIR="$(get_blockchain_dir fbtc)"
         ;;
-    qbx|qbitx)
-        COIN_NAME="Q-BitX"
-        COIN_SYMBOL="QBX"
+ COIN_SYMBOL=""
         COIN_EMOJI="⚛️"
-        CONF="$(get_blockchain_dir qbx)/qbitx.conf"
-        CLI="qbitx-cli -conf=$CONF -datadir=$(get_blockchain_dir qbx)"
-        SERVICE_NAME="qbitxd"
+ SERVICE_NAME=""
         CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
         ADDRESS_PREFIX="M (P2PKH), P (P2SH), or pq (post-quantum)"
         ADDRESS_TYPE="pq"
-        WALLET_DIR="$(get_blockchain_dir qbx)"
         ;;
     xec|ecash|bitcoin-abc)
         COIN_NAME="eCash"
@@ -31305,7 +30593,6 @@ case "$COIN" in
         ;;
     *)
         echo "Unsupported coin: $COIN"
-        echo "Supported: dgb, dgb-scrypt, btc, bch, bch2, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec (SHA256d) | ltc, doge, pep, cat (Scrypt)"
         exit 1
         ;;
 esac
@@ -31597,7 +30884,6 @@ prompt_manual_address() {
             pep|pepecoin)   wallet_suggestion="PepeCoin Core (pepecoin.org)" ;;
             cat|catcoin)    wallet_suggestion="Catcoin Core wallet" ;;
             fbtc|fractalbtc|fractal|fractalbitcoin) wallet_suggestion="Fractal Bitcoin Core wallet" ;;
-            qbx|qbitx) wallet_suggestion="Q-BitX Core wallet" ;;
             *) wallet_suggestion="the official ${COIN_NAME} wallet" ;;
         esac
 
@@ -31745,8 +31031,7 @@ prompt_manual_address() {
                     valid=true
                 fi
                 ;;
-            qbx|qbitx)
-                # QBX uses M... (P2PKH, version 0x32), P... (P2SH, version 0x37), or pq... (post-quantum Dilithium)
+ # uses M... (P2PKH, version 0x32), P... (P2SH, version 0x37), or pq... (post-quantum Dilithium)
                 if [[ "$MANUAL_ADDRESS" =~ ^(M[a-km-zA-HJ-NP-Z1-9]{25,34}|P[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$ ]]; then
                     valid=true
                 fi
@@ -31830,7 +31115,6 @@ if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
                             namecoin) _rcoin="nmc" ;; syscoin) _rcoin="sys" ;;
                             myriadcoin) _rcoin="xmy" ;;
                             fractalbitcoin|fractal) _rcoin="fbtc" ;;
-                            qbitx) _rcoin="qbx" ;;
                             pepecoin) _rcoin="pep" ;; catcoin) _rcoin="cat" ;;
                             *) _rcoin="${BASH_REMATCH[1],,}" ;;
                         esac
@@ -32094,8 +31378,7 @@ else
                 # FBTC: Same format as BTC (bech32 or legacy)
                 NEW_ADDRESS=$($CLI getnewaddress "pool-rewards" "bech32" 2>&1)
                 ;;
-            qbx|qbitx)
-                # QBX: Post-quantum addresses (pq prefix) or legacy
+ #: Post-quantum addresses (pq prefix) or legacy
                 NEW_ADDRESS=$($CLI getnewaddress "pool-rewards" "pq" 2>&1)
                 ;;
             xec|ecash|bitcoin-abc)
@@ -32227,8 +31510,7 @@ case "$COIN" in
             NEW_ADDRESS=$($CLI getnewaddress "pool-rewards" "bech32" 2>&1)
         fi
         ;;
-    qbx|qbitx)
-        # QBX uses M... (P2PKH, version 0x32) or P... (P2SH, version 0x37)
+ # uses M... (P2PKH, version 0x32) or P... (P2SH, version 0x37)
         # getnewaddress "" pq returns M... addresses backed by Dilithium keys
         if [[ ! "$NEW_ADDRESS" =~ ^[MP] ]] && [[ ! "$NEW_ADDRESS" =~ ^pq ]]; then
             echo -e "  ${YELLOW}WARNING: Unexpected address format, regenerating...${NC}"
@@ -32471,18 +31753,6 @@ if [[ -f "$CONFIG_FILE" ]]; then
     echo ""
 fi
 
-# For QBX: add wallet=<name> to qbitx.conf so it auto-loads on daemon restart.
-# QBX (unlike older Bitcoin forks) does NOT auto-create a default wallet, so
-# without this line the named wallet is gone after every restart.
-# Only do this when a local wallet was actually generated (not manual address entry).
-if [[ "$MANUAL_INPUT_USED" != "true" ]] && [[ "$COIN" == "qbx" || "$COIN" == "qbitx" ]]; then
-    qbx_node_conf="$(get_blockchain_dir qbx)/qbitx.conf"
-    if [[ -f "$qbx_node_conf" ]]; then
-        if ! grep -q "^wallet=" "$qbx_node_conf" 2>/dev/null; then
-            echo "wallet=$WALLET_NAME" | tee -a "$qbx_node_conf" > /dev/null
-            echo -e "  ${GREEN}✓${NC} Added wallet auto-load to qbitx.conf (wallet=${WALLET_NAME})"
-        fi
-    fi
 fi
 
 # Detect server internal IP address (prefer private IPs)
@@ -32661,7 +31931,6 @@ case "$COIN" in
     sys|syscoin) STRATUM_PORT=15335; STRATUM_V2_PORT=15336 ;;
     xmy|myriadcoin|myriad) STRATUM_PORT=17335; STRATUM_V2_PORT=17336 ;;
     fbtc|fractalbtc|fractalbitcoin|fractal) STRATUM_PORT=18335; STRATUM_V2_PORT=18336 ;;
-    qbx|qbitx) STRATUM_PORT=20335; STRATUM_V2_PORT=20336 ;;
     *) STRATUM_PORT=3333; STRATUM_V2_PORT=3334 ;;
 esac
 
@@ -32697,11 +31966,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.5.1-PHI_HASH_REACTOR: Create backup command
+    # V2.5.2-PHI_HASH_REACTOR: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.5.1-PHI_HASH_REACTOR
+# Spiral Pool Backup Utility - V2.5.2-PHI_HASH_REACTOR
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32746,7 +32015,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.5.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.5.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32973,17 +32242,8 @@ backup_wallet() {
         log "  Backed up Fractal Bitcoin wallet (legacy)"
     fi
 
-    # Backup Q-BitX wallet (named wallet path first, legacy fallback)
-    if [[ -f "$(get_blockchain_dir qbx)/wallets/pool-qbx/wallet.dat" ]]; then
-        qbitx-cli -conf="$(get_blockchain_dir qbx)/qbitx.conf" walletlock 2>/dev/null || true
-        cp "$(get_blockchain_dir qbx)/wallets/pool-qbx/wallet.dat" "${TEMP_DIR}/wallets/qbitx-wallet.dat"
         found_wallet=true
-        log "  Backed up Q-BitX wallet (named: pool-qbx)"
-    elif [[ -f "$(get_blockchain_dir qbx)/wallet.dat" ]]; then
-        qbitx-cli -conf="$(get_blockchain_dir qbx)/qbitx.conf" walletlock 2>/dev/null || true
-        cp "$(get_blockchain_dir qbx)/wallet.dat" "${TEMP_DIR}/wallets/qbitx-wallet.dat"
         found_wallet=true
-        log "  Backed up Q-BitX wallet (legacy)"
     fi
 
     if [[ "$found_wallet" == "false" ]]; then
@@ -33083,15 +32343,13 @@ backup_config() {
         sed 's/rpcpassword=.*/rpcpassword=REDACTED/' \
             "$(get_blockchain_dir fbtc)/fractal.conf" > "${TEMP_DIR}/config/fractal.conf"
     fi
-    if [[ -f "$(get_blockchain_dir qbx)/qbitx.conf" ]]; then
         sed 's/rpcpassword=.*/rpcpassword=REDACTED/' \
-            "$(get_blockchain_dir qbx)/qbitx.conf" > "${TEMP_DIR}/config/qbitx.conf"
     fi
 
     # Backup systemd service files
     mkdir -p "${TEMP_DIR}/config/systemd"
     cp /etc/systemd/system/spiral*.service "${TEMP_DIR}/config/systemd/" 2>/dev/null || true
-    for daemon_svc in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+ for daemon_svc in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ; do
         cp "/etc/systemd/system/${daemon_svc}.service" "${TEMP_DIR}/config/systemd/" 2>/dev/null || true
     done
 
@@ -33112,7 +32370,7 @@ backup_logs() {
     journalctl -u spiralstratum --since "7 days ago" --no-pager > "${TEMP_DIR}/logs/spiralstratum.log" 2>/dev/null || true
 
     # Copy logs for each enabled blockchain daemon
-    for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+ for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ; do
         if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
             journalctl -u "$daemon" --since "7 days ago" --no-pager > "${TEMP_DIR}/logs/${daemon}.log" 2>/dev/null || true
         fi
@@ -33141,7 +32399,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.5.1",
+    "version": "2.5.2",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33422,7 +32680,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.5.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.5.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33475,11 +32733,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.5.1-PHI_HASH_REACTOR: Create restore command
+    # V2.5.2-PHI_HASH_REACTOR: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.5.1-PHI_HASH_REACTOR
+# Spiral Pool Restore Utility - V2.5.2-PHI_HASH_REACTOR
 # Restores backups created by spiralpool-backup
 #
 
@@ -33526,7 +32784,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.5.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.5.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33735,8 +32993,7 @@ restore_wallet() {
             restore_single_wallet "Fractal Bitcoin" "fractald" "$(get_blockchain_dir fbtc)" "${TEMP_DIR}/wallets/fractal-wallet.dat"
             found_wallet=true
         fi
-        if [[ -f "${TEMP_DIR}/wallets/qbitx-wallet.dat" ]]; then
-            restore_single_wallet "Q-BitX" "qbitxd" "$(get_blockchain_dir qbx)" "${TEMP_DIR}/wallets/qbitx-wallet.dat"
+ if [[ -f "${TEMP_DIR}/wallets/-wallet.dat" ]]; then
             found_wallet=true
         fi
     # Legacy single wallet.dat format (assume DGB)
@@ -33873,7 +33130,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.5.1-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.5.2-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -34508,7 +33765,7 @@ else
 fi
 
 # Blockchain daemon services (check which ones are installed)
-for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
+for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ; do
     if systemctl is-enabled --quiet "$daemon" 2>/dev/null; then
         if systemctl is-active --quiet "$daemon" 2>/dev/null; then
             test_pass "$daemon is running"
@@ -34624,8 +33881,6 @@ check_blockchain_rpc "Myriadcoin" "myriadcoin-cli" "$(get_blockchain_dir xmy)/my
 # Check Fractal Bitcoin
 check_blockchain_rpc "Fractal Bitcoin" "fractal-cli" "$(get_blockchain_dir fbtc)/fractal.conf"
 
-# Check Q-BitX
-check_blockchain_rpc "Q-BitX" "qbitx-cli" "$(get_blockchain_dir qbx)/qbitx.conf"
 
 # === DATABASE ===
 echo -e "${WHITE}PostgreSQL Database:${NC}"
@@ -34751,15 +34006,12 @@ if systemctl is-enabled --quiet fractald 2>/dev/null; then
     check_port 18335 "FBTC Stratum V1"
     check_port 8340 "FBTC RPC"
 fi
-if systemctl is-enabled --quiet qbitxd 2>/dev/null; then
-    check_port 20335 "QBX Stratum V1"
-    check_port 8344 "QBX RPC"
+if systemctl is-enabled --quiet 2>/dev/null; then
 fi
 
 check_port 4000 "Pool API"
 
 # Optional ports - check if listening (all possible V2 ports + dashboard)
-for port_info in "3334:DGB Stratum V2" "4334:BTC Stratum V2" "5334:BCH Stratum V2" "5337:BCH2 Stratum V2" "6334:BC2 Stratum V2" "7334:LTC Stratum V2" "8337:DOGE Stratum V2" "10336:PEP Stratum V2" "11336:BTCS Stratum V2" "3337:DGB-SCRYPT V2" "12336:CAT Stratum V2" "14336:NMC Stratum V2" "15336:SYS Stratum V2" "17336:XMY Stratum V2" "18336:FBTC Stratum V2" "20336:QBX Stratum V2" "18339:XEC Stratum V2" "1618:Dashboard"; do
     port="${port_info%%:*}"
     name="${port_info##*:}"
     if ss -tlnp 2>/dev/null | grep -q ":${port} " || netstat -tlnp 2>/dev/null | grep -q ":${port} "; then
@@ -34853,8 +34105,7 @@ if systemctl is-enabled --quiet fractald 2>/dev/null; then
     test_stratum_port 18335 "FBTC"
     STRATUM_TESTED=true
 fi
-if systemctl is-enabled --quiet qbitxd 2>/dev/null; then
-    test_stratum_port 20335 "QBX"
+if systemctl is-enabled --quiet 2>/dev/null; then
     STRATUM_TESTED=true
 fi
 
@@ -36717,7 +35968,6 @@ except:
             # Coin emoji
             case "${P_SYM,,}" in
                 dgb) P_EMO="💎" ;; btc) P_EMO="🟠" ;; bch) P_EMO="🟢" ;; bc2) P_EMO="🔵" ;;
-                nmc) P_EMO="🔶" ;; sys) P_EMO="🔷" ;; xmy) P_EMO="🔴" ;; fbtc) P_EMO="🔶" ;; qbx) P_EMO="⚛️" ;; xec) P_EMO="💚" ;;
                 ltc) P_EMO="⚪" ;; doge) P_EMO="🐕" ;; pep) P_EMO="🐸" ;; cat) P_EMO="🐱" ;;
                 *) P_EMO="•" ;;
             esac
@@ -36806,7 +36056,7 @@ except:
     # Services status — detect all installed daemons
     echo -e "${CYAN}║${NC}  ${WHITE}SERVICES:${NC}                                                                   ${CYAN}║${NC}"
 
-    for svc in spiralstratum digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd spiralsentinel spiraldash; do
+ for svc in spiralstratum digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald spiralsentinel spiraldash; do
         if systemctl is-active --quiet "$svc" 2>/dev/null; then
             STATUS_TEXT="running"
             STATUS_ICON="${GREEN}●${NC}"
@@ -36833,7 +36083,6 @@ except:
             syscoind) NAME="Syscoin Node" ;;
             myriadcoind) NAME="Myriad Node" ;;
             fractald) NAME="Fractal Node" ;;
-            qbitxd) NAME="Q-BitX Node" ;;
             spiralsentinel) NAME="Sentinel" ;;
             spiraldash) NAME="Dashboard" ;;
         esac
@@ -38106,8 +37355,6 @@ get_coin_cli_info() {
         FBTC|fbtc|fractal)
             echo "fractal-cli|$(get_blockchain_dir fbtc)/fractal.conf"
             ;;
-        QBX|qbx|qbitx)
-            echo "qbitx-cli|$(get_blockchain_dir qbx)/qbitx.conf"
             ;;
         XEC|xec|ecash)
             # eCash uses the ecash-cli symlink pointing to Bitcoin ABC's bitcoin-cli
@@ -38295,12 +37542,6 @@ check_all_coins_sync() {
         fi
     fi
 
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        if ! check_coin_sync "QBX"; then
-            all_synced=false
-        fi
-    fi
-
     if [[ "$ENABLE_XEC" == "true" ]]; then
         if ! check_coin_sync "XEC"; then
             all_synced=false
@@ -38429,19 +37670,6 @@ show_all_coins_sync_status() {
         fi
     fi
 
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        if [[ "$sha256d_shown" == "false" ]]; then
-            echo -e "  ${YELLOW}SHA-256d:${NC}"
-            sha256d_shown=true
-        fi
-        local qbx_progress=$(get_coin_sync_progress "QBX")
-        if check_coin_sync "QBX"; then
-            echo -e "    ⚛️ ${WHITE}Q-BitX:${NC}        ${GREEN}✓ Synced${NC} ($qbx_progress)"
-        else
-            echo -e "    ⚛️ ${WHITE}Q-BitX:${NC}        ${YELLOW}⏳ Syncing${NC} - $qbx_progress"
-        fi
-    fi
-
     if [[ "$ENABLE_XEC" == "true" ]]; then
         if [[ "$sha256d_shown" == "false" ]]; then
             echo -e "  ${YELLOW}SHA-256d:${NC}"
@@ -38566,7 +37794,6 @@ if [[ -f "$CONFIG_FILE" ]] && [[ ! -L "$CONFIG_FILE" ]]; then
     ENABLE_SYS=$(grep -oP '^ENABLE_SYS=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
     ENABLE_XMY=$(grep -oP '^ENABLE_XMY=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
     ENABLE_FBTC=$(grep -oP '^ENABLE_FBTC=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
-    ENABLE_QBX=$(grep -oP '^ENABLE_QBX=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
     ENABLE_XEC=$(grep -oP '^ENABLE_XEC=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
     # Scrypt coins
     ENABLE_LTC=$(grep -oP '^ENABLE_LTC=\K(true|false)$' "$CONFIG_FILE" 2>/dev/null || echo "")
@@ -38588,7 +37815,6 @@ ENABLE_NMC="${ENABLE_NMC:-false}"
 ENABLE_SYS="${ENABLE_SYS:-false}"
 ENABLE_XMY="${ENABLE_XMY:-false}"
 ENABLE_FBTC="${ENABLE_FBTC:-false}"
-ENABLE_QBX="${ENABLE_QBX:-false}"
 ENABLE_XEC="${ENABLE_XEC:-false}"
 # Scrypt coins
 ENABLE_LTC="${ENABLE_LTC:-false}"
@@ -38616,7 +37842,6 @@ get_cli_cmd() {
         SYS) echo "syscoin-cli -conf=$(get_blockchain_dir sys)/syscoin.conf" ;;
         XMY) echo "myriadcoin-cli -conf=$(get_blockchain_dir xmy)/myriadcoin.conf" ;;
         FBTC) echo "fractal-cli -conf=$(get_blockchain_dir fbtc)/fractal.conf" ;;
-        QBX) echo "qbitx-cli -conf=$(get_blockchain_dir qbx)/qbitx.conf" ;;
         XEC) echo "ecash-cli -conf=$(get_blockchain_dir xec)/bitcoin.conf -rpcport=$XEC_RPC_PORT" ;;
         # Scrypt coins
         LTC) echo "litecoin-cli -conf=$(get_blockchain_dir ltc)/litecoin.conf" ;;
@@ -38642,7 +37867,6 @@ get_coin_name() {
         SYS) echo "Syscoin" ;;
         XMY) echo "Myriad" ;;
         FBTC) echo "Fractal Bitcoin" ;;
-        QBX) echo "Q-BitX" ;;
         XEC) echo "eCash" ;;
         # Scrypt coins
         LTC) echo "Litecoin" ;;
@@ -38710,2840 +37934,3 @@ all_synced() {
     if [[ "$ENABLE_SYS" == "true" ]] && ! is_coin_synced "SYS"; then return 1; fi
     if [[ "$ENABLE_XMY" == "true" ]] && ! is_coin_synced "XMY"; then return 1; fi
     if [[ "$ENABLE_FBTC" == "true" ]] && ! is_coin_synced "FBTC"; then return 1; fi
-    if [[ "$ENABLE_QBX" == "true" ]] && ! is_coin_synced "QBX"; then return 1; fi
-    if [[ "$ENABLE_XEC" == "true" ]] && ! is_coin_synced "XEC"; then return 1; fi
-    # Scrypt coins
-    if [[ "$ENABLE_LTC" == "true" ]] && ! is_coin_synced "LTC"; then return 1; fi
-    if [[ "$ENABLE_DOGE" == "true" ]] && ! is_coin_synced "DOGE"; then return 1; fi
-    if [[ "$ENABLE_PEP" == "true" ]] && ! is_coin_synced "PEP"; then return 1; fi
-    if [[ "$ENABLE_CAT" == "true" ]] && ! is_coin_synced "CAT"; then return 1; fi
-    # DGB_SCRYPT uses same daemon as DGB, already checked
-    return 0
-}
-
-# Wait for a daemon to be responsive (max 5 minutes)
-wait_for_daemon() {
-    local coin="$1"
-    local cli_cmd=$(get_cli_cmd "$coin")
-    local name=$(get_coin_name "$coin")
-    local wait_count=0
-
-    while ! $cli_cmd getblockchaininfo &>/dev/null; do
-        if [[ $wait_count -ge 60 ]]; then
-            log "WARNING: $name daemon not responding after 5 minutes — it will continue syncing in the background"
-            return 0
-        fi
-        sleep 5
-        wait_count=$((wait_count + 1))
-    done
-    log "$name daemon is responsive"
-}
-
-log "================================================"
-log "Spiral Pool Multi-Coin Sync Monitor Started"
-log "================================================"
-
-# List enabled coins
-enabled_coins=""
-# SHA-256d
-[[ "$ENABLE_DGB" == "true" ]] && enabled_coins="${enabled_coins}DGB "
-[[ "$ENABLE_BTC" == "true" ]] && enabled_coins="${enabled_coins}BTC "
-[[ "$ENABLE_BCH" == "true" ]] && enabled_coins="${enabled_coins}BCH "
-[[ "$ENABLE_BCH2" == "true" ]] && enabled_coins="${enabled_coins}BCH2 "
-[[ "$ENABLE_BC2" == "true" ]] && enabled_coins="${enabled_coins}BC2 "
-[[ "$ENABLE_BTCS" == "true" ]] && enabled_coins="${enabled_coins}BTCS "
-[[ "$ENABLE_NMC" == "true" ]] && enabled_coins="${enabled_coins}NMC "
-[[ "$ENABLE_SYS" == "true" ]] && enabled_coins="${enabled_coins}SYS "
-[[ "$ENABLE_XMY" == "true" ]] && enabled_coins="${enabled_coins}XMY "
-[[ "$ENABLE_FBTC" == "true" ]] && enabled_coins="${enabled_coins}FBTC "
-[[ "$ENABLE_QBX" == "true" ]] && enabled_coins="${enabled_coins}QBX "
-[[ "$ENABLE_XEC" == "true" ]] && enabled_coins="${enabled_coins}XEC "
-# Scrypt
-[[ "$ENABLE_LTC" == "true" ]] && enabled_coins="${enabled_coins}LTC "
-[[ "$ENABLE_DOGE" == "true" ]] && enabled_coins="${enabled_coins}DOGE "
-[[ "$ENABLE_DGB_SCRYPT" == "true" ]] && enabled_coins="${enabled_coins}DGB_SCRYPT "
-[[ "$ENABLE_PEP" == "true" ]] && enabled_coins="${enabled_coins}PEP "
-[[ "$ENABLE_CAT" == "true" ]] && enabled_coins="${enabled_coins}CAT "
-log "Enabled coins: $enabled_coins"
-
-# Wait for all enabled daemons to be responsive
-# SHA-256d
-[[ "$ENABLE_DGB" == "true" ]] && wait_for_daemon "DGB"
-[[ "$ENABLE_BTC" == "true" ]] && wait_for_daemon "BTC"
-[[ "$ENABLE_BCH" == "true" ]] && wait_for_daemon "BCH"
-[[ "$ENABLE_BCH2" == "true" ]] && wait_for_daemon "BCH2"
-[[ "$ENABLE_BC2" == "true" ]] && wait_for_daemon "BC2"
-[[ "$ENABLE_BTCS" == "true" ]] && wait_for_daemon "BTCS"
-[[ "$ENABLE_NMC" == "true" ]] && wait_for_daemon "NMC"
-[[ "$ENABLE_SYS" == "true" ]] && wait_for_daemon "SYS"
-[[ "$ENABLE_XMY" == "true" ]] && wait_for_daemon "XMY"
-[[ "$ENABLE_FBTC" == "true" ]] && wait_for_daemon "FBTC"
-[[ "$ENABLE_QBX" == "true" ]] && wait_for_daemon "QBX"
-[[ "$ENABLE_XEC" == "true" ]] && wait_for_daemon "XEC"
-# Scrypt
-[[ "$ENABLE_LTC" == "true" ]] && wait_for_daemon "LTC"
-[[ "$ENABLE_DOGE" == "true" ]] && wait_for_daemon "DOGE"
-[[ "$ENABLE_PEP" == "true" ]] && wait_for_daemon "PEP"
-[[ "$ENABLE_CAT" == "true" ]] && wait_for_daemon "CAT"
-# DGB_SCRYPT uses same daemon as DGB, already waited
-
-log "All daemons responsive, monitoring sync progress..."
-
-# ═══════════════════════════════════════════════════════════════════════
-# EARLY WALLET GENERATION - daemons are up, no sync required for key gen
-# Wallets marked PENDING_GENERATION are created NOW instead of waiting
-# for full sync. The post-sync block below acts as a safety net only.
-# ═══════════════════════════════════════════════════════════════════════
-_EARLY_CONFIG_YAML="$INSTALL_DIR/config/config.yaml"
-if [[ -f "$_EARLY_CONFIG_YAML" ]] && grep -q "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null; then
-    log "Detected PENDING_GENERATION addresses - generating wallets now (daemons responsive)..."
-
-    _EARLY_POOL_USER="${POOL_USER:-}"
-    for _svc in spiralstratum digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
-        if [[ -f "/etc/systemd/system/${_svc}.service" ]]; then
-            _EARLY_POOL_USER=$(grep -oP '^User=\K[a-z_][a-z0-9_-]*' "/etc/systemd/system/${_svc}.service" 2>/dev/null | head -1)
-            [[ -n "$_EARLY_POOL_USER" ]] && [[ "$_EARLY_POOL_USER" != "root" ]] && break
-            _EARLY_POOL_USER=""
-        fi
-    done
-    [[ -z "$_EARLY_POOL_USER" ]] && _EARLY_POOL_USER="spiraluser"
-
-    _EARLY_WALLETS=()
-    _early_current_coin=""
-    while IFS= read -r _early_line; do
-        if [[ "$_early_line" =~ symbol:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-            _early_current_coin="${BASH_REMATCH[1]}"
-        elif [[ "$_early_line" =~ ^[[:space:]]*coin:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-            case "${BASH_REMATCH[1]}" in
-                digibyte)        _early_current_coin="DGB"  ;;
-                bitcoin)         _early_current_coin="BTC"  ;;
-                bitcoincash)     _early_current_coin="BCH"  ;;
-                bitcoincashii)   _early_current_coin="BCH2" ;;
-                bitcoinii)       _early_current_coin="BC2"  ;;
-                bitcoinsilver)   _early_current_coin="BTCS" ;;
-                namecoin)        _early_current_coin="NMC"  ;;
-                syscoin)         _early_current_coin="SYS"  ;;
-                myriadcoin)      _early_current_coin="XMY"  ;;
-                fractalbitcoin|fractal) _early_current_coin="FBTC" ;;
-                litecoin)        _early_current_coin="LTC"  ;;
-                dogecoin)        _early_current_coin="DOGE" ;;
-                pepecoin)        _early_current_coin="PEP"  ;;
-                catcoin)         _early_current_coin="CAT"  ;;
-                digibyte-scrypt) _early_current_coin="DGB-SCRYPT" ;;
-                *)               _early_current_coin="${BASH_REMATCH[1]}" ;;
-            esac
-        elif [[ "$_early_line" =~ address:[[:space:]]*\"?PENDING_GENERATION\"? ]] && [[ -n "$_early_current_coin" ]]; then
-            _EARLY_WALLETS+=("$_early_current_coin")
-            _early_current_coin=""
-        fi
-    done < "$_EARLY_CONFIG_YAML"
-
-    for _early_coin in "${_EARLY_WALLETS[@]}"; do
-        _early_coin_lower="${_early_coin,,}"
-        case "$_early_coin_lower" in
-            dgb|digibyte)                _early_coin_lower="dgb"  ;;
-            btc|bitcoin)                 _early_coin_lower="btc"  ;;
-            bch|bitcoincash)             _early_coin_lower="bch"  ;;
-            bch2|bitcoincashii|bitcoincash2) _early_coin_lower="bch2" ;;
-            bc2|bitcoinii|bitcoin2)      _early_coin_lower="bc2"  ;;
-            btcs|bitcoinsilver)          _early_coin_lower="btcs" ;;
-            nmc|namecoin)                _early_coin_lower="nmc"  ;;
-            sys|syscoin)                 _early_coin_lower="sys"  ;;
-            xmy|myriadcoin)              _early_coin_lower="xmy"  ;;
-            fbtc|fractalbitcoin|fractal) _early_coin_lower="fbtc" ;;
-            qbx|qbitx)                   _early_coin_lower="qbx"  ;;
-            ltc|litecoin)                _early_coin_lower="ltc"  ;;
-            doge|dogecoin)               _early_coin_lower="doge" ;;
-            pep|pepecoin)                _early_coin_lower="pep"  ;;
-            cat|catcoin)                 _early_coin_lower="cat"  ;;
-            dgb-scrypt|digibyte-scrypt)  _early_coin_lower="dgb"  ;;
-        esac
-
-        log "Generating ${_early_coin} wallet (daemon responsive, no sync required)..."
-        _early_pending_before=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null || echo 0)
-        if [[ -n "$_EARLY_POOL_USER" ]]; then
-            sudo -u "$_EARLY_POOL_USER" spiralpool-wallet --coin "$_early_coin_lower" --auto --nowait 2>&1 | tee -a "$LOG_FILE" || true
-        else
-            spiralpool-wallet --coin "$_early_coin_lower" --auto --nowait 2>&1 | tee -a "$LOG_FILE" || true
-        fi
-        _early_pending_after=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null || echo 0)
-        if [[ "$_early_pending_after" -ge "$_early_pending_before" ]]; then
-            log "WARNING: ${_early_coin} early wallet generation failed - will retry after sync completes"
-        else
-            log "${_early_coin} wallet generated successfully"
-
-            # Export wallet keys immediately and pause so user can copy the backup
-            _early_gen_addr=""
-            if grep -q '^\s*symbol:' "$_EARLY_CONFIG_YAML" 2>/dev/null; then
-                _early_gen_addr=$(awk -v sym="${_early_coin}" '
-                    /symbol:/ { in_section = ($0 ~ "\"?"sym"\"?") }
-                    in_section && /address:/ && !/PENDING_GENERATION/ {
-                        gsub(/.*address:[[:space:]]*"?/, ""); gsub(/".*/, ""); gsub(/[[:space:]]/, ""); print; exit
-                    }
-                ' "$_EARLY_CONFIG_YAML" 2>/dev/null)
-            else
-                _early_gen_addr=$(grep -E '^\s*address:' "$_EARLY_CONFIG_YAML" 2>/dev/null \
-                    | grep -v 'PENDING_GENERATION' | head -1 \
-                    | sed 's/.*address:[[:space:]]*["'\'']\?\([^"'\'' ]*\)["'\'']\?.*/\1/')
-            fi
-
-            # Determine CLI and wallet name for this coin
-            _early_cli=""
-            _early_wallet_name="pool-${_early_coin_lower}"
-            case "$_early_coin_lower" in
-                dgb) _early_cli="digibyte-cli -datadir=/spiralpool/dgb -rpcwallet=$_early_wallet_name" ;;
-                btc) _early_cli="bitcoin-cli -datadir=/spiralpool/btc -rpcwallet=$_early_wallet_name" ;;
-                bch) _early_cli="bitcoin-cli -datadir=/spiralpool/bch -rpcwallet=$_early_wallet_name" ;;
-                bch2) _early_cli="bitcoincashIId-cli -datadir=/spiralpool/bch2 -rpcwallet=$_early_wallet_name" ;;
-                bc2) _early_cli="bitcoinii-cli -datadir=/spiralpool/bc2 -rpcwallet=$_early_wallet_name" ;;
-                btcs) _early_cli="bitcoinsilver-cli -datadir=/spiralpool/btcs -rpcwallet=$_early_wallet_name" ;;
-                nmc) _early_cli="namecoin-cli -datadir=/spiralpool/nmc -rpcwallet=$_early_wallet_name" ;;
-                sys) _early_cli="syscoin-cli -datadir=/spiralpool/sys -rpcwallet=$_early_wallet_name" ;;
-                xmy) _early_cli="myriadcoin-cli -datadir=/spiralpool/xmy -rpcwallet=$_early_wallet_name" ;;
-                fbtc) _early_cli="fractal-cli -datadir=/spiralpool/fbtc -rpcwallet=$_early_wallet_name" ;;
-                qbx) _early_cli="qbitx-cli -datadir=/spiralpool/qbx -rpcwallet=$_early_wallet_name" ;;
-                ltc) _early_cli="litecoin-cli -datadir=/spiralpool/ltc -rpcwallet=$_early_wallet_name" ;;
-                doge) _early_cli="dogecoin-cli -datadir=/spiralpool/doge -rpcwallet=$_early_wallet_name" ;;
-                pep) _early_cli="pepecoin-cli -datadir=/spiralpool/pep -rpcwallet=$_early_wallet_name" ;;
-                cat) _early_cli="catcoin-cli -datadir=/spiralpool/cat -rpcwallet=$_early_wallet_name" ;;
-            esac
-
-            if [[ -n "$_early_cli" ]]; then
-                _early_backup_dir="/spiralpool/backups"
-                _early_backup_file="${_early_backup_dir}/wallet-${_early_coin_lower}-$(date +%Y%m%d-%H%M%S).dump"
-                mkdir -p "$_early_backup_dir" 2>/dev/null || sudo mkdir -p "$_early_backup_dir" 2>/dev/null || true
-                sudo chmod 700 "$_early_backup_dir" 2>/dev/null || chmod 700 "$_early_backup_dir" 2>/dev/null || true
-                _early_dump_ok="false"
-                _early_dump_out=$($_early_cli dumpwallet "$_early_backup_file" 2>&1) || true
-                if ! echo "$_early_dump_out" | grep -qi "error\|not supported"; then
-                    _early_dump_ok="true"
-                else
-                    _early_desc_out=$($_early_cli listdescriptors true 2>&1) || true
-                    if ! echo "$_early_desc_out" | grep -qi "error"; then
-                        printf '%s\n' "$_early_desc_out" > "$_early_backup_file"
-                        _early_dump_ok="true"
-                    fi
-                fi
-                if [[ "$_early_dump_ok" == "true" ]]; then
-                    chmod 600 "$_early_backup_file" 2>/dev/null || sudo chmod 600 "$_early_backup_file" 2>/dev/null || true
-                fi
-            fi
-
-            echo ""
-            echo -e "${RED}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR ${_early_coin} WALLET NOW${NC}                    ${RED}║${NC}"
-            echo -e "${RED}╚═══════════════════════════════════════════════════════════════════╝${NC}"
-            echo ""
-            if [[ -n "$_early_gen_addr" ]]; then
-                echo -e "  ${WHITE}Pool Wallet Address:${NC}  ${GREEN}${_early_gen_addr}${NC}"
-                echo ""
-            fi
-            if [[ "$_early_dump_ok" == "true" ]]; then
-                echo -e "  ${WHITE}Backup file:${NC}  ${GREEN}${_early_backup_file}${NC}"
-                if [[ "$_early_backup_file" == *.dat ]]; then
-                    echo -e "  ${WHITE}File type:${NC}    wallet.dat — binary wallet file. Load it with: ${GREEN}${_early_coin_lower}-cli loadwallet <path>${NC}"
-                else
-                    echo -e "  ${WHITE}File type:${NC}    descriptor dump — JSON export of private keys. Import with: ${GREEN}${_early_coin_lower}-cli importdescriptors <contents>${NC}"
-                fi
-                echo -e "  ${WHITE}SCP command:${NC}  ${GREEN}scp spiraluser@$(hostname -I | awk '{print $1}'):${_early_backup_file} ./${NC}"
-            else
-                echo -e "  ${YELLOW}Automatic export failed. Manually back up:${NC}"
-                echo -e "  ${GREEN}/spiralpool/${_early_coin_lower}/wallets/${_early_wallet_name}/wallet.dat${NC}"
-                echo -e "  ${WHITE}File type:${NC}    wallet.dat — binary wallet file containing your private keys."
-            fi
-            echo ""
-            echo -e "  Copy the backup file off this server before continuing."
-            echo -e "  If this server is lost without a backup, your funds CANNOT be recovered."
-            echo ""
-            echo -e "  Type ${WHITE}YES${NC} and press ENTER to continue:"
-            while true; do
-                read -r _early_confirm || true
-                [[ "$_early_confirm" == "YES" ]] && break
-                echo -e "  ${YELLOW}Type exactly:${NC} YES"
-            done
-            echo ""
-        fi
-    done
-fi
-
-# Track last progress for each coin to avoid log spam
-declare -A LAST_PROGRESS
-declare -A _SYNC_DEAD_COUNT
-
-# Monitor sync progress for all coins (alphabetically ordered)
-while ! all_synced; do
-    # Crash detection: warn if any enabled daemon has been inactive for 3+ consecutive checks
-    for _chk_coin in BC2 BCH BCH2 BTC BTCS CAT DGB DOGE FBTC LTC NMC PEP QBX SYS XEC XMY; do
-        case "$_chk_coin" in
-            BC2)  [[ "$ENABLE_BC2"   != "true" ]] && continue; _svc="bitcoiniid"     ;;
-            BCH)  [[ "$ENABLE_BCH"   != "true" ]] && continue; _svc="bitcoind-bch"   ;;
-            BCH2) [[ "$ENABLE_BCH2"  != "true" ]] && continue; _svc="bitcoincashIId" ;;
-            BTC)  [[ "$ENABLE_BTC"   != "true" ]] && continue; _svc="bitcoind"       ;;
-            BTCS) [[ "$ENABLE_BTCS"  != "true" ]] && continue; _svc="bitcoinsilverd" ;;
-            CAT)  [[ "$ENABLE_CAT"   != "true" ]] && continue; _svc="catcoind"       ;;
-            DGB)  [[ "$ENABLE_DGB"   != "true" ]] && continue; _svc="digibyted"      ;;
-            DOGE) [[ "$ENABLE_DOGE"  != "true" ]] && continue; _svc="dogecoind"      ;;
-            FBTC) [[ "$ENABLE_FBTC"  != "true" ]] && continue; _svc="fractald"       ;;
-            LTC)  [[ "$ENABLE_LTC"   != "true" ]] && continue; _svc="litecoind"      ;;
-            NMC)  [[ "$ENABLE_NMC"   != "true" ]] && continue; _svc="namecoind"      ;;
-            PEP)  [[ "$ENABLE_PEP"   != "true" ]] && continue; _svc="pepecoind"      ;;
-            QBX)  [[ "$ENABLE_QBX"   != "true" ]] && continue; _svc="qbitxd"         ;;
-            SYS)  [[ "$ENABLE_SYS"   != "true" ]] && continue; _svc="syscoind"       ;;
-            XEC)  [[ "$ENABLE_XEC"   != "true" ]] && continue; _svc="ecashd"         ;;
-            XMY)  [[ "$ENABLE_XMY"   != "true" ]] && continue; _svc="myriadcoind"    ;;
-        esac
-        if ! systemctl is-active --quiet "$_svc" 2>/dev/null; then
-            _SYNC_DEAD_COUNT[$_chk_coin]=$(( ${_SYNC_DEAD_COUNT[$_chk_coin]:-0} + 1 ))
-            if [[ ${_SYNC_DEAD_COUNT[$_chk_coin]} -ge 3 ]]; then
-                log_warn "$_chk_coin daemon ($_svc) has been inactive for 3+ consecutive checks — investigate: sudo systemctl status $_svc"
-            fi
-        else
-            _SYNC_DEAD_COUNT[$_chk_coin]=0
-        fi
-    done
-
-    # Log progress for each coin (SHA-256d and Scrypt)
-    for coin in BC2 BCH BCH2 BTC BTCS CAT DGB DGB_SCRYPT DOGE FBTC LTC NMC PEP QBX SYS XEC XMY; do
-        case "$coin" in
-            BC2) [[ "$ENABLE_BC2" != "true" ]] && continue ;;
-            BCH) [[ "$ENABLE_BCH" != "true" ]] && continue ;;
-            BCH2) [[ "$ENABLE_BCH2" != "true" ]] && continue ;;
-            BTCS) [[ "$ENABLE_BTCS" != "true" ]] && continue ;;
-            BTC) [[ "$ENABLE_BTC" != "true" ]] && continue ;;
-            CAT) [[ "$ENABLE_CAT" != "true" ]] && continue ;;
-            DGB) [[ "$ENABLE_DGB" != "true" ]] && continue ;;
-            DGB_SCRYPT) [[ "$ENABLE_DGB_SCRYPT" != "true" ]] && continue ;;
-            DOGE) [[ "$ENABLE_DOGE" != "true" ]] && continue ;;
-            FBTC) [[ "$ENABLE_FBTC" != "true" ]] && continue ;;
-            LTC) [[ "$ENABLE_LTC" != "true" ]] && continue ;;
-            NMC) [[ "$ENABLE_NMC" != "true" ]] && continue ;;
-            QBX) [[ "$ENABLE_QBX" != "true" ]] && continue ;;
-            SYS) [[ "$ENABLE_SYS" != "true" ]] && continue ;;
-            XEC) [[ "$ENABLE_XEC" != "true" ]] && continue ;;
-            XMY) [[ "$ENABLE_XMY" != "true" ]] && continue ;;
-            PEP) [[ "$ENABLE_PEP" != "true" ]] && continue ;;
-        esac
-
-        current=$(get_coin_progress "$coin")
-        if [[ "$current" != "${LAST_PROGRESS[$coin]}" ]]; then
-            name=$(get_coin_name "$coin")
-            if is_coin_synced "$coin"; then
-                log "$name: SYNCED"
-            else
-                log "$name: $current"
-            fi
-            LAST_PROGRESS[$coin]="$current"
-        fi
-    done
-
-    sleep $CHECK_INTERVAL
-done
-
-log "================================================"
-log "ALL BLOCKCHAINS SYNC COMPLETE!"
-log "================================================"
-
-# ═══════════════════════════════════════════════════════════════════════
-# AUTO-GENERATE WALLETS IF ANY COIN HAS PENDING_GENERATION
-# This ensures wallets are created even when user isn't watching
-# ═══════════════════════════════════════════════════════════════════════
-CONFIG_YAML="$INSTALL_DIR/config/config.yaml"
-if [[ -f "$CONFIG_YAML" ]] && sudo grep -q "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null; then
-    log "Detected PENDING_GENERATION addresses - generating wallets..."
-
-    # Detect the pool user for running wallet generation
-    POOL_USER="${POOL_USER:-}"
-    for svc in spiralstratum digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd; do
-        if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
-            POOL_USER=$(grep -oP '^User=\K[a-z_][a-z0-9_-]*' "/etc/systemd/system/${svc}.service" 2>/dev/null | head -1)
-            [[ -n "$POOL_USER" ]] && [[ "$POOL_USER" != "root" ]] && break
-            POOL_USER=""
-        fi
-    done
-    # Fallback to spiraluser if detection failed
-    [[ -z "$POOL_USER" ]] && POOL_USER="spiraluser"
-
-    # Parse config.yaml to find coins needing wallet generation
-    WALLETS_TO_GENERATE=()
-    current_coin=""
-    while IFS= read -r line; do
-        # Multi-coin format: symbol: "DGB"
-        if [[ "$line" =~ symbol:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-            current_coin="${BASH_REMATCH[1]}"
-        # Single-coin format: coin: "digibyte"
-        elif [[ "$line" =~ ^[[:space:]]*coin:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-            coin_type="${BASH_REMATCH[1]}"
-            case "$coin_type" in
-                digibyte) current_coin="DGB" ;;
-                bitcoin) current_coin="BTC" ;;
-                bitcoincash) current_coin="BCH" ;;
-                bitcoincashii) current_coin="BCH2" ;;
-                bitcoinii) current_coin="BC2" ;;
-                bitcoinsilver) current_coin="BTCS" ;;
-                namecoin) current_coin="NMC" ;;
-                syscoin) current_coin="SYS" ;;
-                myriadcoin) current_coin="XMY" ;;
-                fractalbitcoin|fractal) current_coin="FBTC" ;;
-                litecoin) current_coin="LTC" ;;
-                dogecoin) current_coin="DOGE" ;;
-                pepecoin) current_coin="PEP" ;;
-                catcoin) current_coin="CAT" ;;
-                digibyte-scrypt) current_coin="DGB-SCRYPT" ;;
-                *) current_coin="$coin_type" ;;
-            esac
-        elif [[ "$line" =~ address:[[:space:]]*\"?PENDING_GENERATION\"? ]] && [[ -n "$current_coin" ]]; then
-            WALLETS_TO_GENERATE+=("$current_coin")
-            current_coin=""
-        fi
-    done < <(sudo cat "$CONFIG_YAML")
-
-    for wallet_coin in "${WALLETS_TO_GENERATE[@]}"; do
-        coin_lower="${wallet_coin,,}"
-        # Normalize coin name for spiralpool-wallet CLI
-        case "$coin_lower" in
-            dgb|digibyte) coin_lower="dgb" ;;
-            btc|bitcoin) coin_lower="btc" ;;
-            bch|bitcoincash) coin_lower="bch" ;;
-            bch2|bitcoincashii|bitcoincash2) coin_lower="bch2" ;;
-            bc2|bitcoinii|bitcoin2) coin_lower="bc2" ;;
-            btcs|bitcoinsilver) coin_lower="btcs" ;;
-            nmc|namecoin) coin_lower="nmc" ;;
-            sys|syscoin) coin_lower="sys" ;;
-            xmy|myriadcoin) coin_lower="xmy" ;;
-            fbtc|fractalbitcoin|fractal) coin_lower="fbtc" ;;
-            qbx|qbitx) coin_lower="qbx" ;;
-            ltc|litecoin) coin_lower="ltc" ;;
-            doge|dogecoin) coin_lower="doge" ;;
-            pep|pepecoin) coin_lower="pep" ;;
-            cat|catcoin) coin_lower="cat" ;;
-            dgb-scrypt|digibyte-scrypt) coin_lower="dgb" ;;
-        esac
-
-        log "Generating ${wallet_coin} wallet..."
-        pending_before=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null || echo 0)
-        # Run as pool user if detected, otherwise as current user
-        if [[ -n "$POOL_USER" ]]; then
-            sudo -u "$POOL_USER" spiralpool-wallet --coin "$coin_lower" --auto 2>&1 | tee -a "$LOG_FILE" || true
-        else
-            spiralpool-wallet --coin "$coin_lower" --auto 2>&1 | tee -a "$LOG_FILE" || true
-        fi
-
-        # Verify this specific coin's wallet was generated (count decreased)
-        pending_after=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null || echo 0)
-        if [[ "$pending_after" -ge "$pending_before" ]]; then
-            log "WARNING: ${wallet_coin} wallet generation failed."
-            log ""
-            log "  To set the ${wallet_coin} address manually:"
-            log ""
-            log "  1. Generate a ${wallet_coin} address using the official wallet software"
-            log "     (download from the coin's website) or a hardware wallet (Ledger, Trezor)."
-            log "     You MUST use a wallet where you control the private keys."
-            log ""
-            log "     WARNING: Do NOT use exchange addresses (Binance, Coinbase, Kraken, etc.)"
-            log "     Exchange deposits often require a memo, tag, or note to credit your"
-            log "     account. Pool payouts CANNOT include memos/tags. Funds sent to exchange"
-            log "     addresses without proper identification may be permanently LOST."
-            log ""
-            log "  2. Run this command (replace YOUR_ADDRESS with your actual address):"
-            log ""
-            log "     sudo sed -i '/symbol:.*\"${wallet_coin}\"/,/address:/{s|address:.*|address: \"YOUR_ADDRESS\"|}' /spiralpool/config/config.yaml"
-            log ""
-            log "  3. Restart all pool services:"
-            log ""
-            log "     sudo systemctl restart spiralstratum spiralsentinel spiraldash spiralpool-health"
-            log ""
-            log "  If running HA: repeat steps 2-3 on all peer nodes, or copy the updated"
-            log "  config.yaml to each peer and restart services on each node."
-            log ""
-            log "  Or run wallet setup interactively: spiralpool-wallet --coin ${wallet_coin,,}"
-        else
-            log "${wallet_coin} wallet generated successfully"
-        fi
-    done
-else
-    log "No pending wallet generation needed"
-fi
-
-# Enable and start the stratum pool
-log "Enabling Spiral Stratum pool..."
-systemctl enable spiralstratum
-systemctl restart spiralstratum
-
-if systemctl is-active --quiet spiralstratum; then
-    log "Spiral Stratum is now ONLINE and ready for miners!"
-else
-    log "WARNING: Failed to start Spiral Stratum - check logs"
-fi
-
-# Restart Sentinel and Dashboard (stopped during upgrade)
-for _svc in spiralsentinel spiraldash; do
-    if systemctl is-enabled --quiet "$_svc" 2>/dev/null; then
-        log "Restarting $_svc..."
-        systemctl restart "$_svc"
-        if systemctl is-active --quiet "$_svc"; then
-            log "$_svc is now ONLINE"
-        else
-            log "WARNING: Failed to start $_svc - check logs"
-        fi
-    fi
-done
-
-log "Sync monitor completed successfully"
-SYNCEOF
-
-    sudo chmod +x "$INSTALL_DIR/bin/sync-monitor.sh"
-    sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/sync-monitor.sh"
-
-    # Save enabled coins config for sync monitor to read
-    local _coins_env_tmp="$INSTALL_DIR/config/coins.env.tmp.$$"
-    sudo tee "$_coins_env_tmp" > /dev/null << EOF
-# Enabled coins configuration (auto-generated by installer)
-COIN_MODE=$COIN_MODE
-# Pruned node configuration (global — applies to all future coin installs)
-PRUNE_ENABLED=$PRUNE_ENABLED
-# Multi-disk storage configuration
-MULTI_DISK_CONFIGURED=$MULTI_DISK_CONFIGURED
-CHAIN_MOUNT_POINT=$CHAIN_MOUNT_POINT
-# SHA-256d coins
-ENABLE_DGB=$ENABLE_DGB
-ENABLE_BTC=$ENABLE_BTC
-ENABLE_BCH=$ENABLE_BCH
-ENABLE_BCH2=$ENABLE_BCH2
-ENABLE_BC2=$ENABLE_BC2
-ENABLE_BTCS=$ENABLE_BTCS
-# Scrypt coins
-ENABLE_LTC=$ENABLE_LTC
-ENABLE_DOGE=$ENABLE_DOGE
-ENABLE_PEP=$ENABLE_PEP
-ENABLE_CAT=$ENABLE_CAT
-ENABLE_DGB_SCRYPT=$ENABLE_DGB_SCRYPT
-# Aux chain coins (merge mining)
-ENABLE_NMC=$ENABLE_NMC
-ENABLE_SYS=$ENABLE_SYS
-ENABLE_XMY=$ENABLE_XMY
-ENABLE_FBTC=$ENABLE_FBTC
-ENABLE_QBX=$ENABLE_QBX
-ENABLE_XEC=$ENABLE_XEC
-# Per-coin RPC passwords (preserved for re-install / add-coin mode)
-DGB_RPC_PASSWORD=$DGB_RPC_PASSWORD
-BTC_RPC_PASSWORD=$BTC_RPC_PASSWORD
-BCH_RPC_PASSWORD=$BCH_RPC_PASSWORD
-BCH2_RPC_PASSWORD=$BCH2_RPC_PASSWORD
-BC2_RPC_PASSWORD=$BC2_RPC_PASSWORD
-BTCS_RPC_PASSWORD=$BTCS_RPC_PASSWORD
-LTC_RPC_PASSWORD=$LTC_RPC_PASSWORD
-DOGE_RPC_PASSWORD=$DOGE_RPC_PASSWORD
-PEP_RPC_PASSWORD=$PEP_RPC_PASSWORD
-CAT_RPC_PASSWORD=$CAT_RPC_PASSWORD
-NMC_RPC_PASSWORD=$NMC_RPC_PASSWORD
-SYS_RPC_PASSWORD=$SYS_RPC_PASSWORD
-XMY_RPC_PASSWORD=$XMY_RPC_PASSWORD
-FBTC_RPC_PASSWORD=$FBTC_RPC_PASSWORD
-QBX_RPC_PASSWORD=$QBX_RPC_PASSWORD
-XEC_RPC_PASSWORD=$XEC_RPC_PASSWORD
-# Per-coin pool addresses (preserved for re-install / add-coin mode)
-DGB_POOL_ADDRESS=$DGB_POOL_ADDRESS
-BTC_POOL_ADDRESS=$BTC_POOL_ADDRESS
-BCH_POOL_ADDRESS=$BCH_POOL_ADDRESS
-BCH2_POOL_ADDRESS=$BCH2_POOL_ADDRESS
-BC2_POOL_ADDRESS=$BC2_POOL_ADDRESS
-BTCS_POOL_ADDRESS=$BTCS_POOL_ADDRESS
-LTC_POOL_ADDRESS=$LTC_POOL_ADDRESS
-DOGE_POOL_ADDRESS=$DOGE_POOL_ADDRESS
-DGB_SCRYPT_ADDRESS=$DGB_SCRYPT_ADDRESS
-PEP_POOL_ADDRESS=$PEP_POOL_ADDRESS
-CAT_POOL_ADDRESS=$CAT_POOL_ADDRESS
-NMC_POOL_ADDRESS=$NMC_POOL_ADDRESS
-SYS_POOL_ADDRESS=$SYS_POOL_ADDRESS
-XMY_POOL_ADDRESS=$XMY_POOL_ADDRESS
-FBTC_POOL_ADDRESS=$FBTC_POOL_ADDRESS
-QBX_POOL_ADDRESS=$QBX_POOL_ADDRESS
-XEC_POOL_ADDRESS=$XEC_POOL_ADDRESS
-POOL_ADDRESS=$POOL_ADDRESS
-SOLO_COIN=$SOLO_COIN
-# Stratum ports (single-coin mode uses these, multi-coin uses predefined per-coin ports)
-STRATUM_PORT=$STRATUM_PORT
-STRATUM_V2_PORT=$STRATUM_V2_PORT
-# Enhanced Stratum (V2) — enables encrypted binary protocol + TLS for V1
-ENABLE_V2_STRATUM=true
-# Multi coin smart port (port 16180)
-# MULTIPORT_MODE: TIME (weighted 24h schedule) | DIFFICULTY (lowest network diff wins)
-MULTIPORT_ENABLED=$MULTIPORT_ENABLED
-MULTIPORT_COINS=$MULTIPORT_COINS
-MULTIPORT_WEIGHTS=$MULTIPORT_WEIGHTS
-MULTIPORT_PREFER_COIN=$MULTIPORT_PREFER_COIN
-MULTIPORT_MODE=$MULTIPORT_MODE
-EOF
-    sudo chown "$POOL_USER:$POOL_USER" "$_coins_env_tmp"
-    sudo chmod 600 "$_coins_env_tmp"
-    sudo mv "$_coins_env_tmp" "$INSTALL_DIR/config/coins.env"
-
-    # Create systemd service for sync monitor with dependencies on enabled nodes
-    local after_deps="network.target"
-    local requires_deps=""
-
-    # SHA-256d coin services
-    [[ "$ENABLE_DGB" == "true" ]] && after_deps="$after_deps digibyted.service" && requires_deps="digibyted.service"
-    [[ "$ENABLE_BTC" == "true" ]] && after_deps="$after_deps bitcoind.service" && requires_deps="$requires_deps bitcoind.service"
-    [[ "$ENABLE_BCH" == "true" ]] && after_deps="$after_deps bitcoind-bch.service" && requires_deps="$requires_deps bitcoind-bch.service"
-    [[ "$ENABLE_BCH2" == "true" ]] && after_deps="$after_deps bitcoincashIId.service" && requires_deps="$requires_deps bitcoincashIId.service"
-    [[ "$ENABLE_BC2" == "true" ]] && after_deps="$after_deps bitcoiniid.service" && requires_deps="$requires_deps bitcoiniid.service"
-    [[ "$ENABLE_BTCS" == "true" ]] && after_deps="$after_deps bitcoinsilverd.service" && requires_deps="$requires_deps bitcoinsilverd.service"
-    # Scrypt coin services
-    [[ "$ENABLE_LTC" == "true" ]] && after_deps="$after_deps litecoind.service" && requires_deps="$requires_deps litecoind.service"
-    [[ "$ENABLE_DOGE" == "true" ]] && after_deps="$after_deps dogecoind.service" && requires_deps="$requires_deps dogecoind.service"
-    [[ "$ENABLE_PEP" == "true" ]] && after_deps="$after_deps pepecoind.service" && requires_deps="$requires_deps pepecoind.service"
-    [[ "$ENABLE_CAT" == "true" ]] && after_deps="$after_deps catcoind.service" && requires_deps="$requires_deps catcoind.service"
-    # Aux chain services (merge mining)
-    [[ "$ENABLE_NMC" == "true" ]] && after_deps="$after_deps namecoind.service" && requires_deps="$requires_deps namecoind.service"
-    [[ "$ENABLE_SYS" == "true" ]] && after_deps="$after_deps syscoind.service" && requires_deps="$requires_deps syscoind.service"
-    [[ "$ENABLE_XMY" == "true" ]] && after_deps="$after_deps myriadcoind.service" && requires_deps="$requires_deps myriadcoind.service"
-    [[ "$ENABLE_FBTC" == "true" ]] && after_deps="$after_deps fractald.service" && requires_deps="$requires_deps fractald.service"
-    [[ "$ENABLE_QBX" == "true" ]] && after_deps="$after_deps qbitxd.service" && requires_deps="$requires_deps qbitxd.service"
-    [[ "$ENABLE_XEC" == "true" ]] && after_deps="$after_deps ecashd.service" && requires_deps="$requires_deps ecashd.service"
-    # DGB_SCRYPT uses same daemon as DGB, already added above
-
-    sudo tee /etc/systemd/system/spiralpool-sync.service > /dev/null << EOF
-[Unit]
-Description=Spiral Pool Multi-Coin Blockchain Sync Monitor
-After=$after_deps
-Requires=$requires_deps
-
-[Service]
-Type=oneshot
-User=root
-ExecStart=$INSTALL_DIR/bin/sync-monitor.sh
-RemainAfterExit=yes
-TimeoutStartSec=infinity
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload || true
-    log_success "Multi-coin sync monitor created"
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# START SERVICES
-# ═══════════════════════════════════════════════════════════════════════════════
-
-start_services() {
-    log_step "Starting Services"
-
-    # Helper to safely start a service
-    start_service_if_exists() {
-        local svc="$1"
-        if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
-            if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
-                log "Starting $svc..."
-                sudo systemctl start "$svc" || log_warn "Failed to start $svc"
-            else
-                log "$svc is not enabled, skipping..."
-            fi
-        fi
-    }
-
-    # Helper to wait for a daemon to be responsive
-    wait_for_daemon() {
-        local coin="$1"
-        local cli_info=$(get_coin_cli_info "$coin")
-        local cli_cmd=$(echo "$cli_info" | cut -d'|' -f1)
-        local conf_path=$(echo "$cli_info" | cut -d'|' -f2)
-        local wait_count=0
-
-        while ! $cli_cmd -conf="$conf_path" getblockchaininfo &>/dev/null; do
-            sleep 2
-            wait_count=$((wait_count + 1))
-            if [[ $wait_count -ge 30 ]]; then
-                log_warn "Daemon will start in background, this is normal behaviour."
-                break
-            fi
-        done
-    }
-
-    # Clear any StartLimitBurst failures from prior crash loops (reinstall scenario)
-    for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
-                     digibyted bitcoind bitcoind-bch bitcoiniid bitcoincashIId bitcoinsilverd \
-                     litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd ecashd; do
-        sudo systemctl reset-failed "$svc_reset" 2>/dev/null || true
-    done
-
-    # Start enabled blockchain daemons
-    # SHA-256d coins
-    if [[ "$ENABLE_DGB" == "true" ]]; then
-        log "Starting DigiByte Core..."
-        sudo systemctl start digibyted || log_warn "Failed to start digibyted"
-        sleep 3
-        wait_for_daemon "DGB"
-    fi
-
-    if [[ "$ENABLE_BTC" == "true" ]]; then
-        log "Starting Bitcoin Knots..."
-        sudo systemctl start bitcoind || log_warn "Failed to start bitcoind"
-        sleep 3
-        wait_for_daemon "BTC"
-    fi
-
-    if [[ "$ENABLE_BCH" == "true" ]]; then
-        log "Starting Bitcoin Cash Node..."
-        sudo systemctl start bitcoind-bch || log_warn "Failed to start bitcoind-bch"
-        sleep 3
-        wait_for_daemon "BCH"
-    fi
-
-    if [[ "$ENABLE_BC2" == "true" ]]; then
-        log "Starting Bitcoin II Core..."
-        sudo systemctl start bitcoiniid || log_warn "Failed to start bitcoiniid"
-        sleep 3
-        wait_for_daemon "BC2"
-    fi
-
-    if [[ "$ENABLE_BCH2" == "true" ]]; then
-        log "Starting Bitcoin Cash II Core..."
-        sudo systemctl start bitcoincashIId || log_warn "Failed to start bitcoincashIId"
-        sleep 3
-        wait_for_daemon "BCH2"
-    fi
-
-    if [[ "$ENABLE_BTCS" == "true" ]]; then
-        log "Starting Bitcoin Silver..."
-        sudo systemctl start bitcoinsilverd || log_warn "Failed to start bitcoinsilverd"
-        sleep 3
-        wait_for_daemon "BTCS"
-    fi
-
-    # Scrypt coins
-    if [[ "$ENABLE_LTC" == "true" ]]; then
-        log "Starting Litecoin Core..."
-        sudo systemctl start litecoind || log_warn "Failed to start litecoind"
-        sleep 3
-        wait_for_daemon "LTC"
-    fi
-
-    if [[ "$ENABLE_DOGE" == "true" ]]; then
-        log "Starting Dogecoin Core..."
-        sudo systemctl start dogecoind || log_warn "Failed to start dogecoind"
-        sleep 3
-        wait_for_daemon "DOGE"
-    fi
-
-    if [[ "$ENABLE_PEP" == "true" ]]; then
-        log "Starting PepeCoin Core..."
-        sudo systemctl start pepecoind || log_warn "Failed to start pepecoind"
-        sleep 3
-        wait_for_daemon "PEP"
-    fi
-
-    if [[ "$ENABLE_CAT" == "true" ]]; then
-        log "Starting Catcoin Core..."
-        sudo systemctl start catcoind || log_warn "Failed to start catcoind"
-        sleep 3
-        wait_for_daemon "CAT"
-    fi
-
-    # Aux chain daemons (merge mining)
-    if [[ "$ENABLE_NMC" == "true" ]]; then
-        log "Starting Namecoin Core..."
-        sudo systemctl start namecoind || log_warn "Failed to start namecoind"
-        sleep 3
-        wait_for_daemon "NMC"
-    fi
-
-    if [[ "$ENABLE_SYS" == "true" ]]; then
-        log "Starting Syscoin Core..."
-        sudo systemctl start syscoind || log_warn "Failed to start syscoind"
-        sleep 3
-        wait_for_daemon "SYS"
-    fi
-
-    if [[ "$ENABLE_XMY" == "true" ]]; then
-        log "Starting Myriadcoin Core..."
-        sudo systemctl start myriadcoind || log_warn "Failed to start myriadcoind"
-        sleep 3
-        wait_for_daemon "XMY"
-    fi
-
-    if [[ "$ENABLE_FBTC" == "true" ]]; then
-        log "Starting Fractal Bitcoin..."
-        sudo systemctl start fractald || log_warn "Failed to start fractald"
-        sleep 3
-        wait_for_daemon "FBTC"
-    fi
-
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        log "Starting Q-BitX..."
-        sudo systemctl start qbitxd || log_warn "Failed to start qbitxd"
-        sleep 3
-        wait_for_daemon "QBX"
-    fi
-
-    if [[ "$ENABLE_XEC" == "true" ]]; then
-        log "Starting eCash (Bitcoin ABC)..."
-        sudo systemctl start ecashd || log_warn "Failed to start ecashd"
-        sleep 3
-        wait_for_daemon "XEC"
-    fi
-
-    # Note: DGB-Scrypt uses the same daemon as DGB, no separate start needed
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # WALLET GENERATION / BACKUP — daemons are responsive, no sync required
-    # Triggers on first install (PENDING_GENERATION) AND on reinstalls where
-    # no backup marker exists yet. Blocks until user confirms backup saved.
-    # ─────────────────────────────────────────────────────────────────────────
-    local _wg_config="$INSTALL_DIR/config/config.yaml"
-    local _wg_backup_base="$INSTALL_DIR/backups"
-    if [[ -f "$_wg_config" ]]; then
-        # Create backup dir owned by pool user so dumpwallet can write there
-        sudo mkdir -p "$_wg_backup_base" 2>/dev/null || true
-        sudo chown "${POOL_USER}:${POOL_USER}" "$_wg_backup_base" 2>/dev/null || true
-        sudo chmod 700 "$_wg_backup_base" 2>/dev/null || true
-
-        # Collect coins needing generation or backup confirmation.
-        # Includes a coin if: (a) address is PENDING_GENERATION, or
-        # (b) address is set but no .backup-confirmed-{coin} marker exists.
-        # CAT is excluded — address is user-provided, not auto-generated.
-        local _wg_coins=()
-        local _wg_needs_gen=()
-        local _wg_cur=""
-        while IFS= read -r _wg_line; do
-            if [[ "$_wg_line" =~ ^[[:space:]]*symbol:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-                _wg_cur="${BASH_REMATCH[1]}"
-            elif [[ "$_wg_line" =~ ^[[:space:]]*coin:[[:space:]]*\"?([A-Za-z0-9-]+)\"? ]]; then
-                case "${BASH_REMATCH[1]}" in
-                    digibyte) _wg_cur="DGB" ;; bitcoin) _wg_cur="BTC" ;;
-                    bitcoincash) _wg_cur="BCH" ;; bitcoincashii) _wg_cur="BCH2" ;;
-                    bitcoinii) _wg_cur="BC2" ;; bitcoinsilver) _wg_cur="BTCS" ;;
-                    namecoin) _wg_cur="NMC" ;; syscoin) _wg_cur="SYS" ;;
-                    myriadcoin) _wg_cur="XMY" ;; fractalbitcoin|fractal) _wg_cur="FBTC" ;;
-                    litecoin) _wg_cur="LTC" ;; dogecoin) _wg_cur="DOGE" ;;
-                    pepecoin) _wg_cur="PEP" ;; catcoin) _wg_cur="CAT" ;;
-                    digibyte-scrypt) _wg_cur="DGB-SCRYPT" ;;
-                    ecash|xec) _wg_cur="XEC" ;;
-                    *) _wg_cur="${BASH_REMATCH[1]}" ;;
-                esac
-            elif [[ "$_wg_line" =~ ^[[:space:]]*address:[[:space:]]*\"?([^\"[:space:]]+)\"? ]] && [[ -n "$_wg_cur" ]]; then
-                local _wg_parse_addr="${BASH_REMATCH[1]}"
-                local _wg_parse_cn="${_wg_cur,,}"
-                case "$_wg_parse_cn" in
-                    dgb|digibyte|dgb-scrypt|digibyte-scrypt) _wg_parse_cn="dgb" ;;
-                    btc|bitcoin) _wg_parse_cn="btc" ;;
-                    bch|bitcoincash) _wg_parse_cn="bch" ;;
-                    bch2|bitcoincashii) _wg_parse_cn="bch2" ;;
-                    bc2|bitcoinii) _wg_parse_cn="bc2" ;;
-                    btcs|bitcoinsilver) _wg_parse_cn="btcs" ;;
-                    nmc|namecoin) _wg_parse_cn="nmc" ;;
-                    sys|syscoin) _wg_parse_cn="sys" ;;
-                    xmy|myriadcoin) _wg_parse_cn="xmy" ;;
-                    fbtc|fractalbitcoin|fractal) _wg_parse_cn="fbtc" ;;
-                    qbx|qbitx) _wg_parse_cn="qbx" ;;
-                    ltc|litecoin) _wg_parse_cn="ltc" ;;
-                    doge|dogecoin) _wg_parse_cn="doge" ;;
-                    pep|pepecoin) _wg_parse_cn="pep" ;;
-                    cat|catcoin) _wg_parse_cn="cat" ;;
-                    xec|ecash) _wg_parse_cn="xec" ;;
-                esac
-                if [[ "$_wg_parse_cn" != "cat" ]]; then
-                    local _wg_marker="${_wg_backup_base}/.backup-confirmed-${_wg_parse_cn}"
-                    if [[ "$_wg_parse_addr" == "PENDING_GENERATION" ]]; then
-                        _wg_coins+=("$_wg_cur")
-                        _wg_needs_gen+=("true")
-                    elif [[ ! -f "$_wg_marker" ]]; then
-                        _wg_coins+=("$_wg_cur")
-                        _wg_needs_gen+=("false")
-                    fi
-                fi
-                _wg_cur=""
-            fi
-        done < <(sudo cat "$_wg_config")
-
-        if [[ ${#_wg_coins[@]} -gt 0 ]]; then
-            log "Wallet backup required for: ${_wg_coins[*]}"
-
-            for _wg_i in "${!_wg_coins[@]}"; do
-                local _wg_coin="${_wg_coins[$_wg_i]}"
-                local _wg_do_gen="${_wg_needs_gen[$_wg_i]}"
-                local _wg_coin_lower="${_wg_coin,,}"
-                case "$_wg_coin_lower" in
-                    dgb|digibyte|dgb-scrypt|digibyte-scrypt) _wg_coin_lower="dgb" ;;
-                    btc|bitcoin) _wg_coin_lower="btc" ;;
-                    bch|bitcoincash) _wg_coin_lower="bch" ;;
-                    bch2|bitcoincashii) _wg_coin_lower="bch2" ;;
-                    bc2|bitcoinii) _wg_coin_lower="bc2" ;;
-                    btcs|bitcoinsilver) _wg_coin_lower="btcs" ;;
-                    nmc|namecoin) _wg_coin_lower="nmc" ;;
-                    sys|syscoin) _wg_coin_lower="sys" ;;
-                    xmy|myriadcoin) _wg_coin_lower="xmy" ;;
-                    fbtc|fractalbitcoin|fractal) _wg_coin_lower="fbtc" ;;
-                    qbx|qbitx) _wg_coin_lower="qbx" ;;
-                    ltc|litecoin) _wg_coin_lower="ltc" ;;
-                    doge|dogecoin) _wg_coin_lower="doge" ;;
-                    pep|pepecoin) _wg_coin_lower="pep" ;;
-                    xec|ecash) _wg_coin_lower="xec" ;;
-                esac
-
-                if [[ "$_wg_do_gen" == "true" ]]; then
-                    log "Generating ${_wg_coin} wallet..."
-                    local _wg_before
-                    _wg_before=$(sudo grep -c "PENDING_GENERATION" "$_wg_config" 2>/dev/null || true)
-                    _wg_before="${_wg_before:-0}"
-
-                    sudo -u "$POOL_USER" spiralpool-wallet --coin "$_wg_coin_lower" --auto --nowait \
-                        2>&1 | tee -a "$LOG_FILE" || true
-
-                    local _wg_after
-                    _wg_after=$(sudo grep -c "PENDING_GENERATION" "$_wg_config" 2>/dev/null || true)
-                    _wg_after="${_wg_after:-0}"
-
-                    if [[ "$_wg_after" -ge "$_wg_before" ]]; then
-                        log_warn "${_wg_coin} wallet generation failed — run manually: spiralpool-wallet --coin ${_wg_coin_lower}"
-                        continue
-                    fi
-                fi
-
-                # Read generated/existing address from config
-                local _wg_addr=""
-                if sudo grep -q '^\s*symbol:' "$_wg_config" 2>/dev/null; then
-                    _wg_addr=$(sudo awk -v sym="${_wg_coin}" '
-                        /symbol:/ { in_s = ($0 ~ "\"?"sym"\"?") }
-                        in_s && /address:/ && !/PENDING_GENERATION/ {
-                            gsub(/.*address:[[:space:]]*"?/,""); gsub(/".*$/,""); gsub(/[[:space:]]/,""); print; exit
-                        }' "$_wg_config" 2>/dev/null)
-                else
-                    _wg_addr=$(sudo grep -E '^\s*address:' "$_wg_config" 2>/dev/null \
-                        | grep -v 'PENDING_GENERATION' | head -1 \
-                        | sed 's/.*address:[[:space:]]*["'"'"']\?\([^"'"'"' ]*\)["'"'"']\?.*/\1/')
-                fi
-
-                # Export wallet — backupwallet creates a clean wallet.dat copy while the daemon
-                # is live (it flushes+locks internally, safe for both BerkeleyDB and SQLite).
-                # Falls back to listdescriptors true if backupwallet fails (shouldn't happen).
-                local _wg_wallet="pool-${_wg_coin_lower}"
-
-                # If no pool wallet exists on disk the address was manually provided —
-                # nothing to back up. Mark confirmed and skip the entire backup section.
-                if [[ ! -d "$INSTALL_DIR/${_wg_coin_lower}/${_wg_wallet}" ]] && \
-                   [[ ! -d "$INSTALL_DIR/${_wg_coin_lower}/wallets/${_wg_wallet}" ]]; then
-                    log_info "${_wg_coin}: address was manually provided, no pool wallet on server — skipping backup"
-                    sudo -u "$POOL_USER" touch "${_wg_backup_base}/.backup-confirmed-${_wg_coin_lower}" 2>/dev/null || true
-                    continue
-                fi
-                local _wg_cli=""
-                case "$_wg_coin_lower" in
-                    dgb)  _wg_cli="digibyte-cli -conf=$INSTALL_DIR/dgb/digibyte.conf -rpcwallet=$_wg_wallet" ;;
-                    btc)  _wg_cli="bitcoin-cli -conf=$INSTALL_DIR/btc/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    bch)  _wg_cli="bitcoin-cli -conf=$INSTALL_DIR/bch/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    bch2) _wg_cli="bitcoincashII-cli -conf=$INSTALL_DIR/bch2/bitcoincashii.conf -rpcwallet=$_wg_wallet" ;;
-                    bc2)  _wg_cli="bitcoinii-cli -conf=$INSTALL_DIR/bc2/bitcoinii.conf -rpcwallet=$_wg_wallet" ;;
-                    btcs) _wg_cli="bitcoinsilver-cli -conf=$INSTALL_DIR/btcs/bitcoinsilver.conf -rpcwallet=$_wg_wallet" ;;
-                    nmc)  _wg_cli="namecoin-cli -conf=$INSTALL_DIR/nmc/namecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    sys)  _wg_cli="syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf -rpcwallet=$_wg_wallet" ;;
-                    xmy)  _wg_cli="myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    fbtc) _wg_cli="fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf -rpcwallet=$_wg_wallet" ;;
-                    qbx)  _wg_cli="qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf -rpcwallet=$_wg_wallet" ;;
-                    ltc)  _wg_cli="litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    doge) _wg_cli="dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    pep)  _wg_cli="pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    cat)  _wg_cli="catcoin-cli -conf=$INSTALL_DIR/cat/catcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    xec)  _wg_cli="ecash-cli -conf=$INSTALL_DIR/xec/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                esac
-
-                local _wg_backup_file="${_wg_backup_base}/wallet-${_wg_coin_lower}-$(date +%Y%m%d-%H%M%S).dat"
-                local _wg_dump_ok="false"
-                if [[ -n "$_wg_cli" ]]; then
-                    # Primary: backupwallet — atomic flush+copy, safe for live daemon,
-                    # works for both legacy (BerkeleyDB) and descriptor (SQLite) wallets.
-                    local _wg_bak_out
-                    _wg_bak_out=$(sudo -u "$POOL_USER" $_wg_cli backupwallet "$_wg_backup_file" 2>&1) || true
-                    if ! echo "$_wg_bak_out" | grep -qi "error\|unknown"; then
-                        _wg_dump_ok="true"
-                    else
-                        # Fallback: listdescriptors true — for wallets where backupwallet
-                        # is unavailable. Writes descriptors + private keys as JSON.
-                        local _wg_desc_out
-                        _wg_desc_out=$(sudo -u "$POOL_USER" $_wg_cli listdescriptors true 2>&1) || true
-                        if ! echo "$_wg_desc_out" | grep -qi "error\|unknown"; then
-                            _wg_backup_file="${_wg_backup_base}/wallet-${_wg_coin_lower}-$(date +%Y%m%d-%H%M%S).dump"
-                            printf '%s\n' "$_wg_desc_out" | sudo -u "$POOL_USER" tee "$_wg_backup_file" > /dev/null
-                            _wg_dump_ok="true"
-                        fi
-                    fi
-                    [[ "$_wg_dump_ok" == "true" ]] && sudo chmod 600 "$_wg_backup_file" 2>/dev/null || true
-                fi
-
-                echo ""
-                echo -e "${RED}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-                echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR ${_wg_coin} WALLET NOW${NC}                    ${RED}║${NC}"
-                echo -e "${RED}╚═══════════════════════════════════════════════════════════════════╝${NC}"
-                echo ""
-                [[ -n "$_wg_addr" ]] && echo -e "  ${WHITE}Pool Address:${NC}  ${GREEN}${_wg_addr}${NC}" && echo ""
-                if [[ "$_wg_dump_ok" == "true" ]]; then
-                    echo -e "  ${WHITE}Backup file:${NC}  ${GREEN}${_wg_backup_file}${NC}"
-                    if [[ "$_wg_backup_file" == *.dat ]]; then
-                        echo -e "  ${WHITE}File type:${NC}    wallet.dat — binary wallet file. Load it with: ${GREEN}${_wg_coin_lower}-cli loadwallet <path>${NC}"
-                    else
-                        echo -e "  ${WHITE}File type:${NC}    descriptor dump — JSON export of private keys. Import with: ${GREEN}${_wg_coin_lower}-cli importdescriptors <contents>${NC}"
-                    fi
-                    echo -e "  ${WHITE}SCP command:${NC}  ${GREEN}scp ${POOL_USER}@$(hostname -I | awk '{print $1}'):${_wg_backup_file} ./${NC}"
-                else
-                    echo -e "  ${YELLOW}Auto-export failed. Back up manually:${NC}"
-                    echo -e "  ${GREEN}$INSTALL_DIR/${_wg_coin_lower}/wallets/${_wg_wallet}/wallet.dat${NC}"
-                    echo -e "  ${WHITE}File type:${NC}    wallet.dat — binary wallet file containing your private keys."
-                fi
-                echo ""
-                echo -e "  Copy the backup off this server. If it is lost, your funds CANNOT be recovered."
-                echo ""
-                if [[ "${AUTO_MODE:-false}" != "true" ]]; then
-                    echo -e "  Type ${WHITE}YES${NC} and press ENTER to continue:"
-                    while true; do
-                        read -r _wg_confirm
-                        [[ "$_wg_confirm" == "YES" ]] && break
-                        echo -e "  ${YELLOW}Type exactly:${NC} YES"
-                    done
-                    echo ""
-                else
-                    echo -e "  ${YELLOW}Auto mode: backup created at path above. Confirm backup manually before using this pool.${NC}"
-                    echo ""
-                fi
-
-                # Mark backup confirmed — future reinstalls skip this coin's backup prompt
-                sudo -u "$POOL_USER" touch "${_wg_backup_base}/.backup-confirmed-${_wg_coin_lower}" 2>/dev/null || true
-            done
-        fi
-    fi
-
-    # Check if all enabled blockchains are synced
-    if check_all_coins_sync; then
-        log_success "All blockchains are synced!"
-        log "Starting Spiral Stratum..."
-        sudo systemctl enable spiralstratum || log_warn "Failed to enable spiralstratum"
-        sudo systemctl start spiralstratum || log_warn "Failed to start spiralstratum"
-        sleep 3
-    else
-        # Show sync status for all enabled coins
-        show_all_coins_sync_status
-
-        # Enable sync monitor to auto-start stratum when ready
-        # NOTE: spiralpool-sync is Type=oneshot with TimeoutStartSec=infinity,
-        # so systemctl start blocks until all chains are synced. We must prompt
-        # the user BEFORE starting the service, not after.
-        log "Spiral Stratum will start automatically when sync completes"
-
-        echo ""
-        echo -e "${WHITE}The pool will automatically start once the blockchain finishes syncing.${NC}"
-        echo ""
-
-        # Watch sync choice was already made during configuration phase
-        # Start sync monitor (this blocks until all chains are synced)
-        log "Enabling sync monitor (will start pool when all blockchains are synced)..."
-        sudo systemctl enable spiralpool-sync || true
-        sudo systemctl start --no-block spiralpool-sync > /dev/null 2>&1
-
-        # Don't enable stratum yet - sync monitor will do it
-    fi
-
-    # Health monitor is ALWAYS started (critical for autonomous operation)
-    log "Starting health monitor..."
-    sudo systemctl start spiralpool-health || log_warn "Failed to start health monitor"
-
-    # Full mode starts optional extras (these can run during sync)
-    if [[ "$INSTALL_MODE" == "full" ]]; then
-        # HA Mode: Use role-aware service control
-        if [[ "$HA_ENABLED" == "true" ]]; then
-            log "HA Mode: Checking node role before starting services..."
-
-            # Create HA enabled marker (for watcher service ConditionPathExists)
-            sudo touch "$INSTALL_DIR/config/ha-enabled"
-            sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/config/ha-enabled"
-
-            # Write ha-mode file (used by ha-role-watcher for automatic failback)
-            echo "$HA_MODE" | sudo tee "$INSTALL_DIR/config/ha-mode" > /dev/null
-            sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/config/ha-mode"
-
-            # Install and start the HA role watcher service
-            if [[ -f "${SCRIPT_DIR}/scripts/linux/systemd/spiralpool-ha-watcher.service" ]]; then
-                sudo cp "${SCRIPT_DIR}/scripts/linux/systemd/spiralpool-ha-watcher.service" /etc/systemd/system/
-                sudo sed -i "s|{{INSTALL_DIR}}|$INSTALL_DIR|g" /etc/systemd/system/spiralpool-ha-watcher.service
-                sudo sed -i "s|{{POOL_USER}}|$POOL_USER|g" /etc/systemd/system/spiralpool-ha-watcher.service
-                sudo systemctl daemon-reload || true
-                sudo systemctl enable spiralpool-ha-watcher || true
-                sudo systemctl start spiralpool-ha-watcher || log_warn "Failed to start HA watcher"
-                log_success "HA role watcher service started"
-            fi
-
-            # Use auto-detection to start services based on actual HA role.
-            # SKIP on backup: stratum may not have initialized its VIP API yet
-            # (or may not be running at all if blockchain is still syncing).
-            # Without a VIP API response, auto-detect returns "STANDALONE" and
-            # incorrectly starts sentinel+dashboard on backup. The ha-watcher
-            # service handles role detection continuously and will start services
-            # if/when this node becomes MASTER.
-            if [[ "$HA_MODE" == "ha-backup" ]]; then
-                log "HA backup: sentinel/dashboard will start via ha-role-watcher on failover"
-            elif [[ -x "/usr/local/bin/spiralpool-ha-service" ]]; then
-                log "Running HA service auto-detection..."
-                /usr/local/bin/spiralpool-ha-service auto "Installation complete" || true
-            else
-                log_warn "HA service control script not found, falling back to direct start"
-                start_service_if_exists "spiraldash"
-                if [[ -n "$DISCORD_WEBHOOK" ]] || [[ -n "$TELEGRAM_BOT_TOKEN" ]] || [[ -n "$XMPP_JID" ]]; then
-                    start_service_if_exists "spiralsentinel"
-                fi
-            fi
-        else
-            # Non-HA Mode: Start services directly
-            start_service_if_exists "spiraldash"
-            start_service_if_exists "spiraldash-redirect"
-
-            # Start Sentinel only if notifications were configured
-            if [[ -n "$DISCORD_WEBHOOK" ]] || [[ -n "$TELEGRAM_BOT_TOKEN" ]] || [[ -n "$XMPP_JID" ]]; then
-                start_service_if_exists "spiralsentinel"
-            fi
-        fi
-    fi
-
-    log_success "Services started"
-    mark_progress "services"
-    log ""
-    log "Self-healing health monitor is active and will:"
-    log "  - Auto-restart crashed services"
-    log "  - Monitor disk space and memory"
-    log "  - Start stratum when all blockchains sync"
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# COMPLETION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-print_completion() {
-    # Use VIP address for miner connections when HA is enabled
-    local connect_ip="$SERVER_IP"
-    if [[ "$HA_ENABLED" == "true" ]] && [[ -n "$VIP_ADDRESS" ]]; then
-        connect_ip="$VIP_ADDRESS"
-    fi
-
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  CONNECT YOUR MINERS${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    if [[ "$COIN_MODE" == "multi" ]]; then
-        # Multi-coin mode: show per-coin ports
-        [[ "$ENABLE_DGB" == "true" ]]        && echo -e "  ${WHITE}💎 DGB:${NC}    stratum+tcp://$connect_ip:${GREEN}3333${NC}  (V2: ${GREEN}3334${NC})"
-        [[ "$ENABLE_BTC" == "true" ]]        && echo -e "  ${WHITE}🟠 BTC:${NC}    stratum+tcp://$connect_ip:${GREEN}4333${NC}  (V2: ${GREEN}4334${NC})"
-        [[ "$ENABLE_BCH" == "true" ]]        && echo -e "  ${WHITE}🟢 BCH:${NC}    stratum+tcp://$connect_ip:${GREEN}5333${NC}  (V2: ${GREEN}5334${NC})"
-        [[ "$ENABLE_BCH2" == "true" ]]       && echo -e "  ${WHITE}🟤 BCH2:${NC}   stratum+tcp://$connect_ip:${GREEN}5336${NC}  (V2: ${GREEN}5337${NC})"
-        [[ "$ENABLE_BC2" == "true" ]]        && echo -e "  ${WHITE}🔷 BC2:${NC}    stratum+tcp://$connect_ip:${GREEN}6333${NC}  (V2: ${GREEN}6334${NC})"
-        [[ "$ENABLE_BTCS" == "true" ]]       && echo -e "  ${WHITE}⚪ BTCS:${NC}   stratum+tcp://$connect_ip:${GREEN}11335${NC} (V2: ${GREEN}11336${NC})"
-        [[ "$ENABLE_LTC" == "true" ]]        && echo -e "  ${WHITE}🪙 LTC:${NC}    stratum+tcp://$connect_ip:${GREEN}7333${NC}  (V2: ${GREEN}7334${NC})"
-        [[ "$ENABLE_DOGE" == "true" ]]       && echo -e "  ${WHITE}🐕 DOGE:${NC}   stratum+tcp://$connect_ip:${GREEN}8335${NC}  (V2: ${GREEN}8337${NC})"
-        [[ "$ENABLE_PEP" == "true" ]]        && echo -e "  ${WHITE}🐸 PEP:${NC}    stratum+tcp://$connect_ip:${GREEN}10335${NC} (V2: ${GREEN}10336${NC})"
-        [[ "$ENABLE_CAT" == "true" ]]        && echo -e "  ${WHITE}🐱 CAT:${NC}    stratum+tcp://$connect_ip:${GREEN}12335${NC} (V2: ${GREEN}12336${NC})"
-        [[ "$ENABLE_DGB_SCRYPT" == "true" ]] && echo -e "  ${WHITE}💎 DGB-S:${NC}  stratum+tcp://$connect_ip:${GREEN}3336${NC}  (V2: ${GREEN}3337${NC})"
-        [[ "$ENABLE_NMC" == "true" ]]        && echo -e "  ${WHITE}🔶 NMC:${NC}    stratum+tcp://$connect_ip:${GREEN}14335${NC} (V2: ${GREEN}14336${NC})"
-        [[ "$ENABLE_SYS" == "true" ]]        && echo -e "  ${WHITE}⚙️ SYS:${NC}    stratum+tcp://$connect_ip:${GREEN}15335${NC} (V2: ${GREEN}15336${NC})"
-        [[ "$ENABLE_XMY" == "true" ]]        && echo -e "  ${WHITE}🔴 XMY:${NC}    stratum+tcp://$connect_ip:${GREEN}17335${NC} (V2: ${GREEN}17336${NC})"
-        [[ "$ENABLE_FBTC" == "true" ]]       && echo -e "  ${WHITE}🟡 FBTC:${NC}   stratum+tcp://$connect_ip:${GREEN}18335${NC} (V2: ${GREEN}18336${NC})"
-        [[ "$ENABLE_QBX" == "true" ]]        && echo -e "  ${WHITE}⚛️ QBX:${NC}    stratum+tcp://$connect_ip:${GREEN}20335${NC} (V2: ${GREEN}20336${NC})"
-        [[ "$ENABLE_XEC" == "true" ]]        && echo -e "  ${WHITE}💚 XEC:${NC}    stratum+tcp://$connect_ip:${GREEN}18338${NC} (V2: ${GREEN}18339${NC})"
-    else
-        echo -e "  ${WHITE}Stratum V1:${NC}      stratum+tcp://$connect_ip:$STRATUM_PORT"
-        echo -e "  ${WHITE}Stratum V2:${NC}      stratum+tcp://$connect_ip:$STRATUM_V2_PORT"
-    fi
-    echo -e "  ${WHITE}Worker:${NC}          YOUR_WALLET.worker_name"
-    echo -e "  ${WHITE}Password:${NC}        x"
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  WEB INTERFACES${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    local _finish_proto="http"
-    if grep -q "^ExecStart.*\-\-certfile" /etc/systemd/system/spiraldash.service 2>/dev/null; then _finish_proto="https"; fi
-    if [[ "$HA_MODE" == "ha-backup" ]]; then
-        echo -e "  ${WHITE}Dashboard:${NC}       ${_finish_proto}://$connect_ip:$DASHBOARD_PORT ${DIM}(active on MASTER node only)${NC}"
-        echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools ${DIM}(via VIP)${NC}"
-        echo ""
-        echo -e "  ${DIM}Dashboard and Sentinel run on the MASTER node. On failover, this node${NC}"
-        echo -e "  ${DIM}will become MASTER and start them automatically.${NC}"
-    else
-        if [[ -n "$CLOUD_DETECTED" ]]; then
-            echo -e "  ${YELLOW}⚠ CLOUD INSTALL: Dashboard is accessible via SSH tunnel${NC}"
-            echo -e "  ${WHITE}Access via SSH tunnel from your local machine:${NC}"
-            echo ""
-            echo -e "  ${GREEN}  ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}${NC}"
-            echo -e "  ${WHITE}  Then open:${NC} ${GREEN}https://localhost:1618${NC}"
-            echo ""
-            echo -e "  ${DIM}Port 1618 is intentionally closed in the firewall. A self-signed TLS${NC}"
-            echo -e "  ${DIM}certificate is used — accept the browser warning on first visit.${NC}"
-            echo -e "  ${DIM}See: docs/setup/CLOUD_OPERATIONS.md${NC}"
-        else
-            echo -e "  ${WHITE}Dashboard:${NC}       https://$connect_ip:$DASHBOARD_PORT"
-            echo -e "  ${DIM}(Self-signed TLS cert — accept the browser warning on first visit)${NC}"
-        fi
-        if [[ -n "$CLOUD_DETECTED" ]]; then
-            echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools  ${DIM}(world-accessible — public stats; admin routes require API key)${NC}"
-        else
-            echo -e "  ${WHITE}Pool API:${NC}        http://$connect_ip:$API_PORT/api/pools"
-        fi
-        echo ""
-        echo -e "  ${YELLOW}⚠ IMPORTANT: Dashboard Authentication${NC}"
-        echo -e "  ${WHITE}On first access, you'll be prompted to create an admin password.${NC}"
-        echo -e "  ${WHITE}Minimum 8 characters. Password hash stored in $INSTALL_DIR/dashboard/data/auth.json${NC}"
-    fi
-    echo ""
-    if [[ "$HA_MODE" == "ha-master" ]]; then
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${WHITE}  HIGH AVAILABILITY CREDENTIALS${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  ${YELLOW}⚠ SAVE THESE FOR BACKUP NODE SETUP:${NC}"
-        echo ""
-        echo -e "  ${WHITE}Replication Password:${NC}  $DB_REPLICATION_PASSWORD"
-        echo -e "  ${WHITE}Superuser Password:${NC}    $POSTGRES_SUPERUSER_PASSWORD"
-        echo -e "  ${WHITE}Database Password:${NC}     $DB_PASSWORD"
-        echo ""
-        echo -e "  ${DIM}You will need these when running install.sh on each Backup node.${NC}"
-        echo -e "  ${DIM}Use the same cluster token and credentials for all Backup nodes.${NC}"
-        echo ""
-    fi
-    if [[ "$INSTALL_MODE" == "full" ]]; then
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${WHITE}  NOTIFICATIONS${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        if [[ -n "$DISCORD_WEBHOOK" ]] || [[ -n "$TELEGRAM_BOT_TOKEN" ]] || [[ -n "$XMPP_JID" ]]; then
-            if [[ "$HA_MODE" == "ha-backup" ]]; then
-                echo -e "  ${GREEN}✓${NC} Spiral Sentinel configured ${DIM}(will start on failover to MASTER)${NC}"
-            else
-                echo -e "  ${GREEN}✓${NC} Spiral Sentinel is running"
-            fi
-            [[ -n "$DISCORD_WEBHOOK" ]] && echo -e "    ${GREEN}✓${NC} Discord notifications enabled"
-            [[ -n "$TELEGRAM_BOT_TOKEN" ]] && echo -e "    ${GREEN}✓${NC} Telegram notifications enabled"
-            [[ -n "$XMPP_JID" ]] && echo -e "    ${GREEN}✓${NC} XMPP notifications enabled"
-            echo -e "  ${WHITE}You'll receive alerts for blocks, offline miners, and temperature warnings.${NC}"
-            if [[ -n "$TELEGRAM_BOT_TOKEN" ]] && [[ "${TELEGRAM_COMMANDS_ENABLED:-false}" == "true" ]]; then
-                echo ""
-                echo -e "  ${WHITE}Telegram Bot Commands:${NC}"
-                echo -e "    Type ${YELLOW}/help${NC} in your Telegram chat for interactive commands:"
-                echo -e "    ${DIM}/status  /miners  /hashrate  /blocks  /uptime  /pause  /resume  /cooldowns${NC}"
-            fi
-        else
-            echo -e "  ${YELLOW}○${NC} No notifications configured"
-            echo -e "  ${WHITE}To enable later, edit: $INSTALL_DIR/config/sentinel/config.json${NC}"
-            echo -e "  ${WHITE}Then run: sudo systemctl enable --now spiralsentinel${NC}"
-        fi
-        echo ""
-    fi
-    # When coins were added to an existing installation, remind user to configure wallets
-    if [[ "$NATIVE_UPGRADE_MODE" == "add" ]]; then
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${WHITE}  CONFIGURE WALLET ADDRESSES${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  ${YELLOW}New coins have been added to your pool.${NC}"
-        echo -e "  ${WHITE}You need to set wallet addresses for the new coins in the Dashboard.${NC}"
-        echo ""
-        if [[ -n "$CLOUD_DETECTED" ]]; then
-            echo -e "  ${WHITE}1.${NC} SSH tunnel: ${GREEN}ssh -L 1618:localhost:1618 ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}${NC}"
-            echo -e "  ${WHITE}2.${NC} Open:       ${GREEN}https://localhost:1618/setup${NC}"
-        else
-            echo -e "  ${WHITE}Open:${NC}  ${GREEN}https://${connect_ip}:${DASHBOARD_PORT}/setup${NC}"
-        fi
-        echo ""
-        echo -e "  ${DIM}The setup wizard will detect your active coins and show wallet inputs for each.${NC}"
-        echo -e "  ${DIM}Existing wallet addresses are pre-populated from the stratum config.${NC}"
-        echo ""
-    fi
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  COMMANDS${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${WHITE}spiralctl status${NC}              - Service & node overview"
-    echo -e "  ${WHITE}spiralctl stats${NC}               - Quick stats (hashrate, blocks)"
-    echo -e "  ${WHITE}spiralctl watch${NC}               - Live monitoring dashboard"
-    echo -e "  ${WHITE}spiralctl logs${NC}                - View stratum logs"
-    echo -e "  ${WHITE}spiralctl sync${NC}                - Blockchain sync progress"
-    echo -e "  ${WHITE}spiralctl test${NC}                - Run diagnostic tests"
-    echo -e "  ${WHITE}spiralctl scan${NC}                - Scan network for miners"
-    echo -e "  ${WHITE}spiralctl restart${NC}             - Restart all services"
-    echo -e "  ${WHITE}spiralctl mining${NC}              - Mining mode management"
-    echo -e "  ${WHITE}spiralctl config${NC}              - View/edit configuration"
-    echo -e "  ${WHITE}spiralctl config validate${NC}     - Validate config (dry-run check)"
-    echo -e "  ${WHITE}spiralctl wallet${NC}              - Show wallet addresses"
-    echo -e "  ${WHITE}spiralctl security${NC}            - Security status & fail2ban"
-    echo -e "  ${WHITE}spiralctl data backup${NC}         - Backup pool data"
-    echo -e "  ${WHITE}spiralctl ha${NC}                  - HA cluster management"
-    echo -e "  ${WHITE}spiralctl help${NC}                - Full command reference (all commands)"
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  MAINTENANCE${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${WHITE}spiralpool-pause 30${NC}           - Pause Sentinel alerts for 30 minutes"
-    echo -e "  ${WHITE}spiralpool-pause resume${NC}       - Resume alerts immediately"
-    echo -e "  ${WHITE}spiralpool-pause status${NC}       - Check if alerts are currently paused"
-    echo -e "  ${DIM}Use before planned maintenance to avoid alert noise.${NC}"
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${WHITE}  BLOCKCHAIN SYNC${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    # Check if blockchain is already synced
-    if check_blockchain_sync 2>/dev/null; then
-        echo -e "  ${GREEN}✓ Blockchain is synced - Pool is ONLINE${NC}"
-        echo ""
-    else
-        echo -e "  ${YELLOW}⏳ Blockchain sync in progress${NC}"
-        echo ""
-        # Count enabled coins to show appropriate message
-        local enabled_coins=0
-        local enabled_coin_names=""
-        [[ "$ENABLE_DGB" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="DGB "; }
-        [[ "$ENABLE_BTC" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="BTC "; }
-        [[ "$ENABLE_BCH" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="BCH "; }
-        [[ "$ENABLE_BCH2" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="BCH2 "; }
-        [[ "$ENABLE_BC2" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="BC2 "; }
-        [[ "$ENABLE_BTCS" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="BTCS "; }
-        [[ "$ENABLE_NMC" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="NMC "; }
-        [[ "$ENABLE_SYS" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="SYS "; }
-        [[ "$ENABLE_XMY" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="XMY "; }
-        [[ "$ENABLE_FBTC" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="FBTC "; }
-        [[ "$ENABLE_QBX" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="QBX "; }
-        [[ "$ENABLE_XEC" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="XEC "; }
-        [[ "$ENABLE_LTC" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="LTC "; }
-        [[ "$ENABLE_DOGE" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="DOGE "; }
-        [[ "$ENABLE_DGB_SCRYPT" == "true" ]] && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="DGB-SCRYPT "; }
-        [[ "$ENABLE_PEP" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="PEP "; }
-        [[ "$ENABLE_CAT" == "true" ]]  && { enabled_coins=$((enabled_coins + 1)); enabled_coin_names+="CAT "; }
-
-        if [[ $enabled_coins -gt 1 ]]; then
-            echo -e "  ${RED}⚠ IMPORTANT: Multi-coin mode requires ALL blockchains to sync${NC}"
-            echo -e "  ${WHITE}  Enabled coins: ${enabled_coin_names}${NC}"
-            echo -e "  ${WHITE}  The stratum server will NOT start until every enabled${NC}"
-            echo -e "  ${WHITE}  blockchain reaches 99.99% sync progress.${NC}"
-            echo ""
-            echo -e "  ${YELLOW}TIP: If one coin syncs faster than others, you can:${NC}"
-            echo -e "  ${WHITE}  1. Wait for all to sync (recommended)${NC}"
-            echo -e "  ${WHITE}  2. Temporarily disable slower coins in config.yaml${NC}"
-            echo -e "  ${WHITE}     and re-enable them after they finish syncing${NC}"
-        else
-            echo -e "  ${WHITE}The pool will auto-start when sync reaches 99.99%${NC}"
-        fi
-        echo ""
-
-        # Use the flag set earlier, or ask if not set
-        if [[ "${WATCH_SYNC_ON_EXIT:-}" != "true" && "${WATCH_SYNC_ON_EXIT:-}" != "declined" ]]; then
-            echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-            echo ""
-            echo -e "  ${WHITE}Would you like to watch the blockchain sync progress?${NC}"
-            echo -e "  ${DIM}(Press 'q' to quit, 'b' to background the monitor)${NC}"
-            echo ""
-            # Reset terminal state - psql/sudo may corrupt tty settings during verification
-            stty sane 2>/dev/null || true
-            prompt_input "Watch sync progress? [Y/n]: "; read watch_sync < /dev/tty
-            if [[ "$watch_sync" != "n" && "$watch_sync" != "N" ]]; then
-                WATCH_SYNC_ON_EXIT="true"
-            fi
-        fi
-
-        if [[ "${WATCH_SYNC_ON_EXIT:-}" == "true" ]]; then
-            # Launch the pretty sync watcher
-            # Determine if we need multi-coin mode (count enabled coins)
-            local sync_flags="--watch"
-            local coin_count=0
-            [[ -f "$(get_blockchain_dir dgb)/digibyte.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir btc)/bitcoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir bch)/bitcoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir bc2)/bitcoinii.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir bch2)/bitcoincashii.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir btcs)/bitcoinsilver.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir ltc)/litecoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir doge)/dogecoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir nmc)/namecoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir sys)/syscoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir xmy)/myriadcoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir fbtc)/fractal.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir qbx)/qbitx.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir xec)/bitcoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir pep)/pepecoin.conf" ]] && coin_count=$((coin_count + 1))
-            [[ -f "$(get_blockchain_dir cat)/catcoin.conf" ]] && coin_count=$((coin_count + 1))
-
-            if [[ $coin_count -gt 1 ]]; then
-                sync_flags="--watch --multi"
-            fi
-
-            # Try multiple methods to handle permission issues:
-            # 1. Run as pool user (owns the config files)
-            # 2. Use sg to activate group membership without re-login
-            # 3. Show manual command as last resort
-            # Note: sync tool exit codes are informational, not errors - ignore them
-            if sudo -u "$POOL_USER" spiralpool-sync $sync_flags 2>/dev/null; then
-                : # Success
-            elif sg "$POOL_USER" -c "spiralpool-sync $sync_flags" 2>/dev/null; then
-                : # Success via group switch
-            else
-                echo ""
-                echo -e "  ${YELLOW}Sync monitor starting...${NC}"
-                sleep 2
-                sudo -u "$POOL_USER" spiralpool-sync $sync_flags 2>/dev/null || true
-            fi
-
-            # Reset terminal after sync watcher exits — the watcher uses tput civis,
-            # stty -echo, clear, and cursor positioning. The subprocess stty sane may
-            # not propagate through sudo PTY, causing staircase/shifted output.
-            stty sane 2>/dev/null || true
-            tput cnorm 2>/dev/null || true
-            # Restore CR/LF handling (opost onlcr) and ensure echo is on.
-            # Avoid 'reset' — it clears the screen (wipes sync output) and can
-            # hang on systems where TERM is unset (tset prompts for terminal type).
-            stty opost onlcr echo 2>/dev/null || true
-            # Send terminal init string without clearing screen
-            tput init 2>/dev/null || true
-
-            # User already watched sync — don't re-launch at end of install
-            # (the exec at end of script would clear the screen and wipe miner scan output)
-            WATCH_SYNC_ON_EXIT="ran"
-        fi
-    fi
-
-    # Run miner scan if requested during installation
-    if [[ "${SCAN_FOR_MINERS:-false}" == "true" ]]; then
-        # Reset terminal after sync watcher — sudo subprocess may leave
-        # stty/tput in a corrupted state (staircase output, missing CR)
-        stty sane 2>/dev/null || true
-        tput cnorm 2>/dev/null || true
-        stty opost onlcr echo 2>/dev/null || true
-        tput init 2>/dev/null || true
-        echo ""
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${WHITE}  MINER DISCOVERY${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  ${WHITE}Scanning your network for mining devices...${NC}"
-        echo ""
-        # Refresh sudo credentials — they may have expired during blockchain sync
-        sudo -v 2>/dev/null || true
-        # Run the scan (don't suppress stderr — errors should be visible)
-        spiralpool-scan --auto || {
-            echo -e "  ${YELLOW}Scan will be available after logging out and back in.${NC}"
-            echo -e "  ${WHITE}Run manually: ${GREEN}spiralpool-scan${NC}"
-        }
-        echo ""
-    fi
-
-    # Cloud-specific credentials security notice
-    if [[ -n "${CLOUD_DETECTED:-}" ]]; then
-        echo ""
-        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${RED}  ⚠ CLOUD INSTALL: CREDENTIALS SECURITY${NC}"
-        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo -e "  Your admin API key, metrics token, and RPC passwords are saved to:"
-        echo -e "  ${WHITE}$INSTALL_DIR/config/credentials.txt${NC}  ${DIM}(chmod 600 — readable by root only)${NC}"
-        echo ""
-        echo -e "  ${YELLOW}On a cloud VPS, your provider can snapshot or inspect disk contents.${NC}"
-        echo -e "  ${WHITE}Recommended actions:${NC}"
-        echo -e "    1. Copy the admin API key to a secure location offline (password manager)"
-        echo -e "    2. ${WHITE}Delete the credentials file after you have saved the key:${NC}"
-        echo -e "       ${GREEN}sudo rm $INSTALL_DIR/config/credentials.txt${NC}"
-        echo -e "    3. Clear your terminal history:"
-        echo -e "       ${GREEN}history -c && clear${NC}"
-        echo -e "    4. To retrieve the admin API key later without the file:"
-        echo -e "       ${GREEN}sudo grep admin_api_key $INSTALL_DIR/config/stratum/config.yaml${NC}"
-        echo ""
-        echo -e "  ${YELLOW}Swap security:${NC} A 4GB swapfile is active at /swapfile. Memory pages (including"
-        echo -e "  in-use credential data) can be written to swap and persist on provider-managed disk."
-        echo -e "  If your provider offers encrypted-disk VMs, prefer those for sensitive workloads."
-        echo ""
-        echo -e "  ${YELLOW}Auto-reboot:${NC} Security patches that require a kernel update will trigger an"
-        echo -e "  automatic reboot at ${WHITE}04:00 UTC${NC}. Pool services stop gracefully and restart on boot"
-        echo -e "  (~1-2 min downtime). To disable: ${GREEN}sudo nano /etc/apt/apt.conf.d/50unattended-upgrades${NC}"
-        echo -e "  and set ${WHITE}Automatic-Reboot \"false\"${NC}."
-        echo ""
-        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    fi
-
-    # Prevent the post-main sync watcher exec from clearing the screen after the banner
-    WATCH_SYNC_ON_EXIT="done"
-
-    # Final banner — last thing the user sees
-    echo ""
-    echo -e "${CYAN}  █████████             ███                      ████     ███████████                    ████${NC}"
-    echo -e "${CYAN} ███░░░░░███           ░░░                      ░░███    ░░███░░░░░███                  ░░███${NC}"
-    echo -e "${CYAN}░███    ░░░  ████████  ████  ████████   ██████   ░███     ░███    ░███  ██████   ██████  ░███${NC}"
-    echo -e "${CYAN}░░█████████ ░░███░░███░░███ ░░███░░███ ░░░░░███  ░███     ░██████████  ███░░███ ███░░███ ░███${NC}"
-    echo -e "${CYAN} ░░░░░░░░███ ░███ ░███ ░███  ░███ ░░░   ███████  ░███     ░███░░░░░░  ░███ ░███░███ ░███ ░███${NC}"
-    echo -e "${CYAN} ███    ░███ ░███ ░███ ░███  ░███      ███░░███  ░███     ░███        ░███ ░███░███ ░███ ░███${NC}"
-    echo -e "${CYAN}░░█████████  ░███████  █████ █████    ░░████████ █████    █████       ░░██████ ░░██████  █████${NC}"
-    echo -e "${CYAN} ░░░░░░░░░   ░███░░░  ░░░░░ ░░░░░      ░░░░░░░░ ░░░░░    ░░░░░         ░░░░░░   ░░░░░░  ░░░░░${NC}"
-    echo -e "${CYAN}             ░███${NC}"
-    echo -e "${CYAN}             █████${NC}"
-    echo -e "${CYAN}            ░░░░░${NC}"
-    echo ""
-    echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.5.1 - PHI HASH REACTOR${NC}"
-    echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
-
-detect_operating_system() {
-    # Detect the operating system
-    log_step "Detecting Operating System"
-
-    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
-        # Running on Windows (Git Bash, Cygwin, or similar)
-        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${YELLOW}  WINDOWS DETECTED${NC}"
-        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  ${WHITE}Windows installations use Docker Desktop for containerized deployment.${NC}"
-        echo ""
-        echo -e "  ${CYAN}The Windows installer will:${NC}"
-        echo -e "    • Install/verify Docker Desktop"
-        echo -e "    • Configure container networking (bridge mode, no NAT)"
-        echo -e "    • Set up persistent containers with auto-restart"
-        echo -e "    • Create scheduled tasks for self-healing"
-        echo -e "    • Configure all pool settings"
-        echo ""
-        echo -e "  ${GREEN}Launching Windows Installer (Experimental)...${NC}"
-        echo ""
-
-        # Launch PowerShell script
-        if [[ -f "$SCRIPT_DIR/install-windows.ps1" ]]; then
-            powershell.exe -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install-windows.ps1"
-            exit $?
-        else
-            log_error "Windows installer not found: $SCRIPT_DIR/install-windows.ps1"
-            echo ""
-            echo -e "  ${WHITE}Please run the Windows installer directly:${NC}"
-            echo -e "    powershell -ExecutionPolicy Bypass -File install-windows.ps1"
-            echo ""
-            exit 1
-        fi
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Linux detected
-        echo -e "  ${GREEN}✓${NC} Linux detected (recommended platform)"
-        echo ""
-        return 0
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS detected
-        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${YELLOW}  macOS DETECTED${NC}"
-        echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  ${RED}macOS is not currently supported for pool operation.${NC}"
-        echo ""
-        echo -e "  ${WHITE}Recommended options:${NC}"
-        echo -e "    • Run in a Linux VM (Ubuntu 24.04 LTS or 26.04 LTS)"
-        echo -e "    • Use a dedicated Linux server"
-        echo -e "    • Use a cloud VPS (DigitalOcean, Linode, etc.)"
-        echo ""
-        exit 1
-    else
-        log_warn "Unknown OS: $OSTYPE - assuming Linux"
-        return 0
-    fi
-}
-
-show_usage() {
-    echo "Usage: install.sh [OPTIONS]"
-    echo ""
-    echo "Spiral Pool Installer - Solo Mining Pool Software"
-    echo ""
-    echo "Options:"
-    echo "  --solo <coin>         Solo mining mode with specified coin"
-    echo "                        SHA256d: btc, bch, bch2, bc2, btcs, dgb, fbtc, qbx, nmc, sys, xmy, xec"
-    echo "                        Scrypt:  ltc, doge, dgb-scrypt, pep, cat"
-    echo "  --multi <coins>       Multi-coin mode with comma-separated coins"
-    echo "                        Example: --multi dgb,btc or --multi ltc,doge"
-    echo "                        (Requires at least 2 coins)"
-    echo "  --address <addr>      Wallet address for solo mode or DGB in multi mode"
-    echo "  --btc-address <addr>  BTC wallet address (multi-coin mode)"
-    echo "  --bch-address <addr>  BCH wallet address (multi-coin mode)"
-    echo "  --bch2-address <addr> BCH2 wallet address (bitcoincashii:q... CashAddr)"
-    echo "  --bc2-address <addr>  BC2 wallet address (multi-coin mode)"
-    echo "  --btcs-address <addr> BTCS wallet address (bs1q... bech32 or B... legacy)"
-    echo "  --nmc-address <addr>  NMC wallet address (multi-coin mode)"
-    echo "  --qbx-address <addr>  QBX wallet address (multi-coin mode)
-  --xec-address <addr>  XEC wallet address (ecash:q... CashAddr)"
-    echo "  --pep-address <addr>  PEP wallet address (multi-coin mode)"
-    echo "  --cat-address <addr>  CAT wallet address (multi-coin mode)"
-    echo "  --sys-address <addr>  SYS wallet address (multi-coin mode)"
-    echo "  --xmy-address <addr>  XMY wallet address (multi-coin mode)"
-    echo "  --fbtc-address <addr> FBTC wallet address (multi-coin mode)"
-    echo "  --ltc-address <addr>  LTC wallet address (multi-coin mode)"
-    echo "  --doge-address <addr> DOGE wallet address (multi-coin mode)"
-    echo "  --simulate-cloud <provider>  Simulate a cloud deployment for testing cloud-specific"
-    echo "                        install paths (UFW rules, SSH tunnel notice, risk prompt)."
-    echo "                        E.g.: --simulate-cloud \"Hetzner Cloud\""
-    echo "                        For local/VM testing only. Does not affect real hardware."
-    echo "  --version             Print installer version and exit"
-    echo "  --help, -h            Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  # Interactive installation (default)"
-    echo "  ./install.sh"
-    echo ""
-    echo "  # Solo mining DGB (SHA256d)"
-    echo "  ./install.sh --solo dgb --address D..."
-    echo ""
-    echo "  # Solo mining LTC (Scrypt)"
-    echo "  ./install.sh --solo ltc --address ltc1..."
-    echo ""
-    echo "  # Multi-coin SHA256d"
-    echo "  ./install.sh --multi dgb,btc --address D... --btc-address bc1..."
-    echo ""
-    echo "  # Multi-coin Scrypt"
-    echo "  ./install.sh --multi ltc,doge --ltc-address ltc1... --doge-address D..."
-    echo ""
-}
-
-parse_cli_args() {
-    # Parse command-line arguments for non-interactive mode
-    CLI_MODE="interactive"
-    CLI_SOLO_COIN=""
-    CLI_MULTI_COINS=""
-    CLI_ADDRESS=""
-    CLI_BTC_ADDRESS=""
-    CLI_BCH_ADDRESS=""
-    CLI_BCH2_ADDRESS=""
-    CLI_BC2_ADDRESS=""
-    CLI_BTCS_ADDRESS=""
-    CLI_NMC_ADDRESS=""
-    CLI_QBX_ADDRESS=""
-    CLI_XEC_ADDRESS=""
-    CLI_PEP_ADDRESS=""
-    CLI_CAT_ADDRESS=""
-    CLI_SYS_ADDRESS=""
-    CLI_XMY_ADDRESS=""
-    CLI_FBTC_ADDRESS=""
-    CLI_LTC_ADDRESS=""
-    CLI_DOGE_ADDRESS=""
-    CLI_SIMULATE_CLOUD=""
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --help|-h)
-                show_usage
-                exit 0
-                ;;
-            --version)
-                echo "$VERSION"
-                exit 0
-                ;;
-            --solo)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--solo requires a coin argument (dgb, btc, bch, bc2, ltc, doge, dgb-scrypt, pep, cat)"
-                    exit 1
-                fi
-                CLI_MODE="solo"
-                CLI_SOLO_COIN="${2,,}"  # lowercase
-                shift 2
-                ;;
-            --multi)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--multi requires comma-separated coins (e.g., dgb,btc)"
-                    exit 1
-                fi
-                CLI_MODE="multi"
-                CLI_MULTI_COINS="${2,,}"  # lowercase
-                shift 2
-                ;;
-            --address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--address requires a wallet address"
-                    exit 1
-                fi
-                CLI_ADDRESS="$2"
-                shift 2
-                ;;
-            --btc-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--btc-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_BTC_ADDRESS="$2"
-                shift 2
-                ;;
-            --bch-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--bch-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_BCH_ADDRESS="$2"
-                shift 2
-                ;;
-            --bch2-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--bch2-address requires a wallet address (bitcoincashii:q... CashAddr format)"
-                    exit 1
-                fi
-                CLI_BCH2_ADDRESS="$2"
-                shift 2
-                ;;
-            --bc2-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--bc2-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_BC2_ADDRESS="$2"
-                shift 2
-                ;;
-            --btcs-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--btcs-address requires a wallet address (B... legacy or bs1q... bech32)"
-                    exit 1
-                fi
-                CLI_BTCS_ADDRESS="$2"
-                shift 2
-                ;;
-            --nmc-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--nmc-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_NMC_ADDRESS="$2"
-                shift 2
-                ;;
-            --qbx-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--qbx-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_QBX_ADDRESS="$2"
-                shift 2
-                ;;
-            --xec-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--xec-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_XEC_ADDRESS="$2"
-                shift 2
-                ;;
-            --pep-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--pep-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_PEP_ADDRESS="$2"
-                shift 2
-                ;;
-            --cat-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--cat-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_CAT_ADDRESS="$2"
-                shift 2
-                ;;
-            --sys-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--sys-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_SYS_ADDRESS="$2"
-                shift 2
-                ;;
-            --xmy-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--xmy-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_XMY_ADDRESS="$2"
-                shift 2
-                ;;
-            --fbtc-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--fbtc-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_FBTC_ADDRESS="$2"
-                shift 2
-                ;;
-            --ltc-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--ltc-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_LTC_ADDRESS="$2"
-                shift 2
-                ;;
-            --doge-address)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--doge-address requires a wallet address"
-                    exit 1
-                fi
-                CLI_DOGE_ADDRESS="$2"
-                shift 2
-                ;;
-            --simulate-cloud)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    log_error "--simulate-cloud requires a provider name (e.g. \"Hetzner Cloud\")"
-                    exit 1
-                fi
-                CLI_SIMULATE_CLOUD="$2"
-                shift 2
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                echo "Use --help for usage information"
-                exit 1
-                ;;
-        esac
-    done
-
-    # Validate CLI arguments if non-interactive mode
-    if [[ "$CLI_MODE" == "solo" ]]; then
-        case "$CLI_SOLO_COIN" in
-            dgb|btc|bch|bch2|bc2|btcs|nmc|xmy|fbtc|qbx|xec|ltc|doge|dgb-scrypt|pep|cat)
-                log "CLI Mode: Solo mining with ${CLI_SOLO_COIN^^}"
-                ;;
-            sys)
-                log_error "SYS cannot solo mine (requires CbTx/quorum commitment). Use multi-coin mode with BTC + SYS for merge mining."
-                exit 1
-                ;;
-            *)
-                log_error "Invalid coin for --solo: $CLI_SOLO_COIN (must be dgb, btc, bch, bch2, bc2, btcs, nmc, xmy, fbtc, qbx, xec, ltc, doge, dgb-scrypt, pep, or cat)"
-                exit 1
-                ;;
-        esac
-    elif [[ "$CLI_MODE" == "multi" ]]; then
-        # Parse comma-separated coins
-        IFS=',' read -ra COINS <<< "$CLI_MULTI_COINS"
-        local coin_count=0
-        local valid_coins=""
-        for coin in "${COINS[@]}"; do
-            case "$coin" in
-                dgb|btc|bch|bch2|bc2|btcs|nmc|sys|xmy|fbtc|qbx|xec|ltc|doge|dgb-scrypt|pep|cat)
-                    ((coin_count++)) || true
-                    valid_coins="$valid_coins $coin"
-                    ;;
-                *)
-                    log_error "Invalid coin in --multi: $coin (must be dgb, btc, bch, bch2, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec, ltc, doge, dgb-scrypt, pep, or cat)"
-                    exit 1
-                    ;;
-            esac
-        done
-        if [[ $coin_count -lt 2 ]]; then
-            log_error "--multi requires at least 2 coins (got $coin_count)"
-            exit 1
-        fi
-        log "CLI Mode: Multi-coin mining with${valid_coins}"
-    fi
-}
-
-apply_cli_coin_config() {
-    # Apply CLI coin configuration (called instead of select_coin_mode if CLI args provided)
-    if [[ "$CLI_MODE" == "solo" ]]; then
-        COIN_MODE="single"
-        # Reset all coin enables
-        ENABLE_DGB="false"; ENABLE_BTC="false"; ENABLE_BCH="false"; ENABLE_BCH2="false"
-        ENABLE_BC2="false"; ENABLE_BTCS="false"
-        ENABLE_NMC="false"; ENABLE_SYS="false"; ENABLE_XMY="false"; ENABLE_FBTC="false"; ENABLE_QBX="false"; ENABLE_XEC="false"
-        ENABLE_LTC="false"; ENABLE_DOGE="false"; ENABLE_DGB_SCRYPT="false"
-        ENABLE_PEP="false"; ENABLE_CAT="false"
-
-        case "$CLI_SOLO_COIN" in
-            dgb)
-                ENABLE_DGB="true"
-                SOLO_COIN="DGB"
-                POOL_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: DigiByte (DGB) SHA256d on port 3333"
-                ;;
-            btc)
-                ENABLE_BTC="true"
-                SOLO_COIN="BTC"
-                BTC_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Bitcoin (BTC) SHA256d on port 4333"
-                ;;
-            bch)
-                ENABLE_BCH="true"
-                SOLO_COIN="BCH"
-                BCH_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Bitcoin Cash (BCH) SHA256d on port 5333"
-                ;;
-            bch2)
-                ENABLE_BCH2="true"
-                SOLO_COIN="BCH2"
-                BCH2_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Bitcoin Cash II (BCH2) SHA256d on port 5336"
-                ;;
-            bc2)
-                ENABLE_BC2="true"
-                SOLO_COIN="BC2"
-                BC2_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Bitcoin II (BC2) SHA256d on port 6333"
-                ;;
-            btcs)
-                ENABLE_BTCS="true"
-                SOLO_COIN="BTCS"
-                BTCS_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Bitcoin Silver (BTCS) SHA256d on port 11335"
-                ;;
-            nmc)
-                ENABLE_NMC="true"
-                SOLO_COIN="NMC"
-                NMC_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Namecoin (NMC) SHA256d on port 14335"
-                ;;
-            sys)
-                log_error "SYS cannot solo mine (requires CbTx/quorum commitment). Use multi-coin mode with BTC + SYS for merge mining."
-                exit 1
-                ;;
-            xmy)
-                ENABLE_XMY="true"
-                SOLO_COIN="XMY"
-                XMY_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Myriadcoin (XMY) SHA256d on port 17335"
-                ;;
-            fbtc)
-                ENABLE_FBTC="true"
-                SOLO_COIN="FBTC"
-                FBTC_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Fractal Bitcoin (FBTC) SHA256d on port 18335"
-                ;;
-            qbx)
-                ENABLE_QBX="true"
-                SOLO_COIN="QBX"
-                QBX_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Q-BitX (QBX) SHA256d on port 20335"
-                ;;
-            xec)
-                ENABLE_XEC="true"
-                SOLO_COIN="XEC"
-                XEC_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: eCash (XEC) SHA256d on port 18338"
-                ;;
-            ltc)
-                ENABLE_LTC="true"
-                SOLO_COIN="LTC"
-                LTC_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Litecoin (LTC) Scrypt on port 7333"
-                ;;
-            doge)
-                ENABLE_DOGE="true"
-                SOLO_COIN="DOGE"
-                DOGE_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Dogecoin (DOGE) Scrypt on port 8335"
-                ;;
-            dgb-scrypt)
-                ENABLE_DGB="true"  # Uses DGB node
-                ENABLE_DGB_SCRYPT="true"
-                SOLO_COIN="DGB-SCRYPT"
-                POOL_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: DigiByte Scrypt on port 3336"
-                ;;
-            pep)
-                ENABLE_PEP="true"
-                SOLO_COIN="PEP"
-                PEP_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: PepeCoin (PEP) Scrypt on port 10335"
-                ;;
-            cat)
-                ENABLE_CAT="true"
-                SOLO_COIN="CAT"
-                CAT_ADDRESS="$CLI_ADDRESS"
-                log_success "Solo Mode: Catcoin (CAT) Scrypt on port 12335"
-                ;;
-        esac
-    elif [[ "$CLI_MODE" == "multi" ]]; then
-        COIN_MODE="multi"
-        # Reset all coin enables
-        ENABLE_DGB="false"; ENABLE_BTC="false"; ENABLE_BCH="false"; ENABLE_BCH2="false"
-        ENABLE_BC2="false"; ENABLE_BTCS="false"
-        ENABLE_NMC="false"; ENABLE_SYS="false"; ENABLE_XMY="false"; ENABLE_FBTC="false"; ENABLE_QBX="false"; ENABLE_XEC="false"
-        ENABLE_LTC="false"; ENABLE_DOGE="false"; ENABLE_DGB_SCRYPT="false"
-        ENABLE_PEP="false"; ENABLE_CAT="false"
-
-        # Parse and enable selected coins
-        IFS=',' read -ra COINS <<< "$CLI_MULTI_COINS"
-        local enabled_ports=""
-        for coin in "${COINS[@]}"; do
-            case "$coin" in
-                dgb)
-                    ENABLE_DGB="true"
-                    POOL_ADDRESS="$CLI_ADDRESS"
-                    enabled_ports="$enabled_ports DGB:3333"
-                    ;;
-                btc)
-                    ENABLE_BTC="true"
-                    BTC_ADDRESS="$CLI_BTC_ADDRESS"
-                    enabled_ports="$enabled_ports BTC:4333"
-                    ;;
-                bch)
-                    ENABLE_BCH="true"
-                    BCH_ADDRESS="$CLI_BCH_ADDRESS"
-                    enabled_ports="$enabled_ports BCH:5333"
-                    ;;
-                bch2)
-                    ENABLE_BCH2="true"
-                    BCH2_ADDRESS="${CLI_BCH2_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports BCH2:5336"
-                    ;;
-                bc2)
-                    ENABLE_BC2="true"
-                    BC2_ADDRESS="${CLI_BC2_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports BC2:6333"
-                    ;;
-                btcs)
-                    ENABLE_BTCS="true"
-                    BTCS_ADDRESS="${CLI_BTCS_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports BTCS:11335"
-                    ;;
-                nmc)
-                    ENABLE_NMC="true"
-                    NMC_ADDRESS="${CLI_NMC_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports NMC:14335"
-                    ;;
-                sys)
-                    ENABLE_SYS="true"
-                    SYS_ADDRESS="${CLI_SYS_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports SYS:15335"
-                    ;;
-                xmy)
-                    ENABLE_XMY="true"
-                    XMY_ADDRESS="${CLI_XMY_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports XMY:17335"
-                    ;;
-                fbtc)
-                    ENABLE_FBTC="true"
-                    FBTC_ADDRESS="${CLI_FBTC_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports FBTC:18335"
-                    ;;
-                qbx)
-                    ENABLE_QBX="true"
-                    QBX_ADDRESS="${CLI_QBX_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports QBX:20335"
-                    ;;
-                ltc)
-                    ENABLE_LTC="true"
-                    LTC_ADDRESS="${CLI_LTC_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports LTC:7333"
-                    ;;
-                doge)
-                    ENABLE_DOGE="true"
-                    DOGE_ADDRESS="${CLI_DOGE_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports DOGE:8335"
-                    ;;
-                dgb-scrypt)
-                    ENABLE_DGB="true"  # Uses DGB node
-                    ENABLE_DGB_SCRYPT="true"
-                    POOL_ADDRESS="${POOL_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports DGB-SCRYPT:3336"
-                    ;;
-                pep)
-                    ENABLE_PEP="true"
-                    PEP_ADDRESS="${CLI_PEP_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports PEP:10335"
-                    ;;
-                cat)
-                    ENABLE_CAT="true"
-                    CAT_ADDRESS="${CLI_CAT_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports CAT:12335"
-                    ;;
-                xec)
-                    ENABLE_XEC="true"
-                    XEC_ADDRESS="${CLI_XEC_ADDRESS:-$CLI_ADDRESS}"
-                    enabled_ports="$enabled_ports XEC:18338"
-                    ;;
-            esac
-        done
-        log_success "Multi-Coin Mode:$enabled_ports"
-    fi
-}
-
-show_legal_acceptance() {
-    echo ""
-    echo ""
-    echo -e "${YELLOW}    .-----------------------------------------------------------------------.${NC}"
-    echo -e "${YELLOW}    |${NC}                 ${WHITE}TERMS OF USE & LEGAL NOTICES${NC}                          ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |-----------------------------------------------------------------------|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   By proceeding, you acknowledge and agree to the following:          ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   ${WHITE}NO WARRANTY:${NC} This software is provided \"AS IS\" without warranty     ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   of any kind. See LICENSE and TERMS.md for full details.             ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   ${WHITE}LIMITATION OF LIABILITY:${NC} The authors are not liable for any         ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   damages, including loss of cryptocurrency, data, or profits.        ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   ${WHITE}YOUR RESPONSIBILITIES:${NC} You are solely responsible for:              ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}     - Compliance with all applicable laws and regulations             ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}     - Money transmission / MSB registration requirements              ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}     - Securing your systems, wallets, and infrastructure              ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}     - Backing up all data and disaster recovery                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}     - Tax obligations arising from cryptocurrency mining              ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   ${WHITE}DATA HANDLING:${NC} You are the data controller. See PRIVACY.md.         ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   ${RED}SPECIFIC HAZARDS:${NC} Financial loss, security breaches, legal          ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   risk, data loss, and regulatory penalties. See WARNINGS.md.         ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}   Full documents: TERMS.md, LICENSE, PRIVACY.md, WARNINGS.md          ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    |${NC}                                                                       ${YELLOW}|${NC}"
-    echo -e "${YELLOW}    '-----------------------------------------------------------------------'${NC}"
-    echo ""
-    read -r -p "  Press Enter to continue..." _legal_pause || true
-    echo ""
-
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${RED}  ⚠  SINGLE-OPERATOR ARCHITECTURE NOTICE${NC}"
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  Spiral Pool is designed for ${WHITE}one operator${NC} running their ${WHITE}own miners.${NC}"
-    echo ""
-    echo -e "  ${WHITE}One wallet per coin:${NC} A single wallet address is configured per coin"
-    echo -e "  during installation. All block rewards — regardless of which miner"
-    echo -e "  found the block — go to that address."
-    echo ""
-    echo -e "  ${WHITE}Operator controls the wallet:${NC} Miners connecting to your pool do NOT"
-    echo -e "  receive direct payment. All rewards go to the operator's wallet."
-    echo ""
-    echo -e "  ${WHITE}If you allow others to mine on your pool:${NC} You must inform them that"
-    echo -e "  their hashrate contributes to your wallet, not their own. Any"
-    echo -e "  compensation arrangement is entirely your responsibility. This"
-    echo -e "  software provides no payout mechanism to other parties."
-    echo -e "  See WARNINGS.md and TERMS.md Section 5E."
-    echo ""
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo ""
-
-    if [[ -n "$CLOUD_DETECTED" ]]; then
-        echo -e "  ${RED}⚠ CLOUD INSTALL DETECTED: ${WHITE}${CLOUD_DETECTED}${NC}"
-        echo -e "  ${WHITE}You have already acknowledged the provider ToS, bandwidth billing, and"
-        echo -e "  security risks above. This final step confirms you accept the full"
-        echo -e "  Spiral Pool terms of use covering all remaining legal obligations.${NC}"
-        echo ""
-        echo -e "  ${WHITE}To accept these terms and continue, type:${NC} ${GREEN}YES${NC}"
-        echo -e "  ${WHITE}To cancel installation, press Ctrl+C or type anything else.${NC}"
-        echo ""
-        read -r -p "  Your response: " response || { echo ""; log_error "No input received. Interactive terminal required."; exit 1; }
-        local response_upper
-        response_upper=$(echo "$response" | tr '[:lower:]' '[:upper:]')
-        if [[ "$response_upper" != "YES" ]]; then
-            echo ""
-            log_error "Terms not accepted. Installation cancelled."
-            exit 1
-        fi
-    else
-        echo -e "  ${WHITE}To accept these terms and continue, type:${NC} ${GREEN}I AGREE${NC}"
-        echo -e "  ${WHITE}To cancel installation, press Ctrl+C or type anything else.${NC}"
-        echo ""
-        read -r -p "  Your response: " response || { echo ""; log_error "No input received. Interactive terminal required."; exit 1; }
-        local response_upper
-        response_upper=$(echo "$response" | tr '[:lower:]' '[:upper:]')
-        if [[ "$response_upper" != "I AGREE" ]]; then
-            echo ""
-            log_error "Terms not accepted. Installation cancelled."
-            exit 1
-        fi
-    fi
-
-    echo ""
-    log_success "Terms accepted. Proceeding with installation."
-    echo ""
-}
-
-main() {
-    # Suppress needrestart and debconf interactive prompts during install.
-    # needrestart runs as a DPkg::Post-Invoke hook after every apt operation and can
-    # restart services (etcd, patroni, redis) mid-install, breaking installation state.
-    # DEBIAN_FRONTEND=noninteractive prevents debconf from trying to show dialogs.
-    export NEEDRESTART_SUSPEND=1
-    export DEBIAN_FRONTEND=noninteractive
-
-    # Parse command-line arguments first
-    parse_cli_args "$@"
-
-    show_banner
-
-    # Detect existing installation and suggest spiralctl for admin tasks
-    if [[ -d "/spiralpool" && -f "/spiralpool/config/config.yaml" && -f "/spiralpool/bin/spiralstratum" ]]; then
-        echo ""
-        echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${YELLOW}║  EXISTING INSTALLATION DETECTED                                         ║${NC}"
-        echo -e "${YELLOW}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${YELLOW}║                                                                          ║${NC}"
-        echo -e "${YELLOW}║  Spiral Pool is already installed on this server.                        ║${NC}"
-        echo -e "${YELLOW}║                                                                          ║${NC}"
-        echo -e "${YELLOW}║  For administration and configuration changes, use:                      ║${NC}"
-        echo -e "${YELLOW}║    ${WHITE}sudo spiralctl status${YELLOW}          — Check pool and daemon status          ║${NC}"
-        echo -e "${YELLOW}║    ${WHITE}sudo spiralctl ha enable${YELLOW}       — Enable HA on this node               ║${NC}"
-        echo -e "${YELLOW}║    ${WHITE}sudo spiralctl ha disable${YELLOW}      — Disable HA on this node              ║${NC}"
-        echo -e "${YELLOW}║    ${WHITE}sudo spiralctl sync-addresses${YELLOW}  — Sync wallet addresses from peer      ║${NC}"
-        echo -e "${YELLOW}║    ${WHITE}sudo spiralctl help${YELLOW}            — View all available commands           ║${NC}"
-        echo -e "${YELLOW}║                                                                          ║${NC}"
-        echo -e "${YELLOW}║  Re-running the installer will overwrite your current configuration.     ║${NC}"
-        echo -e "${YELLOW}║  Only continue if you want a FRESH install on this server.               ║${NC}"
-        echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        prompt_input "Continue with fresh install? This will overwrite existing config [y/N]: "; read reinstall_confirm
-        if [[ ! "$reinstall_confirm" =~ ^[Yy] ]]; then
-            echo -e "${GREEN}Use 'sudo spiralctl help' to manage your installation.${NC}"
-            exit 0
-        fi
-        echo ""
-        log_warn "Proceeding with fresh install — existing config will be overwritten"
-    fi
-
-    # Acquire operation lock to prevent concurrent installer/upgrade (GATE 4)
-    if ! acquire_operation_lock "install"; then
-        log_error "Installation cannot proceed - another operation is in progress."
-        log_error "Wait for the other operation to complete, or remove the lock file if stale."
-        exit 1
-    fi
-
-    # Ensure lock is released on exit
-    # Combine lock release with existing cleanup_on_failure trap
-    # Extends the existing cleanup_on_failure trap with lock release
-    trap 'release_operation_lock; cleanup_on_failure' EXIT
-
-    # Check for previous installation checkpoint
-    # Note: check_resume returns 1 if no checkpoint exists, which is normal
-    check_resume || true
-
-    detect_operating_system
-    check_prerequisites
-
-    # Show terms acceptance prompt after cloud detection so CLOUD_DETECTED is available.
-    # Cloud operators get a YES gate (consistent with the cloud risk prompts above).
-    show_legal_acceptance
-    select_deploy_method
-
-    # Route based on deployment method selected
-    case "$DEPLOY_METHOD" in
-        "docker-baremetal")
-            # Bare Metal: Docker with host networking
-            docker_main
-            exit 0
-            ;;
-        "vm-native")
-            # VM Native: Traditional installation (no Docker)
-            # Continue with the rest of this function
-            ;;
-        *)
-            log_error "Unknown deployment method: $DEPLOY_METHOD"
-            exit 1
-            ;;
-    esac
-
-    # VM Native installation continues below
-    detect_existing_native_install
-
-    # Interactive selection loop with 'b' for back navigation
-    local _step=1
-    while true; do
-        case $_step in
-            1) select_install_mode;   _step=2 ;;
-            2)
-                if [[ "$CLI_MODE" != "interactive" ]]; then
-                    apply_cli_coin_config; _step=3
-                elif select_coin_mode; then
-                    _step=3
-                else
-                    _step=1; continue
-                fi
-                ;;
-            3)
-                if select_ha_mode; then
-                    break
-                else
-                    _step=2; continue
-                fi
-                ;;
-        esac
-    done
-
-    collect_configuration
-
-    # Skip steps that were already completed (resume mode)
-    if ! should_skip_step "system_setup"; then
-        setup_system
-        save_checkpoint "system_setup"
-    fi
-
-    # Install enabled blockchain nodes based on user selection
-    if ! should_skip_step "blockchain_nodes"; then
-
-        # HA Backup: One-time prompt — replicate from primary or sync from network?
-        # If user says Y, binaries auto-copy per-coin and blockchain auto-replicates.
-        # If user says N, everything downloads from the network instead.
-        if [[ "$HA_MODE" == "ha-backup" ]] && [[ -n "${HA_PRIMARY_IP:-}" ]]; then
-            echo ""
-            echo -e "  ${YELLOW}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "  ${YELLOW}║${NC}  ${WHITE}HA BACKUP — SYNC FROM PRIMARY${NC}                                           ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
-            printf -v _ha_ip_pad "%-74s" "  Source: ${HA_PRIMARY_IP}"
-            echo -e "  ${YELLOW}║${NC}${_ha_ip_pad}${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}$(printf '%74s')${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}  Binaries and blockchain data can be copied from the primary node.       ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}  This is ${GREEN}much faster${NC} than downloading from the network.                  ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}                                                                          ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}    ${CYAN}↔${NC} Binaries: copied per-coin during installation                       ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}    ${CYAN}↔${NC} Blockchain data: replicated after all coins are installed           ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}                                                                          ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}  ${GREEN}The primary node will continue running normally.${NC}                        ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}  ${DIM}Blockchain daemons on this node will be briefly stopped during sync.${NC}    ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}║${NC}  ${DIM}All services will be restarted automatically after.${NC}                     ${YELLOW}║${NC}"
-            echo -e "  ${YELLOW}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
-            echo ""
-            prompt_input "Replicate from primary (${HA_PRIMARY_IP})? [Y/n]: "; read ha_sync_choice
-            if [[ "$ha_sync_choice" == "n" || "$ha_sync_choice" == "N" ]]; then
-                HA_REPLICATE_FROM_PRIMARY=false
-                log "User chose to sync from network instead of primary"
-            else
-                HA_REPLICATE_FROM_PRIMARY=true
-                log "Will replicate binaries and blockchain data from primary (${HA_PRIMARY_IP})"
-            fi
-            echo ""
-        fi
-
-        # Non-HA option 2 (copy from another node): Set up SSH before coin installs
-        # so binary copying works per-coin (not just blockchain replication after)
-        if [[ "${BLOCKCHAIN_SYNC_CHOICE:-}" == "2" ]] && [[ -n "${SYNC_SOURCE_NODE:-}" ]] && [[ "$HA_MODE" != "ha-backup" ]]; then
-            local sync_ssh_user="${SYNC_SSH_USER:-$POOL_USER}"
-            local sync_ssh_dir="/home/${sync_ssh_user}/.ssh"
-            local sync_ssh_key="${sync_ssh_dir}/id_ed25519"
-
-            log "Setting up SSH to source node (${sync_ssh_user}@${SYNC_SOURCE_NODE}) for replication..."
-
-            if sudo -u "$sync_ssh_user" ssh -i "$sync_ssh_key" -o BatchMode=yes -o ConnectTimeout=10 \
-                -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${sync_ssh_dir}/known_hosts" \
-                "${sync_ssh_user}@${SYNC_SOURCE_NODE}" "echo 'SSH_OK'" &>/dev/null; then
-                log_success "SSH connection to ${SYNC_SOURCE_NODE} successful"
-                SOURCE_SSH_READY=true
-            else
-                log_warn "SSH key not yet authorized on ${SYNC_SOURCE_NODE}"
-                echo ""
-                echo -e "  ${WHITE}SSH Key Setup${NC}"
-                echo -e "  To copy data from the source node, SSH access is required."
-                echo -e "  Enter the password for ${CYAN}${sync_ssh_user}@${SYNC_SOURCE_NODE}${NC} to authorize access."
-                echo ""
-
-                # Ensure sshpass is installed
-                if ! command -v sshpass &>/dev/null; then
-                    log "Installing sshpass..."
-                    sudo apt-get update -qq 2>/dev/null
-                    sudo apt-get install -y -qq sshpass 2>/dev/null
-                fi
-
-                # Ensure SSH directory and key exist
-                if [[ ! -d "$sync_ssh_dir" ]]; then
-                    sudo -u "$sync_ssh_user" mkdir -p "$sync_ssh_dir" 2>/dev/null || mkdir -p "$sync_ssh_dir"
-                fi
-                sudo chown "${sync_ssh_user}:${sync_ssh_user}" "$sync_ssh_dir" 2>/dev/null || true
-                chmod 700 "$sync_ssh_dir"
-
-                if [[ ! -f "$sync_ssh_key" ]]; then
-                    log "Generating SSH key for ${sync_ssh_user}..."
-                    sudo -u "$sync_ssh_user" ssh-keygen -t ed25519 -f "$sync_ssh_key" -N "" -C "spiralpool-replication" -q 2>/dev/null \
-                        || ssh-keygen -t ed25519 -f "$sync_ssh_key" -N "" -C "spiralpool-replication" -q
-                    sudo chown "${sync_ssh_user}:${sync_ssh_user}" "$sync_ssh_key" "${sync_ssh_key}.pub" 2>/dev/null || true
-                fi
-
-                read -sp "  Password for ${sync_ssh_user}@${SYNC_SOURCE_NODE}: " source_password
-                echo ""
-
-                if [[ -n "$source_password" ]] && command -v sshpass &>/dev/null; then
-                    if SSHPASS="$source_password" sshpass -e ssh-copy-id \
-                        -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
-                        -i "${sync_ssh_key}.pub" "${sync_ssh_user}@${SYNC_SOURCE_NODE}" &>/dev/null; then
-                        # BUG FIX (M11): Add StrictHostKeyChecking=accept-new. ssh-copy-id ran
-                        # as root (host key in root's known_hosts). This verification runs as
-                        # sync_ssh_user (different known_hosts). Without accept-new, verification
-                        # falsely fails and all coins fall back to slow network sync.
-                        if sudo -u "$sync_ssh_user" ssh -i "$sync_ssh_key" -o BatchMode=yes -o ConnectTimeout=10 \
-                            -o StrictHostKeyChecking=accept-new \
-                            -o UserKnownHostsFile="${sync_ssh_dir}/known_hosts" \
-                            "${sync_ssh_user}@${SYNC_SOURCE_NODE}" "echo 'SSH_OK'" &>/dev/null; then
-                            log_success "SSH key deployed to ${SYNC_SOURCE_NODE}"
-                            SOURCE_SSH_READY=true
-                        else
-                            log_error "SSH key copied but connection still fails"
-                            SOURCE_SSH_READY=false
-                        fi
-                    else
-                        log_error "Failed to copy SSH key — incorrect password or SSH disabled"
-                        SOURCE_SSH_READY=false
-                    fi
-                    unset source_password 2>/dev/null
-                else
-                    log_warn "No password provided or sshpass unavailable"
-                    SOURCE_SSH_READY=false
-                fi
-
-                if [[ "${SOURCE_SSH_READY:-}" != "true" ]]; then
-                    log_warn "SSH setup failed — binaries will download from network, blockchain will sync from P2P"
-                    BLOCKCHAIN_SYNC_CHOICE="1"
-                fi
-                echo ""
-            fi
-        fi
-
-        if [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]]; then
-            install_digibyte
-        fi
-
-        if [[ "$ENABLE_BTC" == "true" ]]; then
-            install_bitcoin
-        fi
-
-        if [[ "$ENABLE_BCH" == "true" ]]; then
-            install_bitcoincash
-        fi
-
-        if [[ "$ENABLE_BCH2" == "true" ]]; then
-            install_bitcoincashii
-        fi
-
-        if [[ "$ENABLE_BC2" == "true" ]]; then
-            install_bitcoinii
-        fi
-
-        if [[ "$ENABLE_BTCS" == "true" ]]; then
-            install_bitcoinsilver
-        fi
-
-        # SHA-256d AuxPoW coins (merge-mineable with Bitcoin)
-        if [[ "$ENABLE_NMC" == "true" ]]; then
-            install_namecoin
-        fi
-
-        if [[ "$ENABLE_SYS" == "true" ]]; then
-            install_syscoin
-        fi
-
-        if [[ "$ENABLE_XMY" == "true" ]]; then
-            install_myriad
-        fi
-
-        if [[ "$ENABLE_FBTC" == "true" ]]; then
-            install_fbtc
-        fi
-
-        if [[ "$ENABLE_QBX" == "true" ]]; then
-            install_qbx
-        fi
-
-        if [[ "$ENABLE_XEC" == "true" ]]; then
-            install_ecash
-        fi
-
-        # Scrypt coins
-        if [[ "$ENABLE_LTC" == "true" ]]; then
-            install_litecoin
-        fi
-
-        if [[ "$ENABLE_DOGE" == "true" ]]; then
-            install_dogecoin
-        fi
-
-        if [[ "$ENABLE_PEP" == "true" ]]; then
-            install_pepecoin
-        fi
-
-        if [[ "$ENABLE_CAT" == "true" ]]; then
-            install_catcoin
-        fi
-
-        # Write version cache for coin-upgrade.sh — covers daemons whose --version
-        # output does not include a version number (e.g. QBX). Cache is stored at
-        # $INSTALL_DIR/config/coin-versions/<COIN>.ver and read by coin-upgrade.sh
-        # before falling back to --version parsing.
-        local _vc_dir="$INSTALL_DIR/config/coin-versions"
-        sudo mkdir -p "$_vc_dir"
-        [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]] && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB.ver"        > /dev/null
-        [[ "$ENABLE_DGB_SCRYPT" == "true" ]]                            && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB-SCRYPT.ver"  > /dev/null
-        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_KNOTS_VERSION:-29.3.knots20260508}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
-        [[ "$ENABLE_BCH" == "true" ]]   && echo "29.0.0"                    | sudo tee "$_vc_dir/BCH.ver"  > /dev/null
-        [[ "$ENABLE_BCH2" == "true" ]]  && echo "$BITCOINCASHII_VERSION"   | sudo tee "$_vc_dir/BCH2.ver" > /dev/null
-        [[ "$ENABLE_BC2" == "true" ]]   && echo "$BITCOINII_VERSION"        | sudo tee "$_vc_dir/BC2.ver"  > /dev/null
-        [[ "$ENABLE_BTCS" == "true" ]]  && echo "$BTCS_VERSION"              | sudo tee "$_vc_dir/BTCS.ver" > /dev/null
-        [[ "$ENABLE_LTC" == "true" ]]   && echo "0.21.4"               | sudo tee "$_vc_dir/LTC.ver"  > /dev/null
-        [[ "$ENABLE_DOGE" == "true" ]]  && echo "1.14.9"               | sudo tee "$_vc_dir/DOGE.ver" > /dev/null
-        [[ "$ENABLE_PEP" == "true" ]]   && echo "1.1.0"                | sudo tee "$_vc_dir/PEP.ver"  > /dev/null
-        [[ "$ENABLE_CAT" == "true" ]]   && echo "2.1.1"                | sudo tee "$_vc_dir/CAT.ver"  > /dev/null
-        [[ "$ENABLE_NMC" == "true" ]]   && echo "$NAMECOIN_VERSION"    | sudo tee "$_vc_dir/NMC.ver"  > /dev/null
-        [[ "$ENABLE_SYS" == "true" ]]   && echo "$SYSCOIN_VERSION"     | sudo tee "$_vc_dir/SYS.ver"  > /dev/null
-        [[ "$ENABLE_XMY" == "true" ]]   && echo "$MYRIAD_VERSION"      | sudo tee "$_vc_dir/XMY.ver"  > /dev/null
-        [[ "$ENABLE_FBTC" == "true" ]]  && echo "$FBTC_VERSION"        | sudo tee "$_vc_dir/FBTC.ver" > /dev/null
-        [[ "$ENABLE_QBX" == "true" ]]   && echo "0.2.0"                | sudo tee "$_vc_dir/QBX.ver"  > /dev/null
-        [[ "$ENABLE_XEC" == "true" ]]   && echo "$ECASH_VERSION"      | sudo tee "$_vc_dir/XEC.ver"  > /dev/null
-        sudo chown -R "$POOL_USER:$POOL_USER" "$_vc_dir" 2>/dev/null || true
-
-        # Ask if user wants to replicate blockchain data from another node (HA setup)
-        # Must run AFTER all install_* functions so data directories and systemd services exist
-        ask_blockchain_rsync
-
-        save_checkpoint "blockchain_nodes"
-    fi
-
-    if ! should_skip_step "postgresql"; then
-        install_postgresql
-        save_checkpoint "postgresql"
-    else
-        # CRITICAL: Always re-sync DB password on resume.
-        # If collect_configuration() couldn't extract the existing password from
-        # config.yaml, it generates a new one. This ALTER ROLE ensures PG and
-        # the config always match regardless of which password is in DB_PASSWORD.
-        #
-        # SKIP on HA backup: Patroni replicates the password from the primary via
-        # streaming replication. ALTER ROLE on a read-only replica fails with
-        # "cannot execute in a read-only transaction" and aborts the entire install.
-        local _papi_user="" _papi_pass=""
-        if [[ -f /spiralpool/config/patroni-api.conf ]]; then
-            # shellcheck source=/dev/null
-            source /spiralpool/config/patroni-api.conf
-            _papi_user="${PATRONI_API_USERNAME:-}"
-            _papi_pass="${PATRONI_API_PASSWORD:-}"
-        fi
-        if systemctl is-active --quiet patroni 2>/dev/null && \
-           curl -s ${_papi_user:+-u "${_papi_user}:${_papi_pass}"} --max-time 3 "http://localhost:8008/patroni" 2>/dev/null | grep -q '"role".*"replica"'; then
-            log "Patroni replica — skipping DB password re-sync (replicated from primary)"
-        else
-            if ! command -v psql &>/dev/null; then
-                log_error "CRITICAL: psql not found but postgresql step was checkpointed. Cannot re-sync password."
-                exit 1
-            fi
-            if [[ -z "$DB_PASSWORD" ]]; then
-                log_error "CRITICAL: DB_PASSWORD is empty during checkpoint resume. Cannot re-sync."
-                exit 1
-            fi
-            local escaped_db_password
-            escaped_db_password=$(sql_escape "$DB_PASSWORD")
-            if ! sudo -u postgres psql -q -c "ALTER ROLE $DB_USER WITH ENCRYPTED PASSWORD '$escaped_db_password';" 2>&1; then
-                log_error "CRITICAL: Failed to re-sync database password. Pool will not be able to connect to PostgreSQL."
-                log_error "Manual fix: sudo -u postgres psql -c \"ALTER ROLE $DB_USER WITH ENCRYPTED PASSWORD '<password>';\""
-                exit 1
-            fi
-            log "Re-synced database password (checkpoint resume)"
-        fi
-    fi
-
-    # HA: Install Redis for cross-node share/block deduplication
-    if [[ "$HA_ENABLED" == "true" ]] && ! should_skip_step "redis"; then
-        install_redis
-        save_checkpoint "redis"
-    fi
-
-    if ! should_skip_step "go_install"; then
-        install_go
-        save_checkpoint "go_install"
-    fi
-
-    if ! should_skip_step "stratum_build"; then
-        build_stratum
-        run_stratum_tests
-        save_checkpoint "stratum_build"
-    fi
-
-    if ! should_skip_step "stratum_config"; then
-        configure_stratum
-        save_checkpoint "stratum_config"
-    fi
-
-    # Full mode adds extras
-    if [[ "$INSTALL_MODE" == "full" ]]; then
-        if ! should_skip_step "dashboard"; then
-            install_dashboard
-            save_checkpoint "dashboard"
-        fi
-        if ! should_skip_step "sentinel"; then
-            install_sentinel
-            save_checkpoint "sentinel"
-        fi
-    fi
-
-    if ! should_skip_step "services"; then
-        # Health monitor is ALWAYS installed (critical for self-healing)
-        install_health_monitor
-
-        # Auto-updates for security patches (with graceful service handling)
-        setup_auto_updates
-
-        # Create sync monitor (for auto-starting stratum when blockchain is synced)
-        create_sync_monitor
-
-        create_helper_scripts
-
-        # Ask user about automated daily database backups
-        ask_automated_backups
-
-        # Set up PostgreSQL weekly auto-maintenance timer (VACUUM ANALYZE)
-        setup_pg_maintenance || log_warn "PostgreSQL maintenance timer setup failed (non-critical, install continues)"
-
-        # Set up update checker with user preferences (if full mode)
-        # Non-critical — must never abort the install
-        if [[ "$INSTALL_MODE" == "full" ]]; then
-            setup_update_checker || log_warn "Update checker setup failed (non-critical, install continues)"
-        fi
-
-        save_checkpoint "services"
-    fi
-
-    # Verify installation before starting services
-    log_step "Verifying Installation"
-
-    local verify_errors=0
-
-    # Check core binaries
-    if [[ ! -x "$INSTALL_DIR/bin/spiralstratum" ]]; then
-        log_error "Spiral Stratum binary not found"
-        verify_errors=$((verify_errors + 1))
-    else
-        log_success "Spiral Stratum binary OK"
-    fi
-
-    # Verify blockchain nodes based on which coins are enabled
-    if [[ "$ENABLE_DGB" == "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir dgb)/bin/digibyted" ]]; then
-            log_error "DigiByte daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "DigiByte Core OK"
-        fi
-    fi
-
-    # DGB-SCRYPT shares the DGB daemon binary — check it exists when enabled standalone
-    if [[ "$ENABLE_DGB_SCRYPT" == "true" && "$ENABLE_DGB" != "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir dgb)/bin/digibyted" ]]; then
-            log_error "DigiByte daemon not found (required for DGB-SCRYPT)"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "DigiByte Core OK (DGB-SCRYPT)"
-        fi
-    fi
-
-    if [[ "$ENABLE_BTC" == "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir btc)/bin/bitcoind" ]]; then
-            log_error "Bitcoin Knots daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Bitcoin Knots OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_BCH" == "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir bch)/bin/bitcoind" ]]; then
-            log_error "Bitcoin Cash daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Bitcoin Cash Node OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_BCH2" == "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir bch2)/bin/bitcoincashIId" ]]; then
-            log_error "Bitcoin Cash II daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Bitcoin Cash II Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_BTCS" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/btcs-bin/bin/bitcoinsilverd" ]]; then
-            log_error "Bitcoin Silver daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Bitcoin Silver OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_BC2" == "true" ]]; then
-        if [[ ! -x "$(get_blockchain_dir bc2)/bin/bitcoinIId" ]]; then
-            log_error "Bitcoin II daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Bitcoin II Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_LTC" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/ltc-bin/bin/litecoind" ]]; then
-            log_error "Litecoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Litecoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_DOGE" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/doge-bin/bin/dogecoind" ]]; then
-            log_error "Dogecoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Dogecoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_PEP" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/pep-bin/bin/pepecoind" ]]; then
-            log_error "PepeCoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "PepeCoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_CAT" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/cat-bin/bin/catcoind" ]]; then
-            log_error "Catcoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Catcoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_NMC" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/nmc-bin/bin/namecoind" ]]; then
-            log_error "Namecoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Namecoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_SYS" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/sys-bin/bin/syscoind" ]]; then
-            log_error "Syscoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Syscoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_XMY" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/xmy-bin/bin/myriadcoind" ]]; then
-            log_error "Myriadcoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Myriadcoin Core OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_FBTC" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/fbtc-bin/bin/bitcoind" ]]; then
-            log_error "Fractal Bitcoin daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Fractal Bitcoin OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_QBX" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/qbx-bin/qbitx" ]]; then
-            log_error "Q-BitX daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "Q-BitX OK"
-        fi
-    fi
-
-    if [[ "$ENABLE_XEC" == "true" ]]; then
-        if [[ ! -x "$INSTALL_DIR/xec-bin/bin/bitcoind" ]]; then
-            log_error "eCash (Bitcoin ABC) daemon not found"
-            verify_errors=$((verify_errors + 1))
-        else
-            log_success "eCash (XEC) OK"
-        fi
-    fi
-
-    if [[ ! -f "$INSTALL_DIR/config/config.yaml" ]]; then
-        log_error "Pool configuration not found"
-        verify_errors=$((verify_errors + 1))
-    else
-        log_success "Pool configuration OK"
-    fi
-
-    # Check database connectivity (retry a few times as postgres may be starting)
-    local db_ok=false
-    for ((i=1; i<=5; i++)); do
-        if sudo -u postgres psql -c "SELECT 1" </dev/null &>/dev/null; then
-            db_ok=true
-            break
-        fi
-        sleep 2
-    done
-
-    if [[ "$db_ok" == "true" ]]; then
-        log_success "PostgreSQL OK"
-    else
-        log_warn "PostgreSQL not responding (may start later)"
-    fi
-
-    if [[ $verify_errors -gt 0 ]]; then
-        echo ""
-        log_error "Installation verification found $verify_errors critical error(s)"
-        echo ""
-        echo -e "  ${WHITE}Options:${NC}"
-        echo -e "    ${YELLOW}c${NC} = Continue anyway (not recommended)"
-        echo -e "    ${RED}a${NC} = Abort installation"
-        echo ""
-        stty sane 2>/dev/null || true
-        prompt_input "Choice [c/a]: "; read choice < /dev/tty
-        case "$choice" in
-            c|C)
-                log_warn "Continuing despite verification errors - some features may not work"
-                ;;
-            *)
-                log_error "Installation aborted by user"
-                exit 1
-                ;;
-        esac
-    else
-        log_success "Installation verified successfully"
-    fi
-
-    # Strip Windows CRLF line endings from all installed scripts.
-    # Prevents shebangs from becoming /bin/bash\r when files are copied from a Windows checkout.
-    # Only targets known text file types — never touches Go/C binaries.
-    find "$INSTALL_DIR/bin" "$INSTALL_DIR/scripts" /usr/local/bin -maxdepth 2 -type f \
-        \( -name "*.sh" -o -name "*.py" -o -name "*.yaml" -o -name "*.yml" -o -name "*.conf" -o -name "*.json" \) \
-        2>/dev/null | xargs -r sed -i 's/\r//' 2>/dev/null || true
-
-    start_services
-    print_completion
-
-    # Installation completed successfully - clear checkpoint file
-    clear_checkpoint
-    # Checkpoint cleared silently — print_completion already showed the final banner
-
-    # Installation complete - release lock and clear the trap so cleanup doesn't trigger
-    release_operation_lock
-    trap - EXIT
-}
-
-main "$@"
-
-# After installation completes, launch sync watcher if user requested it
-if [[ "$WATCH_SYNC_ON_EXIT" == "true" ]]; then
-    echo ""
-    # Detect multi-coin mode (same logic as the earlier sync watcher invocation)
-    local_sync_flags="--watch"
-    local_coin_count=0
-    [[ "$ENABLE_DGB" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_BTC" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_BCH" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_BC2" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_BCH2" == "true" ]] && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_BTCS" == "true" ]] && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_LTC" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_DOGE" == "true" ]] && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_NMC" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_SYS" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_XMY" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_FBTC" == "true" ]] && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_QBX" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_XEC" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_PEP" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ "$ENABLE_CAT" == "true" ]]  && local_coin_count=$((local_coin_count + 1))
-    [[ $local_coin_count -gt 1 ]] && local_sync_flags="--watch --multi"
-    exec sudo -u "$POOL_USER" spiralpool-sync $local_sync_flags
-fi

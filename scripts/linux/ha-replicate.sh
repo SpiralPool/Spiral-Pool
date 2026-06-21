@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.5.1"
+SCRIPT_VERSION="2.5.2"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -94,7 +94,6 @@ declare -A BLOCKCHAIN_DIRS=(
     ["syscoin"]="$(_chain_dir sys)"
     ["myriadcoin"]="$(_chain_dir xmy)"
     ["fractal"]="$(_chain_dir fbtc)"
-    ["qbitx"]="$(_chain_dir qbx)"
     ["ecash"]="$(_chain_dir xec)"
 )
 
@@ -444,9 +443,6 @@ get_blockchain_service_name() {
             ;;
         fractal)
             echo "fractald"
-            ;;
-        qbitx)
-            echo "qbitxd"
             ;;
         ecash)
             echo "ecashd"

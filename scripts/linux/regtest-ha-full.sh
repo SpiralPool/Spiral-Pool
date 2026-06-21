@@ -73,7 +73,7 @@ SYSTEM_PG_WAS_RUNNING=0
 if [[ -z "${1:-}" ]]; then
     echo "Usage: $0 <coin>"
     echo ""
-    echo "Supported coins: btc, ltc, dgb, doge, bch, sys, nmc, xmy, fbtc, qbx, pep, cat, bc2"
+ echo "Supported coins: btc, ltc, dgb, doge, bch, sys, nmc, xmy, fbtc, pep, cat, bc2"
     echo ""
     echo "Example: $0 btc"
     exit 1
@@ -357,19 +357,9 @@ setup_environment() {
             POOL_ID="pool_fbtc_sha256"
             POOL_ADDRESS="bc1qtest000000000000000000000000000000"
             ;;
-        qbx)
-            POOL_COIN_NAME="qbitx"
-            DAEMON_HOST="qbitx"
-            DAEMON_RPC_PORT=8344
-            DAEMON_ZMQ_PORT=0  # QBX binary compiled without ZMQ support
-            STRATUM_PORT=20335
-            STRATUM_PORT_V2=20336
-            POOL_ID="pool_qbx_sha256"
-            POOL_ADDRESS="1testaddr00000000000000000000000000"
-            ;;
         *)
             log_error "Unknown coin: $COIN"
-            log_info "Supported: btc, dgb, ltc, doge, bch, bc2, pep, cat, nmc, sys, xmy, fbtc, qbx"
+ log_info "Supported: btc, dgb, ltc, doge, bch, bc2, pep, cat, nmc, sys, xmy, fbtc"
             exit 1
             ;;
     esac
@@ -432,8 +422,6 @@ XMY_RPC_USER=spiralpool
 XMY_RPC_PASSWORD=${RPC_PASS}
 FBTC_RPC_USER=spiralpool
 FBTC_RPC_PASSWORD=${RPC_PASS}
-QBX_RPC_USER=spiralpool
-QBX_RPC_PASSWORD=${RPC_PASS}
 EOF
 
     log_ok "Environment file created for $COIN_UPPER"

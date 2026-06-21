@@ -23,7 +23,7 @@ Free, open-source Stratum server software for proof-of-work (PoW) cryptocurrency
 
 ### ⛏️ Supported Coins
 
-**SHA-256d (Bitcoin & forks):** Bitcoin (BTC) · Bitcoin Cash (BCH) · Bitcoin Cash II (BCH2) · DigiByte (DGB) · Bitcoin II (BC2) · Bitcoin Silver (BTCS) · Namecoin (NMC) · Syscoin (SYS) · Myriad (XMY) · Fractal Bitcoin (FBTC) · Q-BitX (QBX)
+**SHA-256d (Bitcoin & forks):** Bitcoin (BTC) · Bitcoin Cash (BCH) · Bitcoin Cash II (BCH2) · DigiByte (DGB) · Bitcoin II (BC2) · Bitcoin Silver (BTCS) · Namecoin (NMC) · Syscoin (SYS) · Myriad (XMY) · Fractal Bitcoin (FBTC)
 
 **Scrypt (Litecoin & forks):** Litecoin (LTC) · Dogecoin (DOGE) · DigiByte-Scrypt (DGB-SCRYPT) · PepeCoin (PEP) · Catcoin (CAT)
 

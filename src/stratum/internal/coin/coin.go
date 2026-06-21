@@ -464,7 +464,7 @@ func AlgorithmFromCoinSymbol(symbol string) string {
 		return "scrypt"
 	case "CAT", "CATCOIN":
 		return "scrypt"
-	case "DGB", "DIGIBYTE", "BTC", "BITCOIN", "BCH", "BITCOINCASH", "BCH2", "BITCOINCASHII", "BC2", "BITCOINII", "BTCS", "BITCOINSILVER", "NMC", "NAMECOIN", "SYS", "SYSCOIN", "XMY", "MYRIAD", "MYRIADCOIN", "FBTC", "FB", "FRACTALBTC", "FRACTAL", "QBX", "QBITX", "XEC", "ECASH", "BITCOIN-ABC":
+	case "DGB", "DIGIBYTE", "BTC", "BITCOIN", "BCH", "BITCOINCASH", "BCH2", "BITCOINCASHII", "BC2", "BITCOINII", "BTCS", "BITCOINSILVER", "NMC", "NAMECOIN", "SYS", "SYSCOIN", "XMY", "MYRIAD", "MYRIADCOIN", "FBTC", "FB", "FRACTALBTC", "FRACTAL", "XEC", "ECASH", "BITCOIN-ABC":
 		return "sha256d"
 	default:
 		return "sha256d" // Default to SHA-256d

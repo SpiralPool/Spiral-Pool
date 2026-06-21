@@ -93,7 +93,6 @@ All tests are designed to run with `go test -race` and should produce zero data 
 | `digibyte_scrypt_test.go` | DGB Scrypt params |
 | `dogecoin_test.go` | DOGE params and merge-mining |
 | `fractalbtc_test.go` | FBTC-specific params |
-| `qbitx_test.go` | QBX-specific params |
 | `litecoin_test.go` | LTC Scrypt params |
 | `myriad_test.go` | XMY multi-algo params |
 | `namecoin_test.go` | NMC merge-mining params |

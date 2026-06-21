@@ -492,7 +492,7 @@ func TestMultiCoin_StressConcurrentOperations(t *testing.T) {
 	t.Parallel()
 
 	manager := NewMultiCoinManager()
-	coins := []string{"BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB", "XMY", "NMC", "SYS", "FBTC", "QBX"}
+	coins := []string{"BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB", "XMY", "NMC", "SYS", "FBTC"}
 
 	for i, coin := range coins {
 		manager.AddCoin(coin, 3333+i)

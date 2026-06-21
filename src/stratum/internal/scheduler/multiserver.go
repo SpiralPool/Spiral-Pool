@@ -64,7 +64,7 @@ type MultiServerConfig struct {
 	// WalletMap maps worker names (case-insensitive) to per-coin payout addresses.
 	// When a miner submits a share, the pool overrides MinerAddress with the
 	// correct wallet for the active coin. Required for multi-coin setups where
-	// coins use different address formats (e.g., QBX vs BC2).
+	// coins use different address formats (e.g. vs BC2).
 	WalletMap map[string]map[string]string
 
 	// RoutingMode controls whether the Smart Port uses time-based or

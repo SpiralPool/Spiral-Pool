@@ -52,7 +52,7 @@ func (m *MigratorV2) RunV2Migrations(ctx context.Context) error {
 				);
 
 				-- Insert default supported coins (SHA-256d and Scrypt)
-				-- FIX: Removed XVG/JKC/LKY (deleted coins), added NMC/SYS/XMY/FBTC (aux chains), QBX, XEC
+				-- FIX: Removed XVG/JKC/LKY (deleted coins), added NMC/SYS/XMY/FBTC (aux chains), XEC
 				INSERT INTO coins (symbol, name, algorithm) VALUES
 					('BTC', 'Bitcoin', 'sha256d'),
 					('BCH', 'Bitcoin Cash', 'sha256d'),
@@ -64,7 +64,6 @@ func (m *MigratorV2) RunV2Migrations(ctx context.Context) error {
 					('SYS', 'Syscoin', 'sha256d'),
 					('XMY', 'Myriadcoin', 'sha256d'),
 					('FBTC', 'Fractal Bitcoin', 'sha256d'),
-					('QBX', 'Q-BitX', 'sha256d'),
 					('XEC', 'eCash', 'sha256d'),
 					('LTC', 'Litecoin', 'scrypt'),
 					('DOGE', 'Dogecoin', 'scrypt'),

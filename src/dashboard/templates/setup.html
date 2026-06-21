@@ -205,15 +205,6 @@
                             </div>
                             <div class="coin-check">✓</div>
                         </div>
-                        <div class="coin-option" id="coin-qbx" data-coin="QBX" onclick="toggleCoin('QBX')">
-                            <div class="coin-icon">🔐</div>
-                            <div class="coin-info">
-                                <div class="coin-name">Q-BitX</div>
-                                <div class="coin-symbol">QBX</div>
-                                <div class="coin-algo">SHA256d (post-quantum)</div>
-                            </div>
-                            <div class="coin-check">✓</div>
-                        </div>
                         <div class="coin-option" id="coin-nmc" data-coin="NMC" onclick="toggleCoin('NMC')">
                             <div class="coin-icon">🔷</div>
                             <div class="coin-info">
@@ -1664,7 +1655,6 @@
             'BTC': { icon: '🟠', name: 'Bitcoin', placeholder: 'bc1q... or 1...' },
             'BTCS': { icon: '⚪', name: 'Bitcoin Silver', placeholder: 'bs1q... or B...' },
             'FBTC': { icon: '🔶', name: 'Fractal Bitcoin', placeholder: 'bc1q... or 1... (FBTC chain)' },
-            'QBX': { icon: '🔐', name: 'Q-BitX', placeholder: 'M... or P... or pq... (QBX)' },
             'NMC': { icon: '🔷', name: 'Namecoin', placeholder: 'N... or nc1q...' },
             'SYS': { icon: '🔴', name: 'Syscoin (merge-mine only)', placeholder: 'sys1q...', mergeOnly: true },
             'XMY': { icon: '⭐', name: 'Myriad (merge-mine only)', placeholder: 'M... (Myriad address)', mergeOnly: true },
@@ -1729,7 +1719,7 @@
         // Update coin selection UI
         function updateCoinSelectionUI() {
             // All supported coins including SYS (shown only in merge mining mode)
-            const allCoins = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'QBX', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+            const allCoins = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
             allCoins.forEach(coin => {
                 const el = document.getElementById(`coin-${coin.toLowerCase()}`);
                 if (el) {
@@ -1783,7 +1773,7 @@
             container.innerHTML = '';
 
             // All supported coins including SYS (SYS only appears when merge mining is active)
-            const validCoins = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'QBX', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+            const validCoins = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
 
             selectedCoins.forEach(coin => {
                 // Validate coin is in whitelist
@@ -2942,7 +2932,7 @@
         // Detect server mode and initialize
         async function detectAndInitializeMode() {
             // SECURITY: Whitelist of valid coin symbols to prevent XSS via malicious API response (alphabetical order)
-            const VALID_COINS = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'QBX', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
+            const VALID_COINS = ['BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'FBTC', 'NMC', 'SYS', 'XMY', 'CAT', 'DGB', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'];
             const VALID_MODES = ['solo', 'multi', 'merge'];
 
             try {
@@ -3033,7 +3023,7 @@
 
                         // Pre-populate wallet addresses detected from stratum
                         // coins_config is [{symbol, wallet_address}, ...] for all active coins
-                        const VALID_WALLET_COINS = new Set(['BC2','BCH','BCH2','BTC','BTCS','FBTC','QBX','NMC','SYS','XMY','CAT','DGB','DGB-SCRYPT','DOGE','LTC','PEP']);
+                        const VALID_WALLET_COINS = new Set(['BC2','BCH','BCH2','BTC','BTCS','FBTC','NMC','SYS','XMY','CAT','DGB','DGB-SCRYPT','DOGE','LTC','PEP']);
                         if (data.coins_config && Array.isArray(data.coins_config)) {
                             data.coins_config.forEach(coinCfg => {
                                 if (!coinCfg || typeof coinCfg !== 'object') return;

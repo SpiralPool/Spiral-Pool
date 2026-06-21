@@ -389,12 +389,6 @@ def test_v2_remove_safety():
                 'address': 'fbtc_address',
                 'stratum': {'port': 3333, 'difficulty': {'initial': 4096}},
             },
-            {
-                'symbol': 'QBX',
-                'enabled': True,
-                'address': 'qbx_address',
-                'stratum': {'port': 3333, 'difficulty': {'initial': 2048}},
-            },
         ],
     }
 
@@ -411,9 +405,7 @@ def test_v2_remove_safety():
     check("DGB address intact", config_copy['coins'][0]['address'], 'dgb1_address')
     check("DGB difficulty intact",
           config_copy['coins'][0]['stratum']['difficulty']['initial'], 5000)
-    check("QBX still present", config_copy['coins'][1]['symbol'], 'QBX')
-    check("QBX address intact", config_copy['coins'][1]['address'], 'qbx_address')
-    check("Total coins = 2 (was 3)", len(config_copy['coins']), 2)
+    check("Total coins = 1 (was 2)", len(config_copy['coins']), 1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -487,7 +479,7 @@ def test_full_v1_to_v2_pipeline():
 
     # Symbol mapping
     _v1_coin_to_symbol = {
-        'digibyte': 'DGB', 'fractalbitcoin': 'FBTC', 'qbitx': 'QBX',
+ 'digibyte': 'DGB', 'fractalbitcoin': 'FBTC', '': '',
     }
     _v1_raw_lower = v1_pool.get('coin', 'DGB').lower()
     _v1_symbol = _v1_coin_to_symbol.get(_v1_raw_lower, v1_pool.get('coin', 'DGB').upper())

@@ -10,7 +10,7 @@ This script is for adding coins that are NOT natively supported by Spiral Pool.
 The following coins ship with Spiral Pool and should be installed via the installer
 (sudo bash install.sh → "Add coins to existing installation"):
 
-    SHA-256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC, QBX, SYS, XEC, XMY
+ SHA-256d: BTC, BCH, BCH2, BC2, BTCS, DGB, FBTC, NMC, SYS, XEC, XMY
     Scrypt:   LTC, DOGE, DGB-SCRYPT, PEP, CAT
 
 Use this script only for coins outside the above list.
@@ -66,7 +66,7 @@ Examples:
     python scripts/add-coin.py -s BAR -g https://github.com/barcoin/bar --algorithm scrypt
 
 NOTE: Do not use this script for natively supported coins (BTC, BCH, LTC, DOGE, DGB,
-      BC2, FBTC, NMC, QBX, SYS, XMY, PEP, CAT, DGB-SCRYPT). Those are installed via
+ BC2, FBTC, NMC, SYS, XMY, PEP, CAT, DGB-SCRYPT). Those are installed via
       the Spiral Pool installer: sudo bash install.sh
 """
 
@@ -99,7 +99,7 @@ KNOWN_SHA256D_COINS = {
     "BTC", "BITCOIN", "BCH", "BITCOINCASH", "DGB", "DIGIBYTE",
     "BCH2", "BITCOINCASHII", "BTCS", "BITCOINSILVER",
     "BC2", "BITCOINII", "NMC", "NAMECOIN", "SYS", "SYSCOIN",
-    "XMY", "MYRIAD", "QBX", "QBITX",
+ "XMY", "MYRIAD",
     "XEC", "ECASH", "BITCOINABC",
 }
 

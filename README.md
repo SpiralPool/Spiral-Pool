@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Phi Hash Reactor V2.5.1</em>
+  <em>Phi Hash Reactor V2.5.2</em>
 </p>
 
 <p align="center">
@@ -108,7 +108,7 @@ Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spir
 | Myriad | XMY | 1 min | BTC (AuxPoW, chain ID 90) |
 | Fractal Bitcoin | FBTC | 30 sec | BTC (AuxPoW, chain ID 8228) |
 | eCash | XEC | 10 min | &mdash; |
-| Q-BitX | QBX | 2.5 min | &mdash; |
+| 2.5 min | &mdash; |
 
 ### Scrypt
 
@@ -130,7 +130,7 @@ BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
       ├── XMY  (Myriad)
       └── FBTC (Fractal Bitcoin)
 
-QBX, XEC (standalone — no merge mining)
+XEC (standalone — no merge mining)
 ```
 
 ---
@@ -247,7 +247,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.5.1 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.5.2 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -320,4 +320,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Phi Hash Reactor 2.5.1 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Phi Hash Reactor 2.5.2 &mdash; Convergent difficulty. Minimal oscillation.*

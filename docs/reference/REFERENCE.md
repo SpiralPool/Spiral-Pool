@@ -26,7 +26,6 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Fractal Bitcoin | FBTC | 18335 | 18336 | 18337 |
 | eCash | XEC | 18338 | 18339 | 18340 |
 | Bitcoin Silver | BTCS | 11335 | 11336 | 11337 |
-| Q-BitX | QBX | 20335 | 20336 | 20337 |
 
 ## Daemon RPC Ports
 
@@ -47,7 +46,6 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Myriad | XMY | 10889 | 10888 | 28889 |
 | Fractal Bitcoin | FBTC | 8340 | 8341 | 28340 |
 | eCash | XEC | 9004 | 8343 | 28335 |
-| Q-BitX | QBX | 8344 | 8345 | N/A |
 
 ## Multi Coin Smart Port
 
@@ -475,4 +473,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.1*
+*Spiral Pool — Phi Hash Reactor 2.5.2*

@@ -1481,7 +1481,7 @@ class MultiCoinExtendedScenarios:
             "XMY": {"algorithm": "sha256d", "port": 12333},
             "FBTC": {"algorithm": "sha256d", "port": 13333},
             "XEC": {"algorithm": "sha256d", "port": 18338},
-            "QBX": {"algorithm": "sha256d", "port": 20335},
+ "": {"algorithm": "sha256d", "port": 20335},
             "LTC": {"algorithm": "scrypt", "port": 7333},
             "DOGE": {"algorithm": "scrypt", "port": 8335},
             "DGB-SCRYPT": {"algorithm": "scrypt", "port": 14333},

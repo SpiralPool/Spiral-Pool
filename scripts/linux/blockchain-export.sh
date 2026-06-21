@@ -38,7 +38,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.5.1"
+SCRIPT_VERSION="2.5.2"
 SCRIPT_NAME="$(basename "$0")"
 
 POOL_USER="${POOL_USER:-spiraluser}"
@@ -86,7 +86,6 @@ declare -A COIN_DIRS=(
     ["SYS"]="$(_chain_dir sys)"
     ["XMY"]="$(_chain_dir xmy)"
     ["FBTC"]="$(_chain_dir fbtc)"
-    ["QBX"]="$(_chain_dir qbx)"
     ["XEC"]="$(_chain_dir xec)"
 )
 
@@ -106,7 +105,6 @@ declare -A COIN_LABELS=(
     ["SYS"]="Syscoin (SYS)"
     ["XMY"]="Myriadcoin (XMY)"
     ["FBTC"]="Fractal Bitcoin (FBTC)"
-    ["QBX"]="Q-BitX (QBX)"
     ["XEC"]="eCash (XEC)"
 )
 
@@ -126,7 +124,6 @@ declare -A COIN_SERVICES=(
     ["SYS"]="syscoind"
     ["XMY"]="myriadcoind"
     ["FBTC"]="fractald"
-    ["QBX"]="qbitxd"
     ["XEC"]="ecashd"
 )
 

@@ -452,10 +452,10 @@ func TestSOLO_RPCFailure_AllCoins_WrongHashUnderThreshold(t *testing.T) {
 
 // TestSOLO_RPCFailure_SHA256d_GetBlockchainInfoFails verifies RPC failure
 // safety specifically for SHA-256d algorithm coins: BTC, BCH, BCH2, DGB, BC2,
-// BTCS, NMC, SYS, XMY, FBTC, QBX.
+// BTCS, NMC, SYS, XMY, FBTC.
 //
 // Risk vector:  GetBlockchainInfo fails -> cycle aborted
-// Coins:        SHA-256d only (BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX)
+// Coins: SHA-256d only (BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC)
 // Block interval: 15s (DGB) to 600s (BTC/BCH)
 // Algorithm:    SHA-256d
 func TestSOLO_RPCFailure_SHA256d_GetBlockchainInfoFails(t *testing.T) {

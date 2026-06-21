@@ -987,7 +987,6 @@ Source: `src/sentinel/SpiralSentinel.py`, `src/dashboard/dashboard.py`
 | Myriad | XMY | SHA-256d | Yes | BTC (chain ID 90) |
 | Fractal Bitcoin | FBTC | SHA-256d | Yes | BTC (chain ID 8228) |
 | eCash | XEC | SHA-256d | Yes | -- |
-| Q-BitX | QBX | SHA-256d | Yes | -- |
 | Litecoin | LTC | Scrypt | Yes | Parent chain |
 | Dogecoin | DOGE | Scrypt | Yes | LTC (chain ID 98) |
 | DigiByte-Scrypt | DGB-SCRYPT | Scrypt | Yes | -- |
@@ -1091,4 +1090,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.1*
+*Spiral Pool — Phi Hash Reactor 2.5.2*

@@ -31,22 +31,22 @@ func runNode(args []string) error {
 	switch action {
 	case "start":
 		if len(args) < 2 {
-			return fmt.Errorf("node symbol required. Usage: spiralctl node start <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|dgb-scrypt|pep|cat|all>")
+			return fmt.Errorf("node symbol required. Usage: spiralctl node start <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|dgb-scrypt|pep|cat|all>")
 		}
 		return startNode(args[1])
 	case "stop":
 		if len(args) < 2 {
-			return fmt.Errorf("node symbol required. Usage: spiralctl node stop <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|dgb-scrypt|pep|cat|all>")
+			return fmt.Errorf("node symbol required. Usage: spiralctl node stop <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|dgb-scrypt|pep|cat|all>")
 		}
 		return stopNode(args[1])
 	case "restart":
 		if len(args) < 2 {
-			return fmt.Errorf("node symbol required. Usage: spiralctl node restart <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|dgb-scrypt|pep|cat|all>")
+			return fmt.Errorf("node symbol required. Usage: spiralctl node restart <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|dgb-scrypt|pep|cat|all>")
 		}
 		return restartNode(args[1])
 	case "logs":
 		if len(args) < 2 {
-			return fmt.Errorf("node symbol required. Usage: spiralctl node logs <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|qbx|ltc|doge|dgb-scrypt|pep|cat>")
+			return fmt.Errorf("node symbol required. Usage: spiralctl node logs <btc|bch|bch2|dgb|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|dgb-scrypt|pep|cat>")
 		}
 		return showNodeLogs(args[1])
 	case "status":
@@ -78,7 +78,7 @@ func printNodeUsage() {
 	fmt.Println("  sys        Syscoin (AuxPoW)")
 	fmt.Println("  xmy        Myriad (AuxPoW)")
 	fmt.Println("  fbtc       Fractal Bitcoin (AuxPoW)")
-	fmt.Println("  qbx        Q-BitX")
+	fmt.Println(" ")
 	fmt.Println()
 	fmt.Println("Nodes (Scrypt):")
 	fmt.Println("  ltc        Litecoin")
@@ -121,7 +121,6 @@ func getNodeServices() []nodeService {
 		{"ltc", "Litecoin", "litecoind", DefaultLTCConfig},
 		{"nmc", "Namecoin", "namecoind", DefaultNMCConfig},
 		{"pep", "PepeCoin", "pepecoind", DefaultPEPConfig},
-		{"qbx", "Q-BitX", "qbitxd", DefaultQBXConfig},
 		{"sys", "Syscoin", "syscoind", DefaultSYSConfig},
 		{"xec", "eCash", "ecashd", DefaultXECConfig},
 		{"xmy", "Myriad", "myriadcoind", DefaultXMYConfig},
@@ -148,7 +147,7 @@ func startNode(symbol string) error {
 
 	node := getNodeBySymbol(symbol)
 	if node == nil {
-		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
+		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
 	}
 
 	if !fileExists(node.config) {
@@ -193,7 +192,7 @@ func stopNode(symbol string) error {
 
 	node := getNodeBySymbol(symbol)
 	if node == nil {
-		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
+		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
 	}
 
 	if !fileExists(node.config) {
@@ -238,7 +237,7 @@ func restartNode(symbol string) error {
 
 	node := getNodeBySymbol(symbol)
 	if node == nil {
-		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
+		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, xec, ltc, doge, dgb-scrypt, pep, cat, all", symbol)
 	}
 
 	if !fileExists(node.config) {
@@ -276,7 +275,7 @@ func restartAllNodes() error {
 func showNodeLogs(symbol string) error {
 	node := getNodeBySymbol(symbol)
 	if node == nil {
-		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, qbx, ltc, doge, dgb-scrypt, pep, cat", symbol)
+		return fmt.Errorf("unknown node: %s. Valid options: btc, bch, dgb, bc2, nmc, sys, xmy, fbtc, ltc, doge, dgb-scrypt, pep, cat", symbol)
 	}
 
 	if !fileExists(node.config) {

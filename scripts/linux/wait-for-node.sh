@@ -289,12 +289,6 @@ get_rpc_creds() {
                 [ -f "$f" ] && { conf_file="$f"; break; }
             done
             ;;
-        QBX)
-            # Q-BitX (Post-Quantum Bitcoin)
-            for f in "$base_dir/qbx/qbitx.conf" "$base_dir/qbitx/qbitx.conf"; do
-                [ -f "$f" ] && { conf_file="$f"; break; }
-            done
-            ;;
         XEC)
             # eCash (Bitcoin ABC) — uses bitcoin.conf like BTC/BCH
             for f in "$base_dir/xec/bitcoin.conf" "$base_dir/ecash/bitcoin.conf"; do
@@ -588,10 +582,6 @@ ensure_auxchain_wallet_and_address() {
             use_addr_type=false
             new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
             ;;
-        QBX)
-            # Q-BitX uses post-quantum "pq" address type
-            new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "" "pq" 2>&1) || true
-            ;;
         *)
             use_addr_type=false
             new_address=$(timeout 10 "$cli_path" -conf="$conf_path" getnewaddress "$wallet_name" 2>&1) || true
@@ -777,9 +767,6 @@ get_cli_path() {
             # Fractal release ships bitcoin-cli; fractal-cli is a symlink in /usr/local/bin only
             echo "$base_dir/fbtc-bin/bin/bitcoin-cli"
             ;;
-        QBX)
-            echo "$base_dir/qbx-bin/qbitx-cli"
-            ;;
         XEC)
             # eCash ships bitcoin-cli; ecash-cli symlink lives in /usr/local/bin only
             echo "$base_dir/xec-bin/bin/bitcoin-cli"
@@ -807,21 +794,6 @@ get_wallet_dir() {
         SYS) echo "$base_dir/sys/wallets" ;;
         XMY) echo "$base_dir/xmy/wallets" ;;
         FBTC) echo "$base_dir/fbtc/wallets" ;;
-        QBX) echo "$base_dir/qbx/wallets" ;;
-        XEC) echo "$base_dir/xec/wallets" ;;
-        *) echo "$base_dir/${symbol,,}/wallets" ;;
-    esac
-}
-
-# Get the config file path for a coin
-get_conf_path() {
-    local symbol="$1"
-    local base_dir="/spiralpool"
-
-    case "$symbol" in
-        DGB|DGB-SCRYPT)
-            echo "$base_dir/dgb/digibyte.conf"
-            ;;
         BCH2)
             echo "$base_dir/bch2/bitcoincashii.conf"
             ;;
@@ -861,9 +833,6 @@ get_conf_path() {
             ;;
         FBTC)
             echo "$base_dir/fbtc/fractal.conf"
-            ;;
-        QBX)
-            echo "$base_dir/qbx/qbitx.conf"
             ;;
         XEC)
             echo "$base_dir/xec/bitcoin.conf"
@@ -1019,7 +988,7 @@ ensure_wallet_and_address() {
     #   DOGE - NO address_type param (no SegWit, legacy D... addresses)
     #   BC2 - NO address_type param (older Bitcoin fork)
     #   XMY, FBTC - may or may not support, try legacy for safety
-    #   QBX - uses post-quantum "pq" address type (handled in separate case above)
+ # - uses post-quantum "pq" address type (handled in separate case above)
     local new_address
     local addr_type=""
     local use_addr_type=true
@@ -1039,10 +1008,6 @@ ensure_wallet_and_address() {
         NMC|SYS)
             # NMC and SYS use legacy addresses
             addr_type="legacy"
-            ;;
-        QBX)
-            addr_type="pq"
-            use_addr_type=true
             ;;
         BCH2)
             # BCH2 uses legacy arg to get bitcoincashii:q... CashAddr
@@ -1326,7 +1291,7 @@ elif [ -n "$V1_INFO" ]; then
         syscoin|sys) COIN_SYMBOL="SYS" ;;
         myriadcoin|myriad|xmy) COIN_SYMBOL="XMY" ;;
         fractalbitcoin|fractal|fbtc) COIN_SYMBOL="FBTC" ;;
-        qbitx|q-bitx|qbx) COIN_SYMBOL="QBX" ;;
+ |) COIN_SYMBOL="" ;;
         ecash|bitcoin-abc|xec) COIN_SYMBOL="XEC" ;;
         *) COIN_SYMBOL="${COIN_RAW^^}" ;;
     esac

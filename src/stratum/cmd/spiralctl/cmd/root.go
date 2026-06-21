@@ -39,7 +39,6 @@ const (
 	DefaultSYSConfig      = "/spiralpool/sys/syscoin.conf"
 	DefaultXMYConfig      = "/spiralpool/xmy/myriadcoin.conf"
 	DefaultFBTCConfig     = "/spiralpool/fbtc/fractal.conf"
-	DefaultQBXConfig      = "/spiralpool/qbx/qbitx.conf"
 	DefaultXECConfig      = "/spiralpool/xec/bitcoin.conf"
 	// Scrypt coins
 	DefaultLTCConfig       = "/spiralpool/ltc/litecoin.conf"
@@ -188,7 +187,7 @@ func printUsage() {
 	fmt.Println("  spiralctl external test                     # Test external connectivity")
 	fmt.Println()
 	fmt.Printf("%sSupported Coins:%s\n", ColorBold, ColorReset)
-	fmt.Println("  SHA-256d: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, qbx, xec")
+	fmt.Println(" SHA-256d: btc, bch, bch2, dgb, bc2, btcs, nmc, sys, xmy, fbtc, xec")
 	fmt.Println("  Scrypt:   ltc, doge, dgb-scrypt, pep, cat")
 	fmt.Println()
 	fmt.Printf("%sMerge Mining (AuxPoW):%s\n", ColorBold, ColorReset)
@@ -208,7 +207,6 @@ func printUsage() {
 	fmt.Printf("    Syscoin:           %s\n", DefaultSYSConfig)
 	fmt.Printf("    Myriad:            %s\n", DefaultXMYConfig)
 	fmt.Printf("    Fractal Bitcoin:   %s\n", DefaultFBTCConfig)
-	fmt.Printf("    Q-BitX:            %s\n", DefaultQBXConfig)
 	fmt.Printf("    eCash:             %s\n", DefaultXECConfig)
 	fmt.Println("  Scrypt Coins:")
 	fmt.Printf("    Litecoin:          %s\n", DefaultLTCConfig)

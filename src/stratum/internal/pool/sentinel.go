@@ -1286,7 +1286,7 @@ func (s *Sentinel) checkOrphanRate(ctx context.Context) {
 // daemon desync, chain stall, or orphaned block that wasn't detected.
 //
 // IMPORTANT: This check is SUPPRESSED when payment processors report confirmation progress.
-// A block maturing from 0% → 100% over several hours is normal (e.g., QBX needs 100 confs
+// A block maturing from 0% → 100% over several hours is normal (e.g. needs 100 confs
 // at 2.5 min blocks = ~4 hours). Only alert when progress is truly zero.
 func (s *Sentinel) checkBlockMaturityStall() {
 	if s.cfg.MaturityStallHours <= 0 || s.metrics == nil {

@@ -200,16 +200,6 @@ case "$POOL_COIN" in
         export STRATUM_PORT_V2="${STRATUM_PORT_V2:-18336}"
         export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-18337}"
         ;;
-    qbitx)
-        export DAEMON_HOST="${DAEMON_HOST:-qbitx}"
-        export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-8344}"
-        export DAEMON_RPC_USER="${DAEMON_RPC_USER:-${QBX_RPC_USER:-spiralqbx}}"
-        export DAEMON_RPC_PASSWORD="${DAEMON_RPC_PASSWORD:-${QBX_RPC_PASSWORD:-}}"
-        export DAEMON_ZMQ_PORT="${DAEMON_ZMQ_PORT:-28344}"
-        export STRATUM_PORT="${STRATUM_PORT:-20335}"
-        export STRATUM_PORT_V2="${STRATUM_PORT_V2:-20336}"
-        export STRATUM_PORT_TLS="${STRATUM_PORT_TLS:-20337}"
-        ;;
     ecash|xec|bitcoin-abc)
         export DAEMON_HOST="${DAEMON_HOST:-ecash}"
         export DAEMON_RPC_PORT="${DAEMON_RPC_PORT:-9004}"
@@ -264,7 +254,7 @@ case "$POOL_COIN" in
     *)
         echo "ERROR: Unknown POOL_COIN: $POOL_COIN"
         echo "Valid: digibyte, dgb-scrypt, bitcoin, bitcoincash, bitcoincashii, bitcoinii,"
-        echo "       bitcoinsilver, namecoin, syscoin, myriadcoin, fractalbitcoin, qbitx,"
+        echo "       bitcoinsilver, namecoin, syscoin, myriadcoin, fractalbitcoin,"
         echo "       ecash, litecoin, dogecoin, pepecoin, catcoin"
         exit 1
         ;;
@@ -805,46 +795,6 @@ generate_v2_config() {
         zmq:
           enabled: true
           endpoint: \"tcp://fractalbitcoin:28340\"
-    payments:
-      enabled: true
-      interval: 600s
-      minimum_payment: 0.01
-      scheme: \"SOLO\""
-        enabled_coins=$((enabled_coins + 1))
-    fi
-
-    if [ "${ENABLE_QBX:-false}" = "true" ]; then
-        local qbx_v2_line=""
-        [ "$v2_enabled" = "true" ] && qbx_v2_line="
-      port_v2: 20336"
-        local qbx_tls_line="
-      port_tls: 20337"
-        coins_yaml="${coins_yaml}
-  - symbol: \"QBX\"
-    pool_id: \"qbx_sha256_1\"
-    enabled: true
-    address: \"${QBX_POOL_ADDRESS}\"
-    coinbase_text: \"${COINBASE_TEXT}\"
-    stratum:
-      port: 20335${qbx_v2_line}${qbx_tls_line}
-      difficulty:
-        varDiff:
-          enabled: true
-          minDiff: 0.001
-          maxDiff: 100000000
-          targetTime: 8
-          retargetTime: 90
-          variancePercent: 30
-          useConfigDifficulty: ${STRATUM_USE_CONFIG_DIFFICULTY}
-    nodes:
-      - id: \"primary\"
-        host: \"qbitx\"
-        port: 8344
-        user: \"${QBX_RPC_USER:-spiralqbx}\"
-        password: \"${QBX_RPC_PASSWORD}\"
-        zmq:
-          enabled: false
-          endpoint: \"tcp://qbitx:28344\"
     payments:
       enabled: true
       interval: 600s

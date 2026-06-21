@@ -3475,8 +3475,6 @@
                                         <a href="https://chainz.cryptoid.info/dgb/block.dws?{{ block.blockHeight }}.htm" target="_blank" style="color: var(--neon-cyan); text-decoration: none; border-bottom: 1px dotted var(--neon-cyan);">{{ block.blockHeight }}</a>
                                     {% elif block.coin|upper == 'FBTC' %}
                                         <a href="https://mempool.fractalbitcoin.io/block/{{ block.blockHeight }}" target="_blank" style="color: var(--neon-cyan);">{{ block.blockHeight }}</a>
-                                    {% elif block.coin|upper == 'QBX' %}
-                                        <a href="https://explorer.qbitx.org/block/{{ block.blockHeight }}" target="_blank" style="color: #a855f7; text-decoration: none; border-bottom: 1px dotted #a855f7;">{{ block.blockHeight }}</a>
                                     {% else %}
                                         <span style="color: var(--neon-cyan);">{{ block.blockHeight }}</span>
                                     {% endif %}
@@ -3806,7 +3804,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.5.1</span>
+            <span>Spiral Pool Dashboard v2.5.2</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -3903,7 +3901,7 @@
         const WORKER_COIN_COLORS = {
             FBTC: '#ff8c00', BTC: '#ff9500', BCH: '#8bc34a', BCH2: '#8bc34a',
             BC2:  '#ffb700', BTCS: '#c0c0c0', DGB: 'var(--neon-cyan)',
-            'DGB-SCRYPT': 'var(--neon-cyan)', NMC: '#b8860b', QBX: '#9b59b6',
+            'DGB-SCRYPT': 'var(--neon-cyan)', NMC: '#b8860b',
             SYS:  '#1abc9c', XEC: '#00bcd4', XMY: '#e74c3c',
             CAT:  '#ffd700', DOGE: '#c2a633', LTC: '#bdbdbd', PEP: '#7cb342',
         };
@@ -3912,14 +3910,14 @@
             BCH:  'rgba(139,195,74,0.2)', BCH2: 'rgba(139,195,74,0.2)',
             BC2:  'rgba(255,183,0,0.2)',  BTCS: 'rgba(192,192,192,0.2)',
             DGB:  'rgba(0,200,255,0.2)',  'DGB-SCRYPT': 'rgba(0,200,255,0.2)',
-            NMC:  'rgba(184,134,11,0.2)', QBX:  'rgba(155,89,182,0.2)',
+            NMC:  'rgba(184,134,11,0.2)',
             SYS:  'rgba(26,188,156,0.2)', XEC:  'rgba(0,188,212,0.2)',
             XMY:  'rgba(231,76,60,0.2)',  CAT:  'rgba(255,215,0,0.2)',
             DOGE: 'rgba(194,166,51,0.2)', LTC:  'rgba(189,189,189,0.2)',
             PEP:  'rgba(124,179,66,0.2)',
         };
         const WORKER_COIN_ORDER = [
-            'BTC','BCH','BCH2','BC2','BTCS','DGB','FBTC','NMC','QBX','SYS','XEC','XMY',
+            'BTC','BCH','BCH2','BC2','BTCS','DGB','FBTC','NMC','SYS','XEC','XMY',
             'CAT','DGB-SCRYPT','DOGE','LTC','PEP',
         ];
 
@@ -4060,7 +4058,6 @@
                 'SYS': 8,
                 'XMY': 8,
                 'FBTC': 8,
-                'QBX': 8,
                 'LTC': 8,
                 'DOGE': 8,
                 'PEP': 6,
@@ -4815,7 +4812,6 @@
             'SYS': {coin_name:'Syscoin', algorithm:'sha256d', block_time:150, block_reward:1.25},
             'XMY': {coin_name:'Myriad', algorithm:'sha256d', block_time:300, block_reward:500},
             'FBTC': {coin_name:'Fractal Bitcoin', algorithm:'sha256d', block_time:30, block_reward:25},
-            'QBX': {coin_name:'Q-BitX', algorithm:'sha256d', block_time:300, block_reward:12.5},
             'PEP': {coin_name:'PepeCoin', algorithm:'scrypt', block_time:60, block_reward:50},
             'CAT': {coin_name:'Catcoin', algorithm:'scrypt', block_time:60, block_reward:25},
         };
@@ -8924,7 +8920,7 @@
                         'DGB': '🔷', 'BTC': '₿', 'BCH': '💚', 'BCH2': '🟤', 'BC2': '🟡', 'BTCS': '⚪',
                         'LTC': '🪙', 'DOGE': '🐕', 'PEP': '🐸', 'CAT': '🐱',
                         'NMC': '📛', 'SYS': '⚙️', 'XMY': '💎', 'FBTC': '🔸',
-                        'QBX': '🔐', 'DGB-SCRYPT': '🔷'
+                        'DGB-SCRYPT': '🔷'
                     };
 
                     // Build merge badge text
@@ -9128,7 +9124,7 @@
                 // Schedule bars — TIME mode shows time windows, DIFFICULTY mode shows per-coin difficulty
                 const barsEl = document.getElementById('smartport-schedule-bars');
                 if (barsEl) {
-                    const colors = {'QBX': '#a855f7', 'BTC': '#f7931a', 'BCH': '#4caf50', 'BCH2': '#8d6e63',
+                    const colors = {'BTC': '#f7931a', 'BCH': '#4caf50', 'BCH2': '#8d6e63',
                                     'BC2': '#2196f3', 'BTCS': '#9e9e9e',
                                     'FBTC': '#ff5722', 'DGB': '#006ad2', 'LTC': '#bfbbbb', 'DOGE': '#c3a634',
                                     'PEP': '#3cb043', 'CAT': '#e91e63', 'NMC': '#186ab4', 'SYS': '#0084c7',
@@ -9213,7 +9209,6 @@
             'BTC':  '#fb923c',
             'BTCS': '#9e9e9e',
             'DGB':  '#a78bfa',
-            'QBX':  '#f472b6',
             'BC2':  '#facc15',
             'DGB-SCRYPT': '#a78bfa',
             'LTC':  '#bfbbbb',

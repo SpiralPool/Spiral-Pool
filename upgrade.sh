@@ -73,7 +73,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 #   2. Create a wallet address for the new coin BEFORE starting mining
 #
 #   For wallet addresses:
-#   - Coins with CLI support (DGB, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, FBTC, QBX):
+#   - Coins with CLI support (DGB, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, FBTC):
 #     Run: spiralpool-wallet --coin <symbol>
 #
 #   - Coins with limited CLI support (NMC, SYS, XMY, PEP, CAT):
@@ -790,7 +790,7 @@ _recover_salvagewallet() {
     local svc_map=(
         [dgb]="digibyted" [btc]="bitcoind" [bch]="bitcoind-bch" [bch2]="bitcoincashIId"
         [bc2]="bitcoiniid" [btcs]="bitcoinsilverd" [nmc]="namecoind" [sys]="syscoind"
-        [xmy]="myriadcoind" [fbtc]="fractald" [qbx]="qbitx" [ltc]="litecoind"
+        [xmy]="myriadcoind" [fbtc]="fractald" [ltc]="litecoind"
         [doge]="dogecoind" [pep]="pepecoind" [xec]="ecashd"
     )
     local daemon="${svc_map[$cn]:-}"
@@ -848,7 +848,7 @@ repair_wallet_backups() {
                 litecoin)        cur="LTC"  ;; dogecoin)      cur="DOGE" ;;
                 pepecoin)        cur="PEP"  ;; catcoin)       cur="CAT"  ;;
                 digibyte-scrypt) cur="DGB"  ;; ecash|xec)     cur="XEC"  ;;
-                qbitx)           cur="QBX"  ;; *)             cur="${BASH_REMATCH[1]}" ;;
+                *)             cur="${BASH_REMATCH[1]}" ;;
             esac
         elif [[ "$line" =~ ^[[:space:]]*address:[[:space:]]*\"?([^\"[:space:]]+)\"? ]] && [[ -n "$cur" ]]; then
             local addr="${BASH_REMATCH[1]}"
@@ -857,7 +857,7 @@ repair_wallet_backups() {
                 dgb|dgb-scrypt) cn="dgb" ;; btc) cn="btc" ;; bch) cn="bch" ;;
                 bch2) cn="bch2" ;; bc2) cn="bc2" ;; btcs) cn="btcs" ;;
                 nmc) cn="nmc"   ;; sys) cn="sys" ;; xmy) cn="xmy"   ;;
-                fbtc) cn="fbtc" ;; qbx) cn="qbx" ;; ltc) cn="ltc"   ;;
+                fbtc) cn="fbtc" ;; ltc) cn="ltc"   ;;
                 doge) cn="doge" ;; pep) cn="pep" ;; xec) cn="xec"   ;;
                 cat) cn="cat"   ;;
             esac
@@ -908,7 +908,7 @@ repair_wallet_backups() {
         [dgb]="digibyted"       [btc]="bitcoind"         [bch]="bitcoind-bch"
         [bch2]="bitcoincashIId" [bc2]="bitcoiniid"       [btcs]="bitcoinsilverd"
         [nmc]="namecoind"       [sys]="syscoind"         [xmy]="myriadcoind"
-        [fbtc]="fractald"       [qbx]="qbitx"            [ltc]="litecoind"
+        [fbtc]="fractald"       [ltc]="litecoind"
         [doge]="dogecoind"      [pep]="pepecoind"        [xec]="ecashd"
     )
 
@@ -924,7 +924,6 @@ repair_wallet_backups() {
         [sys]="syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf -rpcwallet=pool-sys"
         [xmy]="myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf -rpcwallet=pool-xmy"
         [fbtc]="fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf -rpcwallet=pool-fbtc"
-        [qbx]="qbitx-cli -conf=$INSTALL_DIR/qbx/qbitx.conf -rpcwallet=pool-qbx"
         [ltc]="litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf -rpcwallet=pool-ltc"
         [doge]="dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf -rpcwallet=pool-doge"
         [pep]="pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf -rpcwallet=pool-pep"
@@ -1131,7 +1130,6 @@ create_backup() {
     [[ -f "$(resolve_coin_dir sys)/syscoin.conf" ]] && cp "$(resolve_coin_dir sys)/syscoin.conf" "${BACKUP_PATH}/syscoin.conf" && log_info "  - syscoin.conf backed up"
     [[ -f "$(resolve_coin_dir xmy)/myriadcoin.conf" ]] && cp "$(resolve_coin_dir xmy)/myriadcoin.conf" "${BACKUP_PATH}/myriadcoin.conf" && log_info "  - myriadcoin.conf backed up"
     [[ -f "$(resolve_coin_dir fbtc)/fractal.conf" ]] && cp "$(resolve_coin_dir fbtc)/fractal.conf" "${BACKUP_PATH}/fractal.conf" && log_info "  - fractal.conf backed up"
-    [[ -f "$(resolve_coin_dir qbx)/qbitx.conf" ]] && cp "$(resolve_coin_dir qbx)/qbitx.conf" "${BACKUP_PATH}/qbitx.conf" && log_info "  - qbitx.conf backed up"
     [[ -f "$(resolve_coin_dir xec)/bitcoin.conf" ]] && cp "$(resolve_coin_dir xec)/bitcoin.conf" "${BACKUP_PATH}/ecash.conf" && log_info "  - ecash.conf backed up"
     # Legacy location (older installs may have config here)
     [[ -f "${INSTALL_DIR}/config/digibyte.conf" ]] && [[ ! -L "${INSTALL_DIR}/config/digibyte.conf" ]] && \
@@ -1572,14 +1570,6 @@ rollback_to_backup() {
         chown "${POOL_USER}:${POOL_USER}" "$_rd/fractal.conf"
         chmod 600 "$_rd/fractal.conf"
     fi
-    if [[ -f "$backup_path/qbitx.conf" ]]; then
-        local _rd; _rd=$(resolve_coin_dir qbx)
-        log_info "Restoring qbitx.conf..."
-        mkdir -p "$_rd"
-        cp "$backup_path/qbitx.conf" "$_rd/qbitx.conf"
-        chown "${POOL_USER}:${POOL_USER}" "$_rd/qbitx.conf"
-        chmod 600 "$_rd/qbitx.conf"
-    fi
     if [[ -f "$backup_path/ecash.conf" ]]; then
         local _rd; _rd=$(resolve_coin_dir xec)
         log_info "Restoring ecash.conf (bitcoin.conf)..."
@@ -1904,7 +1894,7 @@ start_services() {
     # This affects ALL services including blockchain daemons (bitcoind-bch, etc.)
     for svc_reset in spiralstratum spiraldash spiralsentinel spiralpool-health \
                      bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd digibyted litecoind dogecoind \
-                     pepecoind catcoind namecoind syscoind myriadcoind fractald qbitxd ecashd; do
+                     pepecoind catcoind namecoind syscoind myriadcoind fractald ecashd; do
         systemctl reset-failed "$svc_reset" 2>/dev/null || true
     done
 
@@ -2082,7 +2072,6 @@ fix_config_issues() {
                     SYS) coin_name="Syscoin" ;;
                     XMY) coin_name="Myriad" ;;
                     FBTC) coin_name="Fractal Bitcoin" ;;
-                    QBX) coin_name="Q-BitX" ;;
                     *) coin_name="${symbol//[^a-zA-Z0-9 _-]/}" ;;  # Sanitized symbol as fallback
                 esac
                 log_info "    - Adding missing 'name: ${coin_name}' after line ${line_num}"
@@ -2562,7 +2551,6 @@ cleanup_daemon_configs() {
         "sys:syscoin.conf"
         "xmy:myriadcoin.conf"
         "fbtc:fractal.conf"
-        "qbx:qbitx.conf"
         "xec:bitcoin.conf"
     )
 
@@ -2685,7 +2673,6 @@ rightsize_daemon_resources() {
         "xmy:myriadcoin.conf:2048"
         "fbtc:fractal.conf:2048"
         "doge:dogecoin.conf:4096"
-        "qbx:qbitx.conf:2048"
         "pep:pepecoin.conf:2048"
         "cat:catcoin.conf:2048"
         "xec:bitcoin.conf:4096"
@@ -2773,7 +2760,6 @@ fix_daemon_service_ownership_pre() {
         "fractald"
         "pepecoind"
         "catcoind"
-        "qbitxd"
         "ecashd"
     )
 
@@ -2840,7 +2826,6 @@ ensure_daemon_peer_config() {
         ["sys"]="syscoin.conf|addnode=158.220.107.184:8369 addnode=158.220.114.225:8369 addnode=165.232.103.216:8369 addnode=31.56.38.151:8369 addnode=31.56.38.197:8369 addnode=31.58.170.95:8369 addnode=143.20.33.149:8369 addnode=151.244.85.219:8369 addnode=176.9.210.20:8369 addnode=151.244.85.47:8369 addnode=159.65.195.168:8369 addnode=173.234.17.201:8369"
         ["xmy"]="myriadcoin.conf|addnode=54.37.139.32:10888 addnode=91.206.16.214:10888 addnode=199.241.187.130:10888 addnode=89.189.0.226:10888 addnode=85.15.179.171:10888 addnode=62.210.123.48:10888"
         ["fbtc"]="fractal.conf|addnode=5.9.118.219:8333 addnode=173.212.223.9:8333 addnode=49.51.68.155:8333 addnode=150.136.38.223:8333 addnode=3.124.82.188:8333"
-        ["qbx"]="qbitx.conf|addnode=89.110.93.248:8334 addnode=83.217.213.118:8334"
     )
 
     local TOTAL_ADDED=0
@@ -2871,13 +2856,6 @@ ensure_daemon_peer_config() {
             echo "fixedseeds=1" >> "$conf_path"
             added=$((added + 1))
             log_info "  - ${conf_name} (${coin_key}): added fixedseeds=1"
-        fi
-
-        # Ensure seednode for QBX (missing from original configs)
-        if [[ "$coin_key" == "qbx" ]] && ! grep -q "^seednode=seed.qbitx.org" "$conf_path" 2>/dev/null; then
-            echo "seednode=seed.qbitx.org" >> "$conf_path"
-            added=$((added + 1))
-            log_info "  - ${conf_name} (${coin_key}): added seednode=seed.qbitx.org"
         fi
 
         # Ensure addnode= entries (skip duplicates)
@@ -3642,9 +3620,6 @@ $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart pepecoind
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart catcoind
 # Fractal Bitcoin (AuxPoW merge-mineable with BTC)
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart fractald
-# Q-BitX
-$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart qbitxd
-
 # Log viewer - allow journalctl to read any service logs from dashboard
 # Dashboard validates service names against ALLOWED_SERVICES whitelist before invoking
 $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
@@ -3866,7 +3841,7 @@ update_systemd_services() {
     fi
 
     # Detect daemon type from config.yaml or existing service file
-    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC, QBX, XEC
+    # Supports all coins: DGB, DGB-SCRYPT, BTC, BCH, BCH2, BC2, BTCS, LTC, DOGE, PEP, CAT, NMC, SYS, XMY, FBTC, XEC
     local DETECTED_DAEMON=""
 
     # First, try to detect from config.yaml (most reliable)
@@ -3887,7 +3862,6 @@ update_systemd_services() {
             syscoin) DETECTED_DAEMON="syscoind" ;;
             myriad|myriadcoin) DETECTED_DAEMON="myriadcoind" ;;
             fractal|fractalbitcoin|fractal-bitcoin) DETECTED_DAEMON="fractald" ;;
-            qbitx|q-bitx|qbitxcoin) DETECTED_DAEMON="qbitxd" ;;
             ecash|xec) DETECTED_DAEMON="ecashd" ;;
         esac
     fi
@@ -3922,14 +3896,12 @@ update_systemd_services() {
             DETECTED_DAEMON="fractald"
         elif grep -q "digibyted" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
             DETECTED_DAEMON="digibyted"
-        elif grep -q "qbitxd" "$SYSTEMD_DIR/${STRATUM_SERVICE}.service" 2>/dev/null; then
-            DETECTED_DAEMON="qbitxd"
         fi
     fi
 
     # Ultimate fallback: check which daemon services exist
     if [[ -z "$DETECTED_DAEMON" ]]; then
-        for daemon in bitcoincashIId bitcoinsilverd bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted qbitxd; do
+        for daemon in bitcoincashIId bitcoinsilverd bitcoiniid bitcoind-bch bitcoind litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald digibyted; do
             if [[ -f "/etc/systemd/system/${daemon}.service" ]]; then
                 DETECTED_DAEMON="$daemon"
                 break
@@ -4330,7 +4302,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.5.1 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.5.2 - PHI HASH REACTOR${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4351,7 +4323,7 @@ echo -e "    ${YELLOW}spiralctl test${NC}           Connectivity   ${YELLOW}spir
 echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference"
 echo ""
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BCH2  BC2  BTCS  DGB  QBX   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BCH2  BC2  BTCS  DGB  XEC   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
 echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
 echo ""
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -4630,7 +4602,7 @@ TMPEOF
 migrate_coin_version_cache() {
     # Seed /spiralpool/config/coin-versions/<COIN>.ver for all installed coins.
     # coin-upgrade.sh reads these files to display the installed version when a
-    # daemon's --version output does not include a version number (e.g. QBX).
+    # daemon's --version output does not include a version number.
     # Files are only written if the binary exists and the cache is not already set.
     #
     # IMPORTANT: When seeding, we try --version detection first, then fall back to
@@ -4640,7 +4612,7 @@ migrate_coin_version_cache() {
     mkdir -p "$vc_dir"
 
     # Previous version map — what v1.0 (BlackICE) shipped for each coin.
-    # Used as fallback when --version detection fails (e.g. QBX).
+    # Used as fallback when --version detection fails.
     declare -A _VC_PREV=(
         [DGB]="8.26.2"          [DGB-SCRYPT]="8.26.2"
         [BTC]="29.3.knots20260210"
@@ -4650,7 +4622,6 @@ migrate_coin_version_cache() {
         [PEP]="1.1.0"           [CAT]="2.1.1"
         [NMC]="28.0"            [SYS]="5.0.5"
         [XMY]="0.18.1.0"        [FBTC]="0.3.0"
-        [QBX]="0.1.0"
     )
     # Daemon binary map — must match COIN_DAEMON_CMD in coin-upgrade.sh
     declare -A _VC_BIN=(
@@ -4661,7 +4632,7 @@ migrate_coin_version_cache() {
         [DOGE]="dogecoind"      [PEP]="pepecoind"
         [CAT]="catcoind"        [NMC]="namecoind"
         [SYS]="syscoind"        [XMY]="myriadcoind"
-        [FBTC]="fractald"       [QBX]="qbitx"
+        [FBTC]="fractald"
     )
 
     local coin ver_file bin_path detected_ver
@@ -4677,7 +4648,7 @@ migrate_coin_version_cache() {
         if [[ -n "$detected_ver" ]]; then
             echo "$detected_ver" > "$ver_file"
         else
-            # Fallback: use known previous version (e.g. QBX --version has no number)
+            # Fallback: use known previous version
             echo "${_VC_PREV[$coin]}" > "$ver_file"
         fi
     done
@@ -5077,7 +5048,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.5.1 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.5.2 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

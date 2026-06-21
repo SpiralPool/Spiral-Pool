@@ -127,7 +127,6 @@ func runConfigValidate(args []string) error {
 		{"Litecoin", DefaultLTCConfig, "ltc"},
 		{"Namecoin", DefaultNMCConfig, "nmc"},
 		{"PepeCoin", DefaultPEPConfig, "pep"},
-		{"Q-BitX", DefaultQBXConfig, "qbx"},
 		{"Syscoin", DefaultSYSConfig, "sys"},
 		{"eCash", DefaultXECConfig, "xec"},
 		{"Myriad", DefaultXMYConfig, "xmy"},

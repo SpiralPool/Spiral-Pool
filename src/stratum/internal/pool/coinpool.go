@@ -2813,7 +2813,7 @@ func (cp *CoinPool) GetHashrate() float64 {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Use 30-minute window for hashrate calculation (smoother, matches ~12 QBX blocks)
+	// Use 30-minute window for hashrate calculation (smoother, matches ~12 blocks)
 	// GetPoolHashrateForPool queries shares_<poolID> for THIS coin specifically,
 	// unlike GetPoolHashrate which uses the shared DB's default poolID.
 	hashrate, err := cp.db.GetPoolHashrateForPool(ctx, cp.poolID, 30, cp.coin.Algorithm())
@@ -3800,7 +3800,7 @@ func (cp *CoinPool) waitForSync(ctx context.Context) error {
 			// On regtest, skip IBD check entirely — regtest is a private test network
 			// with no peers, so there's no risk of mining on stale blocks. This allows
 			// the pool to start on a fresh chain (height 0) where IBD is always true.
-			// Some daemons (e.g. QBX) report near-zero verificationprogress even
+			// Some daemons (e.g. ) report near-zero verificationprogress even
 			// when fully synced.  Fall back to blocks>=headers when IBD is false.
 			blocksSynced := bcInfo.Headers > 0 && bcInfo.Blocks >= bcInfo.Headers
 			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && (bcInfo.VerificationProgress >= syncThreshold || blocksSynced)) {

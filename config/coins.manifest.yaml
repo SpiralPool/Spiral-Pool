@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v2.5.1 - SINGLE COIN MANIFEST
+# SPIRAL POOL v2.5.2 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
@@ -455,49 +455,6 @@ coins:
       short_name: "XEC"
       coingecko_id: "ecash"
       explorer_url: "https://explorer.e.cash"
-
-  # ─────────────────────────────────────────────────────────────────────────────
-
-  - symbol: QBX
-    name: Q-BitX
-    algorithm: sha256d
-    role: standalone
-
-    network:
-      # NOTE: QBX defaults to P2P 8334 / RPC 8332 which conflict with NMC/BTC
-      # Using unique ports to avoid collision
-      rpc_port: 8344
-      p2p_port: 8345
-      zmq_port: 0  # QBX binary compiled without ZMQ support
-
-    mining:
-      stratum_port: 20335
-      stratum_v2_port: 20336
-      stratum_tls_port: 20337
-
-    address:
-      p2pkh_version: 0x32    # 'M' addresses (Dilithium-derived, 50 decimal)
-      p2sh_version: 0x37     # 'P' addresses (Dilithium-derived, 55 decimal)
-      bech32_hrp: "bc"       # Standard bech32 (SegWit not supported by QBX)
-
-    chain:
-      genesis_hash: "407cdbc2ca102bd9e69069f25cebc2ef363a427166edba7580b41031b68549d9"
-      block_time: 150        # 2.5 minutes (same as Litecoin)
-      coinbase_maturity: 100
-      supports_segwit: false  # No standard SegWit; PQ witness (Dilithium) activates at 230,000
-      min_coinbase_script_len: 2
-      # v0.3.0 hard fork activation heights (mainnet)
-      lwma_activation_height: 200001       # LWMA difficulty adjustment (18-block window)
-      pq_sigops_activation_height: 230000  # PQ-aware sigop counting
-      pq_witness_activation_height: 230000 # Native PQ witness (Dilithium), PQ_WITNESS_SCALE_FACTOR=16
-      lwma_window: 18
-      pq_witness_scale_factor: 16
-
-    display:
-      full_name: "Q-BitX"
-      short_name: "QBX"
-      coingecko_id: null     # Not listed on CoinGecko yet
-      explorer_url: "https://explorer.qbitx.org"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # SCRYPT COINS

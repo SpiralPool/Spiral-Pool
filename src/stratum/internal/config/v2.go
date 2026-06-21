@@ -57,7 +57,7 @@ type MultiPortConfig struct {
 	// WalletMap maps worker names to per-coin payout addresses.
 	// Required when multi-port coins use different address formats.
 	// Key: worker name (case-insensitive), Value: coin symbol → wallet address.
-	// Example: {"Heat2Sats": {"QBX": "qbx1...", "BC2": "bc2..."}}
+	// Example: {"Heat2Sats": {"BC2": "bc2...", "DGB": "dgb1..."}}
 	WalletMap map[string]map[string]string `yaml:"wallet_map,omitempty"`
 
 	// Mode controls the routing strategy.
@@ -600,7 +600,7 @@ func (c *ConfigV2) Validate() error {
 		coinName := symbolToCoinName(coin.Symbol)
 		if _, ok := SupportedCoins[coinName]; !ok {
 			return fmt.Errorf("coins[%d]: unknown symbol '%s'. Supported: BTC, BCH, BCH2, BC2, BTCS, DGB, DGB-SCRYPT, "+
-				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC, QBX, XEC (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
+				"LTC, DOGE, PEP, CAT, NMC, XMY, FBTC, XEC (SYS is merge-mining only via BTC parent)", i, coin.Symbol)
 		}
 	}
 
@@ -974,7 +974,6 @@ func (c *ConfigV2) SetDefaults() {
 				"sys":        "syscoin",
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
-				"qbx":        "qbitx",
 				"xec":        "ecash",
 			}
 			coinName := symbolToCoin[coinSymbol]
@@ -1046,7 +1045,6 @@ func (c *ConfigV2) SetDefaults() {
 				"sys":        "syscoin",
 				"xmy":        "myriadcoin",
 				"fbtc":       "fractalbitcoin",
-				"qbx":        "qbitx",
 				"xec":        "ecash",
 			}
 			coinName := symbolToCoin[coinSymbol]
@@ -1206,7 +1204,7 @@ func getBlockTimeForCoin(symbol string) int {
 		return 60 // 1 minute blocks
 	case "FBTC", "FRACTALBTC":
 		return 30 // 30 second blocks
-	case "QBX", "QBITX":
+	case "":
 		return 600 // 10 minute blocks
 	case "XEC", "ECASH":
 		return 600 // 10 minute blocks (like Bitcoin)
@@ -1319,7 +1317,7 @@ func symbolToCoinName(symbol string) string {
 		"BTC": "bitcoin", "BCH": "bitcoincash", "BCH2": "bitcoincashii", "BC2": "bitcoinii", "BTCS": "bitcoinsilver",
 		"LTC": "litecoin", "DOGE": "dogecoin", "PEP": "pepecoin",
 		"CAT": "catcoin", "NMC": "namecoin", "SYS": "syscoin",
-		"XMY": "myriadcoin", "FBTC": "fractalbitcoin", "QBX": "qbitx", "XEC": "ecash",
+		"XMY": "myriadcoin", "FBTC": "fractalbitcoin", "XEC": "ecash",
 	}
 	if name, ok := m[strings.ToUpper(symbol)]; ok {
 		return name
@@ -1359,7 +1357,7 @@ func getDefaultPortForCoin(symbol string) int {
 		return 10889 // FIX: Was 10888 (P2P port). RPC port is 10889.
 	case "FBTC", "FRACTALBTC", "FRACTAL-BTC":
 		return 8340 // FIX: Was 8341 (P2P port). RPC port is 8340.
-	case "QBX", "QBITX", "Q-BITX":
+	case "":
 		return 8344
 	case "XEC", "ECASH":
 		return 9004

@@ -780,7 +780,7 @@ func TestGetHashrate_PerPoolIsolation_SmartMultiPort(t *testing.T) {
 		perPoolHashrates: map[string]float64{
 			"btc_sha256_1": 50e12,  // BTC: 50 TH/s (mined 50% of the time)
 			"bch_sha256_1": 30e12,  // BCH: 30 TH/s (mined 30% of the time)
-			"qbx_sha256_1": 20e12,  // QBX: 20 TH/s (mined 20% of the time)
+			"dgb_sha256_1": 20e12,  // DGB: 20 TH/s (mined 20% of the time)
 		},
 	}
 	// The old GetPoolHashrate() always returned this (first coin's hashrate)
@@ -793,7 +793,7 @@ func TestGetHashrate_PerPoolIsolation_SmartMultiPort(t *testing.T) {
 	}{
 		{"BTC", "btc_sha256_1"},
 		{"BCH", "bch_sha256_1"},
-		{"QBX", "qbx_sha256_1"},
+		{"DGB", "dgb_sha256_1"},
 	}
 
 	for _, tc := range coins {
@@ -842,7 +842,7 @@ func TestGetHashrate_OldBehavior_WouldTripleCount(t *testing.T) {
 		perPoolHashrates: map[string]float64{
 			"btc_sha256_1": 50e12,
 			"bch_sha256_1": 30e12,
-			"qbx_sha256_1": 20e12,
+			"dgb_sha256_1": 20e12,
 		},
 	}
 	sharedDB.globalHashrate = 50e12 // What GetPoolHashrate() would return
@@ -855,7 +855,7 @@ func TestGetHashrate_OldBehavior_WouldTripleCount(t *testing.T) {
 	}{
 		{"BTC", "btc_sha256_1"},
 		{"BCH", "bch_sha256_1"},
-		{"QBX", "qbx_sha256_1"},
+		{"DGB", "dgb_sha256_1"},
 	}
 
 	for _, tc := range coins {

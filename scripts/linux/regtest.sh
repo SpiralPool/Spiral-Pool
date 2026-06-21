@@ -26,8 +26,7 @@
 #   bch2  - Bitcoin Cash II  btcs  - Bitcoin Silver   xec   - eCash
 #   ltc   - Litecoin         dgb   - DigiByte (SHA256d)  nmc   - Namecoin
 #   dgb-scrypt - DigiByte (Scrypt)
-#   xmy   - Myriad           fbtc  - Fractal Bitcoin    qbx   - Q-BitX
-#   doge  - Dogecoin         pep   - PepeCoin          cat   - Catcoin
+# xmy - Myriad fbtc - Fractal Bitcoin - #   doge  - Dogecoin         pep   - PepeCoin          cat   - Catcoin
 #   (SYS is merge-mining only — see btc+sys below)
 #
 # MERGE MINING PAIRS:
@@ -105,7 +104,7 @@ if [[ -z "${1:-}" ]]; then
     echo "  bc2   - Bitcoin II         btc   - Bitcoin            bch   - Bitcoin Cash"
     echo "  bch2  - Bitcoin Cash II    btcs  - Bitcoin Silver     xec   - eCash"
     echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
-    echo "  xmy   - Myriad             fbtc  - Fractal Bitcoin    qbx   - Q-BitX"
+ echo " xmy - Myriad fbtc - Fractal Bitcoin - "
     echo "  doge  - Dogecoin           pep   - PepeCoin            cat   - Catcoin"
     echo "  dgb-scrypt - DigiByte (Scrypt)"
     echo "  (SYS is merge-mining only — use: $0 --merge btc+sys)"
@@ -403,21 +402,6 @@ setup_coin() {
             DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.31.12/bitcoin-abc-0.31.12-x86_64-linux-gnu.tar.gz"
             TARBALL_DIR="bitcoin-abc-0.31.12"
             ;;
-        qbx)
-            COIN_SYMBOL=QBX; COIN_NAME="Q-BitX"; COIN_ALGO=sha256d
-            DAEMON_CMD="${QBITXD:-qbitx}"; CLI_CMD="${QBITXCLI:-qbitx-cli}"
-            RPC_PORT_DEF=18570; P2P_PORT_DEF=18571; ZMQ_PORT_DEF=29362
-            STRATUM_PORT_DEF=16359; STRATUM_V2_PORT_DEF=17350; API_PORT_DEF=14026; METRICS_PORT_DEF=19126
-            HA_STRATUM=16360; HA_API=14027; HA_METRICS=19127
-            DB_NAME_DEF=spiralstratum_qbx_regtest; WALLET_NAME=regtest-pool-qbx
-            POOL_ID=qbx_regtest; DATA_DIR=.qbitx
-            DAEMON_LOG=qbitxd-regtest.log; DAEMON_STARTUP=qbitxd-startup.log
-            PKILL_PATTERN="qbitx.*regtest"
-            GITHUB_URL="https://github.com/q-bitx/Source-"
-            DAEMON_VERSION="0.1.0"
-            DOWNLOAD_URL="https://github.com/q-bitx/Source-/releases/download/v0.1.0/qbitx-linux-x86.zip"
-            TARBALL_DIR=""
-            ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt
             ADDR_TYPE=""        # Dogecoin 1.14.x getnewaddress doesn't accept address_type param
@@ -444,7 +428,7 @@ setup_coin() {
             LEGACY_WALLET=1     # PepeCoin lacks createwallet/loadwallet RPC
             MINE_BEFORE_PEER=1; PREMINE_CMD="generate 1"  # PEP needs block before peer (IBD lock)
             DAEMON_CMD="${PEPECOIND:-pepecoind}"; CLI_CMD="${PEPECOINCLI:-pepecoin-cli}"
-            # Ports remapped: was 18570/18571/29362/14026 which collided with QBX
+ # Ports remapped: was 18570/18571/29362/14026 which collided with
             RPC_PORT_DEF=18572; P2P_PORT_DEF=18573; ZMQ_PORT_DEF=29364
             STRATUM_PORT_DEF=16357; STRATUM_V2_PORT_DEF=17346; API_PORT_DEF=14028; METRICS_PORT_DEF=19124
             HA_STRATUM=16358; HA_API=14029; HA_METRICS=19125
@@ -487,7 +471,7 @@ setup_coin() {
             echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
             echo "  sys   - Syscoin            xmy   - Myriad"
             echo "  fbtc  - Fractal Bitcoin    doge  - Dogecoin           pep   - PepeCoin"
-            echo "  cat   - Catcoin            dgb-scrypt - DigiByte (Scrypt)  qbx   - Q-BitX"
+ echo " cat - Catcoin dgb-scrypt - DigiByte (Scrypt) - "
             exit 1
             ;;
     esac
@@ -1286,38 +1270,6 @@ if [[ "${KEEP_CHAIN:-0}" != "1" ]]; then
         NMC)   COIN_DATA_DIR="$HOME/.namecoin" ;;
         XMY)   COIN_DATA_DIR="$HOME/.myriadcoin" ;;
         FBTC)  COIN_DATA_DIR="$HOME/.fractal" ;;
-        QBX)   COIN_DATA_DIR="$HOME/.qbitx" ;;
-        BC2)   COIN_DATA_DIR="$HOME/.bitcoinii" ;;
-        XEC)   COIN_DATA_DIR="$HOME/.bitcoin-abc" ;;
-        *)     COIN_DATA_DIR="" ;;
-    esac
-
-    if [[ -n "$COIN_DATA_DIR" ]] && [[ -d "$COIN_DATA_DIR/regtest" ]]; then
-        log_info "  Removing: $COIN_DATA_DIR/regtest"
-        rm -rf "$COIN_DATA_DIR/regtest"
-        log_ok "  Regtest chain data cleared for $COIN_SYMBOL"
-    elif [[ -n "$COIN_DATA_DIR" ]]; then
-        log_info "  No existing regtest data found at $COIN_DATA_DIR/regtest"
-    else
-        log_warn "  Unknown coin data directory for $COIN_SYMBOL — manual cleanup may be needed"
-    fi
-else
-    log_info "KEEP_CHAIN=1 — preserving existing regtest chain data"
-fi
-
-# DigiByte multi-algo: must set algo in config file, not just command-line
-# The daemon ignores -algo flag; only reads from digibyte.conf
-case "$COIN" in
-    dgb)
-        log_info "Configuring DigiByte for SHA256d algorithm..."
-        mkdir -p "$HOME/.digibyte"
-        cat > "$HOME/.digibyte/digibyte.conf" <<EOF
-# Spiral Pool regtest configuration
-regtest=1
-algo=sha256d
-EOF
-        log_ok "Created ~/.digibyte/digibyte.conf with algo=sha256d"
-        ;;
     dgb-scrypt)
         log_info "Configuring DigiByte for Scrypt algorithm..."
         mkdir -p "$HOME/.digibyte"
@@ -1379,10 +1331,10 @@ if [[ "$COIN" == "xec" ]]; then
     DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
 fi
 
-# Q-BitX: ensure data directory exists
-if [[ "$COIN" == "qbx" ]]; then
-    mkdir -p "$HOME/.qbitx"
-    DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
+# : ensure data directory exists
+if [[ "$COIN" == "" ]]; then
+ mkdir -p "$HOME/."
+ DAEMON_ARGS+=(-datadir="$HOME/.")
 fi
 if [[ "$COIN" == "bch2" ]]; then
     mkdir -p "$HOME/.bitcoincashii"
@@ -2901,8 +2853,8 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     [[ "$COIN" == "bch" ]] && RESTART_ARGS+=(-expire=0)
     # Fractal Bitcoin: must specify datadir (binary is bitcoind, defaults to ~/.bitcoin)
     [[ "$COIN" == "fbtc" ]] && RESTART_ARGS+=(-datadir="$HOME/.fractal")
-    # Q-BitX: specify datadir
-    [[ "$COIN" == "qbx" ]] && RESTART_ARGS+=(-datadir="$HOME/.qbitx")
+ # : specify datadir
+ [[ "$COIN" == "" ]] && RESTART_ARGS+=(-datadir="$HOME/.")
     # eCash: must specify datadir (ecashd is a symlink to bitcoind, defaults to ~/.bitcoin)
     [[ "$COIN" == "xec" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoin-abc")
     # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
@@ -3371,14 +3323,14 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
             )
 
             # Add fallbackfee for coins that need it
-            if [[ "$COIN_SYMBOL" =~ ^(BTC|LTC|DOGE|PEP|CAT|FBTC|QBX)$ ]]; then
+ if [[ "$COIN_SYMBOL" =~ ^(BTC|LTC|DOGE|PEP|CAT|FBTC| )$ ]]; then
                 HA_DAEMON_ARGS+=(-fallbackfee=0.0001)
             fi
 
             # Fractal Bitcoin: must specify datadir (binary is bitcoind, defaults to ~/.bitcoin)
             [[ "$COIN" == "fbtc" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.fractal")
-            # Q-BitX: specify datadir
-            [[ "$COIN" == "qbx" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.qbitx")
+ # : specify datadir
+ [[ "$COIN" == "" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.")
             # eCash: must specify datadir (ecashd is a symlink to bitcoind, defaults to ~/.bitcoin)
             [[ "$COIN" == "xec" ]] && HA_DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
 

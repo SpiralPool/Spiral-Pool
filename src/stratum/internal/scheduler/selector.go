@@ -175,9 +175,9 @@ func NewSelector(cfg SelectorConfig) *Selector {
 //	BTC: 0.95–1.00 (22:48–24:00 local)
 //	anchorFrac = 0.0
 //
-// Example with start_hour: QBX(start_hour=22, weight=8), DGB(weight=92) →
+// Example with start_hour: (start_hour=22, weight=8), DGB(weight=92) →
 //
-//	QBX: 0.00–0.08 (22:00–23:55 local)
+//	: 0.00–0.08 (22:00–23:55 local)
 //	DGB: 0.08–1.00 (23:55–22:00 next day)
 //	anchorFrac = 22/24 ≈ 0.9167
 func buildTimeSlots(weights []CoinWeight) ([]timeSlot, float64) {

@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.5.1"
+__version__ = "2.5.2"
 
 import os
 import json
@@ -827,7 +827,7 @@ def safe_error_response(error: Exception, error_type: str = "internal", log_full
 # Must match frontend coinInfo/allCoins/validCoins arrays in setup.html
 VALID_COINS = {
     # SHA-256d coins
-    'BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'DGB', 'FBTC', 'NMC', 'QBX', 'SYS', 'XEC', 'XMY',
+    'BC2', 'BCH', 'BCH2', 'BTC', 'BTCS', 'DGB', 'FBTC', 'NMC', 'SYS', 'XEC', 'XMY',
     # Scrypt coins
     'CAT', 'DGB-SCRYPT', 'DOGE', 'LTC', 'PEP'
 }
@@ -877,8 +877,6 @@ WALLET_PATTERNS = {
         r'^bc1q[a-z0-9]{58}$|'
         r'^bc1p[a-z0-9]{58}$'
     ),
-    # QBX - Q-BitX: M prefix P2PKH (0x32), P prefix P2SH (0x37), pq... Dilithium
-    'QBX': re.compile(
         r'^(?:'
         r'M[a-km-zA-HJ-NP-Z1-9]{25,34}'   # P2PKH (version byte 0x32 = 'M')
         r'|P[a-km-zA-HJ-NP-Z1-9]{25,34}'  # P2SH (version byte 0x37 = 'P')
@@ -1962,8 +1960,7 @@ def fetch_pool_stats():
             "syscoin": "SYS", "sys": "SYS",
             "myriadcoin": "XMY", "myriad": "XMY", "xmy": "XMY",
             "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
-            "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
-            "ecash": "XEC", "xec": "XEC",
+                        "ecash": "XEC", "xec": "XEC",
         }
 
         # Build per-coin block counts and last-block info from fetched blocks
@@ -2515,8 +2512,7 @@ def load_stratum_ports_from_config():
                         'SYSCOIN': 'SYS', 'SYS': 'SYS',
                         'MYRIADCOIN': 'XMY', 'MYRIAD': 'XMY', 'XMY': 'XMY',
                         'FRACTALBITCOIN': 'FBTC', 'FRACTAL-BITCOIN': 'FBTC', 'FBTC': 'FBTC',
-                        'QBITX': 'QBX', 'Q-BITX': 'QBX', 'QBX': 'QBX',
-                        'PEPECOIN': 'PEP', 'PEP': 'PEP',
+                                                'PEPECOIN': 'PEP', 'PEP': 'PEP',
                         'CATCOIN': 'CAT', 'CAT': 'CAT'
                     }
                     symbol = coin_map.get(coin, None)
@@ -2596,11 +2592,6 @@ def load_pool_config():
             "conf_path": "/spiralpool/fbtc/fractal.conf",
             "default_port": 8340,
             "name": "Fractal Bitcoin"
-        },
-        "QBX": {
-            "conf_path": "/spiralpool/qbx/qbitx.conf",
-            "default_port": 8344,
-            "name": "Q-BitX"
         },
         "XEC": {
             "conf_path": "/spiralpool/xec/bitcoin.conf",
@@ -2691,8 +2682,6 @@ def load_pool_config():
                         detected_coin = "XMY"
                     elif 'fractal' in coin_type or 'fbtc' in coin_type:
                         detected_coin = "FBTC"
-                    elif 'qbitx' in coin_type or 'q-bitx' in coin_type or 'qbx' in coin_type:
-                        detected_coin = "QBX"
 
                 # Format 2: pool.coin (single-pool format)
                 if not detected_coin:
@@ -2729,8 +2718,6 @@ def load_pool_config():
                         detected_coin = "XMY"
                     elif 'fractal' in coin_type or 'fbtc' in coin_type or 'fbtc' in pool_id:
                         detected_coin = "FBTC"
-                    elif 'qbitx' in coin_type or 'q-bitx' in coin_type or 'qbx' in coin_type or 'qbx' in pool_id:
-                        detected_coin = "QBX"
 
                 # Format 3: Fallback to daemon port
                 if not detected_coin:
@@ -2751,8 +2738,7 @@ def load_pool_config():
                         8370: "SYS",   # Syscoin RPC
                         10889: "XMY",  # Myriadcoin RPC
                         8340: "FBTC",  # Fractal Bitcoin RPC
-                        8344: "QBX",   # Q-BitX RPC
-                        9004: "XEC",   # eCash RPC
+                                                9004: "XEC",   # eCash RPC
                     }
                     detected_coin = PORT_TO_COIN.get(daemon_port)
                     if not detected_coin:
@@ -2862,7 +2848,7 @@ def digibyte_rpc(method, params=None):
 # ============================================
 
 # Multi-coin node configuration
-# Supports 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX (SHA-256d) and LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
+# Supports 16 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC (SHA-256d) and LTC, DOGE, DGB-SCRYPT, PEP, CAT (Scrypt)
 MULTI_COIN_NODES = {
     # === SHA-256d Coins ===
     # Bitcoin II (BC2) - "nearly 1:1 re-launch of Bitcoin" with new genesis block
@@ -3017,23 +3003,6 @@ MULTI_COIN_NODES = {
         "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "chain_id": 8228},
         "enabled": False
     },
-    # Q-BitX - SHA-256d standalone coin (NOT merge-mineable)
-    "QBX": {
-        "name": "Q-BitX",
-        "symbol": "QBX",
-        "algorithm": "sha256d",
-        "rpc_host": "127.0.0.1",
-        "rpc_port": 8344,
-        "rpc_user": "",
-        "rpc_password": "",
-        "data_dir": "/spiralpool/qbx",
-        "config_file": "/spiralpool/qbx/qbitx.conf",
-        "service_name": "qbitxd",
-        "stratum_ports": {"v1": 20335, "v2": 20336, "tls": 20337},
-        "block_time": 150,  # 2.5 minutes
-        "merge_mining": None,  # Standalone, NOT merge-mineable
-        "enabled": False
-    },
     # eCash (Bitcoin ABC) - SHA-256d, CashAddr addressing
     "XEC": {
         "name": "eCash",
@@ -3181,8 +3150,7 @@ COINGECKO_IDS = {
     "SYS": "syscoin",    # Syscoin - UTXO platform with AuxPoW
     "XMY": "myriadcoin", # Myriad - Multi-algo coin
     "FBTC": "fractal-bitcoin",  # Fractal Bitcoin - Bitcoin scaling with AuxPoW
-    "QBX": None,  # Q-BitX - not listed on CoinGecko
-    "XEC": "ecash",  # eCash (Bitcoin ABC) - listed on CoinGecko as "ecash"
+        "XEC": "ecash",  # eCash (Bitcoin ABC) - listed on CoinGecko as "ecash"
     # Scrypt coins
     "LTC": "litecoin",
     "DOGE": "dogecoin",
@@ -3193,7 +3161,6 @@ COINGECKO_IDS = {
 
 # ---- Alternative price sources for coins absent from CoinGecko ----
 # BTCS: CoinPaprika ticker ID
-# QBX:  Klingex exchange (GET https://api.klingex.io/api/markets, QBX/USDT entry)
 _COINPAPRIKA_IDS = {
     "BTCS": "btcs-bitcoin-silver1",
     "BCH2": "bch2-bitcoin-cash-ii",
@@ -3236,8 +3203,6 @@ def _fetch_alternative_coin_prices() -> dict:
 
     Sources:
       BTCS → CoinPaprika  (api.coinpaprika.com)
-      QBX  → Klingex exchange  (api.klingex.io/api/markets, QBX/USDT entry;
-             last_price is an integer scaled by 10^price_decimals)
 
     Returns {SYMBOL: usd_price_float}. Cached 300 s.
     """
@@ -3260,24 +3225,6 @@ def _fetch_alternative_coin_prices() -> dict:
         except Exception:
             pass
 
-    # --- QBX via Klingex /api/markets ---
-    try:
-        resp = _http_session.get("https://api.klingex.io/api/markets", timeout=5)
-        for m in resp.json():
-            if (
-                str(m.get("base_asset_symbol", "")).upper() == "QBX"
-                and str(m.get("quote_asset_symbol", "")).upper() == "USDT"
-                and m.get("is_active")
-            ):
-                raw_price = m.get("last_price")
-                decimals = int(m.get("price_decimals", 6))
-                if raw_price is not None:
-                    usdt_price = float(raw_price) / (10 ** decimals)
-                    if usdt_price > 0:
-                        prices["QBX"] = usdt_price  # USDT ≈ USD
-                break
-    except Exception:
-        pass
 
     with _alt_prices_lock:
         _alt_prices_cache["data"] = prices
@@ -3387,12 +3334,6 @@ BLOCK_EXPLORERS = {
             {"api": None, "url": "https://fractal.unisat.io/explorer", "name": "UniSat Explorer"},
         ]
     },
-    "QBX": {
-        "api": None,  # No public REST API — use RPC for block data
-        "url": "https://explorer.qbitx.org",
-        "name": "Q-BitX Explorer",
-        "fallbacks": []
-    },
     # === Scrypt Coins ===
     "LTC": {
         "api": "https://api.blockchair.com/litecoin",
@@ -3491,8 +3432,7 @@ COIN_BLOCK_REWARDS = {
     "SYS": 1.25,        # Syscoin block reward (approximate current)
     "XMY": 500,         # Myriad block reward per algo (approximate)
     "FBTC": 25,         # Fractal Bitcoin block reward (25 FB per block)
-    "QBX": 12.5,        # Q-BitX block reward (12.5 QBX per block)
-    "XEC": 3125000,     # eCash block reward (3,125,000 XEC; note: 1 XEC = 1e-8 BCH denomination)
+        "XEC": 3125000,     # eCash block reward (3,125,000 XEC; note: 1 XEC = 1e-8 BCH denomination)
     # Scrypt coins
     "LTC": 6.25,        # Litecoin block reward after 2023 halving
     "DOGE": 10000,      # Dogecoin block reward (fixed at 10,000)
@@ -3515,8 +3455,7 @@ COIN_BLOCK_TIMES = {
     "SYS": 60,          # Syscoin 1-minute blocks
     "XMY": 60,          # Myriad 1-minute blocks per algo
     "FBTC": 30,         # Fractal Bitcoin 30-second blocks (NOT 600 like Bitcoin!)
-    "QBX": 150,         # Q-BitX 2.5-minute blocks
-    "XEC": 600,         # eCash 10-minute blocks (same as Bitcoin)
+        "XEC": 600,         # eCash 10-minute blocks (same as Bitcoin)
     # Scrypt coins
     "LTC": 150,         # Litecoin 2.5-minute blocks
     "DOGE": 60,         # Dogecoin 1-minute blocks
@@ -3941,7 +3880,7 @@ def fetch_live_block_reward_bc2():
 def fetch_live_block_reward(coin):
     """Fetch live block reward for any supported coin.
 
-    Supports 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
+    Supports 16 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
     """
     coin = coin.upper()
     # SHA-256d coins with live API lookup
@@ -3977,8 +3916,6 @@ def fetch_live_block_reward(coin):
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("XMY", 250), "symbol": "XMY"}
     elif coin == "FBTC":
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("FBTC", 25), "symbol": "FBTC"}
-    elif coin == "QBX":
-        return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("QBX", 12.5), "symbol": "QBX"}
     elif coin == "XEC":
         return {"block_height": 0, "block_reward": COIN_BLOCK_REWARDS.get("XEC", 3125000), "symbol": "XEC"}
     else:
@@ -4035,8 +3972,6 @@ def get_enabled_coins():
             primary = "XMY"
         elif "fbtc" in pool_id_lower or "fractal" in pool_id_lower:
             primary = "FBTC"
-        elif "qbx" in pool_id_lower or "qbitx" in pool_id_lower or "q-bitx" in pool_id_lower:
-            primary = "QBX"
 
     # Method 2: Load from config file
     load_multi_coin_config()
@@ -4199,8 +4134,6 @@ def load_multi_coin_config():
                     elif 'fractal' in pool_id_lower or 'fbtc' in pool_id_lower or daemon_port == 8340:
                         detected_coin = 'FBTC'
                         default_port = 8340
-                    elif 'qbitx' in pool_id_lower or 'q-bitx' in pool_id_lower or 'qbx' in pool_id_lower or daemon_port == 8344:
-                        detected_coin = 'QBX'
                         default_port = 8344
                     elif 'pepecoin' in pool_id_lower or 'pep' in pool_id_lower or daemon_port == 33873:
                         detected_coin = 'PEP'
@@ -4423,7 +4356,7 @@ def fetch_coin_node_health(symbol):
             health["chain"] = bc_info.get("chain", "")
             health["blocks"] = bc_info.get("blocks", 0)
             health["headers"] = bc_info.get("headers", 0)
-            # Some daemons (QBX, BC2, etc.) report low verificationprogress even
+            # Some daemons (BC2, etc.) report low verificationprogress even
             # when fully synced.  Use blocks/headers when blocks >= headers and
             # IBD is false — this is authoritative for any coin.
             _blk = bc_info.get("blocks", 0)
@@ -4451,7 +4384,7 @@ def fetch_coin_node_health(symbol):
             health["version"] = net_info.get("subversion", "")
             health["connections"] = net_info.get("connections", 0)
 
-        # Override with version cache if available — some daemons (e.g. QBX)
+        # Override with version cache if available — some daemons (e.g. BC2)
         # report incorrect version in their subversion string
         cached_ver = _get_cached_coin_version(symbol)
         if cached_ver:
@@ -4477,7 +4410,7 @@ def fetch_coin_node_health(symbol):
                 "DGB": 15, "BTC": 600, "BCH": 600, "BCH2": 600, "BC2": 600, "BTCS": 300,
                 "LTC": 150, "DOGE": 60, "DGB-SCRYPT": 15,
                 "PEP": 60, "CAT": 600,
-                "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150, "XEC": 600
+                "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "XEC": 600
             }
             block_time = coin_block_times.get(symbol, 600)
             health["network_hashrate"] = health["difficulty"] * (2**32) / block_time
@@ -4706,7 +4639,7 @@ def fetch_health_data():
             node_health["relay_fee"] = net_info.get("relayfee", 0)
             node_health["warnings"] = net_info.get("warnings", "")
 
-        # Override with version cache if available — some daemons (e.g. QBX)
+        # Override with version cache if available — some daemons (e.g. BC2)
         # report incorrect version in their subversion string
         cached_ver = _get_cached_coin_version(primary_coin)
         if cached_ver:
@@ -4733,7 +4666,7 @@ def fetch_health_data():
                         "DGB": 15, "BTC": 600, "BCH": 600, "BCH2": 600, "BC2": 600, "BTCS": 300,
                         "LTC": 150, "DOGE": 60, "DGB-SCRYPT": 15,
                         "PEP": 60, "CAT": 600,
-                        "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "QBX": 150, "XEC": 600
+                        "NMC": 600, "SYS": 60, "XMY": 60, "FBTC": 30, "XEC": 600
                     }
                     bt = coin_block_times.get(primary_coin, 600)
                     node_health["network_hashrate"] = diff_val * (2**32) / bt
@@ -5766,7 +5699,7 @@ def fetch_block_reward():
         except (requests.exceptions.RequestException, ValueError, KeyError):
             pass
 
-    # Fallback for coins not on CoinGecko (BTCS, QBX, …): alternative sources + FX conversion
+    # Fallback for coins not on CoinGecko (BTCS, …): alternative sources + FX conversion
     if not coin_prices and primary_coin:
         alt_usd = _fetch_alternative_coin_prices()
         usd_price = alt_usd.get(primary_coin)
@@ -5879,7 +5812,7 @@ def _fetch_per_coin_all_prices():
     except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
         pass
 
-    # Merge alternative-source prices for coins absent from CoinGecko (BTCS, QBX, …)
+    # Merge alternative-source prices for coins absent from CoinGecko (BTCS, …)
     currency_codes = DASHBOARD_VS_CURRENCIES.split(",")
     _apply_alt_prices(result, currency_codes)
 
@@ -9880,7 +9813,7 @@ def index():
         # SHA-256d
         'btc_sha256_1', 'bch_sha256_1', 'bch2_sha256_1', 'bc2_sha256_1',
         'btcs_sha256_1', 'dgb_sha256_1', 'fbtc_sha256_1', 'nmc_sha256_1',
-        'qbx_sha256_1', 'sys_sha256_1', 'xec_sha256_1', 'xmy_sha256_1',
+        'sys_sha256_1', 'xec_sha256_1', 'xmy_sha256_1',
         # Scrypt
         'cat_scrypt_1', 'dgb_scrypt_1', 'doge_scrypt_1', 'ltc_scrypt_1',
         'pep_scrypt_1',
@@ -9980,7 +9913,7 @@ def get_server_mode():
     VALID_COINS = {
         # Standard symbols
         "DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
-        "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC",
+        "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "XEC",
         # Full names
         "DIGIBYTE", "BITCOIN", "BITCOINCASH", "BITCOIN-CASH",
         "BITCOINCASHII", "BITCOIN-CASH-II",
@@ -9990,8 +9923,7 @@ def get_server_mode():
         "PEPECOIN", "CATCOIN",
         "NAMECOIN", "SYSCOIN", "MYRIADCOIN", "MYRIAD",
         "FRACTALBITCOIN", "FRACTAL",
-        "QBITX", "Q-BITX",
-        "ECASH", "BITCOIN-ABC"
+                "ECASH", "BITCOIN-ABC"
     }
 
     def normalize_coin(coin_type):
@@ -10014,7 +9946,6 @@ def get_server_mode():
             "SYSCOIN": "SYS", "SYS": "SYS",
             "MYRIADCOIN": "XMY", "MYRIAD": "XMY", "XMY": "XMY",
             "FRACTALBITCOIN": "FBTC", "FRACTAL": "FBTC", "FBTC": "FBTC",
-            "QBITX": "QBX", "Q-BITX": "QBX", "QBX": "QBX",
             "ECASH": "XEC", "BITCOIN-ABC": "XEC", "XEC": "XEC",
         }
         return coin_map.get(coin_type, coin_type)
@@ -10061,7 +9992,7 @@ def get_server_mode():
         coins_config = []
         pool_addresses = {}
         merge_mining_info = None
-        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC"}
+        COIN_WHITELIST = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "XEC"}
 
         for pool in pools:
             if not isinstance(pool, dict):
@@ -10169,7 +10100,7 @@ def get_server_mode():
         fallback_config = []
         fallback_merge = None
         COIN_WHITELIST = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
-                          "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC"}
+                          "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "XEC"}
         for symbol, node in MULTI_COIN_NODES.items():
             if node.get('enabled', False) and symbol in COIN_WHITELIST:
                 fallback_coins.append(symbol)
@@ -10472,11 +10403,11 @@ def save_pool_coin_config(coins, multi_coin_enabled):
     default_ports = {"BC2": 6333, "BCH": 5333, "BCH2": 5336, "BTC": 4333, "BTCS": 11335,
                      "CAT": 12335, "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
                      "FBTC": 18335, "LTC": 7333, "NMC": 14335,
-                     "PEP": 10335, "QBX": 20335, "SYS": 15335, "XEC": 18338, "XMY": 17335}
+                     "PEP": 10335, "SYS": 15335, "XEC": 18338, "XMY": 17335}
     default_rpc_ports = {"BC2": 8339, "BCH": 8432, "BCH2": 8533, "BTC": 8332, "BTCS": 10567,
                          "CAT": 9932, "DGB": 14022, "DGB-SCRYPT": 14022, "DOGE": 22555,
                          "FBTC": 8340, "LTC": 9332, "NMC": 8336,
-                         "PEP": 33873, "QBX": 8344, "SYS": 8370, "XEC": 9004, "XMY": 10889}
+                         "PEP": 33873, "SYS": 8370, "XEC": 9004, "XMY": 10889}
 
     # Scrypt coins need different algorithm suffix
     scrypt_coins = {"LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT"}
@@ -10948,8 +10879,7 @@ WORKER_STATS_POOL_MAP = {
     'dgb_sha256_1':  'DGB',
     'fbtc_sha256_1': 'FBTC',
     'nmc_sha256_1':  'NMC',
-    'qbx_sha256_1':  'QBX',
-    'sys_sha256_1':  'SYS',
+        'sys_sha256_1':  'SYS',
     'xec_sha256_1':  'XEC',
     'xmy_sha256_1':  'XMY',
     # Scrypt
@@ -13135,7 +13065,7 @@ def multiport_wallets():
     """Manage per-worker per-coin wallet mappings for Smart Port.
 
     GET: Returns current wallet_map from config.
-    POST: Replaces wallet_map. Expects JSON: {"wallet_map": {"Worker1": {"QBX": "addr1", "BC2": "addr2"}, ...}}
+    POST: Replaces wallet_map. Expects JSON: {"wallet_map": {"Worker1": {"BC2": "addr2", "DGB": "addr3"}, ...}}
     """
     import yaml as pyyaml
 
@@ -13708,7 +13638,7 @@ def remove_node(symbol):
                 app.logger.error(f"Failed to remove {symbol}: {error_msg}")
                 _node_operation_status[symbol] = {"status": "error", "message": f"Removal failed: {error_msg}"}
         except subprocess.TimeoutExpired:
-            _node_operation_status[symbol] = {"status": "error", "message": "Removal timed out (11 min) — check service manually: sudo systemctl status fractald/qbitxd/etc"}
+            _node_operation_status[symbol] = {"status": "error", "message": "Removal timed out (11 min) — check service manually: sudo systemctl status fractald/etc"}
         except Exception as e:
             _node_operation_status[symbol] = {"status": "error", "message": f"Failed to run removal: {e}"}
         finally:
@@ -14489,7 +14419,7 @@ def get_node_sync_status(symbol):
     headers = bc_info.get("headers", 0)
     progress = bc_info.get("verificationprogress", 0)
 
-    # Many daemons report inaccurate verificationprogress (QBX, BC2, etc.).
+    # Many daemons report inaccurate verificationprogress (BC2, etc.).
     # Use blocks/headers as authoritative when IBD is false and blocks >= headers.
     ibd = bc_info.get("initialblockdownload", True)
     vp_pct = round(progress * 100, 4)
@@ -14658,7 +14588,7 @@ def get_stratum_address():
     # SECURITY: Uses global VALID_COINS and validate_wallet_address() for proper validation
     # Extended whitelist includes long-form names that get normalized to standard symbols
     VALID_COIN_TYPES_EXTENDED = {"DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT",
-                                  "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC",
+                                  "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "XEC",
                                   "DIGIBYTE", "BITCOIN", "BITCOINCASH", "BITCOIN-CASH",
                                   "BITCOINCASHII", "BITCOIN-CASH-II",
                                   "BITCOINII", "BITCOIN-II", "BITCOIN2", "BC2",
@@ -14666,7 +14596,7 @@ def get_stratum_address():
                                   "LITECOIN", "DOGECOIN", "DIGIBYTE-SCRYPT",
                                   "PEPECOIN", "CATCOIN",
                                   "NAMECOIN", "SYSCOIN", "MYRIADCOIN", "FRACTALBITCOIN", "FRACTAL",
-                                  "QBITX", "Q-BITX", "ECASH", "BITCOIN-ABC"}
+                                  "ECASH", "BITCOIN-ABC"}
 
     wallet_addresses = {}
     try:
@@ -14718,7 +14648,6 @@ def get_stratum_address():
                         "SYSCOIN": "SYS",
                         "MYRIADCOIN": "XMY", "MYRIAD": "XMY",
                         "FRACTALBITCOIN": "FBTC", "FRACTAL-BITCOIN": "FBTC",
-                        "QBITX": "QBX", "Q-BITX": "QBX",
                         "PEPECOIN": "PEP",
                         "CATCOIN": "CAT",
                         "ECASH": "XEC", "BITCOIN-ABC": "XEC",
@@ -15608,7 +15537,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.5.1"},
+        "footer": {"text": f"Spiral Pool v2.5.2"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -18071,7 +18000,7 @@ def batch_update_pool():
     default_port = {"BC2": 6333, "BCH": 5333, "BCH2": 5336, "BTC": 4333, "BTCS": 11335,
                     "CAT": 12335, "DGB": 3333, "DGB-SCRYPT": 3336, "DOGE": 8335,
                     "FBTC": 18335, "LTC": 7333, "NMC": 14335,
-                    "PEP": 10335, "QBX": 20335, "SYS": 15335, "XEC": 18338, "XMY": 17335}.get(primary, 3333) if primary else 3333
+                    "PEP": 10335, "SYS": 15335, "XEC": 18338, "XMY": 17335}.get(primary, 3333) if primary else 3333
     pool_port = data.get("pool_port", default_port)
     worker_prefix = data.get("worker_prefix", "")
     password = data.get("password", "x")
@@ -20939,7 +20868,7 @@ def update_luck_tracker():
 def get_luck_overview():
     """V1.0: Get mining luck statistics.
 
-    Optional query param: ?coin=QBX — returns per-coin hashrate/difficulty stats.
+    Optional query param: ?coin=DGB — returns per-coin hashrate/difficulty stats.
     Luck history is always aggregate (not tracked per-coin).
     """
     update_luck_tracker()

@@ -85,7 +85,7 @@ if ($Run) {
         "timeout 10 systemctl stop spiralpool-health 2>/dev/null"
         "timeout 10 systemctl stop spiralpool-ha-watcher 2>/dev/null"
         "timeout 60 systemctl stop spiralstratum 2>/dev/null"
-        "for svc in `$(systemctl list-units --type=service --state=running --no-legend | grep -oP 'bitcoind\S*|bitcoiniid\S*|litecoind\S*|dogecoind\S*|digibyted\S*|namecoind\S*|syscoind\S*|pepecoind\S*|catcoind\S*|fractald\S*|qbitxd\S*|myriadcoind\S*' | head -20); do timeout 45 systemctl stop `$svc 2>/dev/null; done"
+        "for svc in `$(systemctl list-units --type=service --state=running --no-legend | grep -oP 'bitcoind\S*|bitcoiniid\S*|litecoind\S*|dogecoind\S*|digibyted\S*|namecoind\S*|syscoind\S*|pepecoind\S*|catcoind\S*|fractald\S*|myriadcoind\S*' | head -20); do timeout 45 systemctl stop `$svc 2>/dev/null; done"
         "sync"
     ) -join ' ; '
 

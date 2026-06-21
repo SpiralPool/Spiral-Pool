@@ -51,7 +51,7 @@
 param(
     [switch]$Unattended,
     [string]$PoolAddress,
-    [ValidateSet("DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "QBX", "XEC")]
+ [ValidateSet("DGB", "BTC", "BCH", "BCH2", "BC2", "BTCS", "LTC", "DOGE", "DGB-SCRYPT", "PEP", "CAT", "NMC", "SYS", "XMY", "FBTC", "XEC")]
     [string]$Coin,  # Required in unattended mode; interactive mode shows menu
     [string]$DataDrive = "C:",
     [switch]$AcceptTerms,
@@ -82,7 +82,7 @@ $Script:CoinConfig = @{
     SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; V2Port=15336; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
     XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; V2Port=17336; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
     FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; V2Port=18336; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
-    QBX          = @{ Container="qbitx";          RpcPort=8344;  P2pPort=8345;  ZmqPort=28344; RpcUser="spiralqbx";  StratumPort=20335; V2Port=20336; TlsPort=20337; PoolCoin="qbitx";            Profile="qbx";        Algo="SHA256d"; Storage="5 GB";    CliName="qbitx-cli" }
+ = @{ Container=""; RpcPort=8344; P2pPort=8345; ZmqPort=28344; RpcUser=""; StratumPort=20335; V2Port=20336; TlsPort=20337; PoolCoin=""; Profile=""; Algo="SHA256d"; Storage="5 GB"; CliName="-cli" }
     XEC          = @{ Container="ecash";          RpcPort=9004;  P2pPort=8343;  ZmqPort=28335; RpcUser="spiralxec";  StratumPort=18338; V2Port=18339; TlsPort=18340; PoolCoin="ecash";            Profile="xec";        Algo="SHA256d"; Storage="20 GB";   CliName="bitcoin-cli" }
     LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
     DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
@@ -103,7 +103,7 @@ $Script:WalletPatterns = @{
     SYS          = "^(sys1[a-z0-9]{38,59})$"
     XMY          = "^(M[a-km-zA-HJ-NP-Z1-9]{25,34})$"
     FBTC         = "^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1q[a-z0-9]{38,58})$"
-    QBX          = "^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$"
+ = "^((1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}|pq[a-zA-Z0-9]{20,80})$"
     XEC          = "^ecash:[qp][a-z0-9]{41,}$"
     LTC          = "^(L[a-km-zA-HJ-NP-Z1-9]{25,34}|M[a-km-zA-HJ-NP-Z1-9]{25,34}|ltc1[a-z0-9]{38,59})$"
     DOGE         = "^(D[a-km-zA-HJ-NP-Z1-9]{25,34}|A[a-km-zA-HJ-NP-Z1-9]{25,34})$"
@@ -220,7 +220,7 @@ function Show-Help {
   OPTIONS:
     -Unattended       Fully automated installation (no prompts)
     -PoolAddress      Your wallet address for mining rewards
-    -Coin             Coin to mine: BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XEC, or XMY
+ -Coin Coin to mine: BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XEC, or XMY
     -DataDrive        Drive for blockchain data (default: C:)
     -AcceptTerms      Accept Terms of Use and warnings (non-interactive)
     -Help             Show this help message
@@ -242,7 +242,7 @@ function Show-Help {
     When run without -Unattended, the installer presents a coin selection menu:
 
     SHA256d: DGB (~60GB), BTC (~600GB), BCH (~250GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
-             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), QBX (~5GB), XEC (~20GB)
+ NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB) (~5GB), XEC (~20GB)
     Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~60GB), PEP (~5GB), CAT (~5GB)
 
     You will be prompted for:
@@ -395,7 +395,7 @@ function Show-DockerLimitations {
 
 function Show-SoloCoinMenu {
     $coinMap = @{
-        "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BCH2"; "5"="BC2"; "6"="BTCS"; "7"="NMC"; "8"="SYS"; "9"="XMY"; "10"="FBTC"; "11"="QBX"; "12"="XEC"
+ "1"="DGB"; "2"="BTC"; "3"="BCH"; "4"="BCH2"; "5"="BC2"; "6"="BTCS"; "7"="NMC"; "8"="SYS"; "9"="XMY"; "10"="FBTC"; "11"=""; "12"="XEC"
         "13"="LTC"; "14"="DOGE"; "15"="DGB-SCRYPT"; "16"="PEP"; "17"="CAT"
     }
 
@@ -438,7 +438,7 @@ function Show-SoloCoinMenu {
         Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
         Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
         Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
-        Write-Host "QBX  - Q-BitX" -NoNewline -ForegroundColor White
+ Write-Host " - " -NoNewline -ForegroundColor White
         Write-Host "         ~5 GB    Port 20335" -ForegroundColor DarkGray
         Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
         Write-Host "XEC  - eCash" -NoNewline -ForegroundColor White

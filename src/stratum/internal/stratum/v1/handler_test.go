@@ -948,7 +948,7 @@ func TestMinerDifficultyRouter(t *testing.T) {
 		switch {
 		case userAgent == "BFGMiner/5.5.0":
 			return 16.0 // ASIC
-		case userAgent == "cpuminer/2.5.1":
+		case userAgent == "cpuminer/2.5.2":
 			return 0.001 // CPU
 		default:
 			return 0 // Use default
@@ -960,7 +960,7 @@ func TestMinerDifficultyRouter(t *testing.T) {
 		expectedDiff float64
 	}{
 		{"BFGMiner/5.5.0", 16.0},
-		{"cpuminer/2.5.1", 0.001},
+		{"cpuminer/2.5.2", 0.001},
 		{"UnknownMiner/1.0", 1.0}, // Default
 	}
 

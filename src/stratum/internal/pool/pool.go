@@ -837,7 +837,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Pool, error) {
 			)
 
 			// V40 FIX: Reject if aux chain uses same payout address as parent chain.
-			// Coins with identical address formats (BC2/BTC, FBTC/BTC, QBX/BTC) can accept
+			// Coins with identical address formats (BC2/BTC, FBTC/BTC/BTC) can accept
 			// addresses from either chain. If the same address is configured for both,
 			// payments for different coins may go to the wrong chain wallet.
 			if auxCfg.Address == cfg.Pool.Address {
@@ -4259,7 +4259,7 @@ func getAlgoBlockTime(symbol string) float64 {
 		return 600
 	case "BTCS":
 		return 300 // 5-minute blocks
-	case "SYS", "LTC", "QBX":
+	case "SYS", "LTC":
 		return 150
 	case "XMY", "DOGE", "PEP":
 		return 60
@@ -4907,7 +4907,7 @@ func (p *Pool) waitForSync(ctx context.Context) error {
 			// with no peers, so there's no risk of mining on stale blocks. This allows
 			// the pool to start on a fresh chain (height 0) where IBD is always true.
 			//
-			// Some daemons (QBX, BC2, etc.) report low verificationProgress even
+			// Some daemons (BC2, etc.) report low verificationProgress even
 			// when fully synced. Fall back to blocks >= headers for any coin.
 			blocksSynced := bcInfo.Headers > 0 && bcInfo.Blocks >= bcInfo.Headers
 			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && (bcInfo.VerificationProgress >= syncThreshold || blocksSynced)) {

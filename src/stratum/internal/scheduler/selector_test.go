@@ -457,35 +457,35 @@ func TestSelectorBuildTimeSlots(t *testing.T) {
 }
 
 // =============================================================================
-// START_HOUR TESTS — proves the fix for the QBX timing bug
+// START_HOUR TESTS — proves the fix for the timing bug
 // =============================================================================
 
 func floatPtr(v float64) *float64 { return &v }
 
 func TestSelectorStartHour_BuildTimeSlots(t *testing.T) {
-	// QBX starts at 22:00 with 8% weight (~1.92h), DGB gets the rest (92%)
+	// starts at 22:00 with 8% weight (~1.92h), DGB gets the rest (92%)
 	// This is the exact scenario from the production bug.
 	slots, anchor := buildTimeSlots([]CoinWeight{
 		{Symbol: "DGB", Weight: 92},
-		{Symbol: "QBX", Weight: 8, StartHour: floatPtr(22.0)},
+		{Symbol: "XEC", Weight: 8, StartHour: floatPtr(22.0)},
 	})
 
 	if len(slots) != 2 {
 		t.Fatalf("expected 2 slots, got %d", len(slots))
 	}
 
-	// QBX has start_hour so it sorts first; anchor = 22/24
+	// has start_hour so it sorts first; anchor = 22/24
 	expectedAnchor := 22.0 / 24.0
 	if math.Abs(anchor-expectedAnchor) > 0.0001 {
 		t.Errorf("anchor = %f, want %f (22:00)", anchor, expectedAnchor)
 	}
 
-	// QBX: slot 0 in anchor-relative space, 0.00–0.08
-	if slots[0].symbol != "QBX" {
-		t.Errorf("slot 0: got %s, want QBX", slots[0].symbol)
+	// XEC: slot 0 in anchor-relative space, 0.00–0.08
+	if slots[0].symbol != "XEC" {
+		t.Errorf("slot 0: got %s, want XEC", slots[0].symbol)
 	}
 	if math.Abs(slots[0].endFrac-0.08) > 0.001 {
-		t.Errorf("QBX endFrac = %.4f, want 0.08 (8%%)", slots[0].endFrac)
+		t.Errorf("XEC endFrac = %.4f, want 0.08 (8%%)", slots[0].endFrac)
 	}
 
 	// DGB: slot 1, 0.08–1.00
@@ -497,21 +497,21 @@ func TestSelectorStartHour_BuildTimeSlots(t *testing.T) {
 	}
 
 	// In wall-clock terms with anchor at 22:00:
-	// QBX: 22:00 – 23:55 (0.08 * 24 = 1.92 hours)
+	// XEC: 22:00 – 23:55 (0.08 * 24 = 1.92 hours)
 	// DGB: 23:55 – 22:00 next day (0.92 * 24 = 22.08 hours)
-	qbxHours := (slots[0].endFrac - slots[0].startFrac) * 24
+	xecHours := (slots[0].endFrac - slots[0].startFrac) * 24
 	dgbHours := (slots[1].endFrac - slots[1].startFrac) * 24
-	t.Logf("QBX: %.2f hours starting at 22:00", qbxHours)
-	t.Logf("DGB: %.2f hours starting at %.2f:00", dgbHours, 22.0+qbxHours)
+	t.Logf("XEC: %.2f hours starting at 22:00", xecHours)
+	t.Logf("DGB: %.2f hours starting at %.2f:00", dgbHours, 22.0+xecHours)
 
-	if math.Abs(qbxHours-1.92) > 0.01 {
-		t.Errorf("QBX duration = %.2f hours, want 1.92", qbxHours)
+	if math.Abs(xecHours-1.92) > 0.01 {
+		t.Errorf("XEC duration = %.2f hours, want 1.92", xecHours)
 	}
 }
 
 func TestSelectorStartHour_CoinSelection(t *testing.T) {
 	// Reproduce the exact production scenario:
-	// QBX: start_hour=22, weight=8 → 22:00–23:55 EST
+	// XEC: start_hour=22, weight=8 → 22:00–23:55 EST
 	// DGB: weight=92 → 23:55–22:00 EST
 	// Timezone: America/New_York
 
@@ -520,9 +520,9 @@ func TestSelectorStartHour_CoinSelection(t *testing.T) {
 		Logger:       zap.NewNop(),
 	})
 	dgb := newMockSource("DGB", "pool_dgb", 1000.0)
-	qbx := newMockSource("QBX", "pool_qbx", 5000.0)
+	xec := newMockSource("XEC", "pool_xec", 5000.0)
 	mon.RegisterCoin(dgb, 15)
-	mon.RegisterCoin(qbx, 150)
+	mon.RegisterCoin(xec, 150)
 	mon.poll()
 
 	loc, err := time.LoadLocation("America/New_York")
@@ -535,19 +535,19 @@ func TestSelectorStartHour_CoinSelection(t *testing.T) {
 		wantCoin     string
 		desc         string
 	}{
-		// QBX window: 22:00–23:55 EST
-		{22, 0, "QBX", "22:00 — QBX slot starts"},
-		{22, 30, "QBX", "22:30 — middle of QBX slot"},
-		{23, 0, "QBX", "23:00 — still QBX"},
-		{23, 50, "QBX", "23:50 — near end of QBX slot"},
+		// XEC window: 22:00–23:55 EST
+		{22, 0, "XEC", "22:00 — XEC slot starts"},
+		{22, 30, "XEC", "22:30 — middle of XEC slot"},
+		{23, 0, "XEC", "23:00 — still XEC"},
+		{23, 50, "XEC", "23:50 — near end of XEC slot"},
 		// DGB window: 23:55–22:00 next day
 		{23, 56, "DGB", "23:56 — DGB slot starts"},
 		{0, 0, "DGB", "midnight — DGB slot"},
-		{3, 8, "DGB", "03:08 — should NOT be QBX (the bug)"},
+		{3, 8, "DGB", "03:08 — should NOT be XEC (the bug)"},
 		{10, 0, "DGB", "10:00 — DGB slot"},
 		{15, 0, "DGB", "15:00 — DGB slot"},
-		{21, 0, "DGB", "21:00 — DGB slot (just before QBX)"},
-		{21, 59, "DGB", "21:59 — last minute before QBX"},
+		{21, 0, "DGB", "21:00 — DGB slot (just before XEC)"},
+		{21, 59, "DGB", "21:59 — last minute before XEC"},
 	}
 
 	for _, tt := range tests {
@@ -555,10 +555,10 @@ func TestSelectorStartHour_CoinSelection(t *testing.T) {
 			mockNow := time.Date(2026, 4, 13, tt.hour, tt.minute, 0, 0, loc)
 			sel := NewSelector(SelectorConfig{
 				Monitor:      mon,
-				AllowedCoins: []string{"DGB", "QBX"},
+				AllowedCoins: []string{"DGB", "XEC"},
 				CoinWeights: []CoinWeight{
 					{Symbol: "DGB", Weight: 92},
-					{Symbol: "QBX", Weight: 8, StartHour: floatPtr(22.0)},
+					{Symbol: "XEC", Weight: 8, StartHour: floatPtr(22.0)},
 				},
 				PreferCoin:    "DGB",
 				MinTimeOnCoin: -1,
@@ -613,7 +613,7 @@ func TestSelectorStartHour_MultipleCoinsWithStartHour(t *testing.T) {
 func TestSelectorStartHour_NegativeClampedToZero(t *testing.T) {
 	// Negative start_hour should be clamped to 0 (midnight)
 	slots, anchor := buildTimeSlots([]CoinWeight{
-		{Symbol: "QBX", Weight: 10, StartHour: floatPtr(-5.0)},
+		{Symbol: "XEC", Weight: 10, StartHour: floatPtr(-5.0)},
 		{Symbol: "DGB", Weight: 90},
 	})
 
@@ -630,7 +630,7 @@ func TestSelectorStartHour_NegativeClampedToZero(t *testing.T) {
 func TestSelectorStartHour_GreaterThan24ClampedToZero(t *testing.T) {
 	// start_hour >= 24 should be clamped to 0 (midnight)
 	slots, anchor := buildTimeSlots([]CoinWeight{
-		{Symbol: "QBX", Weight: 10, StartHour: floatPtr(25.0)},
+		{Symbol: "XEC", Weight: 10, StartHour: floatPtr(25.0)},
 		{Symbol: "DGB", Weight: 90},
 	})
 
@@ -646,7 +646,7 @@ func TestSelectorStartHour_GreaterThan24ClampedToZero(t *testing.T) {
 func TestSelectorStartHour_Exactly24ClampedToZero(t *testing.T) {
 	// start_hour == 24.0 should be clamped to 0 (24 == midnight next day == 0)
 	slots, anchor := buildTimeSlots([]CoinWeight{
-		{Symbol: "QBX", Weight: 10, StartHour: floatPtr(24.0)},
+		{Symbol: "XEC", Weight: 10, StartHour: floatPtr(24.0)},
 		{Symbol: "DGB", Weight: 90},
 	})
 
@@ -662,7 +662,7 @@ func TestSelectorStartHour_Exactly24ClampedToZero(t *testing.T) {
 func TestSelectorStartHour_23_99IsValid(t *testing.T) {
 	// 23.99 is the max valid start_hour — should NOT be clamped
 	_, anchor := buildTimeSlots([]CoinWeight{
-		{Symbol: "QBX", Weight: 10, StartHour: floatPtr(23.99)},
+		{Symbol: "XEC", Weight: 10, StartHour: floatPtr(23.99)},
 		{Symbol: "DGB", Weight: 90},
 	})
 
@@ -676,7 +676,7 @@ func TestSelectorStartHour_23_99IsValid(t *testing.T) {
 func TestSelectorStartHour_ZeroIsValid(t *testing.T) {
 	// start_hour=0.0 means midnight — explicit zero should work
 	_, anchor := buildTimeSlots([]CoinWeight{
-		{Symbol: "QBX", Weight: 10, StartHour: floatPtr(0.0)},
+		{Symbol: "XEC", Weight: 10, StartHour: floatPtr(0.0)},
 		{Symbol: "DGB", Weight: 90},
 	})
 

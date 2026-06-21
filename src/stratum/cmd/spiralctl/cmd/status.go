@@ -112,7 +112,6 @@ func printNodeStatus() {
 		{"Myriad", "myriadcoind", DefaultXMYConfig},
 		{"Namecoin", "namecoind", DefaultNMCConfig},
 		{"PepeCoin", "pepecoind", DefaultPEPConfig},
-		{"Q-BitX", "qbitxd", DefaultQBXConfig},
 		{"Syscoin", "syscoind", DefaultSYSConfig},
 		{"eCash", "ecashd", DefaultXECConfig},
 	}
@@ -215,7 +214,6 @@ func printTorStatus() {
 		{"LTC", DefaultLTCConfig},
 		{"NMC", DefaultNMCConfig},
 		{"PEP", DefaultPEPConfig},
-		{"QBX", DefaultQBXConfig},
 		{"SYS", DefaultSYSConfig},
 		{"XEC", DefaultXECConfig},
 		{"XMY", DefaultXMYConfig},

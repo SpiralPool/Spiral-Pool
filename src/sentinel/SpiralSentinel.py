@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.5.1 - PHI HASH REACTOR EDITION                            ║
+║  Spiral Sentinel v2.5.2 - PHI HASH REACTOR EDITION                            ║
 ║  Autonomous Solo Mining Monitor (17 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.5.1"
+__version__ = "2.5.2"
 __codename__ = "PHI_HASH_REACTOR"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -392,7 +392,7 @@ def _build_rpc_auth_cache(config_path):
             continue
         # Extract exact port value
         val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-        # Strip inline comments (e.g., "8344  # QBX RPC port")
+        # Strip inline comments (e.g., "8370  # SYS RPC port")
         val = val.split("#")[0].strip()
         if not val.isdigit():
             i += 1
@@ -1844,7 +1844,7 @@ def get_enabled_coins():
         enabled_coins = [c for c in CONFIGURED_COINS if c.get("enabled", False)]
         # Auto-sync: if pool API has coins that are missing or disabled in config.json,
         # add them automatically. This prevents coins added after initial sentinel setup
-        # from being silently ignored (e.g., QBX added to stratum but never enabled in
+        # from being silently ignored (e.g., a coin added to stratum but never enabled in
         # sentinel config.json).
         if AUTO_DETECTED_COIN is None:
             AUTO_DETECTED_COIN = auto_detect_pool_coin()
@@ -1875,8 +1875,7 @@ def get_enabled_coins():
         "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933, "pool_id": "ltc_scrypt_1"},
         "NMC": {"stratum": 14335, "stratum_v2": 14336, "rpc": 8336, "zmq": 28336, "pool_id": "nmc_sha256_1"},
         "PEP": {"stratum": 10335, "stratum_v2": 10336, "rpc": 33873, "zmq": 28873, "pool_id": "pep_scrypt_1"},
-        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": None, "pool_id": "qbx_sha256_1"},  # No ZMQ — binary compiled without it
-        "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370, "pool_id": "sys_sha256_1"},  # Merge-mining only (BTC parent) — cannot solo mine
+                "SYS": {"stratum": 15335, "stratum_v2": 15336, "rpc": 8370, "zmq": 28370, "pool_id": "sys_sha256_1"},  # Merge-mining only (BTC parent) — cannot solo mine
         "XEC": {"stratum": 18338, "stratum_v2": 18339, "rpc": 9004, "zmq": 28335, "pool_id": "xec_sha256_1"},
         "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889, "pool_id": "xmy_sha256_1"},
     }
@@ -1907,7 +1906,7 @@ def get_enabled_coins():
                 ("bc2", "BC2"), ("bitcoinii", "BC2"),
                 ("dgb", "DGB"),
                 ("ltc", "LTC"), ("doge", "DOGE"), ("pep", "PEP"), ("cat", "CAT"),
-                ("nmc", "NMC"), ("sys", "SYS"), ("xmy", "XMY"), ("qbx", "QBX"),
+                ("nmc", "NMC"), ("sys", "SYS"), ("xmy", "XMY"),
             ]
             symbol = ""
             for prefix, coin_sym in _pool_id_prefixes:
@@ -1972,8 +1971,7 @@ def get_coin_emoji(symbol):
         "SYS": "⚙️",  # Syscoin - gear (platform)
         "XMY": "🌀",  # Myriad - spiral (multi-algo)
         "FBTC": "🔶",  # Fractal Bitcoin - orange diamond
-        "QBX": "⚛️",   # Q-BitX - atom (post-quantum)
-        "XEC": "💚",  # eCash - green (eCash brand colour)
+                "XEC": "💚",  # eCash - green (eCash brand colour)
         # Scrypt coins
         "LTC": "🥈",  # Litecoin - silver
         "DOGE": "🐕",  # Dogecoin - doge
@@ -1999,8 +1997,7 @@ def get_coin_name(symbol):
         "SYS": "Syscoin",
         "XMY": "Myriad",
         "FBTC": "Fractal Bitcoin",
-        "QBX": "Q-BitX",
-        "XEC": "eCash",
+                "XEC": "eCash",
         # Scrypt coins
         "LTC": "Litecoin",
         "DOGE": "Dogecoin",
@@ -2226,8 +2223,7 @@ def discover_active_aux_pools(parent_symbol):
             "PEPECOIN": "PEP", "CATCOIN": "CAT",
             "NAMECOIN": "NMC", "SYSCOIN": "SYS", "MYRIADCOIN": "XMY",
             "MYRIAD": "XMY", "FRACTALBITCOIN": "FBTC", "FRACTAL": "FBTC",
-            "QBITX": "QBX", "Q-BITX": "QBX",
-            "ECASH": "XEC", "BITCOIN-ABC": "XEC",
+                        "ECASH": "XEC", "BITCOIN-ABC": "XEC",
         }
 
         # Build symbol -> pool_id from API response
@@ -2466,8 +2462,7 @@ def fetch_pool_stats_by_symbol(symbol):
     # Known pool_id patterns for each coin
     POOL_ID_PATTERNS = {
         "DGB": "dgb_sha256",
-        "QBX": "qbx_mainnet",
-        "XEC": "xec_sha256",
+                "XEC": "xec_sha256",
         "BTC": "btc_sha256",
         "BCH": "bch_sha256",
         "BCH2": "bch2_sha256",
@@ -2527,7 +2522,7 @@ def check_coin_node_synced(coin):
         progress = r.get("verificationprogress", 0)
         blocks = r.get("blocks", 0)
         headers = r.get("headers", 0)
-        # Some daemons (e.g. QBX) report near-zero verificationprogress
+        # Some daemons (e.g. BC2) report near-zero verificationprogress
         # even when fully synced. Fall back to blocks>=headers.
         if progress >= 0.9999:
             return True
@@ -2893,8 +2888,7 @@ def _extract_coin_from_pool(pool):
         "syscoin": "SYS", "sys": "SYS",
         "myriad": "XMY", "myriadcoin": "XMY", "xmy": "XMY",
         "fractalbitcoin": "FBTC", "fractal": "FBTC", "fbtc": "FBTC",
-        "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
-        "ecash": "XEC", "bitcoin-abc": "XEC", "xec": "XEC",
+                "ecash": "XEC", "bitcoin-abc": "XEC", "xec": "XEC",
         "litecoin": "LTC", "ltc": "LTC",
         "dogecoin": "DOGE", "doge": "DOGE",
         "digibyte-scrypt": "DGB-SCRYPT", "dgb-scrypt": "DGB-SCRYPT",
@@ -2917,8 +2911,7 @@ def _extract_coin_from_pool(pool):
         "XMY": {"stratum": 17335, "stratum_v2": 17336, "rpc": 10889, "zmq": 28889},
         "FBTC": {"stratum": 18335, "stratum_v2": 18336, "rpc": 8340, "zmq": 28340},
         "XEC": {"stratum": 18338, "stratum_v2": 18339, "rpc": 9004, "zmq": 28335},
-        "QBX": {"stratum": 20335, "stratum_v2": 20336, "rpc": 8344, "zmq": None},  # No ZMQ — binary compiled without it
-        "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933},
+                "LTC": {"stratum": 7333, "stratum_v2": 7334, "rpc": 9332, "zmq": 28933},
         "DOGE": {"stratum": 8335, "stratum_v2": 8337, "rpc": 22555, "zmq": 28555},
         "DGB-SCRYPT": {"stratum": 3336, "stratum_v2": 3337, "rpc": 14022, "zmq": 28532},
         "PEP": {"stratum": 10335, "stratum_v2": 10336, "rpc": 33873, "zmq": 28873},
@@ -3028,10 +3021,7 @@ def auto_detect_pool_coin():
             "fractalbitcoin": "FBTC",
             "fractal": "FBTC",
             "fbtc": "FBTC",
-            "qbitx": "QBX",
-            "q-bitx": "QBX",
-            "qbx": "QBX",
-            # Scrypt coins
+                                                # Scrypt coins
             "litecoin": "LTC",
             "ltc": "LTC",
             "dogecoin": "DOGE",
@@ -3188,8 +3178,7 @@ def create_coin_change_embed(old_coin, new_coin, new_config=None):
             "BC2": {"stratum": 6333, "stratum_v2": 6334},
             "BTCS": {"stratum": 11335, "stratum_v2": 11336},
             "XEC": {"stratum": 18338, "stratum_v2": 18339},
-            "QBX": {"stratum": 20335, "stratum_v2": 20336},
-            # SHA-256d merge-mineable coins
+                        # SHA-256d merge-mineable coins
             "NMC": {"stratum": 14335, "stratum_v2": 14336},
             "SYS": {"stratum": 15335, "stratum_v2": 15336},
             "XMY": {"stratum": 17335, "stratum_v2": 17336},
@@ -3357,8 +3346,7 @@ def detect_pool_mode():
                 "syscoin": "SYS", "sys": "SYS",
                 "myriad": "XMY", "myriadcoin": "XMY", "xmy": "XMY",
                 # Post-quantum SHA-256d
-                "qbitx": "QBX", "q-bitx": "QBX", "qbx": "QBX",
-            }
+                            }
             for pool in pools:
                 coin_info = pool.get("coin", {})
                 coin_type = coin_info.get("type", "").lower()
@@ -3938,7 +3926,7 @@ def check_stuck_syncs(state):
         # Skip coins we can't reach or that are already fully synced
         if blocks is None or progress is None:
             continue
-        # Some daemons (e.g. QBX) report near-zero verificationprogress
+        # Some daemons (e.g. BC2) report near-zero verificationprogress
         # even when fully synced. Fall back to blocks>=headers.
         if progress >= 0.9999 or (headers and headers > 0 and blocks >= headers):
             _sync_progress_history.pop(symbol, None)
@@ -4720,13 +4708,12 @@ VS_CURRENCIES = ",".join(c["code"] for c in SUPPORTED_CURRENCIES.values())
 CURRENCY_CODES = VS_CURRENCIES.split(",")
 
 # All supported coin symbols (lowercase, for price dict keys)
-SUPPORTED_COIN_SYMBOLS = ["dgb", "btc", "bch", "bch2", "bc2", "btcs", "xec", "qbx", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat"]
+SUPPORTED_COIN_SYMBOLS = ["dgb", "btc", "bch", "bch2", "bc2", "btcs", "xec", "nmc", "sys", "xmy", "fbtc", "ltc", "doge", "dgb-scrypt", "pep", "cat"]
 
 # Default block rewards by coin (used as fallback when API data unavailable)
 DEFAULT_BLOCK_REWARDS = {
     # SHA-256d coins
-    "DGB": 277.38, "BTC": 3.125, "BCH": 3.125, "BCH2": 50.0, "BC2": 50.0, "BTCS": 50.0, "XEC": 3125000.0, "QBX": 12.5,
-    # SHA-256d merge-mineable aux chains
+    "DGB": 277.38, "BTC": 3.125, "BCH": 3.125, "BCH2": 50.0, "BC2": 50.0, "BTCS": 50.0, "XEC": 3125000.0,     # SHA-256d merge-mineable aux chains
     "NMC": 6.25, "SYS": 1.25, "XMY": 500.0, "FBTC": 25.0,
     # Scrypt coins
     "LTC": 6.25, "DOGE": 10000, "DGB-SCRYPT": 277.38,
@@ -4744,8 +4731,7 @@ BLOCK_EXPLORER_URLS = {
     "BC2":       None,
     "BTCS":      "https://explorer.bitcoinsilver.top/block/{hash}",
     "DGB":       "https://digiexplorer.info/block/{hash}",
-    "QBX":       None,
-    "NMC":       "https://bchain.info/NMC/block/{hash}",
+        "NMC":       "https://bchain.info/NMC/block/{hash}",
     "SYS":       "https://blockchair.com/syscoin/block/{hash}",
     "XMY":       None,
     "FBTC":      "https://explorer.fractalbitcoin.io/block/{hash}",
@@ -6044,7 +6030,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.5.1-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.2-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6063,7 +6049,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.5.1-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.5.2-PHI_HASH_REACTOR"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -6226,8 +6212,7 @@ COIN_CHECK_INTERVALS = {
     "BTCS": 90,         # Bitcoin Silver: 5min (300s) block time, check every 90s
     "NMC": 120,         # Namecoin: ~10min block time
     "XEC": 120,         # eCash: 10min block time
-    "QBX": 60,          # Q-BitX: 150s block time, check every 60s
-    # Other coins - use default
+        # Other coins - use default
     "PEP": 60,          # Pepecoin
     "CAT": 60,          # Catcoin
 }
@@ -6544,8 +6529,7 @@ COIN_NET_CRASH = {
     "XMY": {"floor": 0.3, "drop": 0.5, "reset": 1},     # XMY: small multi-algo network
     "FBTC": {"floor": 80, "drop": 100, "reset": 150},   # FBTC: newer chain
     "XEC": {"floor": 2000, "drop": 2500, "reset": 3000},  # XEC: ~2-5 EH/s network (SHA-256d, Bitcoin ABC)
-    "QBX": {"floor": 0.05, "drop": 0.08, "reset": 0.12},  # QBX: new small network
-    # Scrypt coins (much smaller networks, values in PH/s)
+        # Scrypt coins (much smaller networks, values in PH/s)
     "LTC": {"floor": 0.8, "drop": 0.9, "reset": 1.1},   # LTC: ~1 PH/s network
     "DOGE": {"floor": 1.2, "drop": 1.4, "reset": 1.6},  # DOGE: ~1.5 PH/s network (merge-mined with LTC)
     "DGB-SCRYPT": {"floor": 0.04, "drop": 0.05, "reset": 0.07},  # DGB Scrypt algo
@@ -6611,8 +6595,7 @@ COIN_ZMQ_STALE_THRESHOLDS = {
     "CAT": 420,             # Catcoin: ~60s blocks × 7
     # Medium block coins (150s block time)
     "LTC": 1050,            # Litecoin: 150s blocks × 7 = 1050s (~17.5 min)
-    "QBX": 1050,            # Q-BitX: 150s blocks × 7 = 1050s (~17.5 min)
-    # Slow block coins (600s block times)
+        # Slow block coins (600s block times)
     "BTC": 3600,            # Bitcoin: 600s blocks × 6 = 3600s (60 min, ~0.25% false positive)
     "BCH": 3600,            # Bitcoin Cash: 600s blocks × 6
     "BCH2": 3600,           # Bitcoin Cash II: 600s blocks × 6 (same as BCH)
@@ -8956,37 +8939,6 @@ def fetch_network_stats(coin=None):
             logger.warning("CAT network stats unavailable")
             return None
 
-        elif coin in ("QBX", "QBITX"):
-            # Q-BitX - SHA256d, 150 second block time
-            # No external API available — use RPC getnetworkhashps (actual block timing)
-            # then pool API / formula fallback
-            qbx_rpc_port = coin_config.get("rpc_port", 8344) if coin_config else 8344
-
-            # Method 1: getnetworkhashps RPC — uses moving average over recent blocks
-            nhps = _rpc_call("127.0.0.1", qbx_rpc_port, "getnetworkhashps")
-            if nhps and isinstance(nhps, (int, float)) and nhps > 0:
-                # Still need difficulty for ETB/odds calculations
-                mining = _rpc_call("127.0.0.1", qbx_rpc_port, "getmininginfo")
-                diff = float(mining.get("difficulty", 0)) if mining else 0
-                return {"network_phs": nhps / 1e15, "difficulty": diff, "algorithm": "sha256d"}
-
-            # Method 2: Pool API + formula fallback
-            pool_stats = fetch_pool_stats_by_symbol(coin)
-            pool_data = pool_stats.get("poolStats", {}) if pool_stats else {}
-            if pool_data.get("networkDifficulty"):
-                diff = float(pool_data.get("networkDifficulty", 0))
-                if diff > 0:
-                    return {"network_phs": (diff * (2**32) / 150) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
-
-            # Method 3: getmininginfo RPC + formula fallback
-            rpc_result = _rpc_call("127.0.0.1", qbx_rpc_port, "getmininginfo")
-            if rpc_result and "difficulty" in rpc_result:
-                diff = float(rpc_result["difficulty"])
-                if diff > 0:
-                    return {"network_phs": (diff * (2**32) / 150) / 1e15, "difficulty": diff, "algorithm": "sha256d"}
-            logger.warning("QBX network stats unavailable")
-            return None
-
         else:
             # Unknown coin - cannot fetch stats
             logger.warning(f"Unknown coin {coin}, cannot fetch network stats")
@@ -9842,7 +9794,7 @@ def _fetch_fx_rates_sentinel():
 
 
 def _fetch_alt_coin_prices_sentinel():
-    """Fetch USD spot prices for BTCS (CoinPaprika), BCH2 (CoinPaprika), QBX (Klingex).
+    """Fetch USD spot prices for BTCS (CoinPaprika), BCH2 (CoinPaprika).
 
     Returns {SYMBOL: usd_price_float}. Cached 120 s (matches CoinGecko cadence).
     """
@@ -9855,22 +9807,6 @@ def _fetch_alt_coin_prices_sentinel():
                 usd = (data.get("quotes") or {}).get("USD", {}).get("price")
                 if usd is not None and float(usd) > 0:
                     prices[sym] = float(usd)
-        # QBX via Klingex /api/markets
-        markets = _http("https://api.klingex.io/api/markets")
-        if markets:
-            for m in markets:
-                if (
-                    str(m.get("base_asset_symbol", "")).upper() == "QBX"
-                    and str(m.get("quote_asset_symbol", "")).upper() == "USDT"
-                    and m.get("is_active")
-                ):
-                    raw_price = m.get("last_price")
-                    decimals = int(m.get("price_decimals", 6))
-                    if raw_price is not None:
-                        usdt_price = float(raw_price) / (10 ** decimals)
-                        if usdt_price > 0:
-                            prices["QBX"] = usdt_price
-                    break
         return prices or None
     return _cached_fetch("alt_coin_prices", _fetch, 120) or {}
 
@@ -9934,7 +9870,7 @@ def fetch_all_prices():
     """Fetch all coin prices in a single API call for efficiency.
 
     Includes SHA-256d coins (DGB, BTC, BCH, NMC, SYS, XMY, FBTC) and Scrypt coins (LTC, DOGE, PEP, CAT)
-    from CoinGecko, plus BTCS/BCH2 from CoinPaprika and QBX from Klingex with FX conversion.
+    from CoinGecko, plus BTCS/BCH2 from CoinPaprika with FX conversion.
     Also includes sat values (price in BTC satoshis) for all non-BTC coins.
     """
     def _fetch():
@@ -9971,7 +9907,7 @@ def fetch_all_prices():
                 result[f"dgb-scrypt_{cur_code}"] = result.get(f"dgb_{cur_code}", 0)
             result["dgb-scrypt_sats"] = result.get("dgb_sats", 0)
 
-            # Merge alternative prices (BTCS, BCH2, QBX) with FX conversion
+            # Merge alternative prices (BTCS, BCH2) with FX conversion
             result.update(_build_alt_price_entries(_fetch_alt_coin_prices_sentinel()))
 
             return result
@@ -10061,10 +9997,10 @@ def fetch_cat_price():
 def fetch_coin_price(symbol):
     """Fetch price for a specific coin.
 
-    Supports all 17 coins: SHA-256d (DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, QBX)
+    Supports all 16 coins: SHA-256d (DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC)
     and Scrypt (LTC, DOGE, DGB-SCRYPT, PEP, CAT).
     DGB-SCRYPT uses DGB price (same blockchain).
-    BCH2/BTCS use CoinPaprika; QBX uses Klingex. BC2 has no price source yet.
+    BCH2/BTCS use CoinPaprika. BC2 has no price source yet.
     """
     symbol = symbol.upper()
     # SHA-256d coins
@@ -10074,7 +10010,7 @@ def fetch_coin_price(symbol):
         return fetch_btc_price()
     elif symbol == "BCH":
         return fetch_bch_price()
-    elif symbol in ("BCH2", "BTCS", "QBX"):
+    elif symbol in ("BCH2", "BTCS"):
         alt = _fetch_alt_coin_prices_sentinel()
         usd = alt.get(symbol)
         if not usd:
@@ -10140,8 +10076,7 @@ def get_coin_volatility_threshold(symbol):
         "SYS": 4,   # Syscoin: relatively stable merge-mined chain
         "XMY": 6,   # Myriad: multi-algo, moderate volatility
         "FBTC": 8,  # Fractal Bitcoin: newer chain, higher volatility
-        "QBX": 10,  # Q-BitX: new chain, high volatility
-        # Scrypt coins (generally more stable due to merge-mining)
+                # Scrypt coins (generally more stable due to merge-mining)
         "LTC": 3,   # Litecoin: relatively stable, some merge-mining with DOGE
         "DOGE": 3,  # Dogecoin: stable due to merge-mining with LTC
         "DGB-SCRYPT": 6,  # DGB Scrypt algo: moderate volatility
@@ -10283,28 +10218,6 @@ def fetch_block_reward_for_coin(symbol):
         reward = 50 / (2 ** halvings)  # Initial 50 BC2, halved each cycle
         return {"block_height": bh, "sha256_reward": reward, "symbol": "BC2"}
 
-    def _fetch_qbx():
-        # Q-BitX (QBX): Post-Quantum Bitcoin fork, SHA-256d
-        # 12.5 QBX initial reward, halving every 840,000 blocks (~4 years at 150s blocks)
-        # 2.5 min block time, 21M max supply
-        bh = 1000  # Default fallback (new chain, launched April 2025)
-
-        # Method 1: Pool API (if mining QBX)
-        pool_bh = _get_block_height_from_pool("QBX")
-        if pool_bh > 0:
-            bh = pool_bh
-        else:
-            # Method 2: Direct RPC to QBX daemon (port 8344)
-            rpc_bh = _get_block_height_from_rpc("QBX", 8344)
-            if rpc_bh > 0:
-                bh = rpc_bh
-
-        # Calculate reward based on halvings (every 840,000 blocks)
-        halvings = bh // 840000
-        reward = 12.5 / (2 ** min(halvings, 10))  # Initial 12.5 QBX, halved each cycle
-        return {"block_height": bh, "sha256_reward": reward, "symbol": "QBX"}
-
-    # === SHA-256d MERGE-MINEABLE COINS ===
 
     def _fetch_nmc():
         # Namecoin (NMC): First AuxPoW coin, same halving schedule as Bitcoin
@@ -10462,8 +10375,6 @@ def fetch_block_reward_for_coin(symbol):
         return _cached_fetch("block_reward_bc2", _fetch_bc2, 43200)
     elif symbol == "BTCS":
         return 50.0  # BTCS: young chain (Jul 2024), static fallback — no public API yet
-    elif symbol == "QBX":
-        return _cached_fetch("block_reward_qbx", _fetch_qbx, 43200)
     # SHA-256d merge-mineable coins
     elif symbol == "NMC":
         return _cached_fetch("block_reward_nmc", _fetch_nmc, 43200)
@@ -11093,8 +11004,7 @@ def calc_odds(net_phs, fleet_ths, coin=None):
         "SYS": 1440,       # 86400 / 60 = 1440 (60s block time)
         "XMY": 1440,       # 86400 / 60 = 1440 (60s per algo, 5 algos)
         "FBTC": 2880,      # 86400 / 30 = 2880 (30s block time)
-        "QBX": 576,        # 86400 / 150 = 576 (150s block time)
-        # Scrypt coins
+                # Scrypt coins
         "LTC": 576,        # 86400 / 150 = 576
         "DOGE": 1440,      # 86400 / 60 = 1440
         "DGB-SCRYPT": 1152, # Same as DGB SHA256d
@@ -11126,21 +11036,18 @@ def calc_odds(net_phs, fleet_ths, coin=None):
 COIN_BLOCKS_PER_DAY = {
     # SHA-256d
     "DGB": 1152, "BTC": 144, "BCH": 144, "BCH2": 144, "BC2": 144, "BTCS": 288,
-    "NMC": 144, "SYS": 1440, "XMY": 1440, "FBTC": 2880, "XEC": 144, "QBX": 576,
-    # Scrypt
+    "NMC": 144, "SYS": 1440, "XMY": 1440, "FBTC": 2880, "XEC": 144,     # Scrypt
     "LTC": 576, "DOGE": 1440, "DGB-SCRYPT": 1152, "PEP": 1440, "CAT": 144,
 }
 
 COIN_ALGORITHM_FAMILY = {
     "DGB": "sha256d", "BTC": "sha256d", "BCH": "sha256d", "BCH2": "sha256d", "BC2": "sha256d", "BTCS": "sha256d",
-    "NMC": "sha256d", "SYS": "sha256d", "XMY": "sha256d", "FBTC": "sha256d", "XEC": "sha256d", "QBX": "sha256d",
-    "LTC": "scrypt", "DOGE": "scrypt", "DGB-SCRYPT": "scrypt", "PEP": "scrypt", "CAT": "scrypt",
+    "NMC": "sha256d", "SYS": "sha256d", "XMY": "sha256d", "FBTC": "sha256d", "XEC": "sha256d",     "LTC": "scrypt", "DOGE": "scrypt", "DGB-SCRYPT": "scrypt", "PEP": "scrypt", "CAT": "scrypt",
 }
 
 # Price key mapping: coin symbol -> key prefix in fetch_all_prices() result
 _PRICE_KEY_MAP = {
-    "DGB": "dgb", "BTC": "btc", "BCH": "bch", "BCH2": "bch2", "BC2": "bc2", "BTCS": "btcs", "QBX": "qbx",
-    "NMC": "nmc", "SYS": "sys", "XMY": "xmy", "FBTC": "fbtc", "XEC": "xec",
+    "DGB": "dgb", "BTC": "btc", "BCH": "bch", "BCH2": "bch2", "BC2": "bc2", "BTCS": "btcs",     "NMC": "nmc", "SYS": "sys", "XMY": "xmy", "FBTC": "fbtc", "XEC": "xec",
     "LTC": "ltc", "DOGE": "doge", "DGB-SCRYPT": "dgb-scrypt", "PEP": "pep", "CAT": "cat",
 }
 
@@ -16672,7 +16579,7 @@ class AchievementTracker:
 
 # === MONITOR STATE ===
 class MonitorState:
-    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros"]
+    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","baseline_poison_migrated","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros"]
 
     def __init__(self):
         self.data_dir = DATA_DIR
@@ -16715,6 +16622,7 @@ class MonitorState:
         self.miner_block_counts = {}
         self.miner_stale_history = {}
         self.miner_hashrate_baseline = {}
+        self.baseline_poison_migrated = False  # One-time v2.5.2 cleanup of pre-guard poisoned baselines
         self.recent_blips = []
         self.pool_share_history = {}  # Track pool-side share verification
 
@@ -16928,6 +16836,35 @@ class MonitorState:
                 self.high_odds_session_alerted = {}
         except (json.JSONDecodeError, IOError, OSError, KeyError, TypeError) as e:
             logger.warning(f"Could not load state file: {e}")
+
+        # One-time migration (v2.5.2): purge per-miner hashrate baselines that were poisoned
+        # before update_hashrate_baseline() gained a high-side outlier guard. A single glitched
+        # or units-misparsed spike could inflate a baseline far above the miner's real hashrate;
+        # because the baseline stops adapting while a miner reads "degraded", it never self-heals
+        # and fires perpetual false degradation alerts. Detect a poisoned baseline by comparing it
+        # to the median of recent readings and drop it so the miner relearns a correct baseline.
+        # Guarded by a persisted flag so it runs exactly once, then stays dormant.
+        # TODO(v2.5.3): remove this one-time migration. Delete (1) this whole `if not
+        # self.baseline_poison_migrated:` block, (2) the `self.baseline_poison_migrated = False`
+        # line in __init__, and (3) "baseline_poison_migrated" from _PERSIST_KEYS. The high-side
+        # outlier guard in update_hashrate_baseline() is permanent and stays.
+        if not self.baseline_poison_migrated:
+            try:
+                for _name in list(self.miner_hashrate_baseline.keys()):
+                    _b = self.miner_hashrate_baseline.get(_name) or {}
+                    _avg = _b.get("avg", 0)
+                    _recent = sorted(x.get("hr", 0) for x in self.miner_hashrate_history.get(_name, [])[-15:] if x.get("hr", 0) > 0)
+                    if _avg <= 0 or len(_recent) < 5:
+                        continue  # not enough evidence to judge — leave it alone
+                    _median = _recent[len(_recent) // 2]
+                    if _median > 0 and _avg > _median * 2:
+                        del self.miner_hashrate_baseline[_name]
+                        logger.warning(f"v2.5.2 migration: cleared poisoned hashrate baseline for {_name} "
+                                       f"(baseline {_avg:.0f} GH/s vs recent median {_median:.0f} GH/s); will relearn")
+            except Exception as _e:
+                logger.warning(f"v2.5.2 baseline migration skipped: {_e}")
+            self.baseline_poison_migrated = True
+            self.save()
 
         # Re-seed pool_blocks_found from the database if state.json has a stale
         # (lower) value — handles database restores where historical blocks are
@@ -17797,11 +17734,14 @@ class MonitorState:
             self.miner_hashrate_baseline[name] = {"avg": hashrate_ghs, "samples": 1, "last_alert": 0, "degradation_start": None}
             return None
         baseline = self.miner_hashrate_baseline[name]
+        is_high_outlier = baseline["samples"] >= 5 and hashrate_ghs > baseline["avg"] * 2
         is_outlier = baseline["samples"] >= 5 and hashrate_ghs < baseline["avg"] * 0.5
         is_degraded = baseline["samples"] >= 10 and hashrate_ghs < baseline["avg"] * 0.8
-        if not is_outlier and not is_degraded:
-            # Only incorporate into baseline when hashrate is within normal range (>80% of baseline)
-            # This prevents gradual baseline drift during sustained degradation
+        if not is_high_outlier and not is_outlier and not is_degraded:
+            # Only incorporate into baseline when hashrate is within normal range (>80% of baseline).
+            # Reject high spikes (>2x baseline) too: a single glitched/units-misparsed reading
+            # would otherwise be absorbed and ratchet the baseline up permanently, making every
+            # subsequent healthy reading look like a crash. This guards baseline drift both ways.
             samples = min(baseline["samples"], 100)
             baseline["avg"] = (baseline["avg"] * samples + hashrate_ghs) / (samples + 1)
             baseline["samples"] = samples + 1
@@ -19164,7 +19104,7 @@ def monitor_loop(state):
                         if "result" in result:
                             r = result["result"]
                             progress = r.get("verificationprogress", 0)
-                            # Some daemons (e.g. QBX) report near-zero
+                            # Some daemons (e.g. BC2) report near-zero
                             # verificationprogress when fully synced.
                             blk = r.get("blocks", 0)
                             hdr = r.get("headers", 0)

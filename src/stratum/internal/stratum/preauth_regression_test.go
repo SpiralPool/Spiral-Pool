@@ -63,7 +63,7 @@ func TestPreAuth_FixedConfig_MinerCanHandshake(t *testing.T) {
 	}
 
 	// Simulate a normal stratum handshake: mining.subscribe
-	subscribeMsg := []byte(`{"id":1,"method":"mining.subscribe","params":["cpuminer/2.5.1"]}`)
+	subscribeMsg := []byte(`{"id":1,"method":"mining.subscribe","params":["cpuminer/2.5.2"]}`)
 
 	// Send 5 messages (typical handshake) — should NOT disconnect
 	for i := 0; i < 5; i++ {
@@ -151,7 +151,7 @@ func TestPreAuth_ZeroLimit_DisconnectsOnFirstMessage(t *testing.T) {
 	}()
 
 	// Send first message — with buggy config, this should close the connection
-	subscribeMsg := []byte(`{"id":1,"method":"mining.subscribe","params":["cpuminer/2.5.1"]}`)
+	subscribeMsg := []byte(`{"id":1,"method":"mining.subscribe","params":["cpuminer/2.5.2"]}`)
 	server.handleMessage(session, subscribeMsg)
 
 	// The connection should be closed now

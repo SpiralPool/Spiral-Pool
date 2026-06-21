@@ -273,7 +273,7 @@ These watch the Spiral Stratum Go backend's `/metrics` endpoint.
 | `metrics_fetch_interval` | 60 | Scrape every N seconds |
 | `infra_circuit_breaker_alert` | true | Daemon circuit-breaker state changes |
 | `infra_backpressure_alert` | true | Share-pipeline backpressure level ≥ 2 |
-| `infra_zmq_health_alert` | true | ZMQ degradation (note: QBX never has ZMQ — ignore) |
+| `infra_zmq_health_alert` | true | ZMQ degradation (note: never has ZMQ — ignore) |
 | `infra_wal_errors_alert` | true | WAL write/commit errors |
 | `infra_share_loss_alert` | true | Share batch drops |
 
@@ -441,8 +441,8 @@ Already handled — `alert_batching_enabled: true` digests miner alerts within 5
 ]
 ```
 
-### "Sentinel keeps alerting about ZMQ on QBX"
-QBX doesn't support ZMQ — polling fallback is by design. Either ignore or:
+### "Sentinel keeps alerting about ZMQ on "
+ doesn't support ZMQ — polling fallback is by design. Either ignore or:
 ```json
 "infra_zmq_health_alert": false
 ```

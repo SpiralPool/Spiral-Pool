@@ -406,10 +406,10 @@ func TestManifestCoinCount(t *testing.T) {
 		t.Fatalf("Failed to load manifest: %v", err)
 	}
 
-	// We expect 17 coins total (12 SHA256d + 5 Scrypt)
-	// SHA256d: BTC, BCH, DGB, BC2, BCH2, BTCS, NMC, SYS, XMY, FBTC, QBX, XEC
+	// We expect 16 coins total (11 SHA256d + 5 Scrypt)
+	// SHA256d: BTC, BCH, DGB, BC2, BCH2, BTCS, NMC, SYS, XMY, FBTC, XEC
 	// Scrypt: LTC, DOGE, DGB-SCRYPT, PEP, CAT
-	expectedCount := 17
+	expectedCount := 16
 	if len(manifest.Coins) != expectedCount {
 		t.Errorf("Expected %d coins in manifest, got %d", expectedCount, len(manifest.Coins))
 	}
@@ -426,9 +426,9 @@ func TestManifestCoinCount(t *testing.T) {
 		}
 	}
 
-	// Expected: 12 SHA256d (BTC, BCH, DGB, BC2, BCH2, BTCS, NMC, SYS, XMY, FBTC, QBX, XEC), 5 Scrypt (LTC, DOGE, DGB-SCRYPT, PEP, CAT)
-	if sha256dCount != 12 {
-		t.Errorf("Expected 12 SHA-256d coins, got %d", sha256dCount)
+	// Expected: 11 SHA256d (BTC, BCH, DGB, BC2, BCH2, BTCS, NMC, SYS, XMY, FBTC, XEC), 5 Scrypt (LTC, DOGE, DGB-SCRYPT, PEP, CAT)
+	if sha256dCount != 11 {
+		t.Errorf("Expected 11 SHA-256d coins, got %d", sha256dCount)
 	}
 	if scryptCount != 5 {
 		t.Errorf("Expected 5 Scrypt coins, got %d", scryptCount)

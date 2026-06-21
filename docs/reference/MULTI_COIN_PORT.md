@@ -104,14 +104,14 @@ multi_port:
   port: 16180                # Dedicated stratum port for multi-coin mining
   mode: TIME                 # Routing strategy: TIME | DIFFICULTY (default: TIME)
   coins:
-    QBX:
-      weight: 96             # 96% of mining time on Q-BitX (~23 hours)  [TIME mode only]
+ :
+ weight: 96 # 96% of mining time on (~23 hours) [TIME mode only]
       start_hour: 0          # Start at midnight (optional — omit to auto-sequence)
     BC2:
       weight: 4              # 4% on Bitcoin II (~1 hour)  [TIME mode only]
       start_hour: 23         # Start at 11 PM (optional)
   check_interval: 5m         # Re-evaluate every 5 minutes
-  prefer_coin: QBX           # Default coin on connect / tie-breaker / DIFFICULTY-mode fallback
+ prefer_coin: # Default coin on connect / tie-breaker / DIFFICULTY-mode fallback
   min_time_on_coin: 60s      # Minimum time before allowing a switch (both modes)
   timezone: America/New_York # IANA timezone for 24h schedule (TIME mode; auto-set from install)
 ```
@@ -169,7 +169,7 @@ By default, coins are sequenced from midnight in alphabetical order. You can ove
 
 ```yaml
 coins:
-  QBX:
+ :
     weight: 96           # 23 hours
     start_hour: 0        # Midnight to 11 PM
   BC2:
@@ -192,10 +192,8 @@ multi_port:
   # ... coins, weights, etc.
   wallet_map:
     Heat2Sats:
-      QBX: "Mqbx1abc..."
       BC2: "1bc2xyz..."
     worker2:
-      QBX: "Mqbx1def..."
       BC2: "1bc2uvw..."
 ```
 
@@ -229,7 +227,7 @@ The multi-coin port must not conflict with any per-coin stratum port. The defaul
 | Myriadcoin | 17335 | 17336 | 17337 |
 | Fractal Bitcoin | 18335 | 18336 | 18337 |
 | eCash (XEC) | 18338 | 18339 | 18340 |
-| Q-BitX | 20335 | 20336 | 20337 |
+| 20335 | 20336 | 20337 |
 | **Multi-Coin Port** | **16180** | — | — |
 
 ### Service Ports (no conflicts)
@@ -285,16 +283,15 @@ Returns current multi-port configuration, computed schedule, and live stats.
   "port": 16180,
   "mode": "TIME",
   "routing_mode": "TIME",
-  "coins": { "QBX": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
-  "prefer_coin": "QBX",
-  "timezone": "America/New_York",
+ "coins": { "": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
+ "prefer_coin":   "timezone": "America/New_York",
   "schedule": [
-    { "symbol": "QBX", "weight": 96, "start_h": 0, "end_h": 23 },
+ { "symbol": "weight": 96, "start_h": 0, "end_h": 23 },
     { "symbol": "BC2", "weight": 4, "start_h": 23, "end_h": 24 }
   ],
   "wallet_map": {},
-  "live": { "active_coin": "QBX", "next_switch": "BC2", "time_remaining": "2h 15m" },
-  "available_coins": [{ "symbol": "QBX", "name": "Q-BitX", "enabled": true }]
+ "live": { "active_coin": "next_switch": "BC2", "time_remaining": "2h 15m" },
+ "available_coins": [{ "symbol": "name": "", "enabled": true }]
 }
 ```
 
@@ -313,7 +310,7 @@ Returns the current `wallet_map` and active coin list.
 Update worker wallet mappings (admin only). Restarts stratum on success.
 
 ```json
-{ "wallet_map": { "Heat2Sats": { "QBX": "Mqbx1...", "BC2": "1bc2..." } } }
+{ "wallet_map": { "Heat2Sats": { "BC2": "1bc2..." } } }
 ```
 
 ### `GET /api/multiport/switches?limit=50`

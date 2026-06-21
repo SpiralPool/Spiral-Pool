@@ -194,8 +194,7 @@ docker compose --profile btcs up -d      # Bitcoin Silver
 docker compose --profile nmc up -d       # Namecoin
 docker compose --profile xmy up -d       # Myriadcoin
 docker compose --profile fbtc up -d      # Fractal Bitcoin
-docker compose --profile qbx up -d       # Q-BitX
-docker compose --profile sys up -d       # Syscoin (daemon sync only — mining requires native install)
+docker compose --profile up -d # docker compose --profile sys up -d       # Syscoin (daemon sync only — mining requires native install)
 docker compose --profile ltc up -d       # Litecoin
 docker compose --profile doge up -d      # Dogecoin
 docker compose --profile dgb-scrypt up -d # DigiByte-Scrypt
@@ -362,7 +361,7 @@ main()
 | Dogecoin | DOGE | 80 GB |
 | DigiByte | DGB | 60 GB |
 | Fractal Bitcoin | FBTC | 10 GB |
-| Q-BitX | QBX | 5 GB |
+| 5 GB |
 | eCash | XEC | 20 GB |
 | Namecoin | NMC | 15 GB |
 | Myriad | XMY | 6 GB |
@@ -673,8 +672,8 @@ For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-up
   ltc-bin/, doge-bin/, pep-bin/...       Daemon binaries (Scrypt coins, symlinked to /usr/local/bin/)
   nmc/, sys/, xmy/, fbtc/               Blockchain data + config (merge-mined coins)
   nmc-bin/, sys-bin/, xmy-bin/, fbtc-bin/ Daemon binaries (merge-mined coins)
-  qbx/                                  Blockchain data + config (Q-BitX, standalone SHA-256d)
-  qbx-bin/                              Daemon binaries (Q-BitX, symlinked to /usr/local/bin/)
+ / Blockchain data + config (, standalone SHA-256d)
+ -bin/ Daemon binaries (, symlinked to /usr/local/bin/)
 
 ~spiraluser/.spiralsentinel/             Sentinel state
   config.json                           Sentinel settings (webhook URLs, etc.)
@@ -788,4 +787,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.1*
+*Spiral Pool — Phi Hash Reactor 2.5.2*

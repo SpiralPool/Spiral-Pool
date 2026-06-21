@@ -102,7 +102,7 @@ func TestSpiralRouterDetection(t *testing.T) {
 
 		// General-purpose mining software
 		{"sgminer/5.6.0", MinerClassLow, "sgminer"},
-		{"cpuminer/2.5.1", MinerClassLow, "cpuminer"},
+		{"cpuminer/2.5.2", MinerClassLow, "cpuminer"},
 		{"ccminer/2.3.1", MinerClassLow, "ccminer"},
 
 		// ========================================================================
@@ -189,7 +189,7 @@ func TestSpiralRouterDifficulties(t *testing.T) {
 		{"bitaxe/BM1397/v1.0.0", 580},
 		{"bitaxe/unknown/v1.0", 580},
 		{"sgminer/5.6.0", 580},
-		{"cpuminer/2.5.1", 580},
+		{"cpuminer/2.5.2", 580},
 		{"ccminer/2.3.1", 580},
 
 		// ========================================================================
@@ -640,9 +640,9 @@ func TestDeviceHintClassification(t *testing.T) {
 		{&DeviceHint{IP: "2.4.1.3", DeviceModel: "Avalon A1246", HashrateGHs: 90000}, MinerClassAvalonHigh},
 
 		// Avalon Mid (A9, A10, A11)
-		{&DeviceHint{IP: "2.5.1.1", DeviceModel: "Avalon 1166", HashrateGHs: 81000}, MinerClassAvalonMid},
-		{&DeviceHint{IP: "2.5.1.2", DeviceModel: "Avalon 1066", HashrateGHs: 50000}, MinerClassAvalonMid},
-		{&DeviceHint{IP: "2.5.1.3", DeviceModel: "Avalon 921", HashrateGHs: 20000}, MinerClassAvalonMid},
+		{&DeviceHint{IP: "2.5.2.1", DeviceModel: "Avalon 1166", HashrateGHs: 81000}, MinerClassAvalonMid},
+		{&DeviceHint{IP: "2.5.2.2", DeviceModel: "Avalon 1066", HashrateGHs: 50000}, MinerClassAvalonMid},
+		{&DeviceHint{IP: "2.5.2.3", DeviceModel: "Avalon 921", HashrateGHs: 20000}, MinerClassAvalonMid},
 
 		// Avalon Legacy Mid (A7, A8)
 		{&DeviceHint{IP: "2.6.1.1", DeviceModel: "Avalon 851", HashrateGHs: 15000}, MinerClassAvalonLegacyMid},
@@ -713,7 +713,7 @@ func TestScryptAlgorithmDifficulties(t *testing.T) {
 		{"bitaxe/BM1366/v2.9.31", 28000},
 		{"bitaxe/BM1370/v2.4.5", 28000},
 		{"sgminer/5.6.0", 28000},
-		{"cpuminer/2.5.1", 28000},
+		{"cpuminer/2.5.2", 28000},
 		{"ccminer/2.3.1", 28000},
 
 		// MID — Scrypt InitialDiff 38000

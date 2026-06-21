@@ -407,7 +407,7 @@ func TestSubmitTimeouts_AllCoinTiers(t *testing.T) {
 		{"15s", 15, 2, 3 * time.Second, 5 * time.Second, "DGB, DGB-SCRYPT"},
 		{"30s", 30, 3, 5 * time.Second, 10 * time.Second, "FBTC"},
 		{"60s", 60, 5, 5 * time.Second, 10 * time.Second, "DOGE, XMY, PEP, SYS"},
-		{"150s", 150, 5, 5 * time.Second, 10 * time.Second, "LTC, QBX"},
+		{"150s", 150, 5, 5 * time.Second, 10 * time.Second, "LTC"},
 		{"600s", 600, 5, 5 * time.Second, 10 * time.Second, "BTC, BCH, BC2, CAT, NMC"},
 	}
 

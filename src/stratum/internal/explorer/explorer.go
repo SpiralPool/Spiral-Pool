@@ -50,7 +50,6 @@ const (
 	CoinSyscoin        CoinType = "syscoin"
 	CoinMyriad         CoinType = "myriadcoin"
 	CoinFractalBTC     CoinType = "fractalbtc"
-	CoinQBitX          CoinType = "qbitx"
 )
 
 // validBlockHash matches valid block hashes (64 hex chars)
@@ -342,19 +341,6 @@ func DefaultConfig() *ExplorerConfig {
 					Priority:    0,
 				},
 			},
-			CoinQBitX: {
-				{
-					Type:        ExplorerBlockCypher,
-					Name:        "Q-BitX Explorer",
-					BaseURL:     "https://explorer.qbitx.org",
-					BlockPath:   "/block/{hash}",
-					TxPath:      "/tx/{hash}",
-					AddressPath: "/address/{address}",
-					HeightPath:  "/block/{height}",
-					Enabled:     true,
-					Priority:    0,
-				},
-			},
 		},
 	}
 }
@@ -570,8 +556,6 @@ func CoinFromString(s string) CoinType {
 		return CoinMyriad
 	case "fractalbtc", "fractal", "fbtc":
 		return CoinFractalBTC
-	case "qbitx", "q-bitx", "qbx":
-		return CoinQBitX
 	default:
 		return CoinType(strings.ToLower(s))
 	}

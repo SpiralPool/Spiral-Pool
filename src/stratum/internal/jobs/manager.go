@@ -288,9 +288,6 @@ func extractCoinSymbol(coinConfig string) string {
 		"fractal-bitcoin": "FBTC",
 		"fractal":         "FBTC",
 		"fbtc":            "FBTC",
-		"qbitx":           "QBX",
-		"q-bitx":          "QBX",
-		"qbx":             "QBX",
 		"ecash":           "XEC",
 		"xec":             "XEC",
 		"e-cash":          "XEC",
@@ -1026,7 +1023,7 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 	cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff)
 
 	// Output count — skip witness commitment for non-SegWit coins.
-	// Some non-SegWit daemons (e.g. QBX) still include default_witness_commitment
+	// Some non-SegWit daemons (e.g. ) still include default_witness_commitment
 	// in getblocktemplate; including it causes "unexpected-witness" rejection.
 	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
 	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()
@@ -1218,7 +1215,7 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	// 1 output for pool reward, optionally +1 for witness commitment.
 	// For XEC: +1 for MinerFund, +1 for StakingRewards (each when present).
 	// CRITICAL: Only include witness commitment for coins that support SegWit.
-	// Non-SegWit coins (e.g. QBX, XEC) must use outputCount=1+ or the node returns
+	// Non-SegWit coins (e.g. XEC) must use outputCount=1+ or the node returns
 	// "unexpected-witness" and rejects the block.
 	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
 	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()

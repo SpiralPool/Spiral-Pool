@@ -321,7 +321,7 @@ spiralctl node [status|start|stop|restart] [coin|all]
 - `stop` - Stop daemon(s) (requires root)
 - `restart` - Restart daemon(s) (requires root)
 
-**Coin values:** `bc2`, `bch`, `btc`, `cat`, `dgb`, `dgb-scrypt`, `doge`, `fbtc`, `ltc`, `nmc`, `pep`, `qbx`, `sys`, `xec`, `xmy`, `all`
+**Coin values:** `bc2`, `bch`, `btc`, `cat`, `dgb`, `dgb-scrypt`, `doge`, `fbtc`, `ltc`, `nmc`, `pep`, ``, `sys`, `xec`, `xmy`, `all`
 
 **Note:** DGB-SCRYPT shares the DigiByte daemon with DGB. Stopping/restarting DGB-SCRYPT alone is not supported.
 
@@ -429,7 +429,7 @@ spiralctl wallet [--coin <coin>] [--auto]
 ```
 
 **Options:**
-- `--coin <coin>` - Specific coin (dgb, dgb-scrypt, btc, bch, bc2, nmc, sys, xmy, fbtc, xec, qbx, ltc, doge, pep, cat)
+- `--coin <coin>` - Specific coin (dgb, dgb-scrypt, btc, bch, bc2, nmc, sys, xmy, fbtc, xec, ltc, doge, pep, cat)
 - `--auto` - Auto-generate wallet address if none exists
 
 **Examples:**
@@ -689,7 +689,7 @@ Add a supported coin to the pool. Launches the installer in "Add coins to existi
 spiralctl coin enable <TICKER>
 ```
 
-**Supported coins:** BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, QBX, SYS, XEC, XMY
+**Supported coins:** BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, SYS, XEC, XMY
 
 **Examples:**
 ```
@@ -888,13 +888,13 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 
 ## SUPPORTED COINS
 
-**SHA-256d:** BC2, BCH, BCH2, BTC, BTCS, DGB, FBTC, NMC, QBX, SYS, XEC, XMY
+**SHA-256d:** BC2, BCH, BCH2, BTC, BTCS, DGB, FBTC, NMC, SYS, XEC, XMY
 
 **Scrypt:** CAT, DGB-SCRYPT, DOGE, LTC, PEP
 
 **AuxPoW merge-mining pairs (6):** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP
 
-**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, QBX, XEC
+**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, XEC
 
 ## SEE ALSO
 

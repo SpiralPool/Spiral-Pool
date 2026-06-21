@@ -1,6 +1,6 @@
 # Spiral Pool v2.4.2 Configuration
 # Multi-coin support with node failover
-# Supports SHA256d coins: BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC, QBX, XEC
+# Supports SHA256d coins: BTC, BCH, BCH2, DGB, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC
 # Supports Scrypt coins: LTC, DOGE, DGB-SCRYPT, PEP, CAT
 #
 # NOTE: This is a TEMPLATE. All "CHANGE_ME" passwords are replaced automatically
@@ -633,54 +633,6 @@ coins:
       enabled: true
       scheme: SOLO
 
-  # Q-BitX Pool (SHA256d) - Standalone (NO merge mining)
-  # Post-quantum Bitcoin fork with Dilithium signatures
-  - symbol: QBX
-    pool_id: qbx_mainnet
-    enabled: false  # Enable when ready
-    address: "MYourQBitXAddress..."  # P2PKH format (M-prefix) or pq-prefix for post-quantum
-    coinbase_text: "Spiral Pool"
-
-    stratum:
-      port: 20335             # QBX stratum port
-      difficulty:
-        initial: 5000
-        varDiff:
-          enabled: true
-          minDiff: 0.001
-          maxDiff: 100000000
-          targetTime: 10
-          retargetTime: 120
-          variancePercent: 30
-      banning:
-        enabled: true
-        banDuration: 600s
-        invalidSharesThreshold: 5
-      connection:
-        timeout: 600s
-        maxConnections: 10000
-        keepaliveInterval: 60s
-      version_rolling:
-        enabled: true
-        mask: 536862720
-      job_rebroadcast: 30s    # QBX has 2.5-min blocks
-
-    nodes:
-      - id: primary
-        host: 127.0.0.1
-        port: 8344
-        user: spiralqbx
-        password: "CHANGE_ME"
-        priority: 0
-        weight: 1
-        zmq:
-          enabled: false  # QBX binary compiled without ZMQ support; uses RPC polling
-          endpoint: "tcp://127.0.0.1:28344"
-
-    payments:
-      enabled: true
-      scheme: SOLO
-
   # eCash Pool (XEC — SHA-256d, Bitcoin ABC v0.31.12)
   # CashAddr format: ecash:q... (P2PKH) or ecash:p... (P2SH)
   # Post-Nov 2025: uses RTT (Real Time Target) difficulty mechanism
@@ -992,14 +944,14 @@ coins:
 #   enabled: true
 #   port: 16180                  # Dedicated stratum port (default: 16180)
 #   coins:
-#     QBX:
+# :
 #       weight: 96               # 96% of daily mining time (~23 hours)
 #       start_hour: 0            # Optional: start at midnight (0-23.99)
 #     BC2:
 #       weight: 4                # 4% of daily mining time (~1 hour)
 #       start_hour: 23           # Optional: start at 11 PM
 #   check_interval: 30s          # How often to check schedule boundaries
-#   prefer_coin: QBX             # Default coin / tie-breaker
+# prefer_coin: # Default coin / tie-breaker
 #   min_time_on_coin: 60s        # Minimum time before switch (prevents flip-flopping)
 #   timezone: America/New_York   # IANA timezone for 24h schedule
 #
@@ -1016,10 +968,8 @@ coins:
 #   # For public pools where individual miners need per-coin wallets:
 #   # wallet_map:
 #   #   WorkerName1:
-#   #     QBX: "Mqbx1abc..."
 #   #     BC2: "1bc2xyz..."
 #   #   WorkerName2:
-#   #     QBX: "Mqbx1def..."
 #   #     BC2: "1bc2uvw..."
 
 # ═══════════════════════════════════════════════════════════════════════════
