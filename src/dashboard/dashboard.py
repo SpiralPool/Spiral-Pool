@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 
 import os
 import json
@@ -876,12 +876,6 @@ WALLET_PATTERNS = {
         r'^bc1q[a-z0-9]{38}$|'
         r'^bc1q[a-z0-9]{58}$|'
         r'^bc1p[a-z0-9]{58}$'
-    ),
-        r'^(?:'
-        r'M[a-km-zA-HJ-NP-Z1-9]{25,34}'   # P2PKH (version byte 0x32 = 'M')
-        r'|P[a-km-zA-HJ-NP-Z1-9]{25,34}'  # P2SH (version byte 0x37 = 'P')
-        r'|pq[a-zA-Z0-9]{20,80}'           # Post-quantum Dilithium
-        r')$'
     ),
     # NMC - Namecoin: N/M prefix for P2PKH, nc1q for bech32
     'NMC': re.compile(r'^[NM][a-km-zA-HJ-NP-Z1-9]{25,34}$|^nc1q[a-z0-9]{38,58}$'),
@@ -1947,8 +1941,9 @@ def fetch_pool_stats():
         # Coin-type normalization map for pool API coin types
         _pool_coin_map = {
             "digibyte": "DGB", "dgb": "DGB",
+            "digibyte-scrypt": "DGB-SCRYPT", "dgb-scrypt": "DGB-SCRYPT", "dgb_scrypt": "DGB-SCRYPT",
             "bitcoincash": "BCH", "bitcoin-cash": "BCH", "bch": "BCH",
-            "bitcoincashii": "BCH2", "bitcoin-cash-ii": "BCH2", "bch2": "BCH2", "bitcoincashii": "BCH2",
+            "bitcoincashii": "BCH2", "bitcoin-cash-ii": "BCH2", "bch2": "BCH2",
             "bitcoinsilver": "BTCS", "bitcoin-silver": "BTCS", "btcs": "BTCS",
             "bitcoinii": "BC2", "bitcoin-ii": "BC2", "bitcoin2": "BC2", "bc2": "BC2", "bcii": "BC2",
             "bitcoin": "BTC", "btc": "BTC",
@@ -2682,6 +2677,8 @@ def load_pool_config():
                         detected_coin = "XMY"
                     elif 'fractal' in coin_type or 'fbtc' in coin_type:
                         detected_coin = "FBTC"
+                    elif 'ecash' in coin_type or 'xec' in coin_type:
+                        detected_coin = "XEC"
 
                 # Format 2: pool.coin (single-pool format)
                 if not detected_coin:
@@ -2690,11 +2687,15 @@ def load_pool_config():
                     pool_id = pool_section.get('id', '').lower()
 
                     # SHA-256d coins
-                    if 'bitcoincash' in coin_type or 'bitcoin-cash' in coin_type or 'bch' in coin_type or 'bch' in pool_id:
+                    if 'bitcoincashii' in coin_type or 'bitcoin-cash-ii' in coin_type or 'bch2' in coin_type or 'bch2' in pool_id:
+                        detected_coin = "BCH2"   # must be before 'bitcoincash' check
+                    elif 'bitcoinsilver' in coin_type or 'bitcoin-silver' in coin_type or 'btcs' in coin_type or 'btcs' in pool_id:
+                        detected_coin = "BTCS"   # must be before 'bitcoin' check
+                    elif 'bitcoincash' in coin_type or 'bitcoin-cash' in coin_type or 'bch' in coin_type or 'bch' in pool_id:
                         detected_coin = "BCH"
                     elif 'bitcoinii' in coin_type or 'bitcoin-ii' in coin_type or 'bitcoin2' in coin_type or 'bc2' in coin_type or 'bcii' in coin_type or 'bc2' in pool_id or 'bcii' in pool_id:
                         detected_coin = "BC2"
-                    elif 'bitcoin' in coin_type or ('btc' in pool_id and 'bch' not in pool_id and 'bc2' not in pool_id):
+                    elif 'bitcoin' in coin_type or ('btc' in pool_id and 'bch' not in pool_id and 'bc2' not in pool_id and 'btcs' not in pool_id):
                         detected_coin = "BTC"
                     elif 'digibyte-scrypt' in coin_type or 'dgb-scrypt' in coin_type or 'dgb_scrypt' in pool_id:
                         detected_coin = "DGB-SCRYPT"
@@ -2718,6 +2719,8 @@ def load_pool_config():
                         detected_coin = "XMY"
                     elif 'fractal' in coin_type or 'fbtc' in coin_type or 'fbtc' in pool_id:
                         detected_coin = "FBTC"
+                    elif 'ecash' in coin_type or 'xec' in coin_type or 'xec' in pool_id:
+                        detected_coin = "XEC"
 
                 # Format 3: Fallback to daemon port
                 if not detected_coin:
@@ -3334,6 +3337,14 @@ BLOCK_EXPLORERS = {
             {"api": None, "url": "https://fractal.unisat.io/explorer", "name": "UniSat Explorer"},
         ]
     },
+    "XEC": {
+        "api": None,
+        "url": "https://explorer.e.cash",
+        "name": "eCash Explorer",
+        "fallbacks": [
+            {"api": None, "url": "https://blockchair.com/ecash", "name": "Blockchair"},
+        ]
+    },
     # === Scrypt Coins ===
     "LTC": {
         "api": "https://api.blockchair.com/litecoin",
@@ -3943,13 +3954,19 @@ def get_enabled_coins():
     pool_id = os.environ.get("POOL_ID", "")
     if pool_id:
         pool_id_lower = pool_id.lower()
-        # SHA-256d coins
-        if pool_id_lower.startswith("btc"):
+        # SHA-256d coins (check specific prefixes before generic: btcs before btc, bch2 before bch)
+        if pool_id_lower.startswith("btcs"):
+            primary = "BTCS"
+        elif pool_id_lower.startswith("btc"):
             primary = "BTC"
+        elif pool_id_lower.startswith("bch2"):
+            primary = "BCH2"
         elif pool_id_lower.startswith("bch"):
             primary = "BCH"
         elif pool_id_lower.startswith("bc2") or pool_id_lower.startswith("bitcoinii"):
             primary = "BC2"
+        elif pool_id_lower.startswith("xec") or pool_id_lower.startswith("ecash"):
+            primary = "XEC"
         # Scrypt coins (check dgb-scrypt/dgb_scrypt before dgb)
         elif pool_id_lower.startswith("dgb-scrypt") or pool_id_lower.startswith("dgb_scrypt"):
             primary = "DGB-SCRYPT"
@@ -4102,8 +4119,14 @@ def load_multi_coin_config():
                     detected_coin = None
                     default_port = 0
 
-                    # SHA-256d coins
-                    if 'bitcoincash' in pool_id_lower or 'bitcoin-cash' in pool_id_lower or 'bch' in pool_id_lower or daemon_port == 8432:
+                    # SHA-256d coins (check specific before generic: BCH2 before BCH, BTCS before BTC)
+                    if 'bitcoincashii' in pool_id_lower or 'bitcoin-cash-ii' in pool_id_lower or 'bch2' in pool_id_lower or daemon_port == 8533:
+                        detected_coin = 'BCH2'
+                        default_port = 8533
+                    elif 'bitcoinsilver' in pool_id_lower or 'bitcoin-silver' in pool_id_lower or 'btcs' in pool_id_lower or daemon_port == 10567:
+                        detected_coin = 'BTCS'
+                        default_port = 10567
+                    elif 'bitcoincash' in pool_id_lower or 'bitcoin-cash' in pool_id_lower or 'bch' in pool_id_lower or daemon_port == 8432:
                         detected_coin = 'BCH'
                         default_port = 8432
                     elif 'bitcoinii' in pool_id_lower or 'bitcoin-ii' in pool_id_lower or 'bitcoin2' in pool_id_lower or 'bc2' in pool_id_lower or 'bcii' in pool_id_lower or daemon_port == 8339:
@@ -4128,13 +4151,18 @@ def load_multi_coin_config():
                     elif 'namecoin' in pool_id_lower or 'nmc' in pool_id_lower or daemon_port == 8336:
                         detected_coin = 'NMC'
                         default_port = 8336
+                    elif 'syscoin' in pool_id_lower or 'sys' in pool_id_lower or daemon_port == 8370:
+                        detected_coin = 'SYS'
+                        default_port = 8370
                     elif 'myriad' in pool_id_lower or 'xmy' in pool_id_lower or daemon_port == 10889:
                         detected_coin = 'XMY'
                         default_port = 10889
                     elif 'fractal' in pool_id_lower or 'fbtc' in pool_id_lower or daemon_port == 8340:
                         detected_coin = 'FBTC'
                         default_port = 8340
-                        default_port = 8344
+                    elif 'ecash' in pool_id_lower or 'xec' in pool_id_lower or daemon_port == 9004:
+                        detected_coin = 'XEC'
+                        default_port = 9004
                     elif 'pepecoin' in pool_id_lower or 'pep' in pool_id_lower or daemon_port == 33873:
                         detected_coin = 'PEP'
                         default_port = 33873
@@ -10867,7 +10895,7 @@ def reset_stats():
 
 
 # Maps every supported pool ID to its coin symbol. Used by /api/worker-stats and
-# the dashboard's coin-keyed renderer so all 17 coins surface in the Worker
+# the dashboard's coin-keyed renderer so all 16 coins surface in the Worker
 # Statistics panel, not just the five sha256d coins listed in the upstream port.
 WORKER_STATS_POOL_MAP = {
     # SHA-256d
@@ -15537,7 +15565,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.5.2"},
+        "footer": {"text": f"Spiral Pool v2.5.3"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -19655,7 +19683,7 @@ def get_power_stats():
     # Calculate efficiency (J/TH)
     efficiency_jth = (total_watts / total_hashrate_ths) if total_hashrate_ths > 0 else 0
 
-    # Get current coin info for profitability (dynamic, supports all 17 coins)
+    # Get current coin info for profitability (dynamic, supports all 16 coins)
     # Use power_cost currency for profitability calculations (or CAD fallback)
     power_currency = power_config.get("currency", "CAD").upper()
     cur_meta = DASHBOARD_CURRENCIES.get(power_currency, DASHBOARD_CURRENCIES["CAD"])

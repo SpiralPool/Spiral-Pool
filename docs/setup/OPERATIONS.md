@@ -424,7 +424,7 @@ spiralctl mining merge enable doge,pep   # LTC parent
 
 | Port | Service |
 |------|---------|
-| 3333-20337 | Stratum (see [REFERENCE.md](../reference/REFERENCE.md)) |
+| 3333-18340 | Stratum (see [REFERENCE.md](../reference/REFERENCE.md)) |
 | 4000 | REST API |
 | 1618 | Dashboard |
 | 9100 | Prometheus metrics |
@@ -787,4 +787,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.2*
+*Spiral Pool — Phi Hash Reactor 2.5.3*

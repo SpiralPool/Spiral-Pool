@@ -1357,8 +1357,6 @@ func getDefaultPortForCoin(symbol string) int {
 		return 10889 // FIX: Was 10888 (P2P port). RPC port is 10889.
 	case "FBTC", "FRACTALBTC", "FRACTAL-BTC":
 		return 8340 // FIX: Was 8341 (P2P port). RPC port is 8340.
-	case "":
-		return 8344
 	case "XEC", "ECASH":
 		return 9004
 	default:

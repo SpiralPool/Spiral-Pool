@@ -227,7 +227,6 @@ The multi-coin port must not conflict with any per-coin stratum port. The defaul
 | Myriadcoin | 17335 | 17336 | 17337 |
 | Fractal Bitcoin | 18335 | 18336 | 18337 |
 | eCash (XEC) | 18338 | 18339 | 18340 |
-| 20335 | 20336 | 20337 |
 | **Multi-Coin Port** | **16180** | — | — |
 
 ### Service Ports (no conflicts)

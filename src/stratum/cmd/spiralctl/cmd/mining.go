@@ -95,7 +95,6 @@ var syncRequirements = map[string]struct {
 	"sys":  {85, "1-2 days"},
 	"xmy":  {6, "< 1 day"},
 	"fbtc": {50, "< 1 day"}, // Fractal Bitcoin: 30-second blocks, fast sync
-	"": {5, "< 1 day"}, // : SHA-256d standalone
 	"ltc":  {180, "2-4 days"},
 	"doge": {75, "1-2 days"},
 	"pep":  {2, "< 1 day"},

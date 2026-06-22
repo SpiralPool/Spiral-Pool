@@ -71,7 +71,6 @@ $Script:CoinConfig = @{
     SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  StratumPort=15335; TlsPort=15337; Profile="sys";        CliName="syscoin-cli";          ContainerName="spiralpool-syscoin" }
     XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; StratumPort=17335; TlsPort=17337; Profile="xmy";        CliName="myriadcoin-cli";       ContainerName="spiralpool-myriadcoin" }
     FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  StratumPort=18335; TlsPort=18337; Profile="fbtc";       CliName="bitcoin-cli";          ContainerName="spiralpool-fractalbitcoin" }
- = @{ Container=""; RpcPort=8344; P2pPort=8345; StratumPort=20335; TlsPort=20337; Profile=""; CliName="-cli"; ContainerName="spiralpool-" }
     LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  StratumPort=7333;  TlsPort=7335;  Profile="ltc";        CliName="litecoin-cli";         ContainerName="spiralpool-litecoin" }
     DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; StratumPort=8335;  TlsPort=8342;  Profile="doge";       CliName="dogecoin-cli";         ContainerName="spiralpool-dogecoin" }
     "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; StratumPort=3336;  TlsPort=3338;  Profile="dgb-scrypt"; CliName="digibyte-cli";         ContainerName="spiralpool-digibyte" }

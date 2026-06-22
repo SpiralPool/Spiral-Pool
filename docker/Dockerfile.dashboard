@@ -5,7 +5,7 @@
 # ║                      SPIRAL DASHBOARD - DOCKER IMAGE                       ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM python:3.12.10-slim
+FROM python:3.14-slim
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool Dashboard"

@@ -13,7 +13,7 @@
 # ║   SUPPORTED COINS:                                                        ║
 # ║   - SHA-256d: DigiByte, Bitcoin, Bitcoin Cash, Bitcoin Cash II,          ║
 # ║               Bitcoin II, Bitcoin Silver, Namecoin, Syscoin*,            ║
-# ║ Myriadcoin, Fractal Bitcoin, eCash ║
+# ║               Myriadcoin, Fractal Bitcoin, eCash                 ║
 # ║               (* Syscoin = merge-mining only, requires BTC parent)       ║
 # ║   - Scrypt:   Litecoin, Dogecoin, DigiByte-Scrypt, PepeCoin, Catcoin    ║
 # ║                                                                            ║
@@ -43,7 +43,7 @@
 #   docker compose --profile nmc up -d        # Namecoin
 #   docker compose --profile xmy up -d        # Myriadcoin
 #   docker compose --profile fbtc up -d       # Fractal Bitcoin
-# docker compose --profile up -d # #   docker compose --profile btcs up -d       # Bitcoin Silver
+#   docker compose --profile btcs up -d       # Bitcoin Silver
 #   docker compose --profile ltc up -d        # Litecoin
 #   docker compose --profile doge up -d       # Dogecoin
 #   docker compose --profile dgb-scrypt up -d # DigiByte-Scrypt (uses DGB node)
@@ -70,7 +70,6 @@
 #     XMY:                           17335   17336   17337   10889   10888
 #     FBTC:                          18335   18336   18337   8340    8341
 #     XEC:                           18338   18339   18340   9004    8343
-# : 20335 20336 20337 8344 8345
 #     BTCS:                          11335   11336   11337   10567   10566
 #   Scrypt:
 #     LTC:                           7333    7334    7335    9332    9333
@@ -520,10 +519,6 @@ services:
       retries: 5
       start_period: 300s
 
- # - SHA-256d (standalone, post-quantum)
-  # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
- # NOTE: is a standalone SHA-256d coin with post-quantum (Dilithium) address support
-
   # Syscoin (SYS) - SHA-256d (merge-mining only, requires BTC parent)
   # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
   # NOTE: SYS cannot be solo mined — it is always merge-mined with BTC.
@@ -749,8 +744,8 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # NOTE: no-new-privileges NOT set - official postgres image uses gosu
   postgres:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
-    image: postgres:18.1-alpine
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: postgres:18.4-alpine
     container_name: spiralpool-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -784,7 +779,7 @@ services:
   # SPIRAL STRATUM (POOL SERVER)
   # ═══════════════════════════════════════════════════════════════════════════
   stratum:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -854,9 +849,6 @@ services:
       - "18338:18338"   # XEC Stratum V1
       - "18339:18339"   # XEC Stratum V2 (Noise)
       - "18340:18340"   # XEC Stratum TLS
- - "20335:20335" # Stratum V1
- - "20336:20336" # Stratum V2 (Noise)
- - "20337:20337" # Stratum TLS
       # API
       - "4000:4000"     # Pool API
       - "9100:9100"     # Prometheus metrics
@@ -893,9 +885,6 @@ services:
         condition: service_healthy
         required: false
       ecash:
-        condition: service_healthy
-        required: false
- :
         condition: service_healthy
         required: false
       syscoin:
@@ -1047,7 +1036,7 @@ services:
   # SPIRAL DASHBOARD
   # ═══════════════════════════════════════════════════════════════════════════
   dashboard:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
     build:
       context: ..
       dockerfile: docker/Dockerfile.dashboard
@@ -1109,7 +1098,7 @@ services:
   # SPIRAL SENTINEL (MONITORING & ALERTS)
   # ═══════════════════════════════════════════════════════════════════════════
   sentinel:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
     build:
       context: ..
       dockerfile: docker/Dockerfile.sentinel
@@ -1187,8 +1176,8 @@ services:
   # PROMETHEUS (METRICS COLLECTION)
   # ═══════════════════════════════════════════════════════════════════════════
   prometheus:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
-    image: prom/prometheus:v2.51.0
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: prom/prometheus:v3.12.0
     container_name: spiralpool-prometheus
     restart: unless-stopped
     logging: *default-logging
@@ -1227,8 +1216,8 @@ services:
   # GRAFANA (DASHBOARDS & ALERTING)
   # ═══════════════════════════════════════════════════════════════════════════
   grafana:
- profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
-    image: grafana/grafana-oss:10.4.2
+    profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
+    image: grafana/grafana-oss:13.0.2
     container_name: spiralpool-grafana
     restart: unless-stopped
     logging: *default-logging

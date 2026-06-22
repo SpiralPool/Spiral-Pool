@@ -79,7 +79,6 @@ var DefaultStratumPorts = []int{
 	15335, // SYS (Syscoin)
 	17335, // XMY (Myriad)
 	18335, // FBTC (Fractal Bitcoin)
-	20335, // ()
 }
 
 // NewScanner creates a new pool discovery scanner.

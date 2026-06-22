@@ -1336,7 +1336,6 @@ class MultiCoinExtendedScenarios:
             "SYS": CoinConfig("SYS", "sha256d", {"stratum": 11333}),
             "XMY": CoinConfig("XMY", "sha256d", {"stratum": 12333}),
             "FBTC": CoinConfig("FBTC", "sha256d", {"stratum": 13333}),
- "": CoinConfig("sha256d", {"stratum": 20335}),
             "LTC": CoinConfig("LTC", "scrypt", {"stratum": 7333}),
             "DOGE": CoinConfig("DOGE", "scrypt", {"stratum": 8335}),
             "DGB-SCRYPT": CoinConfig("DGB-SCRYPT", "scrypt", {"stratum": 14333}),

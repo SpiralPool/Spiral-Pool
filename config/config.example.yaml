@@ -944,14 +944,14 @@ coins:
 #   enabled: true
 #   port: 16180                  # Dedicated stratum port (default: 16180)
 #   coins:
-# :
+#     DGB:
 #       weight: 96               # 96% of daily mining time (~23 hours)
 #       start_hour: 0            # Optional: start at midnight (0-23.99)
 #     BC2:
 #       weight: 4                # 4% of daily mining time (~1 hour)
 #       start_hour: 23           # Optional: start at 11 PM
 #   check_interval: 30s          # How often to check schedule boundaries
-# prefer_coin: # Default coin / tie-breaker
+#   prefer_coin: DGB             # Default coin / tie-breaker
 #   min_time_on_coin: 60s        # Minimum time before switch (prevents flip-flopping)
 #   timezone: America/New_York   # IANA timezone for 24h schedule
 #

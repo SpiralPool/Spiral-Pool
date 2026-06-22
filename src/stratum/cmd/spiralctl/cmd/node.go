@@ -78,7 +78,6 @@ func printNodeUsage() {
 	fmt.Println("  sys        Syscoin (AuxPoW)")
 	fmt.Println("  xmy        Myriad (AuxPoW)")
 	fmt.Println("  fbtc       Fractal Bitcoin (AuxPoW)")
-	fmt.Println(" ")
 	fmt.Println()
 	fmt.Println("Nodes (Scrypt):")
 	fmt.Println("  ltc        Litecoin")

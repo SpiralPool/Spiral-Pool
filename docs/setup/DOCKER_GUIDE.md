@@ -404,7 +404,6 @@ After the pool starts (allow 5-10 minutes for blockchain daemon initialization):
 | Myriadcoin | 17335 | 17336 | 17337 |
 | Fractal BTC | 18335 | 18336 | 18337 |
 | eCash | 18338 | 18339 | 18340 |
-| 20335 | 20336 | 20337 |
 
 > V2 ports are only active when `STRATUM_V2_ENABLED=true` is set in `.env`. V2 uses the Noise NX protocol (`secp256k1 + ChaCha20-Poly1305 + SHA-256`) — encryption keys are generated in memory at startup, no certificate files needed.
 
@@ -784,7 +783,7 @@ What it does:
 - Prints a heartbeat while running so you know it's alive
 - **Removes portproxy rules on Ctrl+C** (closing the window does not clean up — use Ctrl+C to stop)
 
-Point your ASIC at your Windows LAN IP with the standard stratum port (e.g. `192.168.1.161:20335` for ). The proxy handles the rest.
+Point your ASIC at your Windows LAN IP with the standard stratum port (e.g. `192.168.1.161:3333` for DigiByte). The proxy handles the rest.
 
 > **Note:** The proxy must be running whenever miners need to connect. Portproxy rules are ephemeral — a reboot or `wsl --shutdown` wipes them. Firewall rules and the Task Scheduler entry persist. The auto-start task re-applies portproxy rules at next logon.
 

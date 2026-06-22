@@ -32,7 +32,7 @@ $COIN_PORTS = @(
     [pscustomobject]@{ Num=13; Code='SYS';       Name='Syscoin (SHA-256d)';             V1=15335; V2=15336; TLS=15337 },
     [pscustomobject]@{ Num=14; Code='XMY';       Name='Myriadcoin (SHA-256d)';          V1=17335; V2=17336; TLS=17337 },
     [pscustomobject]@{ Num=15; Code='FBTC';      Name='Fractal Bitcoin (SHA-256d)';     V1=18335; V2=18336; TLS=18337 },
- [pscustomobject]@{ Num=16; Code=''; Name='(SHA-256d)'; V1=20335; V2=20336; TLS=20337 },
+    [pscustomobject]@{ Num=16; Code='XEC';       Name='eCash (SHA-256d)';               V1=18338; V2=18339; TLS=18340 },
     # Smart Multi-Coin Stratum port — used when install.sh was run in multi-coin mode.
     # Routes all coins through a single entry-point; miners connect to port 16180.
     [pscustomobject]@{ Num=17; Code='MULTI';     Name='Smart Multi-Coin Stratum';       V1=16180; V2=0;     TLS=0     }
@@ -313,7 +313,7 @@ if ($wslIP -eq $lanIP) {
     if ($cont -notmatch '^[Yy]') {
         Write-Host ""
         Write-Host "  Exiting. No rules applied." -ForegroundColor Green
-        Write-Host "  Your miners can connect to $lanIP:<stratum_port> directly." -ForegroundColor Cyan
+        Write-Host "  Your miners can connect to ${lanIP}:<stratum_port> directly." -ForegroundColor Cyan
         Read-Host "  Press Enter to exit"
         exit 0
     }
@@ -713,7 +713,7 @@ try {
                     foreach ($port in $selectedPorts) {
                         $r = netsh interface portproxy add v4tov4 listenport=$port listenaddress=0.0.0.0 connectport=$port connectaddress=$wslIP 2>&1
                         if ($LASTEXITCODE -eq 0) { $addedPorts += $port }
-                        else { Write-Host "  [!] netsh failed for port $port: $r" -ForegroundColor Red }
+                        else { Write-Host "  [!] netsh failed for port ${port}: $r" -ForegroundColor Red }
                     }
                     Write-Host "  [+] Rules updated -> $wslIP  ($($addedPorts.Count) rule(s) active)" -ForegroundColor Green
                 }

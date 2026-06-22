@@ -794,6 +794,20 @@ get_wallet_dir() {
         SYS) echo "$base_dir/sys/wallets" ;;
         XMY) echo "$base_dir/xmy/wallets" ;;
         FBTC) echo "$base_dir/fbtc/wallets" ;;
+        XEC) echo "$base_dir/xec/wallets" ;;
+        *) echo "$base_dir/${symbol,,}/wallets" ;;
+    esac
+}
+
+# Get the config file path for a coin
+get_conf_path() {
+    local symbol="$1"
+    local base_dir="/spiralpool"
+
+    case "$symbol" in
+        DGB|DGB-SCRYPT)
+            echo "$base_dir/dgb/digibyte.conf"
+            ;;
         BCH2)
             echo "$base_dir/bch2/bitcoincashii.conf"
             ;;
@@ -988,7 +1002,6 @@ ensure_wallet_and_address() {
     #   DOGE - NO address_type param (no SegWit, legacy D... addresses)
     #   BC2 - NO address_type param (older Bitcoin fork)
     #   XMY, FBTC - may or may not support, try legacy for safety
- # - uses post-quantum "pq" address type (handled in separate case above)
     local new_address
     local addr_type=""
     local use_addr_type=true
@@ -1291,7 +1304,6 @@ elif [ -n "$V1_INFO" ]; then
         syscoin|sys) COIN_SYMBOL="SYS" ;;
         myriadcoin|myriad|xmy) COIN_SYMBOL="XMY" ;;
         fractalbitcoin|fractal|fbtc) COIN_SYMBOL="FBTC" ;;
- |) COIN_SYMBOL="" ;;
         ecash|bitcoin-abc|xec) COIN_SYMBOL="XEC" ;;
         *) COIN_SYMBOL="${COIN_RAW^^}" ;;
     esac

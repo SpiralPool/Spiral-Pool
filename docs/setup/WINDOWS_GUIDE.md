@@ -87,12 +87,11 @@ The installer will:
 | 8 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
 | 9 | FBTC | Fractal Bitcoin | SHA256d | ~10 GB | 18335 |
 | 10 | XEC | eCash | SHA256d | ~20 GB | 18338 |
-| 11 | SHA256d | ~5 GB | 20335 |
-| 12 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
-| 13 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
-| 14 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
-| 15 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
-| 16 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
+| 11 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
+| 12 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
+| 13 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
+| 14 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
+| 15 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
 | 17 | SYS | Syscoin | SHA256d | ~80 GB | 15335 |
 
 > Syscoin (SYS) appears in the menu but cannot be mined standalone. It requires merge mining with BTC, which is only available via native Linux installation.
