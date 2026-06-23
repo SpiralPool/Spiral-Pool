@@ -108,7 +108,6 @@ Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spir
 | Myriad | XMY | 1 min | BTC (AuxPoW, chain ID 90) |
 | Fractal Bitcoin | FBTC | 30 sec | BTC (AuxPoW, chain ID 8228) |
 | eCash | XEC | 10 min | &mdash; |
-| 2.5 min | &mdash; |
 
 ### Scrypt
 
