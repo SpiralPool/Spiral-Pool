@@ -36,9 +36,9 @@ Spiral Pool is **free, open-source, self-hosted Stratum mining pool software** f
 
 Block rewards are embedded directly in the coinbase transaction paying the **miner's own wallet address**. The intended fund flow is: **Blockchain &rarr; Coinbase Transaction &rarr; Miner's Wallet.** There is no pool wallet, no intermediate balance, no fees, and no withdrawal process &mdash; the software is designed to never hold, route, or access funds at any point in the payment path.
 
-At its core is the **Spiral Router** &mdash; a miner classification engine that identifies miners via 47 verified user-agent patterns at connection time and maps each to one of 15 SHA-256d or 8 Scrypt difficulty profiles before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4&times; up / 0.75&times; down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
+At its core is the **Spiral Router** &mdash; a miner classification engine that identifies miners via 47 verified user-agent patterns at connection time and maps each to one of 14 SHA-256d or 8 Scrypt difficulty profiles before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4&times; up / 0.75&times; down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
 
-17 coins. 2 algorithms. 6 merge-mining pairs. One binary.
+16 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
 ### No Tiers. No Licensing. No Strings.
 
