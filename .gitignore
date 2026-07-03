@@ -103,6 +103,12 @@ backups/
 *.backup
 
 # =========================
+# Merge / rebase / patch artifacts
+# =========================
+*.orig
+*.rej
+
+# =========================
 # Test artifacts
 # =========================
 coverage.out

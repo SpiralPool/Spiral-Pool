@@ -1,3 +1,9 @@
+# Default: auto-detect text and normalize it to LF on commit (binaries are
+# auto-detected and left untouched; explicit binary rules below reinforce it).
+# This also covers extensionless text files (LICENSE, CONTRIBUTORS, VERSION,
+# DCO), which previously had no rule and triggered CRLF conversion warnings.
+* text=auto eol=lf
+
 # Force LF line endings for all shell scripts, regardless of OS
 *.sh        text eol=lf
 *.py        text eol=lf
