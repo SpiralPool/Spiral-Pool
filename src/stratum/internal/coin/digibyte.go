@@ -360,6 +360,18 @@ func (c *DigiByteCoin) MultiAlgoGBTParam() string {
 	return "sha256d"
 }
 
+// GBTRules returns the getblocktemplate rules for DigiByte.
+//
+// "digidollar-oracle" (added in DigiByte Core v9.26.3) asks the node to include
+// a fresh MuSig2 oracle price commitment (default_oracle_commitment) in the
+// template when DigiDollar is active and a bundle is available, so the pool can
+// carry price-dependent DigiDollar mint/redeem transactions. Requesting the rule
+// is safe before activation — the node simply returns a normal template with no
+// commitment. Inherited by DigiByteScryptCoin (same chain) via embedding.
+func (c *DigiByteCoin) GBTRules() []string {
+	return []string{"segwit", "digidollar-oracle"}
+}
+
 // Register DigiByte on package init
 func init() {
 	Register("DGB", NewDigiByteCoin)

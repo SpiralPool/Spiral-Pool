@@ -401,6 +401,125 @@ func TestBuildCoinbase_WithWitnessCommitment(t *testing.T) {
 	}
 }
 
+// DigiByte DigiDollar (v9.26.3+): default_oracle_commitment must be copied
+// verbatim into the coinbase as a single zero-value output, appended after the
+// witness commitment.
+func TestBuildCoinbase_WithOracleCommitment(t *testing.T) {
+	t.Parallel()
+	m := newTestJobManager()
+
+	// Plausible oracle commitment scriptPubKey (OP_RETURN + 32-byte push).
+	oracleHex := "6a20" + strings.Repeat("cd", 32)
+	oracleBytes, _ := hex.DecodeString(oracleHex)
+
+	template := &daemon.BlockTemplate{
+		Height:                  200000,
+		CoinbaseValue:           500000000,
+		Bits:                    "1d00ffff",
+		DefaultOracleCommitment: oracleHex,
+	}
+
+	_, cb2 := m.buildCoinbase(template)
+
+	// Output count = 2 (pool reward + oracle commitment; no witness here)
+	if cb2[4] != 0x02 {
+		t.Fatalf("output count with oracle = %d, want 2", cb2[4])
+	}
+
+	// The oracle output sits immediately before the 4-byte locktime:
+	// [8-byte zero value][varint len][script]
+	end := len(cb2) - 4
+	scriptStart := end - len(oracleBytes)
+	if scriptStart < 0 || string(cb2[scriptStart:end]) != string(oracleBytes) {
+		t.Fatalf("oracle script not found verbatim at tail of cb2")
+	}
+	if cb2[scriptStart-1] != byte(len(oracleBytes)) {
+		t.Errorf("oracle script varint len = 0x%02x, want 0x%02x", cb2[scriptStart-1], byte(len(oracleBytes)))
+	}
+	for i := scriptStart - 1 - 8; i < scriptStart-1; i++ {
+		if cb2[i] != 0x00 {
+			t.Errorf("oracle output value byte %d = 0x%02x, want 0x00 (zero value)", i, cb2[i])
+			break
+		}
+	}
+}
+
+// With both commitments present the count is 3 and the oracle output is LAST.
+func TestBuildCoinbase_WitnessAndOracleCommitment(t *testing.T) {
+	t.Parallel()
+	m := newTestJobManager()
+
+	witnessHex := "6a" + "24" + "aa21a9ed" + strings.Repeat("ab", 32)
+	oracleHex := "6a20" + strings.Repeat("cd", 32)
+	oracleBytes, _ := hex.DecodeString(oracleHex)
+
+	template := &daemon.BlockTemplate{
+		Height:                   200001,
+		CoinbaseValue:            500000000,
+		Bits:                     "1d00ffff",
+		DefaultWitnessCommitment: witnessHex,
+		DefaultOracleCommitment:  oracleHex,
+	}
+
+	_, cb2 := m.buildCoinbase(template)
+
+	if cb2[4] != 0x03 {
+		t.Fatalf("output count with witness+oracle = %d, want 3", cb2[4])
+	}
+	// Oracle is appended after the witness commitment, so it ends cb2 (pre-locktime).
+	end := len(cb2) - 4
+	scriptStart := end - len(oracleBytes)
+	if scriptStart < 0 || string(cb2[scriptStart:end]) != string(oracleBytes) {
+		t.Fatalf("oracle script not appended after witness commitment")
+	}
+}
+
+// Absent oracle commitment => normal single-output coinbase (self-gating).
+func TestBuildCoinbase_NoOracleCommitment(t *testing.T) {
+	t.Parallel()
+	m := newTestJobManager()
+
+	template := &daemon.BlockTemplate{
+		Height:        200002,
+		CoinbaseValue: 500000000,
+		Bits:          "1d00ffff",
+	}
+
+	_, cb2 := m.buildCoinbase(template)
+
+	if cb2[4] != 0x01 {
+		t.Errorf("output count without oracle = %d, want 1", cb2[4])
+	}
+}
+
+// The merge-mining-parent path (buildCoinbase2Only) must also carry the oracle
+// commitment, since DGB can be an AuxPoW parent.
+func TestBuildCoinbase2Only_WithOracleCommitment(t *testing.T) {
+	t.Parallel()
+	m := newTestJobManager()
+
+	oracleHex := "6a20" + strings.Repeat("ef", 32)
+	oracleBytes, _ := hex.DecodeString(oracleHex)
+
+	template := &daemon.BlockTemplate{
+		Height:                  200003,
+		CoinbaseValue:           500000000,
+		Bits:                    "1d00ffff",
+		DefaultOracleCommitment: oracleHex,
+	}
+
+	_, cb2 := m.buildCoinbase2Only(template)
+
+	if cb2[4] != 0x02 {
+		t.Fatalf("merge-path output count with oracle = %d, want 2", cb2[4])
+	}
+	end := len(cb2) - 4
+	scriptStart := end - len(oracleBytes)
+	if scriptStart < 0 || string(cb2[scriptStart:end]) != string(oracleBytes) {
+		t.Fatalf("oracle script not present in merge-mining coinbase2")
+	}
+}
+
 func TestBuildCoinbase_NegativeCoinbaseValue_ClampedToZero(t *testing.T) {
 	t.Parallel()
 	m := newTestJobManager()

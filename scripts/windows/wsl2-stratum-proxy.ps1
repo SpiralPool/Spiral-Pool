@@ -85,7 +85,7 @@ Write-Host "    Windows shuts down, restarts, or sleeps." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  I/O performance" -ForegroundColor White
 Write-Host "    Blockchain sync is 2-4x slower due to the virtual disk (.vhdx)." -ForegroundColor Gray
-Write-Host "    Large chains (BTC: ~600 GB, DGB: ~60 GB) take significantly longer." -ForegroundColor Gray
+Write-Host "    Large chains (BTC: ~600 GB, DGB: ~80 GB) take significantly longer." -ForegroundColor Gray
 Write-Host "    PostgreSQL write performance under mining load is also reduced." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Memory cap" -ForegroundColor White

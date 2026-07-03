@@ -473,4 +473,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.3*
+*Spiral Pool — Spiral Citadel 2.6.0*

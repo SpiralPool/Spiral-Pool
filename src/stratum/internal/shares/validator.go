@@ -510,8 +510,28 @@ func buildBlockHeader(job *protocol.Job, share *protocol.Share) ([]byte, error) 
 		if mask == 0 {
 			mask = 0x1FFFE000 // Default BIP320 mask as fallback
 		}
+		// PRESERVE base-version bits: OR the miner's rolled bits onto the base
+		// version rather than clearing the masked region first.
+		//
+		// Miners (ESP-Miner/NerdQAxe, cgminer) roll version by ORing their chosen
+		// bits onto the base nVersion — they never clear a bit the daemon already
+		// set. If the daemon sets a bit that falls INSIDE the BIP320 mask
+		// (0x1FFFE000), a `(v &^ mask)` first-clear would strip it, producing a
+		// header version that differs from the miner's by that bit → a completely
+		// different SHA256d → every version-rolled share rejected as low-difficulty.
+		//
+		// INCIDENT: DigiByte Core v9.26.3 (DigiDollar) sets bit 0x00800000 (bit 23,
+		// inside the mask) in the block version. Base 0x20800202 + rolled 0x02768000:
+		//   miner: 0x20800202 | 0x02768000            = 0x22F68202 (bit 23 kept)
+		//   old:   (0x20800202 &^ mask) | (bits&mask)  = 0x22768202 (bit 23 stripped)
+		// The OR form matches the miner and keeps the daemon-required bit, so the
+		// block we later submit (buildFullBlock reuses this header) stays valid.
+		//
+		// Safe for all other coins: when the base version has no bits inside the
+		// mask (BTC/LTC/DOGE base 0x20000000, bit 29 outside), `v | (bits&mask)` is
+		// identical to the previous expression.
 		v := binary.BigEndian.Uint32(version)
-		v = (v &^ mask) | (share.VersionBits & mask)
+		v |= share.VersionBits & mask
 		binary.LittleEndian.PutUint32(header[0:4], v)
 	} else {
 		copy(header[0:4], reverseBytes(version))

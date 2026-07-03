@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v2.5.3
+    Spiral Pool - Windows Installer v2.6.0
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 2.5.3
+    Version: 2.6.0
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "2.5.3"
+$Script:Version = "2.6.0"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -72,7 +72,7 @@ $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $Script:CoinConfig = @{
-    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="60 GB";   CliName="digibyte-cli" }
+    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="80 GB";   CliName="digibyte-cli" }
     BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  V2Port=4334;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="600 GB";  CliName="bitcoin-cli" }
     BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  V2Port=5334;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="250 GB";  CliName="bitcoin-cli" }
     BCH2         = @{ Container="bitcoincashii";  RpcPort=8533;  P2pPort=8534;  ZmqPort=28533; RpcUser="spiralbch2"; StratumPort=5336;  V2Port=5337;  TlsPort=5338;  PoolCoin="bitcoincashii";   Profile="bch2";       Algo="SHA256d"; Storage="20 GB";   CliName="bitcoincashII-cli" }
@@ -85,7 +85,7 @@ $Script:CoinConfig = @{
     XEC          = @{ Container="ecash";          RpcPort=9004;  P2pPort=8343;  ZmqPort=28335; RpcUser="spiralxec";  StratumPort=18338; V2Port=18339; TlsPort=18340; PoolCoin="ecash";            Profile="xec";        Algo="SHA256d"; Storage="20 GB";   CliName="bitcoin-cli" }
     LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
     DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
-    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="60 GB";   CliName="digibyte-cli" }
+    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="80 GB";   CliName="digibyte-cli" }
     PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; ZmqPort=28873; RpcUser="spiralpep";  StratumPort=10335; V2Port=10336; TlsPort=10337; PoolCoin="pepecoin";        Profile="pep";        Algo="Scrypt";  Storage="5 GB";    CliName="pepecoin-cli" }
     CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  ZmqPort=28932; RpcUser="spiralcat";  StratumPort=12335; V2Port=12336; TlsPort=12337; PoolCoin="catcoin";         Profile="cat";        Algo="Scrypt";  Storage="5 GB";    CliName="catcoin-cli" }
 }
@@ -135,7 +135,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.5.3" -ForegroundColor DarkGray
+    Write-Host "                           v2.6.0" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (17 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -239,9 +239,9 @@ function Show-Help {
   INTERACTIVE MODE:
     When run without -Unattended, the installer presents a coin selection menu:
 
-    SHA256d: DGB (~60GB), BTC (~600GB), BCH (~250GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
+    SHA256d: DGB (~80GB), BTC (~600GB), BCH (~250GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
              NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), XEC (~20GB)
-    Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~60GB), PEP (~5GB), CAT (~5GB)
+    Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~80GB), PEP (~5GB), CAT (~5GB)
 
     You will be prompted for:
     - Wallet address for the selected coin
@@ -407,7 +407,7 @@ function Show-SoloCoinMenu {
         Write-Host ""
         Write-Host "   [1] " -NoNewline -ForegroundColor Cyan
         Write-Host "DGB  - DigiByte" -NoNewline -ForegroundColor Green
-        Write-Host "        ~60 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
+        Write-Host "        ~80 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
         Write-Host "   [2] " -NoNewline -ForegroundColor Cyan
         Write-Host "BTC  - Bitcoin" -NoNewline -ForegroundColor Yellow
         Write-Host "         ~600 GB  Port 4333" -ForegroundColor DarkGray
@@ -449,7 +449,7 @@ function Show-SoloCoinMenu {
         Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
         Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
         Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
-        Write-Host " ~60 GB   Port 3336" -ForegroundColor DarkGray
+        Write-Host " ~80 GB   Port 3336" -ForegroundColor DarkGray
         Write-Host "  [15] " -NoNewline -ForegroundColor Cyan
         Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
         Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
@@ -668,7 +668,7 @@ function Get-BlockchainStorageLocations {
         $volume = Get-Volume -DriveLetter $driveLetter.Substring(0,1) -ErrorAction SilentlyContinue
         if ($volume) {
             $freeGB = [math]::Round($volume.SizeRemaining / 1GB, 0)
-            # Parse required GB from storage string (e.g. "60 GB" -> 60)
+            # Parse required GB from storage string (e.g. "80 GB" -> 80)
             $requiredGB = [int]($storageSize -replace '[^\d]', '')
             if ($freeGB -lt $requiredGB) {
                 Write-Log "$SelectedCoin requires ~$storageSize but $driveLetter only has $freeGB GB free" "WARN"
@@ -1494,7 +1494,7 @@ function New-EnvironmentFile {
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.5.3 Docker Configuration
+# Spiral Pool v2.6.0 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 

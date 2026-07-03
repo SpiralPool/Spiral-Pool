@@ -5,7 +5,10 @@
 server=1
 daemon=0
 printtoconsole=1
+# DigiByte Core v9.26.3+ requires txindex for DigiDollar and refuses to start
+# when pruned — DGB runs as a full node (pruning is not supported).
 txindex=1
+prune=0
 listen=1
 port=12024
 

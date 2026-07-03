@@ -22,6 +22,10 @@ Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
   - GetBlocksWithOrphans dynamic limit (pageSize query parameter)
   - Docker ZMQ port exposures, extra_hosts, PROMETHEUS_URL additions
   - Full stack fixes: stratum API, Sentinel reliability, dashboard math
+  - BIP9 version-bits capture: VBAvailable/VBRequired fields on BlockTemplate
+    for reading getblocktemplate soft-fork signaling status (commit 3277cce).
+    Spiral Pool's DigiDollar oracle coinbase support is a separate,
+    independently-written implementation and is not derived from this work.
   - XEC (eCash / Bitcoin ABC) full coin integration:
     - ECashCoin Go type: CashAddr validation (ecash:q/p), RTT difficulty,
       MinerFund and StakingRewards mandatory coinbase outputs

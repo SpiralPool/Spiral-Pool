@@ -17,7 +17,7 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool - Multi-Coin Solo Mining Pool"
-LABEL version="2.5.3"
+LABEL version="2.6.0"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,7 +25,7 @@ ENV TZ=UTC
 
 # Build arguments for configuration
 ARG GO_VERSION=1.26.4
-ARG DIGIBYTE_VERSION=8.26.2
+ARG DIGIBYTE_VERSION=9.26.3
 ARG POSTGRES_VERSION=18
 
 # Environment variables for runtime

@@ -801,4 +801,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Phi Hash Reactor 2.5.3*
+*Spiral Sentinel &mdash; Spiral Citadel 2.6.0*

@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.5.3                                                         ║
+# ║   Version: 2.6.0                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.5.3"
+    VERSION="2.6.0"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -44,7 +44,7 @@ INSTALL_DIR="/spiralpool"
 # blockchain data / wallets / configs on a failed re-run (e.g. adding a coin).
 INSTALL_DIR_PREEXISTED=false
 [[ -d "$INSTALL_DIR" ]] && INSTALL_DIR_PREEXISTED=true
-DIGIBYTE_VERSION="8.26.2"
+DIGIBYTE_VERSION="9.26.3"
 BITCOINII_VERSION="29.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="1.0.2"
@@ -3842,7 +3842,7 @@ select_wsl2_deployment_method() {
     echo ""
     echo -e "  ${YELLOW}4. I/O performance${NC}"
     echo -e "     Blockchain sync uses the WSL2 virtual disk (.vhdx) and is 2-4x slower"
-    echo -e "     than native. Large chains (BTC ~600 GB, DGB ~60 GB) take significantly"
+    echo -e "     than native. Large chains (BTC ~600 GB, DGB ~80 GB) take significantly"
     echo -e "     longer. PostgreSQL write performance under mining load is also reduced."
     echo ""
     echo -e "  ${YELLOW}5. Windows can kill WSL2 without warning${NC}"
@@ -6548,8 +6548,10 @@ generate_docker_dgb_config() {
 # Network
 server=1
 daemon=0
-$PRUNE_CONF_TXINDEX
-$PRUNE_CONF_PRUNE
+# DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar and refuses to start
+# when pruned. DGB is ALWAYS a full node — global pruning does NOT apply here.
+txindex=1
+prune=0
 listen=1
 listenonion=0
 port=12024
@@ -6577,7 +6579,7 @@ rpcworkqueue=64
 # Mining
 algo=sha256d
 
-# Force DNS seed queries on every startup (verified: digibyted 8.26.2)
+# Force DNS seed queries on every startup (verified: digibyted 9.26.3)
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
@@ -7428,7 +7430,7 @@ validate_docker_disk_requirements() {
 
     # Calculate required space based on enabled coins
     # SHA-256d coins
-    [[ "$ENABLE_DGB" == "true" ]] && ((REQUIRED_GB+=70))   # DGB: ~60GB + buffer
+    [[ "$ENABLE_DGB" == "true" ]] && ((REQUIRED_GB+=90))   # DGB: ~80GB + buffer
     [[ "$ENABLE_BTC" == "true" ]] && ((REQUIRED_GB+=700))  # BTC: ~600GB + buffer
     [[ "$ENABLE_BCH" == "true" ]]  && ((REQUIRED_GB+=300))  # BCH: ~250GB + buffer
     [[ "$ENABLE_BCH2" == "true" ]] && ((REQUIRED_GB+=15))  # BCH2: ~10GB + buffer (young chain, Dec 2024)
@@ -7458,7 +7460,7 @@ validate_docker_disk_requirements() {
         echo -e "  Required:  ${GREEN}${REQUIRED_GB} GB${NC}"
         echo ""
         echo -e "  Breakdown:"
-        [[ "$ENABLE_DGB" == "true" ]] && echo -e "    • DigiByte:          ~60 GB"
+        [[ "$ENABLE_DGB" == "true" ]] && echo -e "    • DigiByte:          ~80 GB"
         [[ "$ENABLE_BTC" == "true" ]] && echo -e "    • Bitcoin:           ~600 GB"
         [[ "$ENABLE_BCH" == "true" ]]  && echo -e "    • Bitcoin Cash:      ~250 GB"
         [[ "$ENABLE_BCH2" == "true" ]] && echo -e "    • Bitcoin Cash II:   ~10 GB"
@@ -8503,7 +8505,7 @@ select_coin_mode() {
             echo -e "  ${RED}⚠  IMPORTANT DISCLAIMER:${NC}"
             echo ""
             echo -e "  ${WHITE}Merge mining requires syncing MULTIPLE full blockchains:${NC}"
-            echo -e "    • Parent chain (BTC ~600GB, DGB ~60GB, or LTC ~180GB)"
+            echo -e "    • Parent chain (BTC ~600GB, DGB ~80GB, or LTC ~180GB)"
             echo -e "    • PLUS each auxiliary chain you enable (5-80GB each)"
             echo ""
             echo -e "  ${WHITE}This means:${NC}"
@@ -8651,7 +8653,7 @@ select_merge_mining_parent() {
     echo -e "     ${CYAN}•${NC} Myriad (XMY)           - Multi-algo coin, ~3 GB"
     echo -e "     ${CYAN}•${NC} Fractal Bitcoin (FBTC) - Recursive scaling, ~10 GB"
     echo ""
-    echo -e "     ${WHITE}Requirements:${NC} ~60 GB + aux chains, 4+ GB RAM"
+    echo -e "     ${WHITE}Requirements:${NC} ~80 GB + aux chains, 4+ GB RAM"
     echo -e "     ${DIM}Lighter than BTC — 15s blocks, faster merge mining cycles${NC}"
     echo ""
     echo ""
@@ -8939,7 +8941,7 @@ select_solo_coin_no_merge() {
     echo -e "  ${GREEN} 3)${NC} 🟤 ${WHITE}Bitcoin Cash II (BCH2)${NC}    ~10 GB  | 4+ GB RAM | Port: 5336"
     echo -e "  ${GREEN} 4)${NC} 🔷 ${WHITE}Bitcoin II (BC2)${NC}          ~5 GB   | 4+ GB RAM | Port: 6333"
     echo -e "  ${GREEN} 5)${NC} ⚪ ${WHITE}Bitcoin Silver (BTCS)${NC}     ~5 GB   | 4+ GB RAM | Port: 11335"
-    echo -e "  ${GREEN} 6)${NC} 💎 ${WHITE}DigiByte (DGB)${NC}            ~60 GB  | 4+ GB RAM | Port: 3333"
+    echo -e "  ${GREEN} 6)${NC} 💎 ${WHITE}DigiByte (DGB)${NC}            ~80 GB  | 4+ GB RAM | Port: 3333"
     echo -e "  ${GREEN} 7)${NC} 💚 ${WHITE}eCash (XEC)${NC}              ~20 GB  | 4+ GB RAM | Port: 18338"
     echo ""
     echo ""
@@ -9341,7 +9343,7 @@ select_multi_coins() {
     echo -e "  🟤 ${WHITE}Bitcoin Cash II (BCH2)${NC}     Port: 5336  |  ~15 GB"
     echo -e "  🔷 ${WHITE}Bitcoin II (BC2)${NC}           Port: 6333  |  ~5 GB"
     echo -e "  ⚪ ${WHITE}Bitcoin Silver (BTCS)${NC}      Port: 11335 |  ~8 GB"
-    echo -e "  💎 ${WHITE}DigiByte (DGB)${NC}             Port: 3333  |  ~60 GB"
+    echo -e "  💎 ${WHITE}DigiByte (DGB)${NC}             Port: 3333  |  ~80 GB"
     echo -e "  🔶 ${WHITE}Fractal Bitcoin (FBTC)${NC}     Port: 18335 |  ~10 GB"
     echo -e "  🌀 ${WHITE}Myriad (XMY)${NC}              Port: 17335 |  ~3 GB"
     echo -e "  🔷 ${WHITE}Namecoin (NMC)${NC}             Port: 14335 |  ~12 GB"
@@ -11723,8 +11725,13 @@ prompt_prune_option() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  Pruning reduces disk usage dramatically:"
-    echo -e "  ${GREEN}BTC:${NC} ~600 GB → ~5 GB    ${GREEN}DGB:${NC} ~60 GB → ~5 GB"
-    echo -e "  ${GREEN}BCH:${NC} ~200 GB → ~5 GB    ${GREEN}LTC:${NC} ~100 GB → ~5 GB"
+    echo -e "  ${GREEN}BTC:${NC} ~600 GB → ~5 GB    ${GREEN}BCH:${NC} ~200 GB → ~5 GB"
+    echo -e "  ${GREEN}LTC:${NC} ~100 GB → ~5 GB"
+    echo ""
+    echo -e "  ${YELLOW}NOTE:${NC} DigiByte (DGB) does NOT support pruning. DigiByte Core"
+    echo -e "  v9.26.3+ requires a full transaction index for DigiDollar and will"
+    echo -e "  not start when pruned. DGB always runs as a full node (~80 GB),"
+    echo -e "  even if you enable pruning below (which applies to the other coins)."
     echo ""
     echo -e "  ${YELLOW}IMPORTANT:${NC} The node still downloads and verifies the ENTIRE"
     echo -e "  blockchain first, then prunes (deletes) old blocks."
@@ -11745,6 +11752,9 @@ prompt_prune_option() {
         PRUNE_CONF_TXINDEX=""
         PRUNE_CONF_PRUNE="prune=5000"
         log_success "Pruned mode enabled — nodes will use prune=5000 (~5 GB)"
+        if [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]]; then
+            log_warn "DigiByte (DGB) is excluded from pruning and will run as a full node (~80 GB)"
+        fi
     else
         PRUNE_ENABLED="false"
         PRUNE_CONF_TXINDEX="txindex=1"
@@ -16384,7 +16394,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.5.3 — PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.6.0 — SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -16647,8 +16657,12 @@ blocksonly=0"
 server=1
 daemon=1
 $(if [[ "$TOR_ENABLED" != "true" ]]; then echo "listen=1"; else echo "listen=0"; fi)
-$PRUNE_CONF_TXINDEX
-$PRUNE_CONF_PRUNE
+# DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar consensus and refuses
+# to start with pruning enabled on mainnet (prune and txindex are mutually
+# exclusive). DGB is therefore ALWAYS a full archival node — global pruning does
+# NOT apply here. Do not add a prune= line to this file.
+txindex=1
+prune=0
 
 # === RPC CONFIGURATION ===
 rpcuser=$DGB_RPC_USER
@@ -16715,7 +16729,7 @@ seednode=seed.quakeguy.com
 seednode=seed.aroundtheblock.app
 seednode=seed.digibyte.services"; fi)
 
-# Force DNS seed queries on every startup (verified: digibyted 8.26.2 -help confirms support)
+# Force DNS seed queries on every startup (verified: digibyted 9.26.3 -help confirms support)
 forcednsseed=1
 
 # Hardcoded fallback peers for when DNS seeds are unreachable (confirmed active 2026-03-30)
@@ -22923,7 +22937,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.5.3"
+    local BUILD_VERSION="2.6.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -31985,11 +31999,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.5.3-PHI_HASH_REACTOR: Create backup command
+    # V2.6.0-SPIRAL_CITADEL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.5.3-PHI_HASH_REACTOR
+# Spiral Pool Backup Utility - V2.6.0-SPIRAL_CITADEL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32034,7 +32048,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.5.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32413,7 +32427,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.5.3",
+    "version": "2.6.0",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -32694,7 +32708,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.5.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -32747,11 +32761,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.5.3-PHI_HASH_REACTOR: Create restore command
+    # V2.6.0-SPIRAL_CITADEL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.5.3-PHI_HASH_REACTOR
+# Spiral Pool Restore Utility - V2.6.0-SPIRAL_CITADEL
 # Restores backups created by spiralpool-backup
 #
 
@@ -32798,7 +32812,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.5.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33141,7 +33155,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.5.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -39391,7 +39405,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.5.3 - PHI HASH REACTOR${NC}"
+    echo -e "                                     ${DIM}V2.6.0 - SPIRAL CITADEL${NC}"
     echo ""
 }
 

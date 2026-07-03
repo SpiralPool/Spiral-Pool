@@ -1,14 +1,43 @@
-# Upgrading to Spiral Pool v2.5.3 (Phi Hash Reactor)
+# Upgrading to Spiral Pool v2.6.0 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x) and v2.5.3 for any coin.**
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate, mandatory step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
 ---
 
-## What's new in v2.5.3
+## ⚠ DigiByte (DGB) node upgrade — action required
+
+**Coin daemon upgrades are separate from the pool stack upgrade.** `upgrade.sh` upgrades the Spiral Pool software only; it never touches coin daemons (they can require a resync). After it runs, it *flags* any coin node that is behind and tells you to run `coin-upgrade.sh`.
+
+DigiByte Core **v9.26.3** is a **mandatory** upgrade for two reasons:
+
+1. **Consensus security fix (Groestl).** v9.26.3 restores retired-algorithm enforcement, which activates at mainnet block **23,808,000** regardless of miner signaling. A node that has not upgraded by that height will fork off the network.
+2. **DigiDollar** ships in v9 (activates later via BIP9). It requires a full transaction index.
+
+### Pruning is no longer supported for DigiByte
+
+v9.26.3 makes `txindex=1` mandatory on mainnet, and `txindex` is incompatible with pruning. **A pruned DGB node will refuse to start on v9.26.3.**
+
+- **Full (non-pruned) DGB nodes** — a normal binary upgrade. Run `sudo /spiralpool/scripts/coin-upgrade.sh` (or `spiralctl coin-upgrade`). No resync.
+- **Pruned DGB nodes** — `coin-upgrade.sh` detects pruning and will: warn you, check free disk space, require you to type `UPGRADE` to accept, remove pruning + enable `txindex=1` in `digibyte.conf` (nothing else changed; no wallets or data deleted), and start with `-reindex` to fully resync (~80 GB, takes hours).
+
+New installs: `install.sh` always configures DGB as a full node (`txindex=1`, `prune=0`) even if you enable pruning for other coins.
+
+> **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
+
+---
+
+## What's new in v2.6.0
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **DigiByte Core 8.26.2 → 9.26.3** — a mandatory network-consensus upgrade (Groestl enforcement at mainnet block 23,808,000; `txindex=1` now required, so pruning is no longer supported for DGB). See the DigiByte node-upgrade section above for the operator procedure.
+- **Codename** — the release line advances from *Phi Hash Reactor* to *Spiral Citadel*.
+
+## What was new in v2.5.3
 
 See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 
@@ -120,7 +149,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.5.3 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -359,13 +388,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.5.3`. If Sentinel is running:
+The version line should show `2.6.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.5.3` followed by `Phi Hash Reactor` in the startup log.
+Look for `Spiral Pool v2.6.0` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -445,4 +474,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.3 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.0 — Built on what came before. Growing toward phi.*

@@ -82,7 +82,7 @@ Cloud providers charge for outbound (egress) network traffic. Blockchain sync pu
 | Bitcoin Silver (BTCS) | ~8 GB | ~8 GB | <$1 |
 | Litecoin (LTC) | ~150 GB | ~150 GB | ~$14 |
 | Dogecoin (DOGE) | ~80 GB | ~80 GB | ~$7 |
-| DigiByte (DGB) | ~60 GB | ~60 GB | ~$5 |
+| DigiByte (DGB) | ~80 GB | ~80 GB | ~$5 |
 | () | ~5 GB | ~5 GB | <$1 |
 
 > Blockchain sizes grow over time. The figures above are approximate as of Q1 2026.
@@ -753,4 +753,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.3*
+*Spiral Pool — Spiral Citadel 2.6.0*

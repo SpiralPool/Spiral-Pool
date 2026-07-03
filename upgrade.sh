@@ -4541,7 +4541,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.5.3 - PHI HASH REACTOR${NC}"
+echo -e "                                     ${DIM}V2.6.0 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4688,7 +4688,7 @@ migrate_daemon_sudoers() {
 
     if ! grep -q "ecashd" "$DASH_SUDOERS" 2>/dev/null; then
         echo "" >> "$DASH_SUDOERS"
-        echo "# XEC (eCash) daemon control (v2.5.3)" >> "$DASH_SUDOERS"
+        echo "# XEC (eCash) daemon control (v2.6.0)" >> "$DASH_SUDOERS"
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart ecashd" >> "$DASH_SUDOERS"
         changed=1
     fi
@@ -5209,6 +5209,17 @@ show_summary() {
                 printf "  %-6s  %s → %s  %b%s%b\n" \
                     "$coin" "$installed" "$target" "$risk_color" "$risk" "${NC}"
             done <<< "$upgrade_lines"
+            # DigiByte v9.26.3 is a special MAJOR case: it removes pruning support
+            # (DigiDollar forces txindex on mainnet). Call it out explicitly so the
+            # operator knows a pruned DGB node will resync before running the upgrade.
+            if grep -q '^DGB ' <<< "$upgrade_lines"; then
+                echo
+                echo -e "${RED}  ⚠  DigiByte (DGB) v9.26.3 is a MAJOR upgrade — pruning is removed.${NC}"
+                echo -e "${RED}     It requires txindex for DigiDollar and will not run pruned.${NC}"
+                echo -e "     If your DGB node is pruned, coin-upgrade.sh will ask you to confirm"
+                echo -e "     disk space (~80 GB) and accept a full chain resync. Nothing else is"
+                echo -e "     touched — wallets, configs, and other coins are left intact."
+            fi
             echo
             echo -e "${CYAN}Coin daemon upgrades are NOT applied automatically — they may${NC}"
             echo -e "${CYAN}require a chain resync. Run manually when ready:${NC}"
@@ -5284,6 +5295,9 @@ PYEOF
         esac
         coin_lines+="**${coin}** — ${installed} → ${target} (${risk_label})\n"
     done <<< "$upgrade_lines"
+    if grep -q '^DGB ' <<< "$upgrade_lines"; then
+        coin_lines+="\n⚠ **DigiByte removes pruning** (DigiDollar requires txindex). A pruned DGB node will fully resync (~80 GB); coin-upgrade.sh confirms disk space and preserves wallets/configs.\n"
+    fi
 
     local embed
     embed=$(python3 - "$coin_lines" <<'PYEOF' 2>/dev/null
@@ -5301,7 +5315,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.5.3 — Phi Hash Reactor  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.6.0 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

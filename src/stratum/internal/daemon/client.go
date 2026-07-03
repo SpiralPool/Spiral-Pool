@@ -123,6 +123,25 @@ type BlockTemplate struct {
 	Height                   uint64      `json:"height"`
 	DefaultWitnessCommitment string      `json:"default_witness_commitment,omitempty"`
 
+	// DigiByte DigiDollar (v9.26.3+): when a fresh MuSig2 oracle price bundle is
+	// available and DigiDollar is active, getblocktemplate (with the
+	// "digidollar-oracle" rule) returns this hex scriptPubKey. It MUST be copied
+	// verbatim into the coinbase as a single zero-value output, or the block is
+	// rejected. Absent (empty) when no oracle bundle applies — mine normally.
+	DefaultOracleCommitment string `json:"default_oracle_commitment,omitempty"`
+
+	// BIP9 version-bits signaling status, as reported by getblocktemplate.
+	// VBAvailable maps each currently-signalable soft fork to its version-bit
+	// number (e.g. {"digidollar": 23}); VBRequired is the mask of bits the node
+	// *requires* be set for the block to be accepted (normally 0). We read these
+	// for visibility/guarding only — the pool does NOT auto-apply VBAvailable
+	// bits: for DGB we deliberately clear the optional digidollar bit (23,
+	// 0x00800000) to avoid a BM1366 hashrate regression, which is safe precisely
+	// because that bit is advertised in VBAvailable but never in VBRequired.
+	// Field support originally contributed by Kamakhu (upstream 3277cce).
+	VBAvailable map[string]uint32 `json:"vbavailable,omitempty"`
+	VBRequired  uint32            `json:"vbrequired,omitempty"`
+
 	// eCash (XEC) specific fields
 	CoinbaseTxn   *XECCoinbaseTxn `json:"coinbasetxn,omitempty"`
 	RTT           *XECRTTData     `json:"rtt,omitempty"`

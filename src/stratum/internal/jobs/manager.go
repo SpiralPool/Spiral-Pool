@@ -801,13 +801,31 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 
 	now := time.Now()
 	formattedPrevHash := m.formatPrevHash(template.PreviousBlockHash)
+
+	// Strip DigiByte's DigiDollar BIP9 signaling bit (0x00800000) from the block
+	// version handed to miners. Per BIP9 this bit is an OPTIONAL activation
+	// *signal*: a block that leaves it cleared is fully valid during the signaling
+	// window — it just doesn't vote for DigiDollar activation. DigiByte Core
+	// v9.26.3 began setting it, changing the base version miners hash from
+	// 0x20000202 to 0x20800202. Some SHA-256 ASICs (BM1366/NMAxe) lose ~half their
+	// effective hashrate when this bit is set in the version they hash; stripping
+	// it restores the exact pre-9.26.3 version that hashed at full speed. Same
+	// chain, so both DGB algorithms are covered. Other coins pass through
+	// untouched. REVERSIBLE — delete this block to resume DigiDollar signaling.
+	minerVersion := template.Version
+	if m.coinImpl != nil {
+		if sym := m.coinImpl.Symbol(); sym == "DGB" || sym == "DGB-SCRYPT" {
+			minerVersion &^= 0x00800000
+		}
+	}
+
 	job := &protocol.Job{
 		ID:             jobID,
 		PrevBlockHash:  formattedPrevHash,
 		CoinBase1:      hex.EncodeToString(coinbase1),
 		CoinBase2:      hex.EncodeToString(coinbase2),
 		MerkleBranches: merkleBranches,
-		Version:        fmt.Sprintf("%08x", template.Version),
+		Version:        fmt.Sprintf("%08x", minerVersion),
 		NBits:          template.Bits,
 		NTime:          fmt.Sprintf("%08x", template.CurTime),
 		CleanJobs:      cleanJobs,
@@ -821,7 +839,10 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 		StateChangedAt: now,
 
 		VersionRollingAllowed: m.stratumCfg.VersionRolling.Enabled,
-		VersionRollingMask:    m.stratumCfg.VersionRolling.Mask,
+		// Full mask: the miner-facing base version already has the daemon's
+		// signaling bit stripped (see minerVersion above), so there is no
+		// daemon-fixed bit inside the mask to exclude.
+		VersionRollingMask: m.stratumCfg.VersionRolling.Mask,
 
 		TransactionData:  txData,
 		CoinbaseValue:    template.CoinbaseValue,
@@ -1013,6 +1034,24 @@ func (m *Manager) buildCoinbaseWithAux(template *daemon.BlockTemplate, auxMerkle
 	return coinbase1, coinbase2
 }
 
+// decodeOracleCommitment returns the DigiDollar oracle price commitment script
+// (DigiByte v9.26.3+) when getblocktemplate provided one, plus whether to include
+// it. The script is the exact scriptPubKey for a single zero-value coinbase output
+// and MUST be copied verbatim — never synthesized. Absent (ok=false) when no fresh
+// oracle bundle applies, in which case a normal block is mined.
+func (m *Manager) decodeOracleCommitment(template *daemon.BlockTemplate) (script []byte, ok bool) {
+	if template.DefaultOracleCommitment == "" {
+		return nil, false
+	}
+	s, err := hex.DecodeString(template.DefaultOracleCommitment)
+	if err != nil || len(s) == 0 {
+		m.logger.Errorw("CRITICAL: invalid default_oracle_commitment hex — omitting oracle output (DigiDollar mint/redeem txs may not confirm)",
+			"error", err, "commitment", template.DefaultOracleCommitment)
+		return nil, false
+	}
+	return s, true
+}
+
 // buildCoinbase2Only builds only the coinbase2 portion (outputs + locktime).
 // This is used internally by buildCoinbaseWithAux to avoid duplicating code.
 func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1Unused, coinbase2 []byte) {
@@ -1028,9 +1067,15 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
 	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()
 	includeWitness := template.DefaultWitnessCommitment != "" && segwitOK
-	outputCount := byte(0x01)
+	// DigiByte DigiDollar (v9.26.3+): optional zero-value oracle commitment output.
+	oracleScript, includeOracle := m.decodeOracleCommitment(template)
+	oracleCount := byte(0)
+	if includeOracle {
+		oracleCount = 1
+	}
+	outputCount := byte(0x01) + oracleCount
 	if includeWitness {
-		outputCount = 0x02
+		outputCount++
 	}
 	cb2 = append(cb2, outputCount)
 
@@ -1059,7 +1104,7 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 			// Rebuild without witness
 			cb2 = make([]byte, 0, 128)
 			cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff)
-			cb2 = append(cb2, 0x01)
+			cb2 = append(cb2, byte(0x01)+oracleCount)
 			cb2 = append(cb2, valueBytes...)
 			cb2 = append(cb2, byte(len(script)))
 			cb2 = append(cb2, script...)
@@ -1069,7 +1114,7 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 			)
 			cb2 = make([]byte, 0, 128)
 			cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff)
-			cb2 = append(cb2, 0x01)
+			cb2 = append(cb2, byte(0x01)+oracleCount)
 			cb2 = append(cb2, valueBytes...)
 			cb2 = append(cb2, byte(len(script)))
 			cb2 = append(cb2, script...)
@@ -1079,6 +1124,14 @@ func (m *Manager) buildCoinbase2Only(template *daemon.BlockTemplate) (coinbase1U
 			cb2 = append(cb2, crypto.EncodeVarInt(uint64(len(witnessScript)))...)
 			cb2 = append(cb2, witnessScript...)
 		}
+	}
+
+	// DigiDollar oracle commitment (zero-value, verbatim) — appended after the
+	// witness commitment. Order is not consensus-critical (Core marker-scans).
+	if includeOracle {
+		cb2 = append(cb2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+		cb2 = append(cb2, crypto.EncodeVarInt(uint64(len(oracleScript)))...)
+		cb2 = append(cb2, oracleScript...)
 	}
 
 	// Locktime
@@ -1220,6 +1273,10 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 	// nil coinImpl: default to including witness (backwards-compatible for SegWit coins).
 	segwitOK := m.coinImpl == nil || m.coinImpl.SupportsSegWit()
 	includeWitness := template.DefaultWitnessCommitment != "" && segwitOK
+	// DigiByte DigiDollar (v9.26.3+): zero-value oracle price commitment output,
+	// appended after the witness commitment. Present only when DigiDollar is
+	// active and a fresh MuSig2 bundle applies; copied verbatim, never synthesized.
+	oracleScript, includeOracle := m.decodeOracleCommitment(template)
 	outputCount := byte(0x01)
 	if hasMinerFund {
 		outputCount++
@@ -1228,6 +1285,9 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 		outputCount++
 	}
 	if includeWitness {
+		outputCount++
+	}
+	if includeOracle {
 		outputCount++
 	}
 	cb2 = append(cb2, outputCount)
@@ -1286,6 +1346,9 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 			if hasStakingReward {
 				noWitnessCount++
 			}
+			if includeOracle {
+				noWitnessCount++
+			}
 			cb2 = make([]byte, 0, 128)
 			cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff) // Sequence
 			cb2 = append(cb2, noWitnessCount)
@@ -1321,6 +1384,9 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 				if hasStakingReward {
 					noWitnessCount2++
 				}
+				if includeOracle {
+					noWitnessCount2++
+				}
 				cb2 = make([]byte, 0, 128)
 				cb2 = append(cb2, 0xff, 0xff, 0xff, 0xff)
 				cb2 = append(cb2, noWitnessCount2)
@@ -1350,6 +1416,18 @@ func (m *Manager) buildCoinbase(template *daemon.BlockTemplate) (coinbase1, coin
 				cb2 = append(cb2, witnessScript...)
 			}
 		}
+	}
+
+	// DigiDollar oracle commitment (DigiByte v9.26.3+): zero-value output, script
+	// copied verbatim, appended after the witness commitment. Confirmed against
+	// DigiByte Core src/oracle/bundle_manager.cpp (OracleBundleManager::
+	// ExtractOracleBundle): it SCANS all coinbase vout for OP_RETURN+OP_ORACLE
+	// (position-independent) and rejects more than one — so appending our single
+	// output last is valid. Absent unless DigiDollar is active with a fresh bundle.
+	if includeOracle {
+		cb2 = append(cb2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+		cb2 = append(cb2, crypto.EncodeVarInt(uint64(len(oracleScript)))...)
+		cb2 = append(cb2, oracleScript...)
 	}
 
 	// Locktime

@@ -359,7 +359,7 @@ main()
 | Litecoin | LTC | 150 GB |
 | Syscoin | SYS | 25 GB |
 | Dogecoin | DOGE | 80 GB |
-| DigiByte | DGB | 60 GB |
+| DigiByte | DGB | 80 GB |
 | Fractal Bitcoin | FBTC | 10 GB |
 | 5 GB |
 | eCash | XEC | 20 GB |
@@ -787,4 +787,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.3*
+*Spiral Pool — Spiral Citadel 2.6.0*

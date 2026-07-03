@@ -149,6 +149,19 @@ func NewServer(cfg *config.StratumConfig, logger *zap.Logger) *Server {
 		cfg.VersionRolling.Mask,
 	)
 
+	// Exclude daemon-set version bits from the version-rolling mask advertised
+	// to miners. DigiByte Core v9.26.3+ sets bit 0x00800000 (a BIP9 signal) that
+	// lands inside the BIP320 mask; a miner must not roll a bit the daemon fixed,
+	// or its ASICBoost work space is corrupted. Reads the current block version.
+	s.v1Handler.SetBaseVersionFunc(func() uint32 {
+		if job := s.currentJob.Load(); job != nil {
+			if v, err := strconv.ParseUint(job.Version, 16, 32); err == nil {
+				return uint32(v)
+			}
+		}
+		return 0
+	})
+
 	// V2: Enable Spiral Router for automatic miner routing by user-agent and IP hints
 	// This allows all miners (ESP32, BitAxe, ASICs) to use the same port
 	// with automatic difficulty adjustment based on detected miner type.

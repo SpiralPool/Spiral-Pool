@@ -12,6 +12,7 @@
 package shares
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"math/big"
 	"sync"
@@ -672,7 +673,7 @@ func TestVersionRollingMask(t *testing.T) {
 			var result [4]byte
 			if tc.versionBits != 0 && tc.mask != 0 {
 				v := uint32(version[0])<<24 | uint32(version[1])<<16 | uint32(version[2])<<8 | uint32(version[3])
-				v = (v &^ tc.mask) | (tc.versionBits & tc.mask)
+				v |= tc.versionBits & tc.mask
 				// Store as little-endian
 				result[0] = byte(v)
 				result[1] = byte(v >> 8)
@@ -690,6 +691,51 @@ func TestVersionRollingMask(t *testing.T) {
 				t.Errorf("version rolling result:\n  got:  %x\n  want: %x", result[:], expected)
 			}
 		})
+	}
+}
+
+// TestVersionRollingPreservesDaemonSetBits is a regression test for the DigiByte
+// Core v9.26.3 (DigiDollar) low-difficulty incident: the daemon began setting
+// block-version bit 0x00800000, which lands INSIDE the BIP320 mask (0x1FFFE000).
+//
+// The miner (NerdQAxe/ESP-Miner) rolls version by ORing its bits onto the base,
+// so it keeps bit 0x00800000. buildBlockHeader must reconstruct the SAME version;
+// the old `(v &^ mask) | (bits & mask)` stripped that bit, yielding a different
+// header and rejecting every version-rolled share as low-difficulty.
+//
+// Values are taken verbatim from the field log (submit id 14):
+//   base version 0x20800202, rolled bits 0x02768000, ASIC header version 0x22F68202.
+func TestVersionRollingPreservesDaemonSetBits(t *testing.T) {
+	job := &protocol.Job{
+		Version:               "20800202", // DGB v9.26.3 base: bit 0x00800000 set, inside mask
+		PrevBlockHash:         "00000000000000000000000000000000" + "00000000000000000000000000000001",
+		CoinBase1:             "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff",
+		CoinBase2:             "ffffffff01",
+		NBits:                 "19087c7f",
+		NTime:                 "6a47d2c4",
+		MerkleBranches:        []string{},
+		VersionRollingAllowed: true,
+		VersionRollingMask:    0x1FFFE000,
+	}
+	share := &protocol.Share{
+		ExtraNonce1: "00000001",
+		ExtraNonce2: "0000000000000029",
+		NTime:       "6a47d2c4",
+		Nonce:       "f3ac84b9",
+		VersionBits: 0x02768000,
+	}
+
+	header, err := buildBlockHeader(job, share)
+	if err != nil {
+		t.Fatalf("buildBlockHeader failed: %v", err)
+	}
+
+	// Header stores the version little-endian; reconstruct the value.
+	gotVersion := binary.LittleEndian.Uint32(header[0:4])
+	const wantVersion = 0x22F68202 // what the ASIC actually hashed (base | rolled bits)
+	if gotVersion != wantVersion {
+		t.Errorf("header version = 0x%08X, want 0x%08X (daemon-set bit 0x00800000 must survive rolling)",
+			gotVersion, wantVersion)
 	}
 }
 

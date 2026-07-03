@@ -77,7 +77,7 @@ The installer will:
 
 | # | Symbol | Coin | Algorithm | Storage | Stratum Port |
 |---|--------|------|-----------|---------|-------------|
-| 1 | DGB | DigiByte | SHA256d | ~60 GB | 3333 |
+| 1 | DGB | DigiByte | SHA256d | ~80 GB | 3333 |
 | 2 | BTC | Bitcoin | SHA256d | ~600 GB | 4333 |
 | 3 | BCH | Bitcoin Cash | SHA256d | ~250 GB | 5333 |
 | 4 | BCH2 | Bitcoin Cash II | SHA256d | ~15 GB | 5336 |
@@ -89,7 +89,7 @@ The installer will:
 | 10 | XEC | eCash | SHA256d | ~20 GB | 18338 |
 | 11 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
 | 12 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
-| 13 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~60 GB | 3336 |
+| 13 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~80 GB | 3336 |
 | 14 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
 | 15 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
 | 17 | SYS | Syscoin | SHA256d | ~80 GB | 15335 |

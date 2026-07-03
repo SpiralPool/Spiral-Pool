@@ -115,6 +115,7 @@ type Handler struct {
 	getDiffForMiner   func(userAgent string) float64             // Optional: returns difficulty based on miner type
 	getDiffForMinerIP func(userAgent, remoteAddr string) float64 // Optional: returns difficulty with IP lookup
 	allowShare        func(remoteAddr string) (bool, string)     // SECURITY: Rate limiting callback (SEC-05)
+	getBaseVersion    func() uint32                              // Optional: current block base version, to exclude daemon-set bits from the rollable mask
 
 	// Configuration
 	initialDifficulty float64
@@ -613,6 +614,15 @@ func (h *Handler) SetShareRateLimiter(limiter func(remoteAddr string) (bool, str
 	h.allowShare = limiter
 }
 
+// SetBaseVersionFunc sets a callback returning the current block base version.
+// handleConfigure uses it to exclude daemon-set version bits (e.g. DigiByte
+// v9.26.3's 0x00800000 BIP9 signal) from the version-rolling mask advertised to
+// miners, so a miner never rolls a bit the daemon has already fixed. Returning 0
+// (or leaving this unset) advertises the full configured mask unchanged.
+func (h *Handler) SetBaseVersionFunc(fn func() uint32) {
+	h.getBaseVersion = fn
+}
+
 // parseWorkerName splits "address.worker" into components.
 func parseWorkerName(name string) (address, worker string) {
 	for i := len(name) - 1; i >= 0; i-- {
@@ -639,9 +649,25 @@ func (h *Handler) handleConfigure(session *protocol.Session, req *Request) ([]by
 				switch extName {
 				case "version-rolling":
 					if h.versionRolling {
-						session.VersionRollingMask = h.versionMask
+						// Advertise only the bits that are genuinely FREE to roll.
+						// Exclude any bit the daemon has already set in the base
+						// block version: DigiByte Core v9.26.3+ sets bit 0x00800000
+						// (a BIP9 deployment signal) which lands INSIDE the BIP320
+						// mask 0x1FFFE000. Letting a miner roll a daemon-set bit
+						// corrupts its ASICBoost work space (the miner's rated
+						// hashrate assumes it rolls only free bits), so a single-chip
+						// device can end up doing a fraction of its real work.
+						// Only narrows when the base version actually sets a masked
+						// bit — clean coins (BTC/LTC base 0x20000000) are unaffected.
+						mask := h.versionMask
+						if h.getBaseVersion != nil {
+							if base := h.getBaseVersion(); base != 0 {
+								mask &^= base
+							}
+						}
+						session.VersionRollingMask = mask
 						result["version-rolling"] = true
-						result["version-rolling.mask"] = fmt.Sprintf("%08x", h.versionMask)
+						result["version-rolling.mask"] = fmt.Sprintf("%08x", mask)
 					} else {
 						result["version-rolling"] = false
 					}

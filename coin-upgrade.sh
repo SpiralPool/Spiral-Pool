@@ -3,10 +3,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.5.3-PHI_HASH_REACTOR
+#                   V2.6.0-SPIRAL_CITADEL
 #
-# Upgrades coin node binaries in-place. Touches ONLY the binary.
-# Config files, wallets, blockchain data, and pool settings are NEVER modified.
+# Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
+# wallets/blockchain data/pool settings are NEVER deleted.
+# EXCEPTION: upgrading a *pruned* DigiByte node to v9.26.3 also migrates
+# digibyte.conf (removes pruning, enables txindex) after backing it up, because
+# v9.26.3 requires txindex for DigiDollar and will not start while pruned. This
+# is gated behind an explicit disk-space + "type UPGRADE" consent prompt.
 #
 # This is a MANUAL, OPERATOR-INITIATED operation — never automated by upgrade.sh
 # or Sentinel auto-update. Coin daemon upgrades may require a full chain reindex
@@ -57,7 +61,7 @@ declare -A COIN_TARGET=(
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="29.1.0"
     [BTCS]="source-ff5c3c3"  # Bitcoin Silver — built from source, pinned commit
-    [DGB]="8.26.2"
+    [DGB]="9.26.3"
     [LTC]="0.21.5.4"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
@@ -81,7 +85,8 @@ declare -A COIN_RISK=(
     [BCH2]="NONE"   # 27.0.2 — current
     [BC2]="NONE"    # 29.1.0 — current
     [BTCS]="NONE"   # source build — pinned commit ff5c3c3
-    [DGB]="NONE"    # 8.26.2 — current
+    [DGB]="MAJOR"   # 9.26.3 — mandatory consensus upgrade (Groestl enforcement). Kills pruning:
+                    # DigiDollar forces txindex=1 on mainnet, so pruned nodes must resync full chain.
     [LTC]="NONE"    # 0.21.5.4 — current
     [DOGE]="NONE"   # 1.14.9 — current
     [PEP]="NONE"    # 1.1.0  — current
@@ -513,12 +518,49 @@ install_binaries() {
             local src_bin
             src_bin=$(find "$extracted" -maxdepth 3 -type d -name "bin" | head -1)
             [[ -z "$src_bin" ]] && die "No bin/ found in ${coin} archive"
-            sudo cp -r "$src_bin"/. "$bin_dir/"
+            # Unlink the existing daemon/cli first. Overwriting a binary that is
+            # still mapped by a running process fails with "Text file busy"; rm
+            # (unlink) always succeeds and cp then writes a fresh inode. FAIL the
+            # install if the copy errors — never report success on a failed copy.
+            sudo rm -f "$bin_dir/${COIN_DAEMON_CMD[$coin]}" "$bin_dir/${COIN_CLI_CMD[$coin]}" 2>/dev/null || true
+            if ! sudo cp -rf "$src_bin"/. "$bin_dir/"; then
+                log_error "Binary copy failed for ${coin} — is the daemon still running? ('Text file busy')"
+                return 1
+            fi
             sudo chown -R "$POOL_USER:$POOL_USER" "$bin_dir"
             sudo chmod -R 755 "$bin_dir"
             ;;
     esac
     log_success "Binaries installed"
+}
+
+# Verify a coin daemon PROCESS is fully stopped before we touch its binary.
+# systemctl stop can return before the process actually exits (large-chain flush)
+# or a supervisor can respawn it — either way the binary stays "Text file busy".
+# This polls the real process, escalates SIGTERM -> SIGKILL, and RETURNS NON-ZERO
+# if it cannot confirm the process is gone. It never assumes success from elapsed
+# time — the verdict is always a live pgrep check.
+ensure_daemon_stopped() {
+    local coin="$1"
+    local proc="${COIN_DAEMON_CMD[$coin]}"
+    local svc="${COIN_SERVICE[$coin]}.service"
+
+    sudo systemctl stop "$svc" 2>/dev/null || true
+
+    local attempt
+    for attempt in $(seq 1 20); do
+        if ! pgrep -x "$proc" >/dev/null 2>&1; then
+            return 0                                   # confirmed: process is gone
+        fi
+        if   [[ "$attempt" -le 3 ]]; then :            # allow a clean shutdown to finish
+        elif [[ "$attempt" -le 10 ]]; then sudo pkill -x  "$proc" 2>/dev/null || true   # SIGTERM
+        else                               sudo pkill -9 -x "$proc" 2>/dev/null || true # SIGKILL
+        fi
+        sleep 1
+    done
+
+    # Final verdict is a check, not a timer: 0 only if truly gone.
+    ! pgrep -x "$proc" >/dev/null 2>&1
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -570,6 +612,57 @@ rollback_coin() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DIGIBYTE v9.26.3 PRUNING MIGRATION
+# ═══════════════════════════════════════════════════════════════════════════════
+# DigiByte Core v9.26.3 requires txindex=1 on mainnet (DigiDollar), which is
+# mutually exclusive with pruning. A pruned DGB node refuses to start after the
+# upgrade, so we detect pruning, get explicit operator consent + a disk check,
+# migrate the config (remove prune, enable txindex), and force a full resync.
+
+# True if the DGB config is pruned or lacks txindex (i.e. needs migration).
+dgb_needs_pruning_migration() {
+    local conf="${COIN_CONF[DGB]}"
+    [[ -f "$conf" ]] || return 1
+    grep -qE '^[[:space:]]*prune=[1-9]' "$conf" && return 0
+    grep -qE '^[[:space:]]*txindex=1'  "$conf" || return 0
+    return 1
+}
+
+# Available space (whole GB) on the filesystem holding the DGB chain data.
+dgb_free_gb() {
+    local dir; dir=$(dirname "${COIN_CONF[DGB]}")
+    df -PBG "$dir" 2>/dev/null | awk 'NR==2 {gsub(/G/,"",$4); print $4}' || echo 0
+}
+
+# Remove pruning and enable txindex in the DGB config. Touches ONLY those lines;
+# the config is already backed up in Step 1 of upgrade_coin, and no chain data
+# is deleted (Core re-downloads during the subsequent reindex).
+dgb_apply_config_migration() {
+    local conf="${COIN_CONF[DGB]}"
+    [[ -f "$conf" ]] || { log_warn "DGB config not found at ${conf} — skipping migration"; return 0; }
+    # Safety: back up the pre-migration config to the coin-upgrade backup area —
+    # NOT inside the datadir. A root-owned file in the datadir breaks the daemon
+    # service's ExecStartPre chown (which runs as the pool user), so the backup
+    # must live outside it and be owned by the pool user.
+    local _bakdir="${BACKUP_ROOT}/dgb-config"
+    mkdir -p "$_bakdir"
+    local _bak="${_bakdir}/digibyte.conf.pre-migration.$(date '+%Y%m%d-%H%M%S').bak"
+    if cp "$conf" "$_bak" 2>/dev/null; then
+        chown "${POOL_USER}:${POOL_USER}" "$_bak" 2>/dev/null || true
+        log_info "Config backed up → ${_bak}"
+    fi
+    # Comment out any active prune= line (kept for an auditable trail, not deleted).
+    sed -i -E 's|^([[:space:]]*prune=.*)$|#\1  # removed: DGB v9.26.3 needs a full node (DigiDollar/txindex)|' "$conf"
+    # Normalize txindex → exactly one "txindex=1": strip existing lines, then append.
+    sed -i -E '/^[[:space:]]*#?[[:space:]]*txindex=/d' "$conf"
+    printf '\n# DigiDollar (v9.26.3) requires a full transaction index\ntxindex=1\n' >> "$conf"
+    # Editing/appending as root must not flip config ownership — keep it pool-owned
+    # so the service's ExecStartPre chown never fails.
+    chown "${POOL_USER}:${POOL_USER}" "$conf" 2>/dev/null || true
+    log_success "DigiByte config migrated: pruning removed, txindex=1 enabled"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # UPGRADE ONE COIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -607,17 +700,56 @@ upgrade_coin() {
         "$([[ "$do_reindex" == "true" ]] && echo "YES — chain will resync (hours)" || echo "No")"
     echo -e "${CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
 
-    # Extra warning for MAJOR upgrade without --reindex
+    # DigiByte pruned→full migration gate. Only triggers for a currently-pruned
+    # DGB node; full DGB nodes and all other coins take the normal path below.
+    local _dgb_migrate=false
+    if [[ "$coin" == "DGB" ]] && dgb_needs_pruning_migration; then
+        _dgb_migrate=true
+        do_reindex=true
+        local _free; _free=$(dgb_free_gb)
+        echo ""
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}${BOLD}  DIGIBYTE PRUNING WILL BE REMOVED — READ CAREFULLY${NC}"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  This DigiByte node is currently ${YELLOW}pruned${NC}. DigiByte Core v9.26.3"
+        echo -e "  requires a full transaction index (txindex=1) for DigiDollar and"
+        echo -e "  ${BOLD}will not start while pruned${NC}. ${YELLOW}Pruning is no longer supported for DGB.${NC}"
+        echo ""
+        echo -e "  To upgrade, this tool will:"
+        echo -e "    • disable pruning and enable txindex=1 in digibyte.conf"
+        echo -e "    • reindex and re-download the ${BOLD}entire${NC} DigiByte blockchain (hours)"
+        echo ""
+        echo -e "  Disk required: ${BOLD}~80 GB${NC} (and growing) for the full chain.   Free here: ${BOLD}${_free:-?} GB${NC}"
+        if [[ "${_free:-0}" -lt 100 ]]; then
+            echo ""
+            log_warn "Less than 100 GB free — the full chain (~80 GB and growing) may not fit with headroom."
+        fi
+        echo ""
+        echo -e "  ${WHITE}By continuing you confirm you have enough disk space and accept that"
+        echo -e "  pruning is removed and the chain fully resyncs.${NC}"
+        echo ""
+        printf "  Type ${BOLD}UPGRADE${NC} to proceed, anything else to cancel: "
+        local _acc; read -r _acc
+        if [[ "$_acc" != "UPGRADE" ]]; then
+            log_info "DigiByte upgrade cancelled — node left unchanged (still on ${installed_ver})"
+            return 0
+        fi
+    fi
+
+    # Extra warning for MAJOR upgrade without --reindex (non-DGB-migration case)
     if [[ "$risk" == "MAJOR" && "$do_reindex" == "false" ]]; then
         echo ""
         log_warn "MAJOR upgrade detected. If the daemon fails to start or reports"
         log_warn "database errors, rerun with:  sudo ./coin-upgrade.sh --coin ${coin} --reindex"
     fi
 
-    echo ""
-    printf "  Proceed with %s upgrade? [y/N] " "$coin"
-    local confirm; read -r confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Skipped ${coin}"; return 0; }
+    if [[ "$_dgb_migrate" != "true" ]]; then
+        echo ""
+        printf "  Proceed with %s upgrade? [y/N] " "$coin"
+        local confirm; read -r confirm
+        [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Skipped ${coin}"; return 0; }
+    fi
 
     mkdir -p "$WORK_DIR"
     local backup_path
@@ -631,13 +763,17 @@ upgrade_coin() {
     log_step "Step 2/5 — Enable maintenance mode"
     enable_maintenance
 
-    # ── Step 3: Stop daemon ───────────────────────────────────────────────────
+    # ── Step 3: Stop daemon (VERIFIED — must confirm the process is gone before
+    #    we overwrite its binary, or the install fails with 'Text file busy') ────
     log_step "Step 3/5 — Stop ${coin} daemon"
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-        sudo systemctl stop "$svc"
-        log_success "${svc} stopped"
+    if ensure_daemon_stopped "$coin"; then
+        log_success "${COIN_DAEMON_CMD[$coin]} confirmed stopped (no process running)"
     else
-        log_info "${svc} was not running"
+        log_error "${coin}: ${COIN_DAEMON_CMD[$coin]} is STILL running after stop + SIGKILL."
+        log_error "Refusing to install over a live binary. Something may be auto-restarting it —"
+        log_error "check:  pgrep -af ${COIN_DAEMON_CMD[$coin]}"
+        disable_maintenance
+        return 1
     fi
 
     # ── Step 4: Download + install ────────────────────────────────────────────
@@ -656,6 +792,32 @@ upgrade_coin() {
         rollback_coin "$coin" "$backup_path"
         disable_maintenance
         return 1
+    fi
+
+    # ── Verify the installed binary is actually the target BEFORE we start it,
+    #    migrate config, or reindex. If the copy silently failed (e.g. the daemon
+    #    was still running), the on-disk binary still reports the OLD version —
+    #    abort here rather than reindex for hours on the wrong binary. ───────────
+    local _disk_ver=""
+    local _disk_path; _disk_path=$(get_binary_path "$coin")
+    if [[ -n "$_disk_path" && -x "$_disk_path" ]]; then
+        _disk_ver=$("$_disk_path" --version 2>/dev/null | head -1 \
+            | grep -oP '(?i)version\s+v?\K[\d]+\.[\d]+[\w.]*' | head -1 || echo "")
+    fi
+    if [[ -n "$_disk_ver" && "$_disk_ver" != "$target_ver" ]]; then
+        log_error "${coin}: installed binary still reports ${_disk_ver}, expected ${target_ver}."
+        log_error "The new binary did NOT take — aborting before start/migration/reindex."
+        log_error "No config or chain changes were made; the old binary is intact."
+        rollback_coin "$coin" "$backup_path"
+        disable_maintenance
+        return 1
+    fi
+
+    # ── DGB config migration (must run BEFORE start, or v9.26.3 refuses to boot
+    #    because prune and txindex=1 conflict on mainnet) ───────────────────────
+    if [[ "$_dgb_migrate" == "true" ]]; then
+        log_step "Migrate DigiByte config — remove pruning, enable txindex"
+        dgb_apply_config_migration
     fi
 
     # ── Step 5: Start daemon ──────────────────────────────────────────────────
@@ -885,7 +1047,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.5.3-PHI_HASH_REACTOR${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

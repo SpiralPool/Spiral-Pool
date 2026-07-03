@@ -71,6 +71,64 @@ func TestHandleSubscribe(t *testing.T) {
 	}
 }
 
+// TestConfigureExcludesDaemonSetVersionBits verifies that mining.configure
+// advertises a version-rolling mask with the daemon's set base-version bits
+// removed. Regression for the DigiByte v9.26.3 case: the daemon sets bit
+// 0x00800000 (a BIP9 signal) inside the BIP320 mask 0x1FFFE000; a miner must not
+// roll that bit, so the advertised mask must drop it → 0x1F7FE000.
+func TestConfigureExcludesDaemonSetVersionBits(t *testing.T) {
+	h := NewHandler(1.0, true, 0x1fffe000)
+	// DGB v9.26.3 base version 0x20800202: bit 0x00800000 is set and inside the mask.
+	h.SetBaseVersionFunc(func() uint32 { return 0x20800202 })
+
+	session := &protocol.Session{ID: 1}
+	req := `{"id":1,"method":"mining.configure","params":[["version-rolling"],{"version-rolling.mask":"1fffe000"}]}`
+	resp, err := h.HandleMessage(session, []byte(req))
+	if err != nil {
+		t.Fatalf("HandleMessage failed: %v", err)
+	}
+
+	var response Response
+	if err := json.Unmarshal(resp[:len(resp)-1], &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	result, ok := response.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Invalid result structure: %v", response.Result)
+	}
+
+	const wantMask = "1f7fe000" // 0x1FFFE000 &^ 0x00800000
+	if got, _ := result["version-rolling.mask"].(string); got != wantMask {
+		t.Errorf("advertised mask = %q, want %q (daemon bit 0x00800000 must be excluded)", got, wantMask)
+	}
+	if session.VersionRollingMask != 0x1f7fe000 {
+		t.Errorf("session mask = %08x, want 1f7fe000", session.VersionRollingMask)
+	}
+}
+
+// TestConfigureCleanVersionKeepsFullMask verifies a coin whose base version sets
+// no masked bits (e.g. BTC 0x20000000, bit 29 outside the mask) still advertises
+// the full mask — the narrowing only removes genuinely daemon-fixed bits.
+func TestConfigureCleanVersionKeepsFullMask(t *testing.T) {
+	h := NewHandler(1.0, true, 0x1fffe000)
+	h.SetBaseVersionFunc(func() uint32 { return 0x20000000 })
+
+	session := &protocol.Session{ID: 1}
+	req := `{"id":1,"method":"mining.configure","params":[["version-rolling"],{"version-rolling.mask":"1fffe000"}]}`
+	resp, err := h.HandleMessage(session, []byte(req))
+	if err != nil {
+		t.Fatalf("HandleMessage failed: %v", err)
+	}
+	var response Response
+	if err := json.Unmarshal(resp[:len(resp)-1], &response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	result, _ := response.Result.(map[string]interface{})
+	if got, _ := result["version-rolling.mask"].(string); got != "1fffe000" {
+		t.Errorf("advertised mask = %q, want 1fffe000 (no daemon bits in mask → unchanged)", got)
+	}
+}
+
 // TestHandleAuthorize validates mining.authorize handling.
 func TestHandleAuthorize(t *testing.T) {
 	h := NewHandler(1.0, true, 0x1fffe000)

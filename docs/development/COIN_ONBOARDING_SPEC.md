@@ -320,4 +320,4 @@ DGB (DigiByte)
 
 ---
 
-*Spiral Pool — Phi Hash Reactor 2.5.3 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.0 — Built on what came before. Growing toward phi.*

@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v2.5.3 - Third-Party Licenses
+Spiral Pool v2.6.0 - Third-Party Licenses
 ================================================================================
 
 This software incorporates or depends on the following third-party components.
@@ -675,7 +675,7 @@ create a derivative work of the surrounding BSD-3-Clause project. See:
 - AGPL Section 13 (network interaction) applies only to modified versions
 
 A. Grafana OSS
-   Image: grafana/grafana-oss:10.4.2
+   Image: grafana/grafana-oss:13.0.2
    License: AGPLv3 (GNU Affero General Public License v3.0)
    URL: https://grafana.com/oss/grafana/
    Usage: Optional monitoring dashboard (Docker deployments only)
@@ -690,7 +690,7 @@ A. Grafana OSS
    not modifications to Grafana's source code.
 
 B. HAProxy
-   Image: haproxy:2.9-alpine
+   Image: haproxy:3.4-alpine
    License: GPLv2 (with OpenSSL linking exception)
    URL: https://www.haproxy.org/
    Usage: Optional load balancer (HA Docker deployments only)
@@ -699,15 +699,17 @@ B. HAProxy
    extend to Spiral Pool's BSD-3-Clause source code.
 
 C. Redis Server
-   Image: redis:7-alpine
-   License: BSD-3-Clause License (Redis 7.2.x and earlier)
+   Image: redis:8-alpine
+   License: AGPLv3 (GNU Affero General Public License v3.0) — Redis 8.x
+            (Redis 8 is tri-licensed RSALv2 / SSPLv1 / AGPLv3; Redis 7.2.x and
+            earlier were BSD-3-Clause)
    URL: https://redis.io/
    Usage: Optional caching and HA state store (Docker HA deployments only)
    Note: Used as-is, unmodified, as an independent service container.
    Spiral Pool connects via TCP (Redis protocol) only.
 
 D. etcd
-   Image: quay.io/coreos/etcd:v3.5.11
+   Image: quay.io/coreos/etcd:v3.5.31
    License: Apache License 2.0
    URL: https://etcd.io/
    Usage: Distributed consensus for Patroni HA clustering (Docker HA deployments)
@@ -716,7 +718,7 @@ D. etcd
    leader election.
 
 E. Prometheus Server
-   Image: prom/prometheus:v2.51.0
+   Image: prom/prometheus:v3.12.0
    License: Apache License 2.0
    URL: https://prometheus.io/
    Usage: Optional metrics collection and storage (Docker deployments only)
@@ -927,7 +929,7 @@ compliance with all applicable licenses.
 
 ================================================================================
 Last Updated: 2026-05-02
-Spiral Pool Version: 2.5.3
+Spiral Pool Version: 2.6.0
 ================================================================================
 
 Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️

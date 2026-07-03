@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.5.3}"
+VERSION="${VERSION:-2.6.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -4319,8 +4319,10 @@ cmd_coin() {
                 echo "    All pool operations (mining, ZMQ, block submission) work on pruned nodes."
                 echo ""
                 echo -e "${WHITE}SAVINGS${NC}"
-                echo "    BTC: ~600 GB → 5 GB    DGB: ~60 GB → 5 GB"
-                echo "    BCH: ~200 GB → 5 GB    LTC: ~100 GB → 5 GB"
+                echo "    BTC: ~600 GB → 5 GB    BCH: ~200 GB → 5 GB"
+                echo "    LTC: ~100 GB → 5 GB"
+                echo ""
+                echo -e "${YELLOW}    DigiByte (DGB) does not support pruning — v9.26.3 requires a full node.${NC}"
                 echo ""
                 echo -e "${YELLOW}⚠  This requires a full resync — blockchain data will be re-downloaded.${NC}"
                 return 0
@@ -4329,6 +4331,15 @@ cmd_coin() {
             daemon=$(get_coin_daemon "$coin")
             if [[ -z "$daemon" ]]; then
                 log_error "Unknown coin: $coin"
+                exit 1
+            fi
+
+            # DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar and refuses
+            # to start when pruned — pruning is not supported for DGB.
+            if [[ "$coin" == "DGB" || "$coin" == "DGB-SCRYPT" ]]; then
+                log_error "Pruning is not supported for DigiByte (DGB)."
+                log_error "DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar and will"
+                log_error "not start with pruning enabled. DGB must run as a full node."
                 exit 1
             fi
 

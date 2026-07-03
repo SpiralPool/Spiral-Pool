@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.5.3 - PHI HASH REACTOR EDITION                            ║
+║  Spiral Sentinel v2.6.0 - SPIRAL CITADEL EDITION                            ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,8 +28,8 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.5.3"
-__codename__ = "PHI_HASH_REACTOR"
+__version__ = "2.6.0"
+__codename__ = "SPIRAL_CITADEL"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
 from urllib.parse import urlparse, quote as url_quote
@@ -2851,9 +2851,21 @@ def fetch_device_info(ip, timeout=5):
                 raw = raw[:raw.rfind('}')+1]
             d = json.loads(raw)
 
+            # Firmware schema varies. Classic AxeOS/BitAxe returns a FLAT object
+            # (top-level ASICModel / hashRate / ...). Newer forks — e.g. NMAxe
+            # v3.x — NEST the same data under sub-objects: identity.hwModel,
+            # asic.model, asic.count, miner.hashRate. Read BOTH shapes so device
+            # hints survive firmware updates; classification keys on the ASIC
+            # model (physical hardware), not a version string, so it stays valid.
+            identity = d.get("identity") if isinstance(d.get("identity"), dict) else {}
+            asic = d.get("asic") if isinstance(d.get("asic"), dict) else {}
+            miner = d.get("miner") if isinstance(d.get("miner"), dict) else {}
+
             # Extract device model - different firmware versions use different keys
             device_model = (
                 d.get("deviceModel") or
+                identity.get("hwModel") or
+                identity.get("displayName") or
                 d.get("boardVersion") or
                 d.get("board") or
                 d.get("model") or
@@ -2862,9 +2874,9 @@ def fetch_device_info(ip, timeout=5):
 
             return {
                 "device_model": device_model,
-                "asic_model": d.get("ASICModel") or d.get("asicModel") or "",
-                "asic_count": d.get("asicCount") or d.get("asic_count") or 1,
-                "hashrate_ghs": d.get("hashRate") or d.get("hashrate") or 0,
+                "asic_model": d.get("ASICModel") or d.get("asicModel") or asic.get("model") or "",
+                "asic_count": d.get("asicCount") or d.get("asic_count") or asic.get("count") or 1,
+                "hashrate_ghs": d.get("hashRate") or d.get("hashrate") or miner.get("hashRate") or 0,
             }
     except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout, json.JSONDecodeError, OSError, ValueError):
         return None
@@ -6090,7 +6102,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.5.3-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.6.0-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6109,7 +6121,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.5.3-PHI_HASH_REACTOR"
+                "sentinel_version": "V2.6.0-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
