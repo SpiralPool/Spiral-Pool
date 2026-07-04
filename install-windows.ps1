@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v2.6.0
+    Spiral Pool - Windows Installer v2.6.1
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 2.6.0
+    Version: 2.6.1
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "2.6.0"
+$Script:Version = "2.6.1"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -135,7 +135,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.6.0" -ForegroundColor DarkGray
+    Write-Host "                           v2.6.1" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (17 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -1494,7 +1494,7 @@ function New-EnvironmentFile {
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.6.0 Docker Configuration
+# Spiral Pool v2.6.1 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 

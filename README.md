@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Spiral Citadel V2.6.0</em>
+  <em>Spiral Citadel V2.6.1</em>
 </p>
 
 <p align="center">
@@ -246,7 +246,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.6.0 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.6.1 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -319,4 +319,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Spiral Citadel 2.6.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Spiral Citadel 2.6.1 &mdash; Convergent difficulty. Minimal oscillation.*

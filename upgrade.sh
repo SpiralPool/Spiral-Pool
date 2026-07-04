@@ -4541,7 +4541,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.0 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.1 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4557,6 +4557,7 @@ echo -e "    ${YELLOW}spiralctl coin enable${NC}    Add coin       ${YELLOW}spir
 echo -e "    ${YELLOW}spiralctl coin-upgrade${NC}   Upgrade nodes  ${YELLOW}spiralctl restart${NC}          Restart services"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "    ${YELLOW}spiralctl config${NC}         Configuration  ${YELLOW}spiralctl security${NC}         Security audit"
+echo -e "    ${YELLOW}spiralctl alerts${NC}         Alerts on/off  ${YELLOW}spiralctl webhook${NC}          Notifications"
 echo -e "    ${YELLOW}spiralctl data backup${NC}    Backup         ${YELLOW}spiralctl data restore${NC}     Restore"
 echo -e "    ${YELLOW}spiralctl test${NC}           Connectivity   ${YELLOW}spiralctl ha${NC}               HA cluster"
 echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference"
@@ -4688,7 +4689,7 @@ migrate_daemon_sudoers() {
 
     if ! grep -q "ecashd" "$DASH_SUDOERS" 2>/dev/null; then
         echo "" >> "$DASH_SUDOERS"
-        echo "# XEC (eCash) daemon control (v2.6.0)" >> "$DASH_SUDOERS"
+        echo "# XEC (eCash) daemon control (v2.6.1)" >> "$DASH_SUDOERS"
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart ecashd" >> "$DASH_SUDOERS"
         changed=1
     fi
@@ -5160,6 +5161,24 @@ show_summary() {
 
         local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
         [[ -z "$status" ]] && status="inactive"
+
+        # Stratum has Restart=always + a long ExecStartPre node-wait, so a single
+        # snapshot taken right after the bulk restart often catches it mid-restart
+        # (failed/auto-restart/activating) even though systemd brings it online a
+        # few seconds later. Poll it to let systemd settle before declaring FAILED —
+        # matches the retry logic used elsewhere for stratum startup.
+        if [[ "$service" == "$STRATUM_SERVICE" && "$status" != "active" ]]; then
+            echo -e "  ${DIM}Verifying $service (auto-restarts, may take up to 60s)...${NC}"
+            local _sw=0
+            local _sw_max=60
+            while [[ $_sw -lt $_sw_max ]]; do
+                status=$(systemctl is-active "$service" 2>/dev/null) || true
+                [[ -z "$status" ]] && status="inactive"
+                [[ "$status" == "active" ]] && break
+                sleep 3; _sw=$((_sw + 3))
+            done
+        fi
+
         case "$status" in
             active)       printf "  %-24s ${GREEN}%s${NC}\n" "$service" "Running" ;;
             activating)   printf "  %-24s ${CYAN}%s${NC}\n" "$service" "Starting"; all_active=false ;;
@@ -5315,7 +5334,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.6.0 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.6.1 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

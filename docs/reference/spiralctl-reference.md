@@ -103,6 +103,7 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl config validate` | Dry-run config check — YAML/JSON syntax, placeholder detection, key cross-checks |
 | `spiralctl config notify-test` | Send a test notification to every configured channel |
 | `spiralctl config list-cooldowns` | Show active alert cooldowns with time remaining |
+| `spiralctl alerts [action] [alert_type]` | Turn individual alerts & reports on or off |
 | `spiralctl log [errors] [service] [window]` | Filter service logs for errors/warnings |
 | `spiralctl webhook [action]` | Manage Discord & Telegram notifications |
 
@@ -597,6 +598,48 @@ spiralctl config validate
 spiralctl config notify-test
 spiralctl config list-cooldowns
 ```
+
+---
+
+### spiralctl alerts
+
+Turn individual Sentinel alerts and periodic reports on or off. This is a hard
+mute — a disabled alert is dropped at the single `send_alert()` gate that every
+notification passes through, so it silences the native, Prometheus (`infra_*`),
+and Go-bridged pool (`pool_*`) variants of that alert together.
+
+```
+spiralctl alerts [menu|list|disable|enable|reset] [alert_type]
+```
+
+**Actions:**
+- `menu` (default when run with no arguments on a terminal) - Interactive toggle menu: every alert/report is numbered and shown with its on/off state; type a number (or a name) to flip it, `r` to reset all, `s` to save & restart Sentinel, `q` to quit without saving. Edits are held in memory and written once on save.
+- `list` - Show every alert and report grouped by domain, each marked `on` or `DISABLED` (non-interactive; also the default when stdout is not a terminal)
+- `disable <alert_type>` - Stop sending a specific alert or report
+- `enable <alert_type>` - Resume sending it
+- `reset` - Clear all mutes (re-enable everything)
+
+**Notes:**
+- Reports are alert types: `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`.
+- `block_found` can never be disabled — the command rejects it.
+- Unknown/mistyped names are rejected; run `spiralctl alerts list` for the valid set.
+- Backed by the `disabled_alerts` list in the Sentinel `config.json`. Changes require
+  a Sentinel restart (`sudo systemctl restart spiralsentinel`) to take effect.
+
+**Examples:**
+```
+spiralctl alerts                      # interactive menu
+spiralctl alerts list
+spiralctl alerts disable difficulty_change
+spiralctl alerts disable weekly_report
+spiralctl alerts enable difficulty_change
+spiralctl alerts reset
+```
+
+**Relationship to other silencing methods:** `alerts disable` is the uniform on/off
+switch. For alerts you want to keep but tune, the per-feature `*_enabled` flags and
+`alert_cooldowns` in [SentinelConfig.md](SentinelConfig.md) still apply. `spiralctl pause`
+mutes everything temporarily; `alerts disable` is per-type and persistent.
 
 ---
 

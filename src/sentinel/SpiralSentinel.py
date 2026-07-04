@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.6.0 - SPIRAL CITADEL EDITION                            ║
+║  Spiral Sentinel v2.6.1 - SPIRAL CITADEL EDITION                            ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.6.0"
+__version__ = "2.6.1"
 __codename__ = "SPIRAL_CITADEL"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -1113,6 +1113,10 @@ DEFAULT_CONFIG = {
     "enable_weekly_reports": True,   # Weekly summary reports
     "enable_monthly_reports": True,  # Monthly earnings reports
     "enable_quarterly_reports": True, # Quarterly reports
+    # Operator mute list — alert_types disabled via 'spiralctl alerts disable <type>'.
+    # Each entry silences that alert everywhere (including the infra_*/pool_* variants).
+    # block_found can never be muted. See send_alert() for the enforcement.
+    "disabled_alerts": [],
     # Pool API settings for share validation
     "pool_api_url": "http://localhost:4000",  # Spiral Stratum API
     "pool_admin_api_key": "",                  # Admin API key for device hints (from pool config)
@@ -6102,7 +6106,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.6.0-SPIRAL_CITADEL"
+                "sentinel_version": "V2.6.1-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6121,7 +6125,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.6.0-SPIRAL_CITADEL"
+                "sentinel_version": "V2.6.1-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -12747,6 +12751,23 @@ def send_alert(alert_type, embed, state=None, miner_name=None):
         state: MonitorState instance (optional, used for rate limiting and batching)
         miner_name: Name of miner for miner-specific alerts (optional, used for batching)
     """
+    # OPERATOR MUTES: per-alert-type disable list (managed by 'spiralctl alerts disable <type>').
+    # Matches the exact alert_type, or the type with an infra_/pool_ prefix stripped, so a single
+    # canonical name (e.g. "circuit_breaker", "chain_tip_stall") silences the native, Prometheus
+    # (infra_*), and Go-bridged (pool_*) variants alike. Checked first so it also covers reports.
+    # block_found is never mutable — you always want to know when you find a block.
+    if alert_type != "block_found":
+        disabled = CONFIG.get("disabled_alerts", [])
+        if isinstance(disabled, list) and disabled:
+            base = alert_type
+            for _pfx in ("infra_", "pool_"):
+                if base.startswith(_pfx):
+                    base = base[len(_pfx):]
+                    break
+            if alert_type in disabled or base in disabled:
+                logger.debug(f"Alert suppressed by disabled_alerts: {alert_type}")
+                return False
+
     # Master alerts toggle - if disabled, skip all alerts except reports and critical events
     # block_found ALWAYS goes through - you always want to know when you find a block!
     if not ALERTS_ENABLED and alert_type not in ["6h_report", "weekly_report", "monthly_earnings", "startup_summary", "block_found"]:
@@ -20266,7 +20287,14 @@ def monitor_loop(state):
                                 state.coin_wallet_drop_zeros[coin_sym] = 0  # a credit clears any pending drop streak
                                 was_deferred = state.coin_payout_deferred.get(coin_sym, False)
                                 embed = create_payout_received_embed(coin_sym, balance_change, current_balance, prices, deferred=was_deferred)
-                                alert_sent = send_alert("payout_received", embed, state)
+                                # A muted payout alert is a permanent suppression, not a quiet-hours
+                                # deferral — treat it as handled so state advances and we don't keep
+                                # re-deferring (and mis-logging "quiet hours") on every wallet check.
+                                _da = CONFIG.get("disabled_alerts", [])
+                                if isinstance(_da, list) and "payout_received" in _da:
+                                    alert_sent = True
+                                else:
+                                    alert_sent = send_alert("payout_received", embed, state)
                                 if alert_sent:
                                     state.coin_missing_payout_alerted[coin_sym] = False
                                     state.coin_wallet_last_check[coin_sym] = current_time
@@ -21787,12 +21815,26 @@ def monitor_loop(state):
             is_quarterly_due = (ENABLE_QUARTERLY_REPORTS and is_quarter_end() and now.hour == MAJOR_REPORT_HOUR and state.last_quarterly_report != qn)
             is_special_due = (special_info and now.hour == MAJOR_REPORT_HOUR and state.last_special_date != date_key)
 
+            # Operator mutes (spiralctl alerts disable <report>): treat a muted report as
+            # not-due so the scheduler skips the build/send path entirely and never logs
+            # "will retry" — mirroring how enable_*_reports gate these same flags above.
+            # send_alert() still blocks them as a backstop.
+            _muted_reports = CONFIG.get("disabled_alerts", [])
+            if not isinstance(_muted_reports, list):
+                _muted_reports = []
+            if _muted_reports:
+                if "6h_report" in _muted_reports: is_6h_due = False
+                if "weekly_report" in _muted_reports: is_weekly_due = False
+                if "monthly_earnings" in _muted_reports: is_monthly_due = False
+                if "quarterly_report" in _muted_reports: is_quarterly_due = False
+                if "special_date" in _muted_reports: is_special_due = False
+
             # Monthly maintenance reminder - sent on 1st of each month at 8am
             # This is separate from other reports to ensure it's always visible
             maintenance_reminder_key = now.strftime("%Y-%m")  # YYYY-MM format
             is_maintenance_reminder_due = (now.day == 1 and now.hour == 8 and now.minute < REPORT_WINDOW and
                                            state.last_maintenance_reminder != maintenance_reminder_key)
-            if is_maintenance_reminder_due:
+            if is_maintenance_reminder_due and "maintenance_reminder" not in _muted_reports:
                 logger.info("Monthly maintenance reminder due - sending reminder")
                 reminder_sent = send_alert("maintenance_reminder", create_maintenance_reminder_embed(), state)
                 if reminder_sent:

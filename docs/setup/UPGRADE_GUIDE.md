@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v2.6.0 (Spiral Citadel)
+# Upgrading to Spiral Pool v2.6.1 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate, mandatory step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.1 for the pool stack.** (The DigiByte **node** upgrade below is a separate, mandatory step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -30,7 +30,13 @@ New installs: `install.sh` always configures DGB as a full node (`txindex=1`, `p
 
 ---
 
-## What's new in v2.6.0
+## What's new in v2.6.1
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **Per-alert mute (`spiralctl alerts`)** — turn any individual Sentinel alert or scheduled report on or off (`spiralctl alerts` for the interactive menu, or `disable <type>`/`enable <type>`), backed by a new `disabled_alerts` list in the Sentinel config. Works for every alert type, not just those with a dedicated flag. Drop-in from v2.6.0 — existing configs gain it automatically.
+
+## What was new in v2.6.0
 
 See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 
@@ -149,7 +155,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.1 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -388,13 +394,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.6.0`. If Sentinel is running:
+The version line should show `2.6.1`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.6.0` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v2.6.1` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -474,4 +480,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.1 — Built on what came before. Growing toward phi.*

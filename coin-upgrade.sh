@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.6.0-SPIRAL_CITADEL
+#                   V2.6.1-SPIRAL_CITADEL
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
@@ -1047,7 +1047,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.6.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.6.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

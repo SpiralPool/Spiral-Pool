@@ -63,6 +63,8 @@ spiralctl webhook test
 spiralctl pause 30          # Suppress alerts for 30 minutes
 spiralctl maintenance on    # Maintenance mode
 spiralctl config show       # Show Sentinel configuration
+spiralctl alerts list                       # Per-alert on/off state
+spiralctl alerts disable difficulty_change  # Mute one alert or report
 ```
 
 ---
@@ -80,6 +82,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 |-----|------|---------|-------------|
 | `alert_theme` | string | `"cyberpunk"` | `"cyberpunk"` or `"professional"` |
 | `alerts_enabled` | bool | `true` | Master toggle for all alerts |
+| `disabled_alerts` | list | `[]` | Per-type mute list — alert/report types that are never sent. Managed with `spiralctl alerts disable/enable <type>`. `block_found` cannot be added. Matches `infra_*`/`pool_*` variants by canonical name. |
 | `health_monitoring_enabled` | bool | `true` | Master toggle for health monitoring |
 | `check_interval` | int | `120` | Seconds between monitoring cycles (overridden per-coin) |
 | `display_timezone` | string | `"America/New_York"` | IANA timezone for user-facing times |
@@ -327,7 +330,7 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 
 ### Go Stratum API Sentinel Alerts (bridged via `/api/sentinel/alerts`)
 
-`pool_wal_stuck_entry`, `pool_block_drought`, `pool_share_db_critical`, `pool_share_db_degraded`, `pool_share_batch_dropped`, `pool_all_nodes_down`, `pool_chain_tip_stall`, `pool_daemon_no_peers`, `pool_daemon_low_peers`, `pool_wal_recovery_stuck`, `pool_miner_disconnect_spike`, `pool_hashrate_drop`, `pool_node_health_low`, `pool_wal_disk_space_low`, `pool_wal_file_count_high`, `pool_false_rejection_rate`, `pool_retry_storm`, `pool_payment_processor_stalled`, `pool_db_failover`, `pool_ha_flapping`, `pool_block_maturity_stall`, `pool_goroutine_limit`, `pool_goroutine_growth`
+`pool_wal_stuck_entry`, `pool_block_drought`, `pool_share_db_critical`, `pool_share_db_degraded`, `pool_share_batch_dropped`, `pool_all_nodes_down`, `pool_chain_tip_stall`, `pool_daemon_no_peers`, `pool_daemon_low_peers`, `pool_wal_recovery_stuck`, `pool_miner_disconnect_spike`, `pool_hashrate_drop`, `pool_node_health_low`, `pool_wal_disk_space_low`, `pool_wal_file_count_high`, `pool_false_rejection_rate`, `pool_retry_storm`, `pool_payment_processor_stalled`, `pool_db_failover`, `pool_ha_flapping`, `pool_block_maturity_stall`, `pool_goroutine_limit`, `pool_goroutine_growth`, `pool_multi_port_difficulty_spike`, `pool_multi_port_coin_switch`
 
 ### HA Cluster
 
@@ -801,4 +804,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Citadel 2.6.0*
+*Spiral Sentinel &mdash; Spiral Citadel 2.6.1*

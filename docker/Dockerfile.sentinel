@@ -9,7 +9,7 @@ FROM python:3.14-slim
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Sentinel - Mining Monitor"
-LABEL version="2.6.0"
+LABEL version="2.6.1"
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1

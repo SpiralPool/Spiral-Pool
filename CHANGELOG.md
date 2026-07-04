@@ -7,6 +7,19 @@ Versioning follows `MAJOR.MINOR.PATCH` - patch releases are applied in-place on 
 
 ---
 
+## [v2.6.1] - 2026-07-04 - Spiral Citadel
+
+Sentinel alert-management release. Adds an operator-facing way to silence individual alerts and periodic reports without hand-editing config, and lifts the previous limitation that only alerts with a dedicated `*_enabled` flag could be turned off. Drop-in upgrade from v2.6.0 — no database migrations, no config format changes; existing `config.json` files gain the feature automatically (the new key defaults to empty, so behaviour is unchanged until an operator opts in).
+
+### Added
+- **Per-alert/report mute list (`spiralctl alerts`).** A new `spiralctl alerts [list|disable|enable|reset] <type>` command turns any individual Sentinel alert or scheduled report on or off. It is backed by a new `disabled_alerts` list in the Sentinel `config.json`, enforced by a single guard at the top of `send_alert()` — the one gate every notification passes through (native fleet alerts, Prometheus `infra_*` alerts, Go-bridged `pool_*` alerts, and the 6h/weekly/monthly/quarterly reports). The guard matches the exact `alert_type` or its `infra_`/`pool_`-stripped canonical name, so one name silences every variant. `block_found` can never be muted and unknown/mistyped names are rejected. Unlike the per-feature `*_enabled` flags (which exist for only ~a dozen alerts), this works for every alert type — including flag-less ones such as `zombie_miner`, `miner_reboot`, and `hashrate_divergence`. Changes require a Sentinel restart to take effect. (`sentinel/SpiralSentinel.py`, `scripts/spiralctl.sh`; documented in `SENTINEL.md`, `SentinelConfig.md`, `spiralctl-reference.md`.)
+
+### Fixed
+- **Upgrade summary falsely reported `spiralstratum` as FAILED when it actually started fine.** The post-upgrade status summary in `upgrade.sh` waited only for `spiraldash`/`spiralsentinel` to become active (stratum is intentionally excluded because its `ExecStartPre` node-wait can take much longer), then took a **single** `systemctl is-active` snapshot of stratum. Because stratum runs with `Restart=always` (`RestartSec=10`) and is started `--no-block` alongside PostgreSQL and the blockchain daemons, that one sample frequently landed mid-restart (`failed`/`auto-restart`) on the first attempt — printing `FAILED` and the "this is NOT normal startup" warning even though systemd brought the service online seconds later. The summary now polls stratum for up to 60 s (letting `Restart=always` settle) before classifying its state, mirroring the retry logic already used at the other stratum-startup call sites in `install.sh`; a genuinely still-failed service after the poll is still reported as `FAILED`, and a service legitimately waiting on the node still shows `Starting`. (`upgrade.sh`.)
+
+### Release identity
+- Version string moves from `2.6.0` to `2.6.1` across the installer, Sentinel, dashboard, scripts, Docker labels, and documentation. Codename remains **Spiral Citadel** — a patch release on the same tag line.
+
 ## [v2.6.0] - 2026-07-02 - Spiral Citadel
 
 DigiByte node-upgrade release, and the start of the **Spiral Citadel** codename line (succeeding Phi Hash Reactor). The bundled DigiByte Core daemon moves from **8.26.2 to 9.26.3** — a **mandatory** network-consensus upgrade for both DGB (SHA-256d) and DGB-Scrypt, which share one daemon. The pool stack itself is a drop-in upgrade from v2.5.3 (no database migrations, no config format changes); the DGB **node** upgrade is a separate, operator-driven step handled by `coin-upgrade.sh` — see [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md). **This release is also a required pool-side fix** for anyone already on v9.26.3: the node's new DigiDollar version bit broke ASIC share validation and halved BM1366 hashrate until the stratum layer was corrected — see **Fixed** below.

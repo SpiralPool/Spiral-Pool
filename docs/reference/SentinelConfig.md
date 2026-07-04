@@ -59,7 +59,7 @@ sudo systemctl restart spiralsentinel
 
 ## Table of Contents
 
-1. [The Three Ways to Silence an Alert](#the-three-ways-to-silence-an-alert)
+1. [The Ways to Silence an Alert](#the-ways-to-silence-an-alert)
 2. [Alert Cooldowns (the throttle table)](#alert-cooldowns-the-throttle-table)
 3. [Network & Pool Alerts](#network--pool-alerts)
 4. [Miner Fleet Alerts](#miner-fleet-alerts)
@@ -79,15 +79,34 @@ sudo systemctl restart spiralsentinel
 
 ---
 
-## The Three Ways to Silence an Alert
+## The Ways to Silence an Alert
 
 | Method | Effect | When to use |
 |---|---|---|
-| **Disable** — set the `*_enabled` flag to `false` | Alert never fires | You don't care about this signal at all |
+| **Mute by name** — `spiralctl alerts disable <type>` (adds to `disabled_alerts`) | That alert/report never fires | Works for *any* alert or report, including ones with no `*_enabled` flag |
+| **Disable** — set the `*_enabled` flag to `false` | Alert never fires | The alert has a dedicated toggle and you don't care about the signal |
 | **Raise the threshold** — increase the `*_threshold*` value | Alert fires only on bigger swings | You want it, but it's too sensitive |
 | **Increase cooldown** — raise the entry in `alert_cooldowns` | Alert fires at most once per N seconds | The check is fine, the repetition is the problem |
 
 A cooldown of `0` means *no throttle, fire every time*. Set it to a large number (e.g. `86400` = 24h) instead of disabling if you still want occasional reminders.
+
+### Mute by name (`disabled_alerts`)
+
+The simplest universal off-switch. `spiralctl alerts disable <type>` appends the alert type to a `disabled_alerts` list in `config.json`; `send_alert()` drops any alert whose type is in that list. Because the match also strips `infra_`/`pool_` prefixes, one canonical name silences the native, Prometheus, and Go-bridged variants together.
+
+```json
+"disabled_alerts": ["difficulty_change", "weekly_report", "chain_tip_stall"]
+```
+
+```bash
+spiralctl alerts list                      # every alert/report + on/off state
+spiralctl alerts disable difficulty_change
+spiralctl alerts enable  difficulty_change
+spiralctl alerts reset                     # clear all mutes
+sudo systemctl restart spiralsentinel      # required to apply
+```
+
+`block_found` is the one type that can never be muted. Unlike the `*_enabled` flags (which only exist for ~a dozen alerts), this works for every alert type — including flag-less ones like `zombie_miner`, `miner_reboot`, and `hashrate_divergence`. See [spiralctl-reference.md](spiralctl-reference.md#spiralctl-alerts) for the full command.
 
 ---
 
@@ -388,11 +407,18 @@ python3 /spiralpool/bin/SpiralSentinel.py --test
 
 ## Recipes — common silencing tasks
 
+### "Just turn off one specific alert or report"
+```bash
+spiralctl alerts disable difficulty_change   # any alert type, or a report like weekly_report
+sudo systemctl restart spiralsentinel
+```
+The universal off-switch — works even for alerts that have no `*_enabled` flag. `spiralctl alerts list` shows every name.
+
 ### "Stop the network difficulty alert spam"
 ```json
 "difficulty_alert_enabled": false
 ```
-*Or, keep it but only on big swings:* `"difficulty_alert_threshold_pct": 50`.
+*Or, keep it but only on big swings:* `"difficulty_alert_threshold_pct": 50`. *Or just:* `spiralctl alerts disable difficulty_change`.
 
 ### "I'm doing planned maintenance for the next two hours"
 ```bash
