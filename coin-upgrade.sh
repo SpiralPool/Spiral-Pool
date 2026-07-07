@@ -663,9 +663,13 @@ dgb_enable_pruning_config() {
     fi
 
     log_success "DigiByte pruning enabled: prune=5000, txindex removed"
-    log_info "The node will prune old block files down to ~5 GB in the background — this"
-    log_info "can take up to a few hours. Mining and all pool functions work normally"
-    log_info "throughout; the disk shrinks gradually as Core deletes old blocks on flush."
+    log_warn "On its FIRST start the daemon runs a ONE-TIME prune of the existing block"
+    log_warn "store (RPC returns error -28 'Pruning blockstore…'). While it runs, DGB serves"
+    log_warn "no block templates, so DGB miners' shares are REJECTED until it finishes —"
+    log_warn "usually a few minutes, occasionally longer. Check progress with:"
+    echo -e "  ${CYAN}digibyte-cli getblockchaininfo${NC}   ${DIM}# error -28 while pruning; '\"pruned\": true' when done${NC}"
+    log_info "After that one-time pass, pruning is gradual and in the background — mining"
+    log_info "and all pool functions run normally while the disk shrinks on block flush."
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -738,9 +742,11 @@ upgrade_coin() {
         echo -e "  Enabling sets ${BOLD}prune=5000${NC} (~5 GB) and removes txindex (v9.26.4 turns the"
         echo -e "  index off automatically under prune). ${DIM}Reverting to full later needs a resync.${NC}"
         echo ""
-        echo -e "  ${YELLOW}Note:${NC} the txindex space frees right away, but the node prunes the old"
-        echo -e "  block files down in the background — this can take ${BOLD}up to a few hours${NC} to"
-        echo -e "  finish. Mining and all pool functions keep working normally the whole time."
+        echo -e "  ${YELLOW}Note:${NC} the txindex space frees right away. On its first restart the node"
+        echo -e "  runs a ${BOLD}one-time prune pass${NC} (RPC: error -28 'Pruning blockstore…') during which"
+        echo -e "  it serves no templates — ${BOLD}DGB shares are rejected until it finishes${NC}, usually a"
+        echo -e "  few minutes. After that, pruning is gradual/background and mining runs normally."
+        echo -e "  Check progress:  ${CYAN}digibyte-cli getblockchaininfo${NC}  ${DIM}('\"pruned\": true' when done)${NC}"
         echo ""
         printf "  Enable pruning for DigiByte? [y/N] "
         local _pc; read -r _pc

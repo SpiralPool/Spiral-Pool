@@ -4406,7 +4406,11 @@ cmd_coin() {
                 fi
                 log_info "Restarting $daemon to apply pruning…"
                 systemctl restart "$daemon"
-                log_success "$coin pruning applied — the node will prune old blocks down to the ~${current_prune} MB target in the background."
+                log_success "$coin pruning applied (prune=${current_prune})."
+                log_warn "First start runs a ONE-TIME block-store prune (RPC: error -28 'Pruning"
+                log_warn "blockstore…'); $coin serves no templates, so its shares are REJECTED until"
+                log_warn "it finishes — usually a few minutes. Check progress with:"
+                log_info "    $cli getblockchaininfo    # '\"pruned\": true' when done"
                 return 0
             fi
 
@@ -4436,6 +4440,10 @@ cmd_coin() {
             log_info "Restarting $daemon..."
             systemctl restart "$daemon"
             log_success "$coin pruning enabled (prune=5000, ~5 GB). Daemon restarted."
+            log_warn "First start runs a ONE-TIME block-store prune (RPC: error -28 'Pruning"
+            log_warn "blockstore…'); $coin serves no templates, so its shares are REJECTED until"
+            log_warn "it finishes — usually a few minutes. Check progress with:"
+            log_info "    $(get_coin_cli "$coin") getblockchaininfo    # '\"pruned\": true' when done"
             echo ""
             echo -e "  ${DIM}Monitor sync progress: spiralctl sync${NC}"
             echo ""
