@@ -787,4 +787,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.1*
+*Spiral Pool — Spiral Citadel 2.6.2*

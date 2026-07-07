@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 # Spiral Pool Database Initialization
 # This script runs automatically when the PostgreSQL container starts for the first time.
-# V2.6.1-SPIRAL_CITADEL with Merge Mining (AuxPoW) Support
+# V2.6.2-SPIRAL_CITADEL with Merge Mining (AuxPoW) Support
 #
 # NOTE: The Go pool application creates pool-specific tables via migrations
 # (e.g., shares_btc_regtest, blocks_btc_regtest). This file provides base

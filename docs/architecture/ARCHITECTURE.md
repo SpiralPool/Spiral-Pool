@@ -1090,4 +1090,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.1*
+*Spiral Pool — Spiral Citadel 2.6.2*

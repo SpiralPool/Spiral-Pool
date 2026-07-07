@@ -7,6 +7,28 @@ Versioning follows `MAJOR.MINOR.PATCH` - patch releases are applied in-place on 
 
 ---
 
+## [v2.6.2] - 2026-07-06 - Spiral Citadel
+
+DigiByte node-upgrade release. The bundled DigiByte Core daemon moves from **9.26.3 to 9.26.4**, which makes **DigiDollar compatible with pruning** — reversing the v9.26.3 restriction that forced every DGB node to run a full, txindexed archive. A pruned v9.26.4 node keeps only the `[DigiDollar-activation-floor, tip]` window (a few GB) instead of the full ~80 GB node (block history + transaction index), turns `txindex` off automatically, and still validates, mines, mints, sends, redeems, and can run a DigiDollar oracle exactly like a full node. Upgrading a full node is an in-place binary swap with **no reindex**. The pool stack itself is a drop-in upgrade from v2.6.1 — no database migrations, no config format changes. See [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md).
+
+### Changed
+- **DigiByte Core upgraded to v9.26.4** (from 9.26.3) across `install.sh`, `coin-upgrade.sh`, `upgrade.sh`, the Docker images, `regtest.sh`, and the config test. v9.26.4 is a patch on top of v9.26.3 that adds **one narrowly-scoped DigiDollar consensus rule** (redemption collateral classification is gated on the activation floor, so pruned and full nodes reach identical verdicts). The Groestl algolock and DigiDollar BIP9 deployment carry forward unchanged. Treat it as a consensus-rule addition when assessing upgrade urgency; a full node that does not set `-prune` behaves like v9.26.3 apart from this rule.
+- **DigiByte pruning is supported again.** DGB rejoins the pool-wide prune toggle exactly like BTC/BCH/LTC: with pruning enabled it uses `prune=5000` (~5 GB) and no `txindex` (v9.26.4 drops the index automatically under prune); as a full node it keeps `txindex=1`/`prune=0`. Applies to `install.sh` (the pruning prompt and both generated `digibyte.conf` blocks), `scripts/linux/pool-mode.sh` (DGB now calls `get_existing_prune`), `scripts/spiralctl.sh` (`spiralctl coin prune DGB` is no longer blocked), and the Docker config template (documents how to enable pruning).
+
+### Added
+- **One-time pruning offer on the DGB upgrade.** Because v9.26.3 required a full node, any DGB node reaching `coin-upgrade.sh` is coming from a full node — so the 9.26.x → v9.26.4 upgrade now asks whether to switch DGB to a pruned node. If accepted it edits `digibyte.conf` in place (sets `prune=5000`, removes `txindex`) after backing it up, and the node prunes in place with **no resync**. Declining leaves it a full node. DGB is reclassified from **MAJOR** to **MINOR** (in-place binary swap, no forced reindex).
+- **Enabling pruning actually reclaims the disk, and sets expectations.** When the offer is accepted, `coin-upgrade.sh` also deletes the now-orphaned `indexes/txindex/` directory (built while the node was full; unused under prune, and Core never deletes it on its own) so that space is freed immediately. The prompt and completion log note that the block files then prune down in the background over **up to a few hours** while mining and all pool functions keep working.
+- **`install.sh` preserves an existing prune setting on reconfigure.** Regenerating `digibyte.conf` no longer reverts a deliberately-pruned DGB node (pruned via the installer, `coin-upgrade.sh`, or `spiralctl`) back to a full node — it only ever preserves the pruned state; enabling prune still wins.
+
+### Removed
+- **The v9.26.3 forced pruned→full migration.** `coin-upgrade.sh` no longer detects a pruned DGB node, demands a `UPGRADE` confirmation, rewrites the config to a full node, and reindexes — v9.26.4 no longer requires any of that. The `dgb_needs_pruning_migration` / `dgb_free_gb` / `dgb_apply_config_migration` helpers and their upgrade-path gate are gone.
+
+### Fixed
+- **`coin-upgrade.sh` could leave a stale `reindex-once.conf` systemd drop-in.** The drop-in that appends `-reindex` for a MAJOR upgrade is meant to be deleted right after the daemon starts; if that cleanup didn't complete, the leftover silently forced a **full chainstate rebuild on the next daemon restart** — potentially days later, when an unrelated upgrade bounced the node (the block store stays intact, so it rebuilds from local blocks rather than re-downloading, but it takes the node offline for the rebuild). The tool now removes any stale reindex drop-in before starting the daemon for every coin, and `coin-upgrade.sh --check` (and the version-status table) now flag any that are present along with the exact command to clear them.
+
+### Release identity
+- Version string moves from `2.6.1` to `2.6.2` across the installer, Sentinel, dashboard, scripts, Docker labels, and documentation. Codename remains **Spiral Citadel** — a patch release on the same tag line.
+
 ## [v2.6.1] - 2026-07-04 - Spiral Citadel
 
 Sentinel alert-management release. Adds an operator-facing way to silence individual alerts and periodic reports without hand-editing config, and lifts the previous limitation that only alerts with a dedicated `*_enabled` flag could be turned off. Drop-in upgrade from v2.6.0 — no database migrations, no config format changes; existing `config.json` files gain the feature automatically (the new key defaults to empty, so behaviour is unchanged until an operator opts in).

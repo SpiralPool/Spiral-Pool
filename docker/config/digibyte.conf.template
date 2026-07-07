@@ -5,8 +5,10 @@
 server=1
 daemon=0
 printtoconsole=1
-# DigiByte Core v9.26.3+ requires txindex for DigiDollar and refuses to start
-# when pruned — DGB runs as a full node (pruning is not supported).
+# DigiByte Core v9.26.4+ supports pruning with DigiDollar. This template defaults
+# to a full node (txindex=1). To run pruned, replace the two lines below with a
+# single "prune=2000" (MiB, min 550) and remove txindex — v9.26.4 turns the index
+# off automatically and keeps the DigiDollar window intact.
 txindex=1
 prune=0
 listen=1

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Spiral Citadel V2.6.1</em>
+  <em>Spiral Citadel V2.6.2</em>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
 | **Non-custodial solo payout** | Block reward embedded in coinbase tx directly to miner's wallet &mdash; no pool custody |
 | **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
-| **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, LTC 100 GB&rarr;5 GB (DGB excluded &mdash; v9.26.3 requires a full node) |
+| **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, LTC 100 GB&rarr;5 GB, DGB 80 GB&rarr;5 GB (DGB pruning requires DigiByte Core v9.26.4+, which runs DigiDollar pruned) |
 | **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 25 themes (port 1618) |
 | **Spiral Sentinel** | Device discovery, auto-scan (BraiinsOS/Vnish), stratum &amp; wallet mismatch detection, health/temp/hashrate alerts, block notifications, dry streak &amp; difficulty detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, webhooks |
 | **Multi coin smart port** | Single port (16180) rotating SHA-256d coins by either a 24h weighted schedule (TIME mode) or live lowest-network-difficulty selection (DIFFICULTY mode), with failover |
@@ -246,7 +246,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.6.1 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.6.2 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -319,4 +319,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Spiral Citadel 2.6.1 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Spiral Citadel 2.6.2 &mdash; Convergent difficulty. Minimal oscillation.*

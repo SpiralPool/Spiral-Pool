@@ -14,12 +14,12 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="DigiByte Core Node for Spiral Pool"
-LABEL version="9.26.3"
+LABEL version="9.26.4"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG DIGIBYTE_VERSION=9.26.3
+ARG DIGIBYTE_VERSION=9.26.4
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

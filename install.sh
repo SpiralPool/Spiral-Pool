@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.6.1                                                         ║
+# ║   Version: 2.6.2                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.6.1"
+    VERSION="2.6.2"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -44,7 +44,7 @@ INSTALL_DIR="/spiralpool"
 # blockchain data / wallets / configs on a failed re-run (e.g. adding a coin).
 INSTALL_DIR_PREEXISTED=false
 [[ -d "$INSTALL_DIR" ]] && INSTALL_DIR_PREEXISTED=true
-DIGIBYTE_VERSION="9.26.3"
+DIGIBYTE_VERSION="9.26.4"
 BITCOINII_VERSION="29.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="1.0.2"
@@ -6548,10 +6548,11 @@ generate_docker_dgb_config() {
 # Network
 server=1
 daemon=0
-# DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar and refuses to start
-# when pruned. DGB is ALWAYS a full node — global pruning does NOT apply here.
-txindex=1
-prune=0
+# DigiByte Core v9.26.4+ runs DigiDollar on a pruned node too: under -prune it
+# keeps the DigiDollar window ([activation floor, tip]) and turns the transaction
+# index off automatically. Honor the pool-wide prune toggle (full node → txindex=1).
+$PRUNE_CONF_TXINDEX
+$PRUNE_CONF_PRUNE
 listen=1
 listenonion=0
 port=12024
@@ -6579,7 +6580,7 @@ rpcworkqueue=64
 # Mining
 algo=sha256d
 
-# Force DNS seed queries on every startup (verified: digibyted 9.26.3)
+# Force DNS seed queries on every startup (verified: digibyted 9.26.4)
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
@@ -11726,12 +11727,11 @@ prompt_prune_option() {
     echo ""
     echo -e "  Pruning reduces disk usage dramatically:"
     echo -e "  ${GREEN}BTC:${NC} ~600 GB → ~5 GB    ${GREEN}BCH:${NC} ~200 GB → ~5 GB"
-    echo -e "  ${GREEN}LTC:${NC} ~100 GB → ~5 GB"
+    echo -e "  ${GREEN}LTC:${NC} ~100 GB → ~5 GB    ${GREEN}DGB:${NC} ~80 GB → ~5 GB"
     echo ""
-    echo -e "  ${YELLOW}NOTE:${NC} DigiByte (DGB) does NOT support pruning. DigiByte Core"
-    echo -e "  v9.26.3+ requires a full transaction index for DigiDollar and will"
-    echo -e "  not start when pruned. DGB always runs as a full node (~80 GB),"
-    echo -e "  even if you enable pruning below (which applies to the other coins)."
+    echo -e "  ${GREEN}NOTE:${NC} DigiByte (DGB) supports pruning as of DigiByte Core v9.26.4 —"
+    echo -e "  DigiDollar runs on a pruned node, which keeps only the DigiDollar window"
+    echo -e "  and turns txindex off automatically. DGB follows the toggle below."
     echo ""
     echo -e "  ${YELLOW}IMPORTANT:${NC} The node still downloads and verifies the ENTIRE"
     echo -e "  blockchain first, then prunes (deletes) old blocks."
@@ -11752,9 +11752,6 @@ prompt_prune_option() {
         PRUNE_CONF_TXINDEX=""
         PRUNE_CONF_PRUNE="prune=5000"
         log_success "Pruned mode enabled — nodes will use prune=5000 (~5 GB)"
-        if [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]]; then
-            log_warn "DigiByte (DGB) is excluded from pruning and will run as a full node (~80 GB)"
-        fi
     else
         PRUNE_ENABLED="false"
         PRUNE_CONF_TXINDEX="txindex=1"
@@ -16394,7 +16391,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.1 — SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.2 — SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -16649,6 +16646,21 @@ blocksonly=0"
         log "Auto-sized: DGB dbcache=${DGB_DBCACHE}MB, MemoryMax=${DGB_MEM_MAX} (${total_mb}MB total RAM)"
     fi
 
+    # Prune setting for this DGB config. Start from the pool-wide toggle, but if an
+    # existing digibyte.conf is ALREADY pruned, preserve that — so re-running the
+    # installer never silently reverts a deliberately-pruned node (enabled via the
+    # install prompt, coin-upgrade.sh, or spiralctl) back to a full node and forces
+    # a resync. Only ever preserves the pruned state; enabling prune still wins.
+    local _dgb_txindex="$PRUNE_CONF_TXINDEX"
+    local _dgb_prune="$PRUNE_CONF_PRUNE"
+    if [[ -f "$DGB_DIR/digibyte.conf" ]] && grep -qE '^[[:space:]]*prune=[1-9]' "$DGB_DIR/digibyte.conf"; then
+        local _existing_prune
+        _existing_prune=$(grep -oP '^[[:space:]]*prune=\K[0-9]+' "$DGB_DIR/digibyte.conf" | head -1)
+        _dgb_txindex=""
+        _dgb_prune="prune=${_existing_prune:-5000}"
+        log "Preserving existing DigiByte pruning (${_dgb_prune}) on reconfigure — not reverting to a full node"
+    fi
+
     sudo tee "$DGB_DIR/digibyte.conf" > /dev/null << EOF
 # DigiByte Core Configuration
 # Spiral Pool v3 - Solo Mining Pool
@@ -16658,12 +16670,12 @@ blocksonly=0"
 server=1
 daemon=1
 $(if [[ "$TOR_ENABLED" != "true" ]]; then echo "listen=1"; else echo "listen=0"; fi)
-# DigiByte Core v9.26.3+ requires txindex=1 for DigiDollar consensus and refuses
-# to start with pruning enabled on mainnet (prune and txindex are mutually
-# exclusive). DGB is therefore ALWAYS a full archival node — global pruning does
-# NOT apply here. Do not add a prune= line to this file.
-txindex=1
-prune=0
+# DigiByte Core v9.26.4+ runs DigiDollar on a pruned node too: under -prune it
+# keeps the DigiDollar window ([activation floor, tip]) and turns the transaction
+# index off automatically. Honor the pool-wide prune toggle (full node → txindex=1),
+# preserving any pruning already configured on this node.
+$_dgb_txindex
+$_dgb_prune
 
 # === RPC CONFIGURATION ===
 rpcuser=$DGB_RPC_USER
@@ -16730,7 +16742,7 @@ seednode=seed.quakeguy.com
 seednode=seed.aroundtheblock.app
 seednode=seed.digibyte.services"; fi)
 
-# Force DNS seed queries on every startup (verified: digibyted 9.26.3 -help confirms support)
+# Force DNS seed queries on every startup (verified: digibyted 9.26.4 -help confirms support)
 forcednsseed=1
 
 # Hardcoded fallback peers for when DNS seeds are unreachable (confirmed active 2026-03-30)
@@ -22938,7 +22950,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.6.1"
+    local BUILD_VERSION="2.6.2"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -32000,11 +32012,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.6.1-SPIRAL_CITADEL: Create backup command
+    # V2.6.2-SPIRAL_CITADEL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.6.1-SPIRAL_CITADEL
+# Spiral Pool Backup Utility - V2.6.2-SPIRAL_CITADEL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32049,7 +32061,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.2-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32428,7 +32440,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.6.1",
+    "version": "2.6.2",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -32709,7 +32721,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.2-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -32762,11 +32774,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.6.1-SPIRAL_CITADEL: Create restore command
+    # V2.6.2-SPIRAL_CITADEL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.6.1-SPIRAL_CITADEL
+# Spiral Pool Restore Utility - V2.6.2-SPIRAL_CITADEL
 # Restores backups created by spiralpool-backup
 #
 
@@ -32813,7 +32825,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.2-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33156,7 +33168,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.2-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -39406,7 +39418,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.6.1 - SPIRAL CITADEL${NC}"
+    echo -e "                                     ${DIM}V2.6.2 - SPIRAL CITADEL${NC}"
     echo ""
 }
 

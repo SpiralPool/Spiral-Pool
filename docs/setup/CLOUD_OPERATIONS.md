@@ -753,4 +753,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.1*
+*Spiral Pool — Spiral Citadel 2.6.2*
