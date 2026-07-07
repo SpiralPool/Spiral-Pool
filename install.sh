@@ -16809,6 +16809,16 @@ EOF
     sudo systemctl daemon-reload || true
     sudo systemctl enable digibyted || true
 
+    # If digibyted is already running (installer re-run / reconfigure), the config we
+    # just rewrote won't take effect — the later `systemctl start` is a no-op on an
+    # already-active unit, leaving the live node out of sync with the config (e.g.
+    # config now says prune=5000 but the daemon keeps running as a full node). Restart
+    # it now so the running node always matches the config we just wrote.
+    if systemctl is-active --quiet digibyted 2>/dev/null; then
+        log "digibyted already running — restarting to apply the regenerated config"
+        sudo systemctl restart digibyted || log_warn "Could not restart digibyted — restart it manually to apply the new config"
+    fi
+
     # Create digibyte-cli wrapper (default config path is ~/.digibyte/ which is wrong)
     local DGB_BLOCKCHAIN_DIR
     DGB_BLOCKCHAIN_DIR=$(get_blockchain_dir dgb)

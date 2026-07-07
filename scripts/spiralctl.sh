@@ -4366,11 +4366,47 @@ cmd_coin() {
                 exit 1
             fi
 
-            # Check if already pruned (prune=0 means NOT pruned — full node default)
-            if grep -qE "^prune=[1-9]" "$conf_file" 2>/dev/null; then
+            # Config already has pruning set. But the *running* daemon may predate that
+            # edit — the config was regenerated while the daemon was up, or prune was
+            # added without a restart — leaving the live node a full node even though
+            # the config says pruned. Reconcile the two so operators never have to know
+            # to restart by hand (prune=0 means NOT pruned — full node default).
+            if grep -qE "^[[:space:]]*prune=[1-9]" "$conf_file" 2>/dev/null; then
                 local current_prune
-                current_prune=$(grep "^prune=" "$conf_file" | head -1 | cut -d= -f2)
-                log_info "$coin is already configured with prune=${current_prune}"
+                current_prune=$(grep -oP '^[[:space:]]*prune=\K[0-9]+' "$conf_file" | head -1)
+
+                # Ask the live daemon whether it is actually pruned right now.
+                local cli live_pruned=""
+                cli=$(get_coin_cli "$coin")
+                if [[ -n "$cli" ]]; then
+                    live_pruned=$($cli getblockchaininfo 2>/dev/null \
+                        | grep -oE '"pruned"[[:space:]]*:[[:space:]]*(true|false)' | grep -oE '(true|false)' | head -1)
+                fi
+
+                if [[ "$live_pruned" == "true" ]]; then
+                    log_info "$coin is already pruned (prune=${current_prune}) — the running daemon confirms it."
+                    return 0
+                fi
+                if [[ -z "$live_pruned" ]]; then
+                    # Daemon not running / still loading — config is set; it applies on next start.
+                    log_info "$coin config already has prune=${current_prune}; daemon not responding, so it will apply on next start."
+                    return 0
+                fi
+
+                # Drift: config says pruned but the live daemon is still a full node.
+                log_warn "$coin config has prune=${current_prune} but the running daemon is NOT pruned —"
+                log_warn "it started before pruning was configured. Applying it now (restart)."
+                if grep -qE '^[[:space:]]*txindex=1' "$conf_file" 2>/dev/null; then
+                    sed -i 's/^[[:space:]]*txindex=1/#txindex=1  # disabled for pruning/' "$conf_file"
+                fi
+                local _dd; _dd="$(_chain_dir "$coin_lower")"
+                if [[ -d "${_dd}/indexes/txindex" ]]; then
+                    log_info "Removing orphaned transaction index to reclaim disk…"
+                    rm -rf "${_dd}/indexes/txindex" 2>/dev/null || sudo rm -rf "${_dd}/indexes/txindex" 2>/dev/null || true
+                fi
+                log_info "Restarting $daemon to apply pruning…"
+                systemctl restart "$daemon"
+                log_success "$coin pruning applied — the node will prune old blocks down to the ~${current_prune} MB target in the background."
                 return 0
             fi
 
