@@ -26,7 +26,7 @@ v9.26.3 required a full, txindexed node; v9.26.4 lifts that. Because every DGB n
 - **Keep it full** — decline the prompt. Nothing changes beyond the binary swap.
 - **Switch to pruned** — accept, and it edits `digibyte.conf` in place (sets `prune=5000` ≈ 5 GB, removes `txindex`) after backing it up, then starts the node, which **prunes in place with no resync**. Reverting to full later requires a resync.
 
-> **⚠ One-time mining interruption when switching a full node to pruned.** On its first start after pruning is enabled, the daemon runs a one-time prune of the existing block store — `getblockchaininfo` returns `error -28 "Pruning blockstore…"` and the RPC is unavailable. During that window the pool cannot serve DGB block templates, so **DGB miners' shares are rejected until it completes** (usually a few minutes, occasionally longer). This is expected and self-clearing. Watch for completion with:
+> **⚠ One-time mining interruption when switching a full node to pruned.** On its first start after pruning is enabled, the daemon runs a one-time prune of the existing block store — `getblockchaininfo` returns `error -28 "Pruning blockstore…"` and the RPC is unavailable. During that window the pool cannot serve DGB block templates, so **DGB miners' shares are rejected until it completes**. This is expected and self-clearing. **How long it takes varies significantly with your system** — chain size, disk speed (SSD vs HDD/network storage), and load — ranging from several minutes to an hour or more for a full DGB node; there is no fixed duration. Watch for completion with:
 >
 > ```bash
 > digibyte-cli getblockchaininfo    # error -28 while pruning; "pruned": true when done
