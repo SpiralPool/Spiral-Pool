@@ -944,6 +944,7 @@ warn_stale_reindex_dropins() {
         echo -e "       ${DIM}${coin}:${NC} sudo rm -f ${dropin} && sudo systemctl daemon-reload"
     done
     [[ "$found" == "true" ]] && echo ""
+    return 0
 }
 
 show_version_table() {
