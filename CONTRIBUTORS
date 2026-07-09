@@ -20,6 +20,8 @@ Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
   - Block dedup hash-only fix (removed worker-name dedup)
   - Per-coin all-time best share difficulty (lifetime_stats persistence)
   - GetBlocksWithOrphans dynamic limit (pageSize query parameter)
+  - Blocks-found widget limit raised to 5000 (API default 100→5000, dashboard
+    requests pageSize=5000) — fixes multi-coin truncation (commit 8f4aa5d)
   - Docker ZMQ port exposures, extra_hosts, PROMETHEUS_URL additions
   - Full stack fixes: stratum API, Sentinel reliability, dashboard math
   - BIP9 version-bits capture: VBAvailable/VBRequired fields on BlockTemplate
