@@ -679,8 +679,8 @@ func (s *Server) handlePoolBlocks(w http.ResponseWriter, r *http.Request, poolID
 		return
 	}
 
-	// Parse optional pageSize query param (default 100, max 5000).
-	limit := 100
+	// Parse optional pageSize query param (default 5000, max 5000).
+	limit := 5000
 	if val := r.URL.Query().Get("pageSize"); val != "" {
 		if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
 			limit = parsed

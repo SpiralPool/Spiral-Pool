@@ -1922,7 +1922,7 @@ def fetch_pool_stats():
                 continue
             try:
                 blocks_response = requests.get(
-                    f"{POOL_API_URL}/api/pools/{pid}/blocks",
+                    f"{POOL_API_URL}/api/pools/{pid}/blocks?pageSize=5000",
                     timeout=5
                 )
                 if blocks_response.status_code == 200:
@@ -17127,7 +17127,7 @@ def get_block_leaderboard():
                     if not pid:
                         continue
                     try:
-                        blk_resp = requests.get(f"{POOL_API_URL}/api/pools/{pid}/blocks", timeout=5)
+                        blk_resp = requests.get(f"{POOL_API_URL}/api/pools/{pid}/blocks?pageSize=5000", timeout=5)
                         if blk_resp.status_code == 200:
                             blocks = blk_resp.json()
                             coin = pool.get("coin", {}).get("type", "").upper()
