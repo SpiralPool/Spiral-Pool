@@ -3,12 +3,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.6.2-SPIRAL_CITADEL
+#                   V2.6.3-SPIRAL_CITADEL
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
-# EXCEPTION: the 9.26.x → v9.26.4 DigiByte upgrade offers to switch the node to a
-# pruned node (v9.26.4 makes DigiDollar work while pruned). If accepted it edits
+# EXCEPTION: the 9.26.x → v9.26.5 DigiByte upgrade offers to switch the node to a
+# pruned node (v9.26.4+ makes DigiDollar work while pruned). If accepted it edits
 # digibyte.conf in place (sets prune=5000, removes txindex) after backing it up —
 # no chain data is deleted and no resync is required. Declining leaves it full.
 #
@@ -61,7 +61,7 @@ declare -A COIN_TARGET=(
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="29.1.0"
     [BTCS]="source-ff5c3c3"  # Bitcoin Silver — built from source, pinned commit
-    [DGB]="9.26.4"
+    [DGB]="9.26.5"
     [LTC]="0.21.5.4"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
@@ -85,8 +85,10 @@ declare -A COIN_RISK=(
     [BCH2]="NONE"   # 27.0.2 — current
     [BC2]="NONE"    # 29.1.0 — current
     [BTCS]="NONE"   # source build — pinned commit ff5c3c3
-    [DGB]="MINOR"   # 9.26.4 — adds one narrowly-scoped DigiDollar consensus rule; in-place
-                    # binary swap, no reindex. Also enables optional pruning (one-time offer).
+    [DGB]="MINOR"   # 9.26.5 — fixes the DigiDollar oracle startup scan (9.26.4 re-ran the BIP9
+                    # state machine per block, hanging init for 15+ min). Nodes still on 9.26.3
+                    # also cross 9.26.4's narrowly-scoped consensus rule, so this stays MINOR.
+                    # In-place binary swap, no reindex. Optional pruning (one-time offer).
     [LTC]="NONE"    # 0.21.5.4 — current
     [DOGE]="NONE"   # 1.14.9 — current
     [PEP]="NONE"    # 1.1.0  — current
@@ -291,16 +293,31 @@ disable_maintenance() {
 wait_for_daemon() {
     local coin="$1"
     local cli; cli=$(get_coin_cli "$coin")
-    local deadline=$(( SECONDS + 120 ))
-    log_info "Waiting for ${coin} daemon to respond (up to 120s)..."
+    # DGB reloads a ~24M-entry block index before it opens RPC, which takes 4-5 minutes
+    # on ordinary hardware — a flat 120s budget always expired and printed a "did not
+    # respond" warning on a perfectly healthy upgrade. Give the slow starter room.
+    local budget=120
+    [[ "$coin" == "DGB" ]] && budget=600
+    local deadline=$(( SECONDS + budget ))
+    log_info "Waiting for ${coin} daemon to respond (up to ${budget}s)..."
+    local out last_msg=""
     while [[ $SECONDS -lt $deadline ]]; do
-        if $cli getblockchaininfo &>/dev/null; then
+        if out=$($cli getblockchaininfo 2>&1); then
             log_success "${coin} daemon is responding"
             return 0
         fi
+        # A daemon still in init answers RPC with error -28 and a stage name
+        # ("Loading block index…", "Verifying blocks…", "Pruning blockstore…").
+        # Echo each new stage so the wait shows progress instead of looking hung.
+        local msg
+        msg=$(printf '%s' "$out" | grep -vi '^error code' | tr -d '\r' | tail -1)
+        if [[ -n "$msg" && "$msg" != "$last_msg" ]]; then
+            log_info "  ${coin}: ${msg}"
+            last_msg="$msg"
+        fi
         sleep 3
     done
-    log_warn "${coin} did not respond within 120s — may still be starting or reindexing"
+    log_warn "${coin} did not respond within ${budget}s — may still be starting or reindexing"
     return 0  # non-fatal; operator can monitor manually
 }
 
@@ -723,16 +740,17 @@ upgrade_coin() {
     local confirm; read -r confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Skipped ${coin}"; return 0; }
 
-    # ── DigiByte v9.26.4 pruning offer (one-time, this version) ────────────────
-    # v9.26.3 REQUIRED a full node (txindex for DigiDollar); v9.26.4 lets DigiDollar
-    # run while pruned. Any DGB node reaching this point is on a pre-9.26.4 (full)
-    # build, so offer to switch it to a pruned node now. Applied in place before
-    # the daemon starts (no reindex). Declining leaves it a full node.
+    # ── DigiByte pruning offer (one-time, until the node is at target) ─────────
+    # v9.26.3 REQUIRED a full node (txindex for DigiDollar); v9.26.4+ lets DigiDollar
+    # run while pruned. Any DGB node below the target that is still full gets the
+    # offer to switch to a pruned node now. Applied in place before the daemon
+    # starts (no reindex). Declining leaves it a full node. Gate on the target
+    # version so the offer does not re-fire once the node is already there.
     local _dgb_enable_prune=false
-    if [[ "$coin" == "DGB" && "$installed_ver" != "9.26.4" ]] && ! dgb_is_pruned; then
+    if [[ "$coin" == "DGB" && "$installed_ver" != "${COIN_TARGET[DGB]}" ]] && ! dgb_is_pruned; then
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${CYAN}${BOLD}  DigiByte v9.26.4 now supports pruning${NC}"
+        echo -e "${CYAN}${BOLD}  DigiByte v9.26.4+ supports pruning${NC}"
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "  v9.26.3 required a ${BOLD}full${NC} node (txindex) for DigiDollar. v9.26.4 lets a"
@@ -1092,7 +1110,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.6.2-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V2.6.3-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

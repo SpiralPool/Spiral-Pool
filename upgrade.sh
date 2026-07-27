@@ -4541,7 +4541,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.2 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.3 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4689,7 +4689,7 @@ migrate_daemon_sudoers() {
 
     if ! grep -q "ecashd" "$DASH_SUDOERS" 2>/dev/null; then
         echo "" >> "$DASH_SUDOERS"
-        echo "# XEC (eCash) daemon control (v2.6.2)" >> "$DASH_SUDOERS"
+        echo "# XEC (eCash) daemon control (v2.6.3)" >> "$DASH_SUDOERS"
         echo "$POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart ecashd" >> "$DASH_SUDOERS"
         changed=1
     fi
@@ -5228,13 +5228,14 @@ show_summary() {
                 printf "  %-6s  %s → %s  %b%s%b\n" \
                     "$coin" "$installed" "$target" "$risk_color" "$risk" "${NC}"
             done <<< "$upgrade_lines"
-            # DigiByte v9.26.4 adds one narrowly-scoped DigiDollar consensus rule and
-            # makes DigiDollar work on a pruned node. Call it out so operators know it
-            # is an in-place binary swap (no reindex) that also offers to enable pruning.
+            # DigiByte v9.26.5 fixes the DigiDollar oracle startup scan that stalled node
+            # init for 15+ minutes; nodes still on 9.26.3 also cross v9.26.4's narrowly-
+            # scoped consensus rule. Call it out so operators know it is an in-place
+            # binary swap (no reindex) that also offers to enable pruning.
             if grep -q '^DGB ' <<< "$upgrade_lines"; then
                 echo
-                echo -e "${CYAN}  ℹ  DigiByte (DGB) v9.26.4 adds a DigiDollar consensus rule and enables${NC}"
-                echo -e "${CYAN}     optional pruning. It is an in-place binary swap — no reindex.${NC}"
+                echo -e "${CYAN}  ℹ  DigiByte (DGB) v9.26.5 fixes a DigiDollar oracle startup stall and${NC}"
+                echo -e "${CYAN}     enables optional pruning. In-place binary swap — no reindex.${NC}"
                 echo -e "     coin-upgrade.sh will offer to switch DGB to a pruned node (prune=5000,"
                 echo -e "     ~5 GB, prunes in place). Wallets, configs, and other coins are untouched."
             fi
@@ -5314,7 +5315,7 @@ PYEOF
         coin_lines+="**${coin}** — ${installed} → ${target} (${risk_label})\n"
     done <<< "$upgrade_lines"
     if grep -q '^DGB ' <<< "$upgrade_lines"; then
-        coin_lines+="\nℹ **DigiByte v9.26.4** adds a DigiDollar consensus rule and enables optional pruning. In-place binary swap (no reindex); coin-upgrade.sh offers to switch DGB to a pruned node and preserves wallets/configs.\n"
+        coin_lines+="\nℹ **DigiByte v9.26.5** fixes a DigiDollar oracle startup stall that held node init for 15+ minutes, and enables optional pruning. In-place binary swap (no reindex); coin-upgrade.sh offers to switch DGB to a pruned node and preserves wallets/configs.\n"
     fi
 
     local embed
@@ -5333,7 +5334,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.6.2 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.6.3 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

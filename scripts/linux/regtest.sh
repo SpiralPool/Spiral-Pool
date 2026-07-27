@@ -221,9 +221,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/DigiByte-Core/digibyte"
             GBT_RULES='["segwit"]'
             # Auto-install info
-            DAEMON_VERSION="9.26.4"
-            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.4/digibyte-9.26.4-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="digibyte-9.26.4"
+            DAEMON_VERSION="9.26.5"
+            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.5/digibyte-9.26.5-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="digibyte-9.26.5"
             ;;
         dgb-scrypt)
             COIN_SYMBOL=DGB_SCRYPT; COIN_NAME="DigiByte (Scrypt)"; COIN_ALGO=scrypt
@@ -238,9 +238,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/DigiByte-Core/digibyte"
             GBT_RULES='["segwit"]'
             # Auto-install info (same as dgb — same daemon)
-            DAEMON_VERSION="9.26.4"
-            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.4/digibyte-9.26.4-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="digibyte-9.26.4"
+            DAEMON_VERSION="9.26.5"
+            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.5/digibyte-9.26.5-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="digibyte-9.26.5"
             ;;
         btc)
             COIN_SYMBOL=BTC; COIN_NAME="Bitcoin (Knots)"; COIN_ALGO=sha256d

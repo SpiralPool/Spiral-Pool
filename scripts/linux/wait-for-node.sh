@@ -1125,11 +1125,14 @@ check_all_nodes() {
     while IFS=' ' read -r symbol host port user pass; do
         [ -z "$symbol" ] && continue
         total_count=$((total_count + 1))
+        # Per-coin lines go to stderr: every caller runs this in $(... | tail -1) to read
+        # the summary, which would otherwise swallow them and leave the operator with no
+        # way to tell WHICH coin is blocking startup. check_rpc already logs to stderr.
         if check_rpc "$host" "$port" "$user" "$pass"; then
-            echo "  ✓ $symbol node ready ($host:$port)"
+            echo "  ✓ $symbol node ready ($host:$port)" >&2
             ready_count=$((ready_count + 1))
         else
-            echo "  ✗ $symbol node not ready ($host:$port)"
+            echo "  ✗ $symbol node not ready ($host:$port)" >&2
         fi
     done
 
