@@ -234,19 +234,47 @@ func fetchPoolStats(apiPort, dashboardPort int) (*PoolStatsResult, error) {
 	poolURL := fmt.Sprintf("http://127.0.0.1:%d/api/pools", apiPort)
 	resp, err = client.Get(poolURL)
 	if err == nil {
-		var pools []map[string]interface{}
-		if json.NewDecoder(limitedReader(resp.Body)).Decode(&pools) == nil && len(pools) > 0 {
-			pool := pools[0]
+		// /api/pools returns {"software":…,"version":…,"pools":[…]}, and each
+		// pool nests its counters under "poolStats". Decoding into a bare slice
+		// of flat maps fails silently, so every field below stayed at zero and
+		// the printed report came out empty.
+		var poolsResp struct {
+			Pools []struct {
+				Coin struct {
+					Type string `json:"type"`
+				} `json:"coin"`
+				PoolStats struct {
+					ConnectedMiners   int     `json:"connectedMiners"`
+					PoolHashrate      float64 `json:"poolHashrate"`
+					NetworkDifficulty float64 `json:"networkDifficulty"`
+					BlocksFound       int64   `json:"blocksFound"`
+					AcceptedShares    int64   `json:"acceptedShares"`
+					RejectedShares    int64   `json:"rejectedShares"`
+				} `json:"poolStats"`
+			} `json:"pools"`
+		}
+		if json.NewDecoder(limitedReader(resp.Body)).Decode(&poolsResp) == nil && len(poolsResp.Pools) > 0 {
+			pool := poolsResp.Pools[0]
+			if result.Coin == "" {
+				result.Coin = pool.Coin.Type
+			}
 			if result.PoolHashrate == 0 {
-				if hr, ok := pool["hashrate"].(float64); ok {
-					result.PoolHashrate = hr
-				}
+				result.PoolHashrate = pool.PoolStats.PoolHashrate
 			}
-			if workers, ok := pool["workers"].(float64); ok && result.OnlineMiners == 0 {
-				result.OnlineMiners = int(workers)
+			if result.OnlineMiners == 0 {
+				result.OnlineMiners = pool.PoolStats.ConnectedMiners
 			}
-			if blocks, ok := pool["blocks"].(float64); ok && result.BlocksFound == 0 {
-				result.BlocksFound = int(blocks)
+			if result.BlocksFound == 0 {
+				result.BlocksFound = int(pool.PoolStats.BlocksFound)
+			}
+			if result.NetworkDifficulty == 0 {
+				result.NetworkDifficulty = pool.PoolStats.NetworkDifficulty
+			}
+			if result.AcceptedShares == 0 {
+				result.AcceptedShares = pool.PoolStats.AcceptedShares
+			}
+			if result.RejectedShares == 0 {
+				result.RejectedShares = pool.PoolStats.RejectedShares
 			}
 		}
 		resp.Body.Close()

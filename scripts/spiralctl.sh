@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.6.3}"
+VERSION="${VERSION:-2.6.4}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -6976,7 +6976,8 @@ cmd_workers() {
     while IFS= read -r pool_id; do
         [[ -z "$pool_id" ]] && continue
         local symbol
-        symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.[] | select(.id==$id) | .coin.symbol' 2>/dev/null || echo "$pool_id")
+        symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.pools[] | select(.id==$id) | .coin.type // empty' 2>/dev/null)
+        [[ -z "$symbol" ]] && symbol="$pool_id"
 
         local miners_json
         miners_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
@@ -7017,7 +7018,7 @@ cmd_workers() {
                 printf "  %-6s %-18s %-14s %12s %8s %8s\n" "$symbol" "$addr_short" "${worker:0:14}" "$hr_str" "$acc_str" "$online_str"
             done
         done < <(echo "$miners_json" | jq -r '.[].address' 2>/dev/null)
-    done < <(echo "$pools_json" | jq -r '.[].id' 2>/dev/null)
+    done < <(echo "$pools_json" | jq -r '.pools[].id' 2>/dev/null)
 
     if [[ "$header_printed" == "false" ]]; then
         echo ""
@@ -7173,7 +7174,8 @@ cmd_miners() {
                 [[ -z "$miners_json" ]] && continue
 
                 local symbol
-                symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.[] | select(.id==$id) | .coin.symbol' 2>/dev/null || echo "$pool_id")
+                symbol=$(echo "$pools_json" | jq -r --arg id "$pool_id" '.pools[] | select(.id==$id) | .coin.type // empty' 2>/dev/null)
+                [[ -z "$symbol" ]] && symbol="$pool_id"
 
                 local count
                 count=$(echo "$miners_json" | jq 'length' 2>/dev/null || echo 0)
@@ -7201,7 +7203,7 @@ cmd_miners() {
                     fi
                     printf "  %-8s %-20s %12s %10.2f %10.0f\n" "$symbol" "$addr_short" "$hr_str" "$sps" "$shares"
                 done
-            done < <(echo "$pools_json" | jq -r '.[].id' 2>/dev/null)
+            done < <(echo "$pools_json" | jq -r '.pools[].id' 2>/dev/null)
 
             if [[ "$header_printed" == "false" ]]; then
                 echo ""

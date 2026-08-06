@@ -3494,7 +3494,7 @@ build_stratum() {
     if [[ -d "${STRATUM_SOURCE}/.git" ]] || [[ -d "${PROJECT_ROOT}/.git" ]]; then
         git_commit=$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     fi
-    local ldflags="-X main.Version=${TARGET_VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${git_commit} -X github.com/spiralpool/stratum/internal/ha.SpiralPoolVersion=${TARGET_VERSION}"
+    local ldflags="-X main.Version=${TARGET_VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${git_commit} -X github.com/spiralpool/stratum/internal/ha.SpiralPoolVersion=${TARGET_VERSION} -X github.com/spiralpool/stratum/internal/api.Version=${TARGET_VERSION}"
 
     # ZMQ support: The stratum uses go-zeromq/zmq4 (pure Go, no C library needed).
     # Always build with ZMQ enabled — the nozmq tag is only for minimal/test builds.
@@ -4541,7 +4541,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.3 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.4 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -5334,7 +5334,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.6.3 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.6.4 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -5681,24 +5681,29 @@ SSHDEOF
         exit 1
     fi
 
-    # Wallet reminder — shown before any changes are made
-    echo -e "${RED}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REMINDER${NC}                                        ${RED}║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "  If your pool wallet was generated on this server, your private keys"
-    echo -e "  are stored in ${WHITE}/spiralpool/backups/${NC} and in each coin's data directory."
-    echo ""
-    echo -e "  ${YELLOW}Before upgrading:${NC}"
-    echo -e "  ${YELLOW}•${NC} Confirm you have a copy of every wallet.dat off this server"
-    echo -e "  ${YELLOW}•${NC} SCP any missing backups now — upgrade will also prompt per coin"
-    echo -e "  ${YELLOW}•${NC} Store backups in at least two offline locations"
-    echo ""
-    echo -e "  Run ${WHITE}sudo bash scripts/linux/wallet-backup.sh${NC} if unsure."
-    echo ""
-    printf "  Press ENTER to confirm you have read this and continue: "
-    read -r _upgrade_wallet_ack
-    echo ""
+    # Wallet reminder — shown before any changes are made.
+    # Skipped in --auto / non-TTY: the acknowledgement is a no-op without an
+    # operator, and the banner would otherwise leak ANSI escapes into callers
+    # that capture stdout (e.g. the dashboard's pool-upgrade endpoint).
+    if [[ "$AUTO_MODE" != "true" ]] && [[ -t 0 ]]; then
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REMINDER${NC}                                        ${RED}║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  If your pool wallet was generated on this server, your private keys"
+        echo -e "  are stored in ${WHITE}/spiralpool/backups/${NC} and in each coin's data directory."
+        echo ""
+        echo -e "  ${YELLOW}Before upgrading:${NC}"
+        echo -e "  ${YELLOW}•${NC} Confirm you have a copy of every wallet.dat off this server"
+        echo -e "  ${YELLOW}•${NC} SCP any missing backups now — upgrade will also prompt per coin"
+        echo -e "  ${YELLOW}•${NC} Store backups in at least two offline locations"
+        echo ""
+        echo -e "  Run ${WHITE}sudo bash scripts/linux/wallet-backup.sh${NC} if unsure."
+        echo ""
+        printf "  Press ENTER to confirm you have read this and continue: "
+        read -r _upgrade_wallet_ack
+        echo ""
+    fi
 
     # Execute upgrade
     create_backup

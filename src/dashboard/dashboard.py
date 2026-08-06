@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.6.3"
+__version__ = "2.6.4"
 
 import os
 import json
@@ -14302,6 +14302,13 @@ def apply_pool_upgrade():
     if not check_rate_limit(client_ip, "pool_upgrade"):
         return jsonify({"success": False, "error": "Rate limit exceeded"}), 429
 
+    # upgrade.sh emits ANSI colour codes. Strip them before truncating so a
+    # slice can't cut an escape sequence in half and leak raw bytes to the UI.
+    ansi_re = re.compile(r'\x1B(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07)')
+
+    def _tail(text):
+        return ansi_re.sub('', text or '')[-500:]
+
     try:
         # Run upgrade.sh --auto in background — it will restart services itself
         result = subprocess.run(
@@ -14316,14 +14323,14 @@ def apply_pool_upgrade():
             return jsonify({
                 "success": True,
                 "message": "Upgrade complete. Services are restarting.",
-                "output": result.stdout[-500:] if result.stdout else ""
+                "output": _tail(result.stdout)
             })
         else:
             app.logger.warning(f"Pool upgrade failed for {client_ip}: {result.stderr[:200]}")
             return jsonify({
                 "success": False,
                 "error": "Upgrade failed",
-                "output": result.stderr[-500:] if result.stderr else result.stdout[-500:]
+                "output": _tail(result.stderr) if result.stderr else _tail(result.stdout)
             })
     except subprocess.TimeoutExpired:
         return jsonify({"success": False, "error": "Upgrade timed out (5 min limit)"})
@@ -15565,7 +15572,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.6.3"},
+        "footer": {"text": f"Spiral Pool v2.6.4"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

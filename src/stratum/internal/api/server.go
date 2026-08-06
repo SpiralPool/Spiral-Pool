@@ -30,6 +30,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// Version is the pool software version reported by /api/pools.
+//
+// Injected at build time by install.sh and upgrade.sh via:
+//
+//	-X github.com/spiralpool/stratum/internal/api.Version=X.Y.Z
+//
+// mirroring the pattern already used for main.Version and
+// ha.SpiralPoolVersion. Keep the fallback in sync with the VERSION file —
+// it is what an un-injected `go build` reports.
+var Version = "2.6.4"
+
+// Codename is the release codename appended to the reported version, giving
+// the "X.Y.Z-CODENAME" form that API consumers expect.
+const Codename = "SPIRAL_CITADEL"
+
 // SECURITY: Request body size limits to prevent DoS attacks
 const (
 	maxRequestBodySize = 1024 * 1024 // 1MB max request body
@@ -427,7 +442,7 @@ func (s *Server) handlePools(w http.ResponseWriter, r *http.Request) {
 
 	response := PoolsResponse{
 		Software: "spiral-stratum",
-		Version:  "2.4.2-PHI_HASH_REACTOR",
+		Version:  Version + "-" + Codename,
 		Pools: []PoolInfo{
 			{
 				ID: s.poolCfg.ID,

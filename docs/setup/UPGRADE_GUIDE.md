@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v2.6.3 (Spiral Citadel)
+# Upgrading to Spiral Pool v2.6.4 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.3 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.4 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -41,6 +41,15 @@ New installs: `install.sh` configures DGB from the pool-wide pruning choice (pru
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
 
 ---
+
+## What's new in v2.6.4
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **`/api/pools` now reports the version you are actually running.** It previously returned a hard-coded `2.4.2-PHI_HASH_REACTOR` on every build, which made a current pool look years out of date. No behaviour change beyond the reported string — but if you diagnosed a "failed upgrade" from this field, re-check with `spiralpool --version`.
+- **Dashboard-triggered upgrades no longer print a wallet-backup prompt or raw terminal colour codes.** Cosmetic on the surface, but it also removes a path where `upgrade.sh --auto` could stall on a prompt until the dashboard's 5-minute timeout.
+
+No database migrations, no config format changes. Drop-in upgrade from v2.6.3.
 
 ## What's new in v2.6.3
 
@@ -179,7 +188,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.3 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.4 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -418,13 +427,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.6.3`. If Sentinel is running:
+The version line should show `2.6.4`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.6.3` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v2.6.4` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -504,4 +513,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.3 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.4 — Built on what came before. Growing toward phi.*
