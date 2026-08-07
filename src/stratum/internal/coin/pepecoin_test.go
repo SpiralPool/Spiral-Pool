@@ -159,12 +159,13 @@ func TestPepeCoinCoinbaseScript(t *testing.T) {
 func TestPepeCoinVersionBytes(t *testing.T) {
 	coin := NewPepeCoinCoin()
 
-	if coin.P2PKHVersionByte() != 0x37 {
-		t.Errorf("expected P2PKH version 0x37, got 0x%02x", coin.P2PKHVersionByte())
+	// Values match pepecoinppc/pepecoin src/chainparams.cpp mainnet base58Prefixes.
+	if coin.P2PKHVersionByte() != 0x38 {
+		t.Errorf("expected P2PKH version 0x38, got 0x%02x", coin.P2PKHVersionByte())
 	}
 
-	if coin.P2SHVersionByte() != 0x55 {
-		t.Errorf("expected P2SH version 0x55, got 0x%02x", coin.P2SHVersionByte())
+	if coin.P2SHVersionByte() != 0x16 {
+		t.Errorf("expected P2SH version 0x16, got 0x%02x", coin.P2SHVersionByte())
 	}
 
 	if coin.Bech32HRP() != "pep" {

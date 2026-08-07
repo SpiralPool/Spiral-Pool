@@ -204,12 +204,27 @@ func NewManager(cfg *config.PoolConfig, stratumCfg *config.StratumConfig, daemon
 	// Formula: max(10, 2 * blockTime / rebroadcastInterval), capped at 50
 	// This ensures miners with in-flight jobs on slow chains aren't rejected
 	maxJobHistory := 10
+	rebroadcastSec := float64(coinImpl.BlockTime()) / 3.0
+	if rebroadcastSec < 5 {
+		rebroadcastSec = 5
+	}
 	if coinImpl.BlockTime() >= 60 { // 60s+ chains need more history
-		rebroadcastSec := float64(coinImpl.BlockTime()) / 3.0
-		if rebroadcastSec < 5 {
-			rebroadcastSec = 5
-		}
 		scaled := int(2.0 * float64(coinImpl.BlockTime()) / rebroadcastSec)
+		if scaled > maxJobHistory {
+			maxJobHistory = scaled
+		}
+	} else {
+		// Fast chains (DGB/DGB-Scrypt 15s, FBTC 30s) never entered the branch
+		// above, so they kept the flat floor of 10 — and that floor is a job
+		// COUNT, not a duration. On a fast chain jobs are minted by every block
+		// AND by a rebroadcast interval of a few seconds, so DGB produces one
+		// roughly every 3.75s and 10 jobs is barely 40 seconds of acceptance
+		// window — the shortest of any coin, on the chain that churns jobs
+		// fastest. Size these by wall clock instead, covering the same 120s the
+		// slow-chain formula yields. Cheap here: fast-chain templates carry few
+		// transactions, so the extra retained jobs are small.
+		const fastChainCoverageSec = 120.0
+		scaled := int((fastChainCoverageSec + rebroadcastSec - 1) / rebroadcastSec)
 		if scaled > maxJobHistory {
 			maxJobHistory = scaled
 		}
@@ -1755,6 +1770,7 @@ func (m *Manager) OnBlockNotificationWithHash(ctx context.Context, newTipHash st
 	// Capture current block hash to detect when template actually updates
 	m.stateMu.RLock()
 	oldHash := m.lastBlockHash
+	oldHeight := m.lastHeight
 	m.stateMu.RUnlock()
 
 	// Retry up to 20 times with exponential backoff waiting for fresh template
@@ -1770,20 +1786,40 @@ func (m *Manager) OnBlockNotificationWithHash(ctx context.Context, newTipHash st
 		// Check if template actually updated (new prevBlockHash)
 		m.stateMu.RLock()
 		newHash := m.lastBlockHash
+		newHeight := m.lastHeight
 		m.stateMu.RUnlock()
 
 		if newHash != oldHash {
 			m.logger.Infow("Template updated after ZMQ", "attempts", i+1)
 
-			// V48 FIX: Cross-RPC consistency check.
-			// If ZMQ gave us the new tip hash, verify it matches what getblocktemplate
-			// returned as previousBlockHash. A mismatch indicates RPC proxy split-brain
-			// or ZMQ/RPC desync (different daemon backends returning inconsistent state).
-			if newTipHash != "" && newHash != newTipHash {
-				m.logger.Warnw("⚠️ V48: Cross-RPC inconsistency — ZMQ tip hash differs from template prevBlockHash",
+			// V48 FIX: Cross-RPC consistency check, on HEIGHT rather than hash.
+			//
+			// The original form compared the ZMQ tip hash against the template's
+			// previousBlockHash and warned on any difference. That is a false
+			// positive on a fast chain: DigiByte produces a block every ~15s
+			// across five algorithms, so the tip routinely advances between the
+			// ZMQ notification and the getblocktemplate response. The template is
+			// then built on a *newer* block than the one ZMQ announced — healthy,
+			// but reported as split-brain. In the field this fired dozens of times
+			// per hour and buried the "Template unchanged after ZMQ" warning that
+			// actually matters.
+			//
+			// Note the hashes are not comparable at a glance either: a DGB block's
+			// identity hash is SHA256d regardless of the algorithm that mined it,
+			// so only the ~1-in-5 SHA256d blocks carry the leading zeros an
+			// operator expects to see.
+			//
+			// What genuinely indicates desync is the template failing to move
+			// forward: the chain says there is a new block, yet the height we are
+			// building on did not advance. That covers both a stuck/split RPC
+			// backend and a same-height reorg.
+			if newHeight <= oldHeight {
+				m.logger.Warnw("⚠️ V48: Template did not advance after new-block notification",
+					"oldHeight", oldHeight,
+					"newHeight", newHeight,
 					"zmqTipHash", newTipHash,
 					"templatePrevHash", newHash,
-					"note", "possible daemon proxy split-brain or ZMQ/RPC desync — verify daemon topology",
+					"note", "same-height reorg, or daemon proxy split-brain / ZMQ-RPC desync — verify daemon topology",
 				)
 			}
 

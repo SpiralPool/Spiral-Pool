@@ -67,6 +67,14 @@ type Pool struct {
 	// Maintains a durable record to prevent block loss
 	blockWAL *BlockWAL
 
+	// Block hashes already reconciled into the DB by reconcileWALWithDB.
+	// The WAL is append-only and retains submitted entries for the full
+	// retention window, so without this the 5-minute reconciliation loop
+	// re-inserts every block ever found on every pass — work and log volume
+	// that grow with lifetime block count. Failed inserts are deliberately
+	// left out so they retry on the next pass.
+	reconciledBlocks sync.Map
+
 	// Dedicated non-sampled block logger
 	// Standard zap sampling can drop logs under load - block events are too critical
 	blockLogger *BlockLogger
@@ -1492,6 +1500,43 @@ func (p *Pool) handleShare(share *protocol.Share) *protocol.ShareResult {
 // CRITICAL: Block submission is TIME-SENSITIVE. Every millisecond of delay
 // increases the chance of another miner finding a block first.
 // We submit FIRST, then do logging/WAL AFTER.
+// roundEffortPercent returns this round's effort as a percentage: the time the
+// round actually took versus the time a round is expected to take at the pool's
+// current hashrate. 100% is exactly on expectation.
+//
+// Mirrors CoinPool's calculation. The V1 path previously stored share.Difficulty
+// in the Effort column instead, which made the column report whichever miner
+// happened to find the block (its vardiff level) rather than how hard the round
+// was — every low-difficulty finder wrote the same value.
+//
+// Returns 0 when there is no prior block or no hashrate sample to compare
+// against, which is also the value used for the pool's first-ever block.
+func (p *Pool) roundEffortPercent(networkDiff float64) float64 {
+	// Same fallback the block record uses: FBTC's indexing provider cycle can
+	// report a network difficulty of 1, so prefer the validator's cached value.
+	if networkDiff <= 1 && p.shareValidator != nil {
+		if cachedDiff := p.shareValidator.GetNetworkDifficulty(); cachedDiff > 1 {
+			networkDiff = cachedDiff
+		}
+	}
+
+	p.statsMu.RLock()
+	lastBlock := p.lastBlockFoundAt
+	hashrate := p.cachedHashrate
+	p.statsMu.RUnlock()
+
+	if lastBlock.IsZero() || networkDiff <= 0 || hashrate <= 0 {
+		return 0
+	}
+
+	// Expected seconds to find one block = (difficulty × 2^32) / hashrate
+	expectedSeconds := (networkDiff * 4294967296) / hashrate
+	if expectedSeconds <= 0 {
+		return 0
+	}
+	return (time.Since(lastBlock).Seconds() / expectedSeconds) * 100
+}
+
 func (p *Pool) handleBlock(share *protocol.Share, result *protocol.ShareResult) {
 	foundTime := time.Now()
 
@@ -1823,6 +1868,12 @@ func (p *Pool) handleBlock(share *protocol.Share, result *protocol.ShareResult) 
 	}
 
 blockLogging:
+	// Round effort for the block record. MUST be computed here, before the stats
+	// block below resets lastBlockFoundAt — after that reset the round length is
+	// zero. Computed for every status so orphaned/rejected candidates carry a
+	// real figure too.
+	blockEffortPercent := p.roundEffortPercent(share.NetworkDiff)
+
 	// NOW do all the logging and WAL writes AFTER submission attempt.
 	// Differentiate accepted blocks from candidates that were rejected/orphaned
 	// to prevent false positive alerts in log monitoring systems.
@@ -2312,7 +2363,7 @@ blockLogging:
 
 	block := &database.Block{
 		Height:            share.BlockHeight,
-		Effort:            share.Difficulty,
+		Effort:            blockEffortPercent,
 		NetworkDifficulty: v1NetDiff, // Uses corrected difficulty for FBTC
 		Status:            blockStatus,
 		Type:              "block",
@@ -2520,7 +2571,15 @@ func (p *Pool) reconcileWALWithDB(ctx context.Context) error {
 
 	var reconcileErrors []error
 	reconciledCount := 0
+	skipped := 0
 	for _, block := range submittedBlocks {
+		// Already reconciled by an earlier pass in this process — the DB record
+		// exists and re-inserting only re-runs the idempotency check.
+		if _, done := p.reconciledBlocks.Load(block.BlockHash); done {
+			skipped++
+			continue
+		}
+
 		// V1 FIX: Aux blocks need Type "auxpow" and must be inserted into
 		// the aux pool table (blocks_{poolID}_{symbol}), not the parent table.
 		blockType := "block"
@@ -2569,6 +2628,7 @@ func (p *Pool) reconcileWALWithDB(ctx context.Context) error {
 			)
 			reconcileErrors = append(reconcileErrors, insertErr)
 		} else {
+			p.reconciledBlocks.Store(block.BlockHash, struct{}{})
 			reconciledCount++
 		}
 	}
@@ -2576,6 +2636,16 @@ func (p *Pool) reconcileWALWithDB(ctx context.Context) error {
 	if len(reconcileErrors) > 0 {
 		return fmt.Errorf("WAL-DB reconciliation completed with %d errors out of %d blocks",
 			len(reconcileErrors), len(submittedBlocks))
+	}
+
+	// Quiet in steady state: once every WAL entry has been reconciled there is
+	// nothing new to report, so only log passes that actually did work.
+	if reconciledCount > 0 {
+		p.logger.Infow("WAL-DB reconciliation complete",
+			"reconciled", reconciledCount,
+			"alreadyReconciled", skipped,
+			"walEntries", len(submittedBlocks),
+		)
 	}
 
 	return nil

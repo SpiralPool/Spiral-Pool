@@ -107,7 +107,11 @@ coins:
       version_rolling:
         enabled: true
         mask: 536862720  # 0x1FFFE000
-      job_rebroadcast: 30s
+      # DGB targets 15s blocks, so this must stay well under one block time —
+      # every other coin here sits at a third to a tenth of its block time.
+      # At 30s a miner could keep hashing a template two blocks stale whenever
+      # the ZMQ-triggered refresh failed to land.
+      job_rebroadcast: 5s
 
     # Multiple nodes for failover
     nodes:

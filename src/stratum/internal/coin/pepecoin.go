@@ -36,8 +36,9 @@ import (
 
 // PepeCoin mainnet address version bytes
 const (
-	PepeCoinP2PKHVersion byte = 0x37 // 55 decimal - addresses start with 'P'
-	PepeCoinP2SHVersion  byte = 0x55 // 85 decimal - P2SH addresses
+	// Values match pepecoinppc/pepecoin src/chainparams.cpp mainnet base58Prefixes.
+	PepeCoinP2PKHVersion byte = 0x38 // 56 decimal - addresses start with 'P'
+	PepeCoinP2SHVersion  byte = 0x16 // 22 decimal - P2SH addresses
 	PepeCoinBech32HRP         = "pep" // Bech32 prefix (if supported)
 
 	// Regtest address version bytes (Bitcoin-compatible for regtest mining)
@@ -168,7 +169,7 @@ func (c *PepeCoinCoin) DecodeAddress(address string) ([]byte, AddressType, error
 	case PepeCoinP2SHVersion, PepeCoinRegtestP2SHVersion:
 		return hash, AddressTypeP2SH, nil
 	default:
-		return nil, AddressTypeUnknown, fmt.Errorf("unsupported version byte: 0x%02x (expected 0x37/0x6f for P2PKH or 0x55/0xc4 for P2SH)", version)
+		return nil, AddressTypeUnknown, fmt.Errorf("unsupported version byte: 0x%02x (expected 0x38/0x6f for P2PKH or 0x16/0xc4 for P2SH)", version)
 	}
 }
 

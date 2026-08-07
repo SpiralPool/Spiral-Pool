@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v2.6.4 - SINGLE COIN MANIFEST
+# SPIRAL POOL v2.6.5 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
@@ -595,8 +595,8 @@ coins:
       stratum_tls_port: 10337
 
     address:
-      p2pkh_version: 0x37  # 55 decimal - 'P' addresses
-      p2sh_version: 0x55   # 85 decimal - P2SH addresses
+      p2pkh_version: 0x38  # 56 decimal - 'P' addresses
+      p2sh_version: 0x16   # 22 decimal - P2SH addresses
       bech32_hrp: "pep"
 
     chain:

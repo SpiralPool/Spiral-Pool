@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.6.4"
+__version__ = "2.6.5"
 
 import os
 import json
@@ -881,8 +881,9 @@ WALLET_PATTERNS = {
     'NMC': re.compile(r'^[NM][a-km-zA-HJ-NP-Z1-9]{25,34}$|^nc1q[a-z0-9]{38,58}$'),
     # SYS - Syscoin: sys1q for bech32, S for legacy
     'SYS': re.compile(r'^S[a-km-zA-HJ-NP-Z1-9]{25,34}$|^sys1q[a-z0-9]{38,58}$'),
-    # XMY - Myriad: M prefix for P2PKH
-    'XMY': re.compile(r'^M[a-km-zA-HJ-NP-Z1-9]{25,34}$'),
+    # XMY - Myriad: M prefix for P2PKH (PUBKEY_ADDRESS=50); SCRIPT_ADDRESS=9 encodes
+    # to a leading '4' for ~94% of hashes and '5' for the rest, so both are accepted.
+    'XMY': re.compile(r'^[45M][a-km-zA-HJ-NP-Z1-9]{25,34}$'),
     # === Additional Scrypt Coins ===
     # PEP - Pepecoin: P prefix
     'PEP': re.compile(r'^P[a-km-zA-HJ-NP-Z1-9]{25,34}$'),
@@ -15572,7 +15573,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.6.4"},
+        "footer": {"text": f"Spiral Pool v2.6.5"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
