@@ -4582,6 +4582,69 @@ MOTDEOF
     log_success "MOTD updated"
 }
 
+# ============================================================================
+# One-time: lower DGB job_rebroadcast from the old 30s default to 5s.
+#
+# v2.6.5 changed the shipped default in config.example.yaml, but an upgrade
+# never overwrites a deployed config.yaml — so an existing DigiByte pool would
+# keep 30s indefinitely. That is more than twice DGB's 15-second block time,
+# where every other coin sits at a third to a tenth of its own, and where
+# DGB-Scrypt (the same chain) already shipped 5s. It is also what the job
+# manager's own coin-aware fallback computes for a 15s coin.
+#
+# Deliberately narrow. Only the exact value the old template shipped ("30s")
+# is rewritten, and only inside a DGB or DGB-SCRYPT coin block. An operator who
+# tuned this to anything else keeps their choice, and every other coin is
+# untouched. Idempotent: once the value is 5s there is nothing left to match.
+#
+# Scoped to the v2 multi-coin config layout (a list of "- symbol:" blocks).
+# A pre-v2 config has no such blocks, so sym never matches and the file is
+# left alone — correct, if conservative.
+# ============================================================================
+migrate_dgb_job_rebroadcast() {
+    local config="${INSTALL_DIR}/config/config.yaml"
+    [[ -f "$config" ]] || return 0
+
+    # Gate on the upgrade actually crossing into 2.6.5. Value-matching alone is
+    # narrow but NOT one-time: without this the migration re-runs on every future
+    # upgrade, so an operator who deliberately sets 30s back later would have it
+    # silently flipped again. An install already at or past 2.6.5 has had its
+    # chance to be migrated, and any 30s there is a choice, not a stale default.
+    local from="${CURRENT_VERSION:-unknown}"
+    [[ "$from" == "unknown" || -z "$from" ]] && from="0"
+    if [[ "$from" == "2.6.5" ]] || \
+       [[ "$(printf '%s\n%s\n' "$from" "2.6.5" | sort -V | head -1)" != "$from" ]]; then
+        return 0
+    fi
+
+    local tmp="${config}.jrb.$$"
+    if awk '
+        /^[[:space:]]*-[[:space:]]*symbol:/ {
+            line = $0
+            sub(/^[^:]*:[[:space:]]*/, "", line)   # drop "  - symbol: "
+            sub(/[[:space:]]*#.*$/, "", line)      # drop trailing comment
+            gsub(/["'"'"']/, "", line)             # drop quotes
+            sub(/[[:space:]]+$/, "", line)
+            sym = line
+        }
+        (sym == "DGB" || sym == "DGB-SCRYPT") &&
+        /^[[:space:]]*job_rebroadcast:[[:space:]]*30s([[:space:]]|#|$)/ {
+            sub(/30s/, "5s")
+            changed = 1
+        }
+        { print }
+        END { exit (changed ? 0 : 1) }
+    ' "$config" > "$tmp" && [[ -s "$tmp" ]]; then
+        cp -p "$config" "${config}.bak.jobrebroadcast"
+        # Write through the existing inode so ownership and mode 600 survive.
+        cat "$tmp" > "$config"
+        rm -f "$tmp"
+        log_success "DGB job_rebroadcast lowered 30s -> 5s (backup: ${config}.bak.jobrebroadcast)"
+    else
+        rm -f "$tmp"
+    fi
+}
+
 migrate_ha_sudoers() {
     # Add missing HA sudoers entries for etcd quorum recovery and Patroni force bootstrap
     local DASH_SUDOERS="/etc/sudoers.d/spiralpool-dashboard"
@@ -5802,6 +5865,9 @@ SSHDEOF
     migrate_ha_sudoers
     migrate_daemon_sudoers
     migrate_dashboard_https
+    # Must run before start_services so the new interval is picked up by the
+    # same restart, rather than needing a second one.
+    migrate_dgb_job_rebroadcast
     update_motd
     update_version_file
     update_upgrade_script
