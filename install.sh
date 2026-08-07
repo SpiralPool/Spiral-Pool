@@ -33645,7 +33645,12 @@ if [[ -z "$BLOCKS_DATA" ]] || ! echo "$BLOCKS_DATA" | python3 -c "import sys,jso
 fi
 
 # Parse and display blocks
-echo "$BLOCKS_DATA" | python3 -c "
+# PYTHONIOENCODING is required, not cosmetic: the renderer below prints box-drawing
+# characters and status glyphs. sudo resets the environment (env_reset is the default
+# and LANG is not in env_keep), so when spiralctl delegates this script via
+# `sudo -u "$POOL_USER"` Python inherits the POSIX/C locale, selects ASCII for stdout
+# and raises UnicodeEncodeError on the first box character — printing nothing at all.
+echo "$BLOCKS_DATA" | PYTHONIOENCODING=utf-8 python3 -c "
 import sys, json
 from datetime import datetime, timezone
 
@@ -33767,7 +33772,7 @@ for i, block in enumerate(shown):
         print(f'  \033[2m{sep}\033[0m')
 
 print()
-" 2>/dev/null
+"
 
 BLOCKSEOF
     sudo chmod +x /usr/local/bin/spiralpool-blocks

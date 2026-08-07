@@ -123,10 +123,14 @@ func (c *MyriadCoin) DecodeAddress(address string) ([]byte, AddressType, error) 
 			}
 			return nil, AddressTypeUnknown, fmt.Errorf("invalid v0 witness program length: %d", len(hash))
 		case 1:
-			if len(hash) == 32 {
-				return hash, AddressTypeP2TR, nil
-			}
-			return nil, AddressTypeUnknown, fmt.Errorf("invalid v1 witness program length: %d (expected 32)", len(hash))
+			// Myriad deploys SEGWIT but has no DEPLOYMENT_TAPROOT in chainparams
+			// (verified against both myriadcoin/myriadcoin and myriadteam/myriadcoin).
+			// Without Taproot activation a v1 witness output is anyone-can-spend,
+			// so paying a coinbase to a my1p… address would put the block reward
+			// where anybody could sweep it. Reject rather than silently accept.
+			return nil, AddressTypeUnknown, fmt.Errorf(
+				"Taproot (my1p…) addresses are not supported on Myriad: the chain has no Taproot deployment, " +
+					"so a v1 witness output is anyone-can-spend — use a legacy (M…/4…) or my1q… address")
 		default:
 			return nil, AddressTypeUnknown, fmt.Errorf("unsupported witness version: %d", witnessVersion)
 		}

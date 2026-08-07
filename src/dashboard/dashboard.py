@@ -883,7 +883,15 @@ WALLET_PATTERNS = {
     'SYS': re.compile(r'^S[a-km-zA-HJ-NP-Z1-9]{25,34}$|^sys1q[a-z0-9]{38,58}$'),
     # XMY - Myriad: M prefix for P2PKH (PUBKEY_ADDRESS=50); SCRIPT_ADDRESS=9 encodes
     # to a leading '4' for ~94% of hashes and '5' for the rest, so both are accepted.
-    'XMY': re.compile(r'^[45M][a-km-zA-HJ-NP-Z1-9]{25,34}$'),
+    # Also bech32 (hrp "my"): my1q for witness v0 only — P2WPKH (38) and P2WSH (58).
+    # Witness v1 (my1p, Taproot) is deliberately NOT accepted: Myriad deploys
+    # SEGWIT but has no DEPLOYMENT_TAPROOT in chainparams, so a v1 output is
+    # anyone-can-spend on this chain and a coinbase paying one could be swept.
+    'XMY': re.compile(
+        r'^[45M][a-km-zA-HJ-NP-Z1-9]{25,34}$|'
+        r'^my1q[a-z0-9]{38}$|'
+        r'^my1q[a-z0-9]{58}$'
+    ),
     # === Additional Scrypt Coins ===
     # PEP - Pepecoin: P prefix
     'PEP': re.compile(r'^P[a-km-zA-HJ-NP-Z1-9]{25,34}$'),
