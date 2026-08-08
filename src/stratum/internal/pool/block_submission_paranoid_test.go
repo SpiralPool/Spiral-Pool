@@ -601,10 +601,14 @@ func TestIsPermanentRejection_AllBIP22Patterns(t *testing.T) {
 		// Catch-all "bad-" prefix
 		{"bad-arbitrary", "bad-something-unknown", true},
 
-		// Inconclusive special case
-		{"inconclusive", "inconclusive result", true},
-
 		// TRANSIENT errors — should NOT be permanent
+		// "inconclusive" means the node couldn't determine validity, not that the
+		// block is bad — it must stay retryable, including when the daemon wraps it
+		// as "block rejected: inconclusive" (which also contains "rejected").
+		{"inconclusive", "inconclusive result", false},
+		{"inconclusive-wrapped", "block rejected: inconclusive", false},
+		// ...but "duplicate-inconclusive" keeps "duplicate" semantics.
+		{"duplicate-inconclusive", "duplicate-inconclusive", true},
 		{"connection-refused", "connection refused", false},
 		{"timeout", "context deadline exceeded", false},
 		{"eof", "EOF", false},
@@ -639,7 +643,7 @@ func TestIsPermanentRejection_CaseInsensitive(t *testing.T) {
 		{"upper_duplicate", "DUPLICATE"},
 		{"mixed_stale", "Stale-Work"},
 		{"upper_bad_txns", "BAD-TXNMRKLROOT"},
-		{"upper_inconclusive", "INCONCLUSIVE"},
+		{"upper_duplicate_inconclusive", "DUPLICATE-INCONCLUSIVE"},
 	}
 
 	for _, tc := range testCases {

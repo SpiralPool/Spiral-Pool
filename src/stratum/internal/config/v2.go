@@ -125,7 +125,16 @@ type SentinelConfig struct {
 	Enabled               bool          `yaml:"enabled"`
 	CheckInterval         time.Duration `yaml:"check_interval,omitempty"`          // Default: 60s
 	WALStuckThreshold     time.Duration `yaml:"wal_stuck_threshold,omitempty"`     // Default: 10m
-	BlockDroughtHours     int           `yaml:"block_drought_hours,omitempty"`     // Default: 0 (disabled)
+	BlockDroughtHours     int           `yaml:"block_drought_hours,omitempty"`     // Default: 0 (use probability instead)
+	// BlockDroughtProbability fires the drought alert once a gap this improbable is
+	// reached, instead of after a fixed wall-clock time. A fixed threshold cannot be
+	// correct for more than one coin: 24h is a routine gap for a small DGB pool and
+	// an impossibility for a solo BTC miner whose mean gap is measured in decades.
+	// Expressed as the probability of seeing a drought at least this long by chance,
+	// so 0.01 means "alert once this is a worse-than-1-in-100 run". Set
+	// BlockDroughtHours to override with an explicit wall-clock threshold.
+	// Default: 0.01. Set negative to disable the alert entirely.
+	BlockDroughtProbability float64     `yaml:"block_drought_probability,omitempty"`
 	DisconnectDropPercent int           `yaml:"disconnect_drop_percent,omitempty"` // Default: 30
 	HashrateDropPercent   int           `yaml:"hashrate_drop_percent,omitempty"`   // Default: 30
 	WALDiskSpaceWarningMB int           `yaml:"wal_disk_space_warning_mb,omitempty"` // Default: 500
@@ -166,6 +175,12 @@ func (s *SentinelConfig) SetSentinelDefaults() {
 	}
 	if s.WALStuckThreshold == 0 {
 		s.WALStuckThreshold = 10 * time.Minute
+	}
+	if s.BlockDroughtProbability == 0 {
+		// 1-in-100. On a pool averaging ~0.67 blocks/day this lands at ~6.9 days,
+		// which is where the old fixed defaults sat — so the calibration is
+		// unchanged for that case and merely becomes correct for every other coin.
+		s.BlockDroughtProbability = 0.01
 	}
 	if s.DisconnectDropPercent == 0 {
 		s.DisconnectDropPercent = 30

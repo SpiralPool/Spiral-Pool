@@ -125,7 +125,6 @@ func TestHandleBlock_PermanentRejection_Decision(t *testing.T) {
 	permanentErrors := []string{
 		"duplicate",
 		"stale",
-		"inconclusive",
 		"high-hash",
 		"bad-prevblk",
 	}

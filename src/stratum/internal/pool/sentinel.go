@@ -15,6 +15,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"time"
@@ -70,6 +71,11 @@ type Sentinel struct {
 	prevConnections map[string]int64     // coin -> last connection count
 	lastBlockCount  map[string]float64   // coin -> last blocks_found counter value
 	lastBlockTime   map[string]time.Time // coin -> last time a block was observed
+	// coin -> drought already announced for the current round. fireAlert dedups only
+	// on AlertCooldown (15m), but a drought is a single condition that persists for
+	// hours or days, so without a latch it would re-announce every cooldown for the
+	// whole drought. Cleared when a block is found, i.e. once per round at most.
+	droughtAlerted map[string]bool
 
 	// State tracking for daemon health alerts
 	heightTracker   map[string]uint64    // coin -> last known block height
@@ -118,6 +124,7 @@ func NewSentinel(coord *Coordinator, cfg *config.SentinelConfig, m *metrics.Metr
 		prevConnections: make(map[string]int64),
 		lastBlockCount:  make(map[string]float64),
 		lastBlockTime:   make(map[string]time.Time),
+		droughtAlerted:  make(map[string]bool),
 		heightTracker:   make(map[string]uint64),
 		heightChangedAt: make(map[string]time.Time),
 		prevDropped:       make(map[string]uint64),
@@ -311,8 +318,20 @@ func (s *Sentinel) checkWALStuckEntries(ctx context.Context, pool *CoinPool, coi
 // Now tracks the BlocksFoundByCoin Prometheus counter which only increments when this pool
 // actually finds a block.
 func (s *Sentinel) checkZeroBlocksDrought(pool *CoinPool, coin string) {
-	if s.cfg.BlockDroughtHours <= 0 {
-		return // Disabled
+	// Two modes. BlockDroughtHours, when set, is an explicit wall-clock threshold and
+	// wins. Otherwise the threshold is derived from how improbable the drought is,
+	// which is the only formulation that can be correct across coins: block discovery
+	// is Poisson, so P(no block in t) = e^(-effort/100) once effort is expressed as
+	// 100·λ·t. Alert at P < probability, i.e. effort > -100·ln(probability).
+	//
+	// A fixed hour count cannot do this. Twenty-four hours is an unremarkable gap for
+	// a small DigiByte pool and a physical impossibility for a solo BTC miner, whose
+	// mean gap runs to decades — the same threshold is simultaneously too twitchy and
+	// permanently useless. Deriving from effort makes one setting correct for both,
+	// and it re-derives itself as difficulty and pool hashrate move.
+	useProbability := s.cfg.BlockDroughtHours <= 0
+	if useProbability && s.cfg.BlockDroughtProbability <= 0 {
+		return // Explicitly disabled
 	}
 
 	// Read the pool's blocks-found counter (only increments on OUR blocks, not network blocks)
@@ -339,27 +358,72 @@ func (s *Sentinel) checkZeroBlocksDrought(pool *CoinPool, coin string) {
 	}
 
 	if currentCount > lastCount {
-		// Pool found a new block — reset drought timer
+		// Pool found a new block — reset drought timer and re-arm the alert
 		s.lastBlockTime[coin] = time.Now()
 		s.lastBlockCount[coin] = currentCount
+		delete(s.droughtAlerted, coin)
 		s.mu.Unlock()
 		return
 	}
 
-	threshold := time.Duration(s.cfg.BlockDroughtHours) * time.Hour
 	elapsed := time.Since(s.lastBlockTime[coin])
+	alreadyAlerted := s.droughtAlerted[coin]
 	s.mu.Unlock()
 
-	if elapsed > threshold {
-		s.fireAlert(context.Background(), "block_drought", severityWarning, coin, pool.PoolID(),
-			fmt.Sprintf("No new blocks found by pool for %s (threshold: %s)",
-				elapsed.Round(time.Minute), threshold),
-			map[string]interface{}{
-				"hours_elapsed":   elapsed.Hours(),
-				"threshold_hours": s.cfg.BlockDroughtHours,
-			},
-		)
+	// One announcement per round. The condition stays true until a block is found,
+	// which on a slow coin can be days.
+	if alreadyAlerted {
+		return
 	}
+
+	if !useProbability {
+		threshold := time.Duration(s.cfg.BlockDroughtHours) * time.Hour
+		if elapsed > threshold {
+			s.mu.Lock()
+			s.droughtAlerted[coin] = true
+			s.mu.Unlock()
+			s.fireAlert(context.Background(), "block_drought", severityWarning, coin, pool.PoolID(),
+				fmt.Sprintf("No new blocks found by pool for %s (threshold: %s)",
+					elapsed.Round(time.Minute), threshold),
+				map[string]interface{}{
+					"hours_elapsed":   elapsed.Hours(),
+					"threshold_hours": s.cfg.BlockDroughtHours,
+				},
+			)
+		}
+		return
+	}
+
+	// GetPoolEffort returns 100·elapsed/expected, and expected is derived from live
+	// difficulty and pool hashrate — so effort IS 100·λ·t. It returns 0 when either
+	// input is unavailable (no hashrate, no difficulty, no block ever found), in
+	// which case there is nothing to judge and staying silent is correct: a pool with
+	// no hashrate is a miner-offline problem, not a luck problem.
+	effort := pool.GetPoolEffort()
+	if effort <= 0 {
+		return
+	}
+	effortThreshold := -100 * math.Log(s.cfg.BlockDroughtProbability)
+	if effort < effortThreshold {
+		return
+	}
+
+	// e^(-effort/100) is the chance a healthy pool sees a gap at least this long.
+	probability := math.Exp(-effort / 100)
+	s.mu.Lock()
+	s.droughtAlerted[coin] = true
+	s.mu.Unlock()
+	s.fireAlert(context.Background(), "block_drought", severityWarning, coin, pool.PoolID(),
+		fmt.Sprintf("No blocks found for %s — %.0f%% effort, a gap this long occurs by chance about 1 in %.0f rounds",
+			elapsed.Round(time.Minute), effort, 1/probability),
+		map[string]interface{}{
+			"hours_elapsed":        elapsed.Hours(),
+			"effort_percent":       effort,
+			"effort_threshold":     effortThreshold,
+			"probability":          probability,
+			"configured_threshold": s.cfg.BlockDroughtProbability,
+		},
+	)
 }
 
 // checkShareDBCritical fires when the share pipeline's database connection is critical.

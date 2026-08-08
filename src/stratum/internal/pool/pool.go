@@ -4061,7 +4061,16 @@ func (p *Pool) updateStats(ctx context.Context) {
 	p.cachedSharesPerSecond = sharesPerSecond
 
 	// Network hashrate: difficulty * 2^32 / algo_block_time
-	algoBlockTime := getAlgoBlockTime(p.cfg.Pool.Coin)
+	//
+	// getAlgoBlockTime keys off the ticker, but cfg.Pool.Coin holds the coin *name*
+	// ("digibyte") — config.go carries a separate extractSymbolFromCoin for exactly
+	// this reason. The switch therefore never matched and every coin silently took
+	// the 600s default, so DGB reported difficulty * 2^32 / 600 against a chain that
+	// produces a SHA256d block every 75s: an 8x overstatement, served from
+	// /api/pools to the dashboard, spiralctl and Sentinel alike. coinImpl.Symbol()
+	// is the ticker ("DGB", "DGB-SCRYPT") and is never nil — a coin.Create failure
+	// aborts construction. CoinPool already does this correctly via cfg.CoinConfig.Symbol.
+	algoBlockTime := getAlgoBlockTime(p.coinImpl.Symbol())
 	if networkDiff > 0 && algoBlockTime > 0 {
 		p.cachedNetworkHashrate = networkDiff * math.Pow(2, 32) / algoBlockTime
 	}
@@ -4720,6 +4729,20 @@ func containsLower(s, substr string) bool {
 func isPermanentRejection(errStr string) bool {
 	errLower := strings.ToLower(errStr)
 
+	// BIP22 "inconclusive" means the node could not determine the block's validity —
+	// submitblock's state catcher never observed a result — NOT that the block is
+	// invalid. The daemon's own guidance is to resubmit, and submitblock is
+	// idempotent: a block that did land comes back as "duplicate" next attempt.
+	// Treating it as permanent aborted the retry loop and orphaned recoverable
+	// blocks. Checked before the pattern loop below because the daemon reports it
+	// as "block rejected: inconclusive", which would otherwise match "rejected".
+	//
+	// "duplicate-inconclusive" is deliberately excluded: it carries "duplicate", and
+	// callers resolve that through verifyBlockAcceptance rather than a blind retry.
+	if strings.Contains(errLower, "inconclusive") && !strings.Contains(errLower, "duplicate") {
+		return false
+	}
+
 	// Permanent rejection patterns from BIP22 and coin-specific implementations
 	permanentPatterns := []string{
 		// Stale/timing - block is outdated
@@ -4762,12 +4785,6 @@ func isPermanentRejection(errStr string) bool {
 		if strings.Contains(errLower, pattern) {
 			return true
 		}
-	}
-
-	// "inconclusive" is a special case - the network couldn't determine validity
-	// This is permanent because the block state is unknown and retrying won't help
-	if strings.Contains(errLower, "inconclusive") {
-		return true
 	}
 
 	return false
