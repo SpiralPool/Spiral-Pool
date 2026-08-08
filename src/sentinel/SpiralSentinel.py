@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.6.5 - SPIRAL CITADEL EDITION                            ║
+║  Spiral Sentinel v2.6.6 - SPIRAL CITADEL EDITION                            ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.6.5"
+__version__ = "2.6.6"
 __codename__ = "SPIRAL_CITADEL"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -5205,7 +5205,6 @@ ALERT_THEMES = {
         "wallet_drop.body": "wallet balance dropped unexpectedly.",
         "wallet_drop.footer": "Verify wallet transaction history",
         "missing_payout.title": "⚠️ {coin} MISSING PAYOUT",
-        "missing_payout.body": "wallet balance has not changed in {days} days.",
         "missing_payout.footer": "No balance change in {days}d",
         # Coin config
         "coin.node_down.title": "🔴 NODE DOWN: {coin_emoji} {coin}",
@@ -5562,7 +5561,6 @@ ALERT_THEMES = {
         "wallet_drop.body": "wallet balance decreased unexpectedly.",
         "wallet_drop.footer": "Verify wallet transaction history",
         "missing_payout.title": "⚠️ {coin} MISSING PAYOUT",
-        "missing_payout.body": "wallet balance has not changed in {days} days.",
         "missing_payout.footer": "No balance change in {days}d",
         # Coin config
         "coin.node_down.title": "🔴 NODE DOWN: {coin_emoji} {coin}",
@@ -6106,7 +6104,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.6.5-SPIRAL_CITADEL"
+                "sentinel_version": "V2.6.6-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6125,7 +6123,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.6.5-SPIRAL_CITADEL"
+                "sentinel_version": "V2.6.6-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -6674,7 +6672,23 @@ CHRONIC_COUNT_MIN_INTERVAL = CONFIG.get("chronic_count_min_interval", 3600)
 PRICE_CRASH_PCT = CONFIG.get("price_crash_pct", 15)             # Alert when price drops 15%+ in 1 hour
 PRICE_CRASH_ENABLED = CONFIG.get("price_crash_enabled", True)
 PAYOUT_CHECK_INTERVAL = CONFIG.get("payout_check_interval", 3600)  # Check wallet balance every 1 hour
-MISSING_PAYOUT_DAYS = CONFIG.get("missing_payout_days", 7)        # Alert if no payout for N days
+MISSING_PAYOUT_DAYS = CONFIG.get("missing_payout_days", 7)        # Grace period before an unpaid found block is an alert
+# A flat "no balance change in N days" test cannot distinguish "we are unlucky" from
+# "our payouts are going somewhere else", and the two need opposite responses. Worse,
+# it is only calibrated for one block rate: 7 days is reasonable for a pool averaging
+# a block every day or two, and meaningless for a solo BTC miner whose mean gap is
+# measured in decades — there it fires once, latches, and is never useful again.
+#
+# missing_payout now requires evidence that a payout was actually owed: at least one
+# block recorded by the pool since the balance last moved. That is the wrong-address /
+# hijack / orphan-storm case, and it is deterministic rather than statistical. Pure
+# bad luck (no blocks found at all) is a different question, answered by the stratum's
+# own effort-based block_drought alert, which derives its threshold from live
+# difficulty and pool hashrate and is therefore correct on any coin.
+#
+# The backstop covers what neither test sees: blocks landing but never being recorded,
+# so both the block counter and the balance stay frozen. 0 disables it.
+MISSING_PAYOUT_MAX_DAYS = CONFIG.get("missing_payout_max_days", 0)
 REVENUE_DECLINE_PCT = CONFIG.get("revenue_decline_pct", 50)       # Alert when pace is 50%+ below last month
 # Wallet balance sources (node scantxoutset vs external API) can disagree transiently or return
 # partial reads. Require a balance DROP to persist this many consecutive checks before firing a
@@ -16778,7 +16792,7 @@ class AchievementTracker:
 
 # === MONITOR STATE ===
 class MonitorState:
-    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","baseline_poison_migrated","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros"]
+    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","baseline_poison_migrated","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros","coin_blocks_at_last_balance"]
 
     def __init__(self):
         self.data_dir = DATA_DIR
@@ -16987,6 +17001,10 @@ class MonitorState:
         self.coin_wallet_balances = {}         # {symbol: balance} — last known wallet balance per coin
         self.coin_wallet_last_check = {}       # {symbol: timestamp} — last balance check time per coin
         self.coin_missing_payout_alerted = {}  # {symbol: bool}
+        # Pool blocks-found count snapshotted when the wallet balance last moved.
+        # The delta against it is the evidence that a payout was owed but never
+        # arrived; without it, "balance unchanged" says nothing on its own.
+        self.coin_blocks_at_last_balance = {}  # {symbol: int}
         self.coin_payout_deferred = {}         # {symbol: bool} — quiet hours deferral per coin
         self.coin_wallet_drop_zeros = {}       # {symbol: int} — consecutive balance-drop confirmations per coin
         self.wallet_issues = []               # List of (symbol, address, issue) from startup validation
@@ -19011,8 +19029,14 @@ def create_payout_received_embed(coin, amount_change, new_balance, prices=None, 
     )
 
 
-def create_missing_payout_embed(coin, days_since_change, last_balance):
-    """Create Discord embed for missing expected payout."""
+def create_missing_payout_embed(coin, days_since_change, last_balance, unpaid_blocks=0):
+    """Create Discord embed for blocks found whose reward never reached the wallet.
+
+    unpaid_blocks is the number of blocks the pool recorded since the balance last
+    moved. When it is zero the alert came from the max-days backstop instead, which
+    is a different situation — the pool is recording nothing either — so the causes
+    listed differ accordingly.
+    """
     coin_emoji = get_coin_emoji(coin)
     coin_name = get_coin_name(coin)
 
@@ -19021,11 +19045,34 @@ def create_missing_payout_embed(coin, days_since_change, last_balance):
     else:
         balance_str = f"{last_balance:,.2f} {coin}"
 
+    if unpaid_blocks > 0:
+        headline = f"{unpaid_blocks} BLOCK{'S' if unpaid_blocks != 1 else ''} FOUND, NO PAYOUT IN {days_since_change} DAYS"
+        body = (f"{coin_emoji} **{coin_name}** recorded **{unpaid_blocks}** block"
+                f"{'s' if unpaid_blocks != 1 else ''} in the last {days_since_change} days, "
+                f"but the tracked wallet balance has not moved. A found block credits this "
+                f"address immediately, including while the coinbase is immature — so the reward "
+                f"is not arriving where Sentinel is looking.")
+        causes = ("• Payout address differs between stratum and Sentinel config\n"
+                  "• Wrong wallet address configured in the pool\n"
+                  "• Firmware hijack redirecting payouts\n"
+                  "• Blocks orphaned after being recorded\n"
+                  "• Verify: `spiralctl stats blocks` vs the address in `spiralctl wallet`")
+    else:
+        headline = f"NO BALANCE CHANGE IN {days_since_change} DAYS"
+        body = (f"{coin_emoji} **{coin_name}** wallet balance has not moved in "
+                f"{days_since_change} days, and the pool has recorded no blocks in that time "
+                f"either. This is the configured backstop — it does not by itself mean "
+                f"anything is broken, since a quiet stretch is normal for a small pool.")
+        causes = ("• Normal variance — check effort before assuming a fault\n"
+                  "• Miners offline or pointed elsewhere\n"
+                  "• Blocks being found but never recorded by the pool\n"
+                  "• Verify: `spiralctl stats` (effort) and `spiralctl miners`")
+
     desc = f"""```fix
-NO PAYOUT IN {days_since_change} DAYS
+{headline}
 ```
 
-{coin_emoji} **{coin_name}** {theme("missing_payout.body", days=days_since_change)}
+{body}
 
 **Current Balance:** `{balance_str}`
 
@@ -19034,7 +19081,7 @@ NO PAYOUT IN {days_since_change} DAYS
     fields = [
         {
             "name": "🔧 Possible Causes",
-            "value": "• Pool payout threshold not met\n• Wrong wallet address configured\n• Pool payout processing delayed\n• Firmware hijack redirecting payouts\n• Check your pool dashboard for pending balance",
+            "value": causes,
             "inline": False
         },
     ]
@@ -20299,6 +20346,10 @@ def monitor_loop(state):
                                     state.coin_missing_payout_alerted[coin_sym] = False
                                     state.coin_wallet_last_check[coin_sym] = current_time
                                     state.coin_payout_deferred[coin_sym] = False
+                                    # Balance moved, so the unpaid-block count restarts. Dropping the
+                                    # anchor re-seeds it from the live count on the next check rather
+                                    # than carrying a stale baseline forward.
+                                    state.coin_blocks_at_last_balance.pop(coin_sym, None)
                                     logger.info(f"PAYOUT RECEIVED: {balance_change} {coin_sym} (new balance: {current_balance}){' [was deferred from quiet hours]' if was_deferred else ''}")
                                 else:
                                     payout_deferred = True
@@ -20311,16 +20362,48 @@ def monitor_loop(state):
                                 if not state.coin_missing_payout_alerted.get(coin_sym, False):
                                     last_check = state.coin_wallet_last_check.get(coin_sym, 0)
                                     days_since_check_start = (current_time - last_check) / 86400
-                                    if last_check > 0 and days_since_check_start >= MISSING_PAYOUT_DAYS:
+
+                                    # Evidence that a payout was actually owed. A block recorded by
+                                    # the pool since the balance last moved should have credited this
+                                    # address within one check cycle — scantxoutset counts immature
+                                    # coinbase outputs, so even a block minutes old shows up. Blocks
+                                    # found with nothing arriving is the wrong-address / hijack case.
+                                    blocks_now = None
+                                    try:
+                                        _ps = fetch_pool_stats_for_coin(payout_coin)
+                                        if _ps:
+                                            blocks_now = int(_ps.get("poolStats", {}).get("blocksFound", 0))
+                                    except (KeyError, TypeError, ValueError):
+                                        blocks_now = None
+
+                                    blocks_at_balance = state.coin_blocks_at_last_balance.get(coin_sym)
+                                    if blocks_now is not None and blocks_at_balance is None:
+                                        # First observation for this coin — anchor, do not judge.
+                                        state.coin_blocks_at_last_balance[coin_sym] = blocks_now
+                                        blocks_at_balance = blocks_now
+                                    unpaid_blocks = 0
+                                    if blocks_now is not None and blocks_at_balance is not None:
+                                        unpaid_blocks = max(0, blocks_now - blocks_at_balance)
+
+                                    # blocksFound counts orphans too, so a single unpaid block can be
+                                    # a normal orphan rather than a payout fault. The day grace makes
+                                    # that self-clearing: a genuine misdirection stays unpaid, an
+                                    # orphan is followed by blocks that do credit the wallet, which
+                                    # resets the anchor. Backstop covers blocks landing but never
+                                    # being recorded, where both counters stay frozen.
+                                    owed = unpaid_blocks > 0 and days_since_check_start >= MISSING_PAYOUT_DAYS
+                                    backstop = MISSING_PAYOUT_MAX_DAYS > 0 and days_since_check_start >= MISSING_PAYOUT_MAX_DAYS
+
+                                    if last_check > 0 and (owed or backstop):
                                         alert_key = f"missing_payout_{coin_sym}"
                                         last_alert = state.last_alerts.get(alert_key, 0)
                                         cooldown = ALERT_COOLDOWNS.get("missing_payout", 86400)
                                         if (current_time - last_alert) >= cooldown:
-                                            embed = create_missing_payout_embed(coin_sym, int(days_since_check_start), current_balance)
+                                            embed = create_missing_payout_embed(coin_sym, int(days_since_check_start), current_balance, unpaid_blocks)
                                             if send_alert("missing_payout", embed, state):
                                                 state.last_alerts[alert_key] = current_time
                                                 state.coin_missing_payout_alerted[coin_sym] = True
-                                                logger.warning(f"MISSING PAYOUT: No {coin_sym} balance change in {int(days_since_check_start)} days")
+                                                logger.warning(f"MISSING PAYOUT: {coin_sym} balance unchanged {int(days_since_check_start)}d with {unpaid_blocks} block(s) recorded since (backstop={backstop})")
 
                             else:
                                 # Balance decreased meaningfully - alert if wallet drop detection enabled.
@@ -20353,6 +20436,7 @@ def monitor_loop(state):
                                 if not wallet_drop_suppressed:
                                     state.coin_wallet_last_check[coin_sym] = current_time
                                     state.coin_missing_payout_alerted[coin_sym] = False
+                                    state.coin_blocks_at_last_balance.pop(coin_sym, None)
 
                         else:
                             # First reading - initialize tracking

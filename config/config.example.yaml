@@ -37,7 +37,12 @@ global:
     enabled: true
     check_interval: 60s          # How often to run checks
     wal_stuck_threshold: 10m     # Alert if WAL entry pending longer than this
-    block_drought_hours: 0       # Alert after N hours with no blocks (0 = disabled)
+    # Block-drought alert. Prefer the probability form: block discovery is Poisson,
+    # so "how improbable is this gap" is the only threshold that is correct on more
+    # than one coin. 24h is a routine gap for a small DGB pool and an impossibility
+    # for a solo BTC miner whose mean gap runs to decades.
+    block_drought_probability: 0.01  # Alert once a gap is worse than 1-in-100 (negative = disable)
+    block_drought_hours: 0       # Override with a fixed N-hour threshold (0 = use probability)
     disconnect_drop_percent: 30  # Alert if connections drop by this % in one interval
     hashrate_drop_percent: 30    # Alert if hashrate drops by this % in one interval
     wal_disk_space_warning_mb: 500  # Early warning (100MB is fail-fast)
