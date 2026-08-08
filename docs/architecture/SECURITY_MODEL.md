@@ -126,4 +126,4 @@ Prometheus metrics endpoint (`/metrics` on port 9100) is protected by `SPIRAL_ME
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.5*
+*Spiral Pool — Spiral Citadel 2.6.6*

@@ -39,7 +39,7 @@ import (
 // mirroring the pattern already used for main.Version and
 // ha.SpiralPoolVersion. Keep the fallback in sync with the VERSION file —
 // it is what an un-injected `go build` reports.
-var Version = "2.6.5"
+var Version = "2.6.6"
 
 // Codename is the release codename appended to the reported version, giving
 // the "X.Y.Z-CODENAME" form that API consumers expect.

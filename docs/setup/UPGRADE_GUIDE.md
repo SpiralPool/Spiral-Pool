@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v2.6.5 (Spiral Citadel)
+# Upgrading to Spiral Pool v2.6.6 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.5 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.6 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -41,6 +41,19 @@ New installs: `install.sh` configures DGB from the pool-wide pruning choice (pru
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
 
 ---
+
+## What's new in v2.6.6
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **`/api/pools` reported network hashrate 8x high for DigiByte.** The block-time lookup was fed a coin *name* where it expected a ticker, so every coin silently fell back to Bitcoin's 600s instead of DGB's 75s per algorithm. Because the value is computed server-side, the dashboard, `spiralctl stats` and Sentinel all inherited it — a pool reading `0.61%` of the network was really at `0.076%`. Nothing about mining changed; only the reported figure was wrong. Verify after upgrading with `curl -s localhost:4000/api/pools`: `networkDifficulty × 2³² ÷ networkHashrate` must equal **75**, not 600.
+- **`spiralctl stats blocks` failed with `SyntaxError: invalid character '─'` on every install.** One line of the renderer used double quotes inside a double-quoted `python3 -c "…"`, so the shell consumed them and Python received a bare box-drawing character. Distinct from the v2.6.5 locale fix, which could not reach it.
+- **BIP22 `inconclusive` block rejections are retried instead of abandoned.** The daemon returns it when it could not determine validity — not that the block is invalid — and its own guidance is to resubmit. It was classified permanent, which broke the retry loop and orphaned recoverable blocks.
+- **`spiralctl config get` / `show` no longer invent values when they cannot read the config.** Without `sudo` they printed defaults indistinguishable from real settings — `get missing_payout_days` answered `7` immediately after a `sudo set` wrote `10`.
+- **New: `spiralctl config set missing_payout_days <days>`.** Raise it if a healthy small pool trips the missing-payout alert on normal variance.
+- **The DGB `job_rebroadcast` migration now reaches installs that upgraded to v2.6.5 early.** Its version gate skipped anything already at 2.6.5, permanently stranding pools upgraded in the window before the migration shipped.
+
+No database migrations, no config format changes. Drop-in upgrade from v2.6.5.
 
 ## What's new in v2.6.5
 
@@ -188,7 +201,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.5 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.6 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -427,13 +440,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.6.5`. If Sentinel is running:
+The version line should show `2.6.6`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.6.5` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v2.6.6` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -513,4 +526,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.5 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.6 — Built on what came before. Growing toward phi.*

@@ -804,4 +804,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Citadel 2.6.5*
+*Spiral Sentinel &mdash; Spiral Citadel 2.6.6*

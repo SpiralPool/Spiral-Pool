@@ -16,7 +16,7 @@ import (
 
 // Version information (set by main.go)
 var (
-	Version   = "2.6.5"
+	Version   = "2.6.6"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )

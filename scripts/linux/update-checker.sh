@@ -271,7 +271,7 @@ get_current_version() {
     if [[ -f "${VERSION_FILE}" ]]; then
         cat "${VERSION_FILE}" | tr -d '[:space:]'
     else
-        echo "2.6.5"
+        echo "2.6.6"
     fi
 }
 

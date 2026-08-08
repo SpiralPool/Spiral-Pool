@@ -136,5 +136,5 @@ If you have questions about contributing, please open an issue for discussion or
 
 ---
 
-*This contributing guide is part of the Spiral Pool v2.6.5 release.*
+*This contributing guide is part of the Spiral Pool v2.6.6 release.*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*
