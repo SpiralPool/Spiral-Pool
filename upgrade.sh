@@ -4458,14 +4458,24 @@ APTEOF
         log_info "  - Post-update service restart hook deployed"
     fi
 
-    # Update spiralpool-* commands from new install.sh heredocs
+    # Update spiralpool-* commands from new install.sh heredocs.
+    # These live only in /usr/local/bin and are written only from install.sh
+    # heredocs, so if this refresh does not run the deployed copies stay at
+    # whatever version first installed them — indefinitely, across every future
+    # upgrade. Failures must therefore be visible: stderr is no longer discarded,
+    # and a skip is reported rather than passing silently.
     if [[ -f "$PROJECT_ROOT/scripts/linux/update-commands.sh" && -f "$PROJECT_ROOT/install.sh" ]]; then
         log_info "Updating spiralpool-* commands from new install.sh..."
-        if bash "$PROJECT_ROOT/scripts/linux/update-commands.sh" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
+        if bash "$PROJECT_ROOT/scripts/linux/update-commands.sh" "$PROJECT_ROOT/install.sh"; then
             log_success "spiralpool-* commands updated"
         else
             log_warn "Some spiralpool-* commands could not be updated (non-fatal)"
+            log_warn "  Those commands keep their existing version — re-run manually with:"
+            log_warn "  sudo bash $PROJECT_ROOT/scripts/linux/update-commands.sh $PROJECT_ROOT/install.sh"
         fi
+    else
+        log_warn "Cannot refresh spiralpool-* commands — update-commands.sh or install.sh not found under $PROJECT_ROOT"
+        log_warn "  /usr/local/bin/spiralpool-* will stay at their currently installed version"
     fi
 
     if [[ $updated -gt 0 ]]; then
@@ -4541,7 +4551,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.5 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.6 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -4605,17 +4615,21 @@ migrate_dgb_job_rebroadcast() {
     local config="${INSTALL_DIR}/config/config.yaml"
     [[ -f "$config" ]] || return 0
 
-    # Gate on the upgrade actually crossing into 2.6.5. Value-matching alone is
-    # narrow but NOT one-time: without this the migration re-runs on every future
-    # upgrade, so an operator who deliberately sets 30s back later would have it
-    # silently flipped again. An install already at or past 2.6.5 has had its
-    # chance to be migrated, and any 30s there is a choice, not a stale default.
-    local from="${CURRENT_VERSION:-unknown}"
-    [[ "$from" == "unknown" || -z "$from" ]] && from="0"
-    if [[ "$from" == "2.6.5" ]] || \
-       [[ "$(printf '%s\n%s\n' "$from" "2.6.5" | sort -V | head -1)" != "$from" ]]; then
-        return 0
-    fi
+    # One-time via an explicit marker rather than a version comparison.
+    #
+    # The original gate skipped any install already at or past 2.6.5, on the
+    # assumption that such an install had already had its chance to migrate. That
+    # is false for anyone who upgraded to 2.6.5 in the window before this
+    # migration shipped: they are at 2.6.5, so the gate skips them, and it will
+    # skip them on every future upgrade too — stranded at 30s permanently.
+    #
+    # A marker records whether THIS migration has run, which is the actual
+    # question the gate was trying to ask. It still guarantees at-most-once, so an
+    # operator who deliberately sets 30s afterwards is never flipped back. Written
+    # on the no-op path as well, otherwise the migration stays live indefinitely
+    # for configs that had nothing to change.
+    local marker="${INSTALL_DIR}/config/.migrated-dgb-job-rebroadcast"
+    [[ -f "$marker" ]] && return 0
 
     local tmp="${config}.jrb.$$"
     if awk '
@@ -4643,6 +4657,9 @@ migrate_dgb_job_rebroadcast() {
     else
         rm -f "$tmp"
     fi
+
+    # Both paths: nothing-to-change is as final an outcome as a rewrite.
+    touch "$marker" 2>/dev/null || true
 }
 
 migrate_ha_sudoers() {
@@ -5397,7 +5414,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.6.5 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.6.6 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

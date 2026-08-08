@@ -60,6 +60,16 @@ extract_and_install() {
     temp_target=$(mktemp "${target}.XXXXXX")
     printf '%s\n' "$content" > "$temp_target"
     chmod 755 "$temp_target"
+
+    # Validate before replacing a working command. The sed above keys off heredoc
+    # markers; if a marker drifts or a heredoc moves, extraction yields truncated
+    # or spliced text and we would install a broken executable over a good one.
+    if ! bash -n "$temp_target" 2>/dev/null; then
+        rm -f "$temp_target"
+        echo -e "  ${RED}[FAIL]${NC} ${cmd} — extracted content is not valid bash, keeping existing copy"
+        return 1
+    fi
+
     mv -f "$temp_target" "$target"
     echo -e "  ${GREEN}[OK]${NC}   ${cmd}"
 }

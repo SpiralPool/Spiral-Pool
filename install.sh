@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.6.5                                                         ║
+# ║   Version: 2.6.6                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.6.5"
+    VERSION="2.6.6"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -16391,7 +16391,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.5 — SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.6.6 — SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -22960,7 +22960,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.6.5"
+    local BUILD_VERSION="2.6.6"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -32033,11 +32033,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.6.5-SPIRAL_CITADEL: Create backup command
+    # V2.6.6-SPIRAL_CITADEL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.6.5-SPIRAL_CITADEL
+# Spiral Pool Backup Utility - V2.6.6-SPIRAL_CITADEL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32082,7 +32082,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.5-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.6-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32461,7 +32461,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.6.5",
+    "version": "2.6.6",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -32742,7 +32742,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.5-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.6-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -32795,11 +32795,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.6.5-SPIRAL_CITADEL: Create restore command
+    # V2.6.6-SPIRAL_CITADEL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.6.5-SPIRAL_CITADEL
+# Spiral Pool Restore Utility - V2.6.6-SPIRAL_CITADEL
 # Restores backups created by spiralpool-backup
 #
 
@@ -32846,7 +32846,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.5-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.6-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33189,7 +33189,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.5-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.6-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33489,8 +33489,14 @@ try:
     data = json.load(sys.stdin)
     pool = data.get('pools', [{}])[0] if isinstance(data.get('pools'), list) else {}
     ps = pool.get('poolStats', {})
-    coin = pool.get('coin', {})
-    symbol = coin.get('type', 'UNKNOWN').upper()
+    # The API reports coin as a name ('digibyte'), never a ticker, so keying BT off
+    # it always missed and every coin silently fell back to 600s — overstating DGB
+    # network hashrate, and understating pool share, by 8x. Pool ids are
+    # '<ticker>_<algo>_<n>', so take the ticker from there and fall back to coin.
+    ticker = str(pool.get('id', '')).split('_')[0].upper()
+    if ticker not in BT:
+        c = pool.get('coin', {})
+        ticker = str(c.get('type', '') if isinstance(c, dict) else c).upper()
 
     hashrate = ps.get('poolHashrate', 0)
     miners = ps.get('connectedMiners', 0)
@@ -33499,7 +33505,7 @@ try:
     net_diff = ps.get('networkDifficulty', 0)
     net_hash = ps.get('networkHashrate', 0)
     if net_hash == 0 and net_diff > 0:
-        bt = BT.get(symbol, 600)
+        bt = BT.get(ticker, 600)
         net_hash = net_diff * (2**32) / bt if bt > 0 else 0
 
     print(f'{hashrate} {miners} {blocks} {effort} {net_hash} {net_diff}')
@@ -33768,7 +33774,12 @@ for i, block in enumerate(shown):
     print(f'    \033[1;37mEffort:\033[0m    {effort_str}')
     print(f'    \033[1;37mWhen:\033[0m      \033[2m{ago}\033[0m')
     if i < len(shown) - 1:
-        sep = "─" * 50
+        # Single-quoted deliberately: this whole program is the argument of
+        # python3 -c \"...\", so an unescaped double quote here is consumed by the
+        # shell and Python receives a bare U+2500 as a token —
+        # SyntaxError: invalid character. Every other string here is single-quoted
+        # for the same reason.
+        sep = '─' * 50
         print(f'  \033[2m{sep}\033[0m')
 
 print()
@@ -35944,6 +35955,13 @@ try:
     for pool in data.get('pools', []):
         coin = pool.get('coin', {})
         symbol = coin.get('type', 'UNKNOWN').upper()
+        # As in spiralpool-stats: coin is a name ('digibyte'), not a ticker, so the
+        # BT lookup needs the ticker off the pool id ('<ticker>_<algo>_<n>') or every
+        # coin falls back to 600s and DGB network hashrate reads 8x high. Only the
+        # lookup uses this — symbol above stays the display value.
+        ticker = str(pool.get('id', '')).split('_')[0].upper()
+        if ticker not in BT:
+            ticker = symbol
         ps = pool.get('poolStats', {})
         hashrate = ps.get('poolHashrate', 0)
         miners = ps.get('connectedMiners', 0)
@@ -35952,7 +35970,7 @@ try:
         net_diff = ps.get('networkDifficulty', 0)
         net_hash = ps.get('networkHashrate', 0)
         if net_hash == 0 and net_diff > 0:
-            bt = BT.get(symbol, 600)
+            bt = BT.get(ticker, 600)
             net_hash = net_diff * (2**32) / bt if bt > 0 else 0
         height = ps.get('blockHeight', 0)
         reward = ps.get('blockReward', 0)
@@ -39444,7 +39462,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.6.5 - SPIRAL CITADEL${NC}"
+    echo -e "                                     ${DIM}V2.6.6 - SPIRAL CITADEL${NC}"
     echo ""
 }
 

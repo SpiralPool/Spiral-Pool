@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.6.5}"
+VERSION="${VERSION:-2.6.6}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -4889,11 +4889,25 @@ PYEOF
                 echo "  discord_webhook      Discord webhook URL"
                 echo "  telegram_token       Telegram bot token"
                 echo "  telegram_chat_id     Telegram chat ID"
+                echo "  missing_payout_days  Grace days before an unpaid found block alerts"
+                echo "  missing_payout_max_days  Backstop: alert after N days regardless (0=off)"
                 exit 1
             fi
 
             if [[ ! -f "$SENTINEL_CONFIG" ]]; then
                 log_error "Config file not found: $SENTINEL_CONFIG"
+                exit 1
+            fi
+
+            # Every reader below ends in "${val:-<default>}", so an unreadable file
+            # is indistinguishable from an unset key and the command confidently
+            # prints a default that is not the running value. The config is mode 600
+            # owned by the Sentinel user, so this is the normal outcome of omitting
+            # sudo — fail loudly rather than answer wrongly.
+            if [[ ! -r "$SENTINEL_CONFIG" ]]; then
+                log_error "Config file not readable: $SENTINEL_CONFIG"
+                echo "It is owned by the Sentinel user and mode 600. Re-run with sudo:"
+                echo "  sudo spiralctl config get $key"
                 exit 1
             fi
 
@@ -4918,6 +4932,18 @@ PYEOF
                     local val=$(grep -oP '"telegram_chat_id"\s*:\s*"\K[^"]+' "$SENTINEL_CONFIG" 2>/dev/null)
                     echo "${val:-(not set)}"
                     ;;
+                missing_payout_days)
+                    local val=$(grep -oP '"missing_payout_days"\s*:\s*\K[0-9]+' "$SENTINEL_CONFIG" 2>/dev/null)
+                    echo "${val:-7} days"
+                    ;;
+                missing_payout_max_days)
+                    local val=$(grep -oP '"missing_payout_max_days"\s*:\s*\K[0-9]+' "$SENTINEL_CONFIG" 2>/dev/null)
+                    if [[ "${val:-0}" == "0" ]]; then
+                        echo "0 (backstop disabled)"
+                    else
+                        echo "${val} days"
+                    fi
+                    ;;
                 *)
                     log_error "Unknown key: $key"
                     exit 1
@@ -4933,6 +4959,8 @@ PYEOF
                 echo "  discord_webhook <url>       Discord webhook URL"
                 echo "  telegram_token <token>      Telegram bot token"
                 echo "  telegram_chat_id <id>       Telegram chat ID"
+                echo "  missing_payout_days <days>      Grace before an unpaid found block alerts (default: 7)"
+                echo "  missing_payout_max_days <days>  Backstop: alert after N days regardless (0=off, default: 0)"
                 exit 1
             fi
 
@@ -5023,6 +5051,54 @@ with open(sys.argv[1], 'w') as f:
                     echo ""
                     echo "Restart Sentinel to apply: sudo systemctl restart spiralsentinel"
                     ;;
+                missing_payout_max_days)
+                    # 0 is meaningful here: it disables the backstop entirely.
+                    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+                        log_error "Invalid value: $value (must be a whole number of days, or 0 to disable)"
+                        exit 1
+                    fi
+                    if ! python3 -c "
+import json, sys
+with open(sys.argv[1], 'r') as f:
+    cfg = json.load(f)
+cfg['missing_payout_max_days'] = int(sys.argv[2])
+with open(sys.argv[1], 'w') as f:
+    json.dump(cfg, f, indent=2)
+" "$SENTINEL_CONFIG" "$value"; then
+                        log_error "Failed to update config"
+                        mv "${SENTINEL_CONFIG}.bak" "$SENTINEL_CONFIG"
+                        exit 1
+                    fi
+                    if [[ "$value" == "0" ]]; then
+                        log_success "Missing-payout backstop disabled"
+                    else
+                        log_success "Missing-payout backstop set to $value days"
+                    fi
+                    echo ""
+                    echo "Restart Sentinel to apply: sudo systemctl restart spiralsentinel"
+                    ;;
+                missing_payout_days)
+                    # Whole days only — Sentinel compares this against an integer day count.
+                    if ! [[ "$value" =~ ^[0-9]+$ ]] || [[ "$value" -lt 1 ]]; then
+                        log_error "Invalid value: $value (must be a whole number of days, 1 or more)"
+                        exit 1
+                    fi
+                    if ! python3 -c "
+import json, sys
+with open(sys.argv[1], 'r') as f:
+    cfg = json.load(f)
+cfg['missing_payout_days'] = int(sys.argv[2])
+with open(sys.argv[1], 'w') as f:
+    json.dump(cfg, f, indent=2)
+" "$SENTINEL_CONFIG" "$value"; then
+                        log_error "Failed to update config"
+                        mv "${SENTINEL_CONFIG}.bak" "$SENTINEL_CONFIG"
+                        exit 1
+                    fi
+                    log_success "Missing-payout alert threshold set to $value days"
+                    echo ""
+                    echo "Restart Sentinel to apply: sudo systemctl restart spiralsentinel"
+                    ;;
                 *)
                     log_error "Unknown key: $key"
                     rm -f "${SENTINEL_CONFIG}.bak"
@@ -5034,6 +5110,18 @@ with open(sys.argv[1], 'w') as f:
             echo ""
             echo -e "${WHITE}SENTINEL CONFIGURATION${NC}"
             echo -e "─────────────────────────────────────────────────────────────────────────"
+            if [[ -f "$SENTINEL_CONFIG" ]] && [[ ! -r "$SENTINEL_CONFIG" ]]; then
+                # Same trap as `config get`: the readers below fall back to defaults
+                # and "Not set", so without read access this renders a plausible but
+                # entirely fictional configuration.
+                echo -e "  Config file:       $SENTINEL_CONFIG"
+                echo ""
+                log_error "Config file not readable — cannot show current values"
+                echo "It is owned by the Sentinel user and mode 600. Re-run with sudo:"
+                echo "  sudo spiralctl config show"
+                echo ""
+                return 1
+            fi
             if [[ -f "$SENTINEL_CONFIG" ]]; then
                 echo -e "  Config file:       $SENTINEL_CONFIG"
                 echo ""
