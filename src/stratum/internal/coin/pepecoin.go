@@ -53,8 +53,9 @@ const (
 	PepeCoinBlockTime        = 60    // Target block time: 1 minute
 	PepeCoinCoinbaseMaturity = 30    // Blocks before coinbase is spendable (Dogecoin fork, inherits nCoinbaseMaturity=30)
 	// Genesis block hash for chain verification
-	// Hash from pepecoinppc Scrypt fork
-	PepeCoinGenesisBlockHash = "00008cae6a01358d774087e2daf3b2108252b0b5a440195ffec4fd38f9892272"
+	// Value matches pepecoinppc/pepecoin src/chainparams.cpp mainnet
+	// assert(consensus.hashGenesisBlock == uint256S("0x37981c0c..."))
+	PepeCoinGenesisBlockHash = "37981c0c48b8d48965376c8a42ece9a0838daadb93ff975cb091f57f8c2a5faa"
 	// Block height at which AuxPoW (merged mining) was enabled
 	PepeCoinAuxPowStartHeight uint64 = 0 // AuxPoW enabled from genesis in Scrypt fork
 )

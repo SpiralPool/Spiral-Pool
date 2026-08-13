@@ -197,7 +197,7 @@ func TestPepeCoinAuxPoW(t *testing.T) {
 func TestPepeCoinGenesisBlock(t *testing.T) {
 	coin := NewPepeCoinCoin()
 
-	expectedGenesis := "00008cae6a01358d774087e2daf3b2108252b0b5a440195ffec4fd38f9892272"
+	expectedGenesis := "37981c0c48b8d48965376c8a42ece9a0838daadb93ff975cb091f57f8c2a5faa"
 	if coin.GenesisBlockHash() != expectedGenesis {
 		t.Errorf("expected genesis %s, got %s", expectedGenesis, coin.GenesisBlockHash())
 	}

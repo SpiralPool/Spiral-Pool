@@ -1,24 +1,29 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v2.6.6 - SINGLE COIN MANIFEST
+# SPIRAL POOL v2.6.7 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
-# All subsystems derive their coin data from this manifest.
 #
 # ARCHITECTURE:
 #   - Metadata (names, ports, display) → From this manifest
 #   - Consensus logic (hashing, serialization) → From Go code (immutable)
-#   - Validation → Manifest values cross-checked against Go at startup
+#   - Validation → Manifest values cross-checked against Go at TEST time
 #
 # TO ADD A NEW COIN:
 #   1. Add entry to this file
 #   2. Add Go implementation in src/stratum/internal/coin/<symbol>.go
-#   3. Run validation: spiralctl config validate
+#   3. Run validation: cd src/stratum && go test ./internal/coin/ -run TestManifest
+#      (or: python3 scripts/validate-manifest.py)
 #   4. Commit both files together
 #
-# WARNING: Consensus-critical values (chain_id, version_bit, genesis_hash)
-#          are validated against Go constants at startup. Mismatches
-#          will cause the pool to REFUSE TO START (fail-fast).
+# WARNING: Consensus-critical values (chain_id, version_bit, genesis_hash) are
+#          cross-checked against the Go constants by internal/coin/manifest_test.go.
+#          That check is TEST-time only — the running pool never loads this file,
+#          and a mismatch will NOT stop it from starting. The Go constant is what
+#          the pool actually enforces; treat this file as documentation of it.
+#          Note also that agreement here proves only that the two copies match,
+#          not that either is correct — v2.6.5 (PEP address bytes) and v2.6.7
+#          (PEP genesis hash) were both cases of two matching wrong values.
 #
 # MINING SECTION SCHEMA:
 #   mining:
@@ -600,7 +605,7 @@ coins:
       bech32_hrp: "pep"
 
     chain:
-      genesis_hash: "00008cae6a01358d774087e2daf3b2108252b0b5a440195ffec4fd38f9892272"
+      genesis_hash: "37981c0c48b8d48965376c8a42ece9a0838daadb93ff975cb091f57f8c2a5faa"
       block_time: 60
       coinbase_maturity: 30
       supports_segwit: false

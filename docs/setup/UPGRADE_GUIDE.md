@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v2.6.6 (Spiral Citadel)
+# Upgrading to Spiral Pool v2.6.7 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x) and v2.6.6 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x) and v2.6.7 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -41,6 +41,15 @@ New installs: `install.sh` configures DGB from the pool-wide pruning choice (pru
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
 
 ---
+
+## What's new in v2.6.7
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **Pepecoin's genesis hash was from a different chain, so a PEP pool could not start at all.** The startup genesis check failed unconditionally with "CRITICAL: Genesis block mismatch - WRONG CHAIN!" against genuine Pepecoin Core. If you run PEP, it now comes up; no action beyond upgrading.
+- **NMMiner and LeafMiner were not recognised and got the config difficulty floor instead of a lottery profile.** An unrecognised user-agent falls back to the operator's configured difficulty — 1024 on the multi-coin smart port. For an ESP32 at ~100 KH/s that works out to `1024 × 2³² / 100000` seconds per share, or **509 days**, so the miner subscribed, authorized, received jobs, and then sat there producing nothing — indistinguishable from getting no work at all. Both now classify as lottery and receive difficulty 0.001 (about 43 seconds per share) with a job immediately. If you have an NMMiner that looked dead, just reconnect it. **No other miner is affected:** the new patterns are matched after all the ASIC and BitAxe patterns, and the ESP32 miners that were already recognised (NerdMiner V2, ESP32 Miner, SparkMiner, BitMaker, Arduino) were already getting the lottery profile and are unchanged.
+
+No database migrations, no config format changes. Drop-in upgrade from v2.6.6.
 
 ## What's new in v2.6.6
 
@@ -201,7 +210,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.6 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.7 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -440,13 +449,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.6.6`. If Sentinel is running:
+The version line should show `2.6.7`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.6.6` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v2.6.7` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -526,4 +535,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.6 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.6.7 — Built on what came before. Growing toward phi.*

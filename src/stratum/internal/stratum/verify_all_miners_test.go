@@ -23,6 +23,8 @@ func TestVerifyAllMinerProfiles(t *testing.T) {
 		{"NerdMinerV2/1.5.3", "lottery"},
 		{"ESP32Miner/1.0", "lottery"},
 		{"NMiner/1.0", "lottery"},
+		{"NMMiner/v0.6.30", "lottery"},
+		{"LeafMiner/1.0", "lottery"},
 
 		// Low class (BitAxe BM1366/BM1368)
 		{"bitaxe/BM1366/v2.9.31", "low"},

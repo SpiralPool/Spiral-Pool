@@ -108,6 +108,10 @@ func TestSpiralRouterDetection(t *testing.T) {
 		// ========================================================================
 		// TIER 4: LOTTERY miners
 		// ========================================================================
+		{"NMMiner/v0.6.30", MinerClassLottery, "NMMiner"},
+		{"NMMiner/v0.6.30 (ESP32-S3)", MinerClassLottery, "NMMiner"}, // esp32 must not win
+		{"nmminer1024", MinerClassLottery, "NMMiner"},
+		{"LeafMiner/1.0", MinerClassLottery, "LeafMiner"},
 		{"nminer/1.0", MinerClassLottery, "NMiner"},
 		{"NMiner", MinerClassLottery, "NMiner"},
 		{"bitmaker", MinerClassLottery, "BitMaker"},
@@ -170,6 +174,8 @@ func TestSpiralRouterDifficulties(t *testing.T) {
 		// ========================================================================
 		{"NerdMinerV2/2.6.0", 0.001},
 		{"HAN_SOLOminer/1.0", 0.001},
+		{"NMMiner/v0.6.30", 0.001},
+		{"LeafMiner/1.0", 0.001},
 		{"nminer/1.0", 0.001},
 		{"NMiner", 0.001},
 		{"bitmaker", 0.001},

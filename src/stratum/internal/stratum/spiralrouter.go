@@ -731,6 +731,16 @@ func NewSpiralRouterWithBlockTime(blockTimeSec int) *SpiralRouter {
 		// ----------------------------------------------------------------
 		// TIER 4: LOTTERY miners (ESP32, no ASIC)
 		// ----------------------------------------------------------------
+
+		// NMMiner: ESP32/ESP32-S3 lottery miner, ~50-100 KH/s
+		// Closed-source firmware (NMminer1024) — sends "NMMiner/{version}" [MEDIUM]
+		// MUST be before the generic esp32 pattern so the name resolves to NMMiner.
+		// Note: does NOT match the `\bnminer` pattern below ("nmminer" != "nminer").
+		{`(?i)nmminer`, MinerClassLottery, "NMMiner"},
+
+		// LeafMiner: ESP32/Arduino lottery miner, ~10-70 KH/s [MEDIUM]
+		{`(?i)leafminer`, MinerClassLottery, "LeafMiner"},
+
 		{`(?i)^nminer`, MinerClassLottery, "NMiner"},
 		{`(?i)\bnminer`, MinerClassLottery, "NMiner"},
 		{`(?i)bitmaker`, MinerClassLottery, "BitMaker"},
