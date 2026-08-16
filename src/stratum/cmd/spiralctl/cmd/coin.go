@@ -183,7 +183,7 @@ func coinStatus() error {
 		cliCmd  string
 	}{
 		// SHA-256d coins
-		{"BTC", "Bitcoin Knots", DefaultBTCConfig, "bitcoind", 8332, "bitcoin-cli"},
+		{"BTC", "Bitcoin Core", DefaultBTCConfig, "bitcoind", 8332, "bitcoin-cli"},
 		{"BCH", "Bitcoin Cash", DefaultBCHConfig, "bitcoind-bch", 8432, "bitcoin-cli-bch"},
 		{"BCH2", "Bitcoin Cash II", DefaultBCH2Config, "bitcoincashIId", 8533, "bitcoincashII-cli"},
 		{"DGB", "DigiByte", DefaultDGBConfig, "digibyted", 14022, "digibyte-cli"},

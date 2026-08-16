@@ -15,12 +15,19 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Syscoin Core Node for Spiral Pool"
-LABEL version="5.0.5"
+ARG SYSCOIN_VERSION=5.1.0
+
+# Interpolated: this label read 5.0.5 while the image shipped 5.1.0.
+LABEL version="${SYSCOIN_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG SYSCOIN_VERSION=5.0.5
+# SHA256 of the pinned release asset (87,013,265 bytes).
+# Verified against the publisher's signed SHA256SUMS.asc on the v5.1.0
+# GitHub release — computed and published digests agree.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=d06dd4d946483bcbf2d3f1d64e7ba09a43b0af25d360eef3dd61d2c84a15193b
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,10 +47,17 @@ RUN useradd -r -m -s /bin/bash syscoin \
 # Download and install Syscoin Core
 # NOTE: Only x86_64 (amd64) is supported.
 WORKDIR /tmp
+# Note on `cp bin/*` below: 5.1.0 ships more binaries than 5.0.5 did — bin/ now
+# also contains bitcoind, bitcoin-cli, syscoin-util, sysgeth and test_syscoin.
+# The bundled bitcoind is a distinct 10.8 MB binary, not a syscoind alias, so it
+# is left in place: removing binaries upstream chose to ship risks breaking
+# syscoind's NEVM/sysgeth sidecar. The entrypoint execs syscoind explicitly, so
+# the extra names are inert in this image.
 RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
     && wget -q --max-redirect=5 "https://github.com/syscoin/syscoin/releases/download/v${SYSCOIN_VERSION}/syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && echo "${SHA256}  syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c - \
     && tar -tzf "syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "syscoin-${SYSCOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "syscoin-${SYSCOIN_VERSION}/bin/"* /usr/local/bin/ \

@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.6.7                                                         ║
+# ║   Version: 2.7.0                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.6.7"
+    VERSION="2.7.0"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -49,10 +49,18 @@ BITCOINII_VERSION="29.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="1.0.2"
 NAMECOIN_VERSION="28.0"
-SYSCOIN_VERSION="5.0.5"
+SYSCOIN_VERSION="5.1.0"
+# BCHN_VERSION and LITECOIN_VERSION are GLOBAL, not local to their install
+# functions. The version cache written at the end of main() has to reference
+# them, and when they were local it hardcoded the numbers instead -- which is
+# how LTC.ver came to be seeded "0.21.4" while the installer fetched 0.21.5.4
+# and coin-upgrade.sh called 0.21.5.6 current. Three different versions for one
+# coin, in one file. Keeping them here makes that drift impossible.
+BCHN_VERSION="29.1.0"
+LITECOIN_VERSION="0.21.5.6"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.3.0"
-ECASH_VERSION="0.31.12"
+ECASH_VERSION="0.33.10"
 GO_VERSION="1.26.4"
 POSTGRES_VERSION="18"
 
@@ -2104,6 +2112,13 @@ download_with_retry() {
     local output_file="$1"
     shift
     local urls=("$@")
+    # `url` and `attempt` MUST be local. Five callers (install_digibyte,
+    # install_bitcoincash, install_bitcoinii, install_bitcoincashii,
+    # install_fbtc) run `for ((attempt=1; attempt<=max_attempts; attempt++))`
+    # around a call to this function. Without `local` the callee left attempt at
+    # max_retries, so the caller's loop ran exactly once and its retry logic was
+    # dead code — in precisely the transient-network case the retries exist for.
+    local url attempt
     local max_retries=2
     local retry_delay=3
     local connect_timeout=15
@@ -2168,6 +2183,9 @@ retry_with_prompt() {
     local func_name="$3"
     shift 3
     local args=("$@")
+    # Local for the same reason as download_with_retry: this calls back into
+    # arbitrary install functions, several of which have their own attempt loop.
+    local attempt
 
     for ((attempt=1; attempt<=max_retries; attempt++)); do
         if "$func_name" "${args[@]}"; then
@@ -3993,6 +4011,27 @@ install_docker() {
             gnupg \
             lsb-release
 
+        # $DOCKER_DISTRO and $OS_CODENAME were referenced below but never
+        # assigned anywhere in this script. Empty, they produced
+        # "https://download.docker.com/linux//gpg" and a sources.list entry with
+        # no distro and no codename, which apt rejects as malformed — so Docker
+        # never installed. Derive both from /etc/os-release, which is present on
+        # every supported target; lsb_release is a fallback because it is only
+        # installed a few lines above.
+        # `|| true` on each: without it, a missing /etc/os-release makes the
+        # command substitution non-zero and `set -e` kills the installer before
+        # the explanatory error below ever prints.
+        local DOCKER_DISTRO OS_CODENAME
+        DOCKER_DISTRO="$( . /etc/os-release 2>/dev/null && printf '%s' "${ID:-ubuntu}" || true )"
+        OS_CODENAME="$( . /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}" || true )"
+        [[ -n "$OS_CODENAME" ]] || OS_CODENAME="$(lsb_release -cs 2>/dev/null || true)"
+        if [[ -z "$OS_CODENAME" ]] || [[ -z "$DOCKER_DISTRO" ]]; then
+            log_error "Could not determine the distribution codename from /etc/os-release."
+            log_error "Refusing to write an apt source with an empty codename."
+            return 1
+        fi
+        log "Docker repository: ${DOCKER_DISTRO} ${OS_CODENAME}"
+
         # Add Docker's official GPG key
         sudo mkdir -p /etc/apt/keyrings
         curl -fsSL "https://download.docker.com/linux/${DOCKER_DISTRO}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -4345,6 +4384,11 @@ collect_docker_coin_addresses() {
         echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
         echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
         echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+        echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+        echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+        echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+        echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+        echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
         echo ""
 
         while true; do
@@ -4424,6 +4468,11 @@ collect_docker_coin_addresses() {
         echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
         echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
         echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+        echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+        echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+        echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+        echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+        echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
         echo ""
 
         while true; do
@@ -5083,6 +5132,11 @@ merge_docker_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BCH2 address"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create on this server (no sync required)"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
             while true; do
                 prompt_input "Choose [1] or [2]: "; read wallet_choice
@@ -5147,6 +5201,11 @@ merge_docker_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BTCS address"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create on this server (no sync required)"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
             while true; do
                 prompt_input "Choose [1] or [2]: "; read wallet_choice
@@ -6599,7 +6658,7 @@ generate_docker_btc_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
     cat > "$CONFIG_DIR/bitcoin.conf" << EOF
-# Bitcoin Knots Configuration
+# Bitcoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
 
 # Network
@@ -6643,7 +6702,7 @@ logtimestamps=1
 # Mining
 blockmaxweight=4000000
 
-# Force DNS seed queries on every startup (verified: bitcoin-29.3.knots)
+# Force DNS seed queries on every startup (Bitcoin Core -help confirms support)
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
@@ -6672,7 +6731,8 @@ generate_docker_bch_config() {
 # Docker Multi-Coin - Generated $(date)
 
 # Network
-chain=main
+# No chain=main: BCHN registers no -chain option and treats an unknown
+# config key as FATAL (it never took Core PR #13799). Mainnet is default.
 listen=1
 port=8433
 
@@ -6713,7 +6773,8 @@ logtimestamps=1
 # Mining (BCH larger blocks)
 blockmaxsize=32000000
 excessiveblocksize=32000000
-excessiveacceptdepth=12
+# No excessiveacceptdepth: that is a Bitcoin Unlimited option, absent from
+# BCHN, and an unknown key is fatal there.
 
 # Force DNS seed queries on every startup (verified: bitcoind BCHN 29.0.0)
 forcednsseed=1
@@ -9005,7 +9066,7 @@ select_solo_coin_no_merge() {
                 STRATUM_V2_PORT=4334
                 log "Selected: Solo Mining - Bitcoin (BTC)"
                 echo ""
-                echo -e "  ${GREEN}✓${NC} Will install: Bitcoin Knots Node (SHA-256d)"
+                echo -e "  ${GREEN}✓${NC} Will install: Bitcoin Core Node (SHA-256d)"
                 echo -e "  ${WHITE}  Stratum port: 4333${NC}"
                 break
                 ;;
@@ -9517,7 +9578,7 @@ select_multi_coins() {
     [[ "$ENABLE_BC2" == "true" ]]  && echo -e "     🔷 Bitcoin II Node         (SHA-256d, port 6333)"
     [[ "$ENABLE_BCH" == "true" ]]  && echo -e "     🟢 Bitcoin Cash Node       (SHA-256d, port 5333)"
     [[ "$ENABLE_BCH2" == "true" ]] && echo -e "     🟤 Bitcoin Cash II Node    (SHA-256d, port 5336)"
-    [[ "$ENABLE_BTC" == "true" ]]  && echo -e "     🟠 Bitcoin Knots           (SHA-256d, port 4333)"
+    [[ "$ENABLE_BTC" == "true" ]]  && echo -e "     🟠 Bitcoin Core            (SHA-256d, port 4333)"
     [[ "$ENABLE_BTCS" == "true" ]] && echo -e "     ⚪ Bitcoin Silver Node     (SHA-256d, port 11335)"
     [[ "$ENABLE_DGB" == "true" ]]  && echo -e "     💎 DigiByte Node           (SHA-256d, port 3333)"
     [[ "$ENABLE_FBTC" == "true" ]] && echo -e "     🔶 Fractal Bitcoin Node    (SHA-256d, port 18335)"
@@ -12358,6 +12419,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BC2 address"
                 echo ""
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo -e "      ${YELLOW}Note: BC2 is a new chain - sync is fast!${NC}"
                 echo ""
 
@@ -12413,6 +12479,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12467,6 +12538,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12553,6 +12629,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12604,6 +12685,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12651,6 +12737,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12702,6 +12793,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12756,6 +12852,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -12807,6 +12908,11 @@ collect_configuration() {
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
                 echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
                 echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
                 echo -e "      ${YELLOW}If generation fails, create an address externally using Namecoin Core${NC}"
                 echo -e "      ${YELLOW}or another wallet. See: https://www.namecoin.org${NC}"
@@ -12860,6 +12966,11 @@ collect_configuration() {
                 echo ""
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
                 echo -e "      ${YELLOW}If generation fails, create an address externally. See: https://myriadcoin.org${NC}"
                 echo ""
@@ -12908,6 +13019,11 @@ collect_configuration() {
                 echo ""
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
                 echo -e "      ${YELLOW}If generation fails, create an address externally. See: https://fractalbitcoin.io${NC}"
                 echo ""
@@ -12959,6 +13075,11 @@ collect_configuration() {
                 echo ""
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -13016,6 +13137,11 @@ collect_configuration() {
                 echo ""
                 echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
                 echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
                 echo ""
 
                 while true; do
@@ -13090,6 +13216,11 @@ collect_configuration() {
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
             echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
             echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13160,6 +13291,11 @@ collect_configuration() {
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
             echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
             echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13224,6 +13360,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BCH2 address"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet (requires blockchain sync)"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
             while true; do
                 prompt_input "Choose [1] or [2]: "; read wallet_choice
@@ -13286,6 +13427,11 @@ collect_configuration() {
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
             echo -e "      ${YELLOW}Note: Requires BC2 blockchain to sync first (fast - new chain)${NC}"
             echo -e "      ${YELLOW}You MUST backup the wallet.dat file!${NC}"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13353,6 +13499,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BTCS address"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet (requires blockchain sync)"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
             while true; do
                 prompt_input "Choose [1] or [2]: "; read wallet_choice
@@ -13411,6 +13562,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13467,6 +13623,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13520,6 +13681,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -13614,6 +13780,11 @@ collect_configuration() {
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
             echo -e "      ${YELLOW}Note: Generates as soon as the daemon starts (no full sync needed)${NC}"
             echo -e "      ${YELLOW}You MUST backup the wallet keys when prompted!${NC}"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
             echo -e "      ${YELLOW}If generation fails, create an address externally using Namecoin Core${NC}"
             echo -e "      ${YELLOW}or another wallet. See: https://www.namecoin.org${NC}"
@@ -13680,6 +13851,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
             echo -e "      ${YELLOW}If generation fails, create an address externally. See: https://syscoin.org${NC}"
             echo ""
@@ -13744,6 +13920,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
             echo -e "      ${YELLOW}If generation fails, create an address externally. See: https://myriadcoin.org${NC}"
             echo ""
@@ -13806,6 +13987,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo -e "      ${YELLOW}Warning: Wallet generation may not be fully supported for this coin.${NC}"
             echo -e "      ${YELLOW}If generation fails, create an address externally. See: https://fractalbitcoin.io${NC}"
             echo ""
@@ -13870,6 +14056,11 @@ collect_configuration() {
             echo ""
             echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing address (recommended)"
             echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet on this server"
+            echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+            echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+            echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+            echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+            echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
             echo ""
 
             while true; do
@@ -16391,7 +16582,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.7 — SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.7.0 — SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
@@ -16533,10 +16724,22 @@ install_digibyte() {
             echo -e "    ${GREEN}r${NC} = Retry download"
             echo -e "    ${RED}a${NC} = Abort installation"
             echo ""
-            prompt_input "Choice [r/a]: "; read choice
-            if [[ "$choice" == "a" || "$choice" == "A" ]]; then
-                log_error "Installation aborted by user"
-                exit 1
+            # Guarded on a tty, and read from /dev/tty rather than stdin.
+            # install.sh runs under `set -e`, so a bare `read` returning 1 at
+            # EOF terminated the entire installer, silently and mid-install, for
+            # every non-interactive run (Ansible, `ssh host 'sudo bash
+            # install.sh'`, cron, a piped script) — the unattended runs that
+            # most need the retry. Same guard as install_bitcoin.
+            if [[ -t 0 ]]; then
+                stty sane 2>/dev/null || true
+                prompt_input "Choice [r/a]: "
+                read -r choice < /dev/tty || choice=""
+                if [[ "$choice" == "a" || "$choice" == "A" ]]; then
+                    log_error "Installation aborted by user"
+                    exit 1
+                fi
+            else
+                log_warn "Non-interactive session — retrying automatically (attempt $((attempt + 1)) of ${max_attempts})"
             fi
         fi
     done
@@ -16592,8 +16795,12 @@ onlynet=ipv4
 onlynet=onion
 # Do NOT listen for incoming connections (hidden node)
 listen=0
-# Do NOT advertise any external IP
-externalip=
+# Do NOT advertise any external IP.
+# There is deliberately no 'externalip=' line. An empty value is NOT treated as
+# 'unset': the daemon passes it to Lookup(), which rejects the empty string, and
+# startup aborts with an InitError. Omitting the option is what actually
+# suppresses advertising. (This shipped as a bare 'externalip=' and would have
+# stopped any Tor-enabled node from starting.)
 # Enable DNS seeding through Tor for peer discovery
 dnsseed=1
 # Reduce connections for Tor (high latency network)
@@ -16654,8 +16861,24 @@ blocksonly=0"
     local _dgb_txindex="$PRUNE_CONF_TXINDEX"
     local _dgb_prune="$PRUNE_CONF_PRUNE"
     if [[ -f "$DGB_DIR/digibyte.conf" ]] && grep -qE '^[[:space:]]*prune=[1-9]' "$DGB_DIR/digibyte.conf"; then
+        # Read it the way the daemon does — see get_existing_prune in
+        # pool-mode.sh, which this mirrors. A bare '^[[:space:]]*prune=' is not
+        # section-aware, so a prune under [test] would be copied up as the
+        # MAINNET target; and it rejects `prune = 5000` and `prune=+5000`, both
+        # of which Core accepts, so an already-pruned node read as unpruned and
+        # had the 5000 default written over its real target.
         local _existing_prune
-        _existing_prune=$(grep -oP '^[[:space:]]*prune=\K[0-9]+' "$DGB_DIR/digibyte.conf" | head -1)
+        _existing_prune=$(tr -d '\015' < "$DGB_DIR/digibyte.conf" 2>/dev/null | awk '
+            /^[[:space:]]*\[/ { s=tolower($0); sub(/^[[:space:]]*\[/,"",s); sub(/\].*$/,"",s); next }
+            $0 !~ /^[[:space:]]*prune[[:space:]]*=/ { next }
+            {
+                v = $0
+                sub(/^[[:space:]]*prune[[:space:]]*=[[:space:]]*/, "", v)
+                if (s == "main" && !gotmain) { mainv = v; gotmain = 1 }
+                else if (s == "" && !gottop) { topv = v; gottop = 1 }
+            }
+            END { if (gotmain) print mainv; else if (gottop) print topv }
+        ' | sed 's/^+//' | grep -oP '^[0-9]+' | head -1)
         _dgb_txindex=""
         _dgb_prune="prune=${_existing_prune:-5000}"
         log "Preserving existing DigiByte pruning (${_dgb_prune}) on reconfigure — not reverting to a full node"
@@ -16833,90 +17056,47 @@ CLIWRAPPER
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BITCOIN KNOTS INSTALLATION (Multi-Coin Mode)
+# BITCOIN CORE INSTALLATION (Multi-Coin Mode)
 # ═══════════════════════════════════════════════════════════════════════════════
-# NOTE: We use Bitcoin Knots instead of Bitcoin Core for consistency with Docker
-# mode and for its additional features (enhanced RPC, better policy options).
-# Bitcoin Knots is a derivative of Core maintained by Luke Dashjr.
+# We install Bitcoin Core, NOT Bitcoin Knots.
+#
+# On 2026-08-08 at block height 961,632, Bitcoin split. BIP-110 ("RDTS", the
+# Reduced Data Temporary Softfork) entered a mandatory signalling window, and
+# nodes enforcing it began rejecting any block that did not signal version bit 4.
+# Around 99.85% of hashpower stayed on the majority chain; the enforcing minority
+# chain produces a block every day or two and its coins are not traded anywhere.
+#
+# Bitcoin Knots builds carrying the knots20260508 datestamp ENFORCE RDTS and
+# follow that minority chain. Enforcement is compiled into the build — it cannot
+# be turned off in bitcoin.conf. A pool whose daemon follows the minority chain
+# keeps working perfectly in every visible respect while earning exactly nothing.
+#
+# Two rules follow, and both matter:
+#   1. Never reintroduce a Knots download here.
+#   2. Never resolve the version dynamically. A "latest version" resolver is the
+#      exact mechanism by which an operator silently drifts onto an enforcing
+#      build — the enforcing and non-enforcing releases differ by one digit in a
+#      datestamp, and sort order does not know the difference.
+BITCOIN_CORE_VERSION="31.1"
 
-# Pinned version — ensures reproducible installs.
-# Set BITCOIN_KNOTS_AUTO_DETECT=1 to fetch the latest from bitcoinknots.org instead.
-BITCOIN_KNOTS_PINNED_VERSION="29.3.knots20260508"
-
-# Auto-detect the latest Bitcoin Knots version from bitcoinknots.org
-detect_latest_knots_version() {
-    # NOTE: This function returns the version via stdout (echo).
-    # All log/log_success/log_warn calls MUST redirect to stderr (>&2)
-    # to avoid contaminating the captured return value.
-    log "Detecting latest Bitcoin Knots version..." >&2
-
-    # Fetch the directory listing from bitcoinknots.org
-    local knots_page
-    knots_page=$(curl -sL --connect-timeout 10 --max-time 30 "https://bitcoinknots.org/files/" 2>/dev/null)
-
-    if [[ -z "$knots_page" ]]; then
-        log_warn "Could not fetch bitcoinknots.org, using fallback version" >&2
-        echo "$BITCOIN_KNOTS_PINNED_VERSION"
-        return
-    fi
-
-    # Find all version directories (e.g., 27.x, 28.x, 29.x) and get the highest
-    local latest_major
-    latest_major=$(echo "$knots_page" | grep -oP 'href="\K[0-9]+\.x(?=/")' | sort -t. -k1 -n | tail -1)
-
-    if [[ -z "$latest_major" ]]; then
-        log_warn "Could not parse major version, using fallback" >&2
-        echo "$BITCOIN_KNOTS_PINNED_VERSION"
-        return
-    fi
-
-    # Fetch the specific version directory
-    local version_page
-    version_page=$(curl -sL --connect-timeout 10 --max-time 30 "https://bitcoinknots.org/files/${latest_major}/" 2>/dev/null)
-
-    if [[ -z "$version_page" ]]; then
-        log_warn "Could not fetch version directory, using fallback" >&2
-        echo "$BITCOIN_KNOTS_PINNED_VERSION"
-        return
-    fi
-
-    # Find the latest version directory (e.g., 29.3.knots20260210)
-    local latest_version
-    latest_version=$(echo "$version_page" | grep -oP 'href="\K[0-9]+\.[0-9]+\.knots[0-9]+(?=/")' | sort -V | tail -1)
-
-    if [[ -z "$latest_version" ]]; then
-        log_warn "Could not parse version, using fallback" >&2
-        echo "$BITCOIN_KNOTS_PINNED_VERSION"
-        return
-    fi
-
-    log_success "Detected latest Bitcoin Knots: $latest_version" >&2
-    echo "$latest_version"
-}
-
-# Get the major version directory (e.g., "29.x" from "29.3.knots20260210")
-get_knots_major_version() {
-    local version="$1"
-    echo "${version%%.*}.x"
-}
+# SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz.
+#
+# Provenance: https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
+# Cross-verified byte-for-byte against two independent Guix attestations in
+# https://github.com/bitcoin-core/guix.sigs (signers achow101 and fanquake).
+# All three sources agree. Verification below is mandatory, never best-effort.
+BITCOIN_CORE_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
 
 install_bitcoin() {
     if [[ "$ENABLE_BTC" != "true" ]]; then
         return 0
     fi
 
-    # Use pinned version for reproducibility, or auto-detect if opted in
-    local BITCOIN_KNOTS_VERSION
-    if [[ "${BITCOIN_KNOTS_AUTO_DETECT:-0}" == "1" ]]; then
-        BITCOIN_KNOTS_VERSION=$(detect_latest_knots_version)
-    else
-        BITCOIN_KNOTS_VERSION="$BITCOIN_KNOTS_PINNED_VERSION"
-        log "Using pinned Bitcoin Knots version: $BITCOIN_KNOTS_VERSION (set BITCOIN_KNOTS_AUTO_DETECT=1 to fetch latest)" >&2
-    fi
-    local KNOTS_MAJOR_VERSION
-    KNOTS_MAJOR_VERSION=$(get_knots_major_version "$BITCOIN_KNOTS_VERSION")
+    # Pinned, always. There is deliberately no auto-detect path — see the note
+    # above BITCOIN_CORE_VERSION for why a latest-resolver is dangerous here.
+    log "Using pinned Bitcoin Core version: $BITCOIN_CORE_VERSION" >&2
 
-    log_step "Installing Bitcoin Knots $BITCOIN_KNOTS_VERSION"
+    log_step "Installing Bitcoin Core $BITCOIN_CORE_VERSION"
 
     # Stop any running BTC daemon before reconfiguring (prevents port conflicts,
     # stale PID files, and LevelDB lock contention on reinstall)
@@ -16935,33 +17115,102 @@ install_bitcoin() {
     BTC_DIR=$(get_blockchain_dir "btc")
     local BTC_DATA="$BTC_DIR"
 
+    # Pad a version to three components so "31.1" and "31.1.0" compare equal.
+    _btc_norm3() {
+        local a b c
+        IFS=. read -r a b c <<< "$1"
+        printf '%s.%s.%s' "${a:-0}" "${b:-0}" "${c:-0}"
+    }
+
     local btc_binary_exists=false
     if [[ -f "$BTC_DIR/bin/bitcoind" ]]; then
+        local _btc_version_line
+        # Whole output, not just line 1. This string decides whether an
+        # RDTS-enforcing Knots build gets replaced, so a client name that
+        # lands on a later line must not be missed.
+        _btc_version_line=$("$BTC_DIR/bin/bitcoind" --version 2>/dev/null || echo "")
+        # The `|| cat BTC.ver || echo unknown` fallbacks that used to be chained
+        # onto this pipeline were unreachable: a pipeline's exit status is
+        # `head`'s, which is 0 even when grep matched nothing. Test the result
+        # explicitly so the version cache is actually consulted.
         local _btc_installed_ver
-        _btc_installed_ver=$("$BTC_DIR/bin/bitcoind" --version 2>/dev/null \
-            | grep -oP '(?i)(?:version\s+v?|^v)\K[\d]+\.[\d]+[\w.]*' | head -1 \
-            || cat "$INSTALL_DIR/config/coin-versions/BTC.ver" 2>/dev/null \
-            || echo "unknown")
-        if [[ "$_btc_installed_ver" == "$BITCOIN_KNOTS_PINNED_VERSION" ]]; then
-            log "Bitcoin Knots ${BITCOIN_KNOTS_PINNED_VERSION} already installed — skipping download"
+        _btc_installed_ver=$(echo "$_btc_version_line" \
+            | grep -oP '(?i)(?:version\s+v?|^v)\K[\d]+\.[\d]+[\w.]*' | head -1)
+
+        # Consult the cache ONLY when the daemon ran and merely printed something
+        # this regex could not parse. An EMPTY --version means the binary did not
+        # execute at all — truncated, wrong architecture, missing shared library
+        # — and BTC.ver was written by this installer on a previous successful
+        # run, so trusting it there reports a broken binary as "already
+        # installed" and skips the download. That is precisely the re-run-to-
+        # repair case, and it would silently do nothing. An empty version string
+        # also defeats the Knots check below, so a Knots build that fails to
+        # print would be certified as up-to-date Core.
+        if [[ -z "$_btc_installed_ver" && -n "$_btc_version_line" ]]; then
+            _btc_installed_ver=$(cat "$INSTALL_DIR/config/coin-versions/BTC.ver" 2>/dev/null || true)
+        fi
+        [[ -n "$_btc_installed_ver" ]] || _btc_installed_ver="unknown"
+
+        # Detect Bitcoin Knots and always replace it, whatever version it claims.
+        #
+        # Reading the version string is legitimate HERE because the question is
+        # "which client is installed", not "is this daemon enforcing RDTS". Never
+        # use a version string to answer the latter — the enforcing and
+        # non-enforcing Knots builds differ by one digit in a datestamp. Actual
+        # enforcement is determined at runtime via getdeploymentinfo.
+        if grep -qi 'knots' <<< "$_btc_version_line"; then
+            log_warn "Bitcoin Knots detected (${_btc_version_line})"
+            log_warn "Knots builds dated knots20260508 or later enforce BIP-110 (RDTS) and follow"
+            log_warn "a minority chain where mined blocks have no value. Replacing with Bitcoin Core."
+            log_warn "The node will need to reorg onto the majority chain. That is checked and"
+            log_warn "repaired automatically: the stratum chain gate verifies block 961,632 at"
+            log_warn "every startup and refuses to serve work until the node is verifiably on the"
+            log_warn "majority chain, so the pool cannot mine the wrong one while it catches up."
+        # Compare on a three-component normalisation. Bitcoin Core publishes
+        # release "31.1" but its binary reports "v31.1.0", so a plain equality
+        # test never matches and this skip branch is dead code — every re-run of
+        # install.sh would re-download and reinstall an already-correct binary
+        # while printing "found 31.1.0 — re-downloading to install 31.1".
+        #
+        # Stripping a trailing ".0" from both sides is not enough: it is
+        # asymmetric, so the next X.0 release ("32.0.0" vs "32.0") would
+        # reintroduce the same bug. Padding both to X.Y.Z is symmetric.
+        elif [[ "$(_btc_norm3 "$_btc_installed_ver")" == "$(_btc_norm3 "$BITCOIN_CORE_VERSION")" ]]; then
+            log "Bitcoin Core ${BITCOIN_CORE_VERSION} already installed — skipping download"
             btc_binary_exists=true
         else
-            log "Bitcoin Knots binary found (version: ${_btc_installed_ver}) — re-downloading to upgrade to ${BITCOIN_KNOTS_PINNED_VERSION}"
+            log "Bitcoin Core binary found (version: ${_btc_installed_ver}) — re-downloading to install ${BITCOIN_CORE_VERSION}"
         fi
     fi
 
     # Try copying binaries from source node (HA primary or user-specified) before downloading
     local btc_download_needed=true
     [[ "$btc_binary_exists" == "true" ]] && btc_download_needed=false
-    if [[ "$btc_download_needed" == "true" ]] && copy_binaries_from_primary "Bitcoin Knots" "$BTC_DIR/bin" "$BTC_DIR/bin"; then
+    if [[ "$btc_download_needed" == "true" ]] && copy_binaries_from_primary "Bitcoin Core" "$BTC_DIR/bin" "$BTC_DIR/bin"; then
         sudo mkdir -p "$BTC_DATA"
         sudo chown -R "$POOL_USER:$POOL_USER" "$BTC_DIR"
-        if [[ -f "$BTC_DIR/bin/bitcoind" ]]; then
+        # Require a POSITIVE Bitcoin Core identification. Testing only for the
+        # absence of "knots" fails open: a truncated, wrong-arch or unexecutable
+        # replicated binary produces no output, the negated grep succeeds, and
+        # the install symlinks to a binary that cannot run.
+        local _repl_ver=""
+        [[ -f "$BTC_DIR/bin/bitcoind" ]] && _repl_ver=$("$BTC_DIR/bin/bitcoind" --version 2>/dev/null || true)
+        if [[ -n "$_repl_ver" ]] && grep -qi 'bitcoin core' <<< "$_repl_ver" \
+           && ! grep -qi 'knots' <<< "$_repl_ver"; then
             btc_download_needed=false
             sudo ln -sf "$BTC_DIR/bin/bitcoind" /usr/local/bin/bitcoind
             sudo ln -sf "$BTC_DIR/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli
+        elif [[ -n "$_repl_ver" ]] && grep -qi 'knots' <<< "$_repl_ver"; then
+            # The HA primary is still running Bitcoin Knots. Replicating its
+            # binary would silently propagate an RDTS-enforcing daemon to this
+            # node, skipping the verified Bitcoin Core download entirely — the
+            # replication path checks file counts, not which client it copied.
+            log_warn "Replicated binary is Bitcoin Knots — discarding and downloading Bitcoin Core instead."
+            log_warn "The HA primary is still on Knots and should be upgraded too:  sudo /spiralpool/scripts/coin-upgrade.sh --coin BTC"
+            sudo rm -f "$BTC_DIR/bin/bitcoind" "$BTC_DIR/bin/bitcoin-cli"
         else
-            log_warn "Replicated files missing expected daemon binary — falling back to download"
+            log_warn "Replicated binary is missing or not identifiable as Bitcoin Core — falling back to verified download"
+            sudo rm -f "$BTC_DIR/bin/bitcoind" "$BTC_DIR/bin/bitcoin-cli"
         fi
     fi
 
@@ -16972,90 +17221,136 @@ install_bitcoin() {
     # Determine architecture suffix for download
     local ARCH_SUFFIX="x86_64-linux-gnu"
 
-    # Bitcoin Knots download (official release)
-    # Format: bitcoin-29.3.knots20260210-x86_64-linux-gnu.tar.gz
-    local KNOTS_FILENAME="bitcoin-${BITCOIN_KNOTS_VERSION}-${ARCH_SUFFIX}.tar.gz"
+    # Bitcoin Core download (official release)
+    # Format: bitcoin-31.1-x86_64-linux-gnu.tar.gz
+    local CORE_FILENAME="bitcoin-${BITCOIN_CORE_VERSION}-${ARCH_SUFFIX}.tar.gz"
     local BTC_MIRRORS=(
-        "https://bitcoinknots.org/files/${KNOTS_MAJOR_VERSION}/${BITCOIN_KNOTS_VERSION}/${KNOTS_FILENAME}"
-        "https://github.com/bitcoinknots/bitcoin/releases/download/v${BITCOIN_KNOTS_VERSION}/${KNOTS_FILENAME}"
+        "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}/${CORE_FILENAME}"
     )
 
-    # Download SHA256SUMS file for verification (auto-detect hash)
-    # NOTE: This fetch is optional — if it fails, download proceeds without verification.
-    # The 'local' keyword masks curl's exit code so set -e doesn't kill the script.
-    log "Fetching SHA256 checksum from bitcoinknots.org..."
-    local BTC_SHA256=""
-    local sha256sums=$(curl -sL --connect-timeout 10 --max-time 30 \
-        "https://bitcoinknots.org/files/${KNOTS_MAJOR_VERSION}/${BITCOIN_KNOTS_VERSION}/SHA256SUMS" 2>/dev/null || true)
-
-    if [[ -n "$sha256sums" ]]; then
-        BTC_SHA256=$(echo "$sha256sums" | grep "$KNOTS_FILENAME" | awk '{print $1}')
-        if [[ -n "$BTC_SHA256" ]]; then
-            log_success "Found SHA256: ${BTC_SHA256:0:16}..."
-        fi
-    fi
+    # The expected hash is COMMITTED IN THIS REPO (BITCOIN_CORE_SHA256 above) and
+    # is never fetched at runtime. Fetching the checksum from the same host that
+    # serves the binary means one compromised host supplies both, which is not a
+    # meaningful check. There is deliberately no override — an unverified BTC
+    # daemon is not a tradeoff worth offering.
+    log "Expected SHA256 (pinned in repo): ${BITCOIN_CORE_SHA256:0:16}..."
 
     # Download with retry
     local download_success=false
     local max_attempts=3
-    for ((attempt=1; attempt<=max_attempts; attempt++)); do
-        log "Downloading Bitcoin Knots $BITCOIN_KNOTS_VERSION (attempt $attempt)..."
+
+    # Accept a pre-placed tarball before reaching for the network.
+    #
+    # Bitcoin Core publishes binaries from bitcoincore.org only, so unlike the
+    # old Knots path there is no second mirror to fall back to — a bitcoincore.org
+    # outage would otherwise fail the install outright. Inventing a mirror URL
+    # would be worse than having none, so instead an operator can download the
+    # tarball by any means (another machine, a USB stick, an internal mirror) and
+    # drop it next to the installer or in /tmp. It is verified against the same
+    # committed hash as a fresh download, so this is not a weaker path. This also
+    # covers air-gapped and egress-filtered installs.
+    local _preplaced
+    for _preplaced in "/tmp/${CORE_FILENAME}" "${SCRIPT_DIR}/${CORE_FILENAME}"; do
+        [[ -f "$_preplaced" ]] || continue
+        if [[ ! -r "$_preplaced" ]]; then
+            log_warn "Cannot read ${_preplaced} (permissions?) — ignoring it"
+            continue
+        fi
+        local _pre_sha
+        # No `|| continue` here: install.sh sets no pipefail, so this pipeline's
+        # status is awk's and is always 0. Readability is checked above instead.
+        _pre_sha=$(sha256sum "$_preplaced" 2>/dev/null | awk '{print $1}')
+        if [[ "$_pre_sha" == "$BITCOIN_CORE_SHA256" ]]; then
+            log_success "Using pre-placed, checksum-verified tarball: ${_preplaced}"
+            if cp -f "$_preplaced" bitcoin.tar.gz; then
+                download_success=true
+                break
+            fi
+            # Guarded deliberately: install_bitcoin is called unguarded, so an
+            # unguarded cp failure (full /tmp, sticky-bit collision) would abort
+            # the entire installer with no diagnostic. Fall through to the
+            # network path instead of extracting whatever stale file is there.
+            log_warn "Could not stage ${_preplaced} — falling back to download"
+        else
+            log_warn "Ignoring ${_preplaced} — checksum does not match the pinned value"
+        fi
+    done
+
+    # Deliberately NOT named `attempt`: download_with_retry uses a variable of
+    # that name for its own loop and runs in this same shell, so it left the
+    # counter at max_retries and this loop always exited after a single pass —
+    # making max_attempts=3 really 1 and the retry prompt below unreachable.
+    local _btc_attempt
+    for ((_btc_attempt=1; _btc_attempt<=max_attempts; _btc_attempt++)); do
+        [[ "$download_success" == "true" ]] && break
+        log "Downloading Bitcoin Core $BITCOIN_CORE_VERSION (attempt $_btc_attempt)..."
         if download_with_retry "bitcoin.tar.gz" "${BTC_MIRRORS[@]}"; then
-            # Verify SHA256 checksum if available
-            if [[ -n "$BTC_SHA256" ]]; then
-                local actual_sha256=$(sha256sum bitcoin.tar.gz | awk '{print $1}')
-                if [[ "$actual_sha256" == "$BTC_SHA256" ]]; then
-                    download_success=true
-                    log_success "SHA256 checksum verified"
-                    break
-                else
-                    log_warn "SHA256 mismatch! Expected: $BTC_SHA256"
-                    log_warn "                     Got: $actual_sha256"
-                    log_warn "Verify manually at:"
-                    log_warn "  https://bitcoinknots.org/files/${KNOTS_MAJOR_VERSION}/${BITCOIN_KNOTS_VERSION}/"
-                    rm -f bitcoin.tar.gz
-                fi
+            local actual_sha256=$(sha256sum bitcoin.tar.gz | awk '{print $1}')
+            if [[ "$actual_sha256" == "$BITCOIN_CORE_SHA256" ]]; then
+                download_success=true
+                log_success "SHA256 checksum verified"
+                break
             else
-                if [[ "${ALLOW_UNVERIFIED_BTC_DOWNLOAD:-false}" == "true" ]]; then
-                    log_warn "⚠ SECURITY: No SHA256 checksum available for Bitcoin Knots — proceeding WITHOUT verification (ALLOW_UNVERIFIED_BTC_DOWNLOAD=true override)."
-                    download_success=true
-                    break
-                else
-                    log_error "Could not obtain a SHA256 checksum to verify the Bitcoin Knots download."
-                    log_error "Refusing to install an unverified daemon binary; will retry."
-                    log_error "To override (NOT recommended), re-run with: ALLOW_UNVERIFIED_BTC_DOWNLOAD=true"
-                    rm -f bitcoin.tar.gz
-                fi
+                log_warn "SHA256 mismatch! Expected: $BITCOIN_CORE_SHA256"
+                log_warn "                     Got: $actual_sha256"
+                log_warn "Verify manually against:"
+                log_warn "  https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}/SHA256SUMS"
+                rm -f bitcoin.tar.gz
             fi
         fi
 
-        if [[ $attempt -lt $max_attempts ]]; then
+        if [[ $_btc_attempt -lt $max_attempts ]]; then
             echo ""
             log_warn "Download failed. Manual download URL:"
-            log_warn "  https://bitcoinknots.org/files/${KNOTS_MAJOR_VERSION}/${BITCOIN_KNOTS_VERSION}/"
+            log_warn "  https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}/"
             echo ""
-            prompt_input "Retry? [Y/n]: "; read retry_choice
-            if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
-                log_error "Bitcoin Knots installation aborted"
-                return 1
+            # Guarded on a tty. An unguarded `read` returns non-zero at EOF, and
+            # under `set -e` that killed the whole installer after ONE attempt —
+            # silently, with an untraceable exit code — for anyone running
+            # non-interactively: `ssh host 'sudo bash install.sh'`, Ansible,
+            # nohup, or a piped script. Those are exactly the unattended runs
+            # that most need the retry. The same guard is used at install.sh:981.
+            if [[ -t 0 ]]; then
+                stty sane 2>/dev/null || true
+                prompt_input "Retry? [Y/n]: "
+                read -r retry_choice < /dev/tty || retry_choice=""
+                if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
+                    log_error "Bitcoin Core installation aborted"
+                    return 1
+                fi
+            else
+                log_warn "Non-interactive session — retrying automatically (attempt $((_btc_attempt + 1)) of ${max_attempts})"
             fi
         fi
     done
 
     if [[ "$download_success" != "true" ]]; then
-        log_error "Failed to download Bitcoin Knots after $max_attempts attempts"
+        log_error "Failed to download and verify Bitcoin Core after $max_attempts attempts"
+        log_error "bitcoincore.org is the only official source for Core binaries, so there is"
+        log_error "no mirror to fall back to. If the host is unreachable from this machine,"
+        log_error "fetch the file elsewhere and place it at either path below, then re-run:"
+        log_error "  /tmp/${CORE_FILENAME}"
+        log_error "  ${SCRIPT_DIR}/${CORE_FILENAME}"
+        log_error "It is checked against the same pinned SHA256, so this is not a weaker path:"
+        log_error "  ${BITCOIN_CORE_SHA256}"
         return 1
     fi
 
-    log "Extracting Bitcoin Knots..."
-    tar -xzf bitcoin.tar.gz || { log_error "Failed to extract Bitcoin Knots archive"; return 1; }
+    log "Extracting Bitcoin Core..."
+    tar -xzf bitcoin.tar.gz || { log_error "Failed to extract Bitcoin Core archive"; return 1; }
     rm -f bitcoin.tar.gz
 
-    # Install Bitcoin Knots — derive directory from known version (no glob in /tmp)
-    local extracted_dir="bitcoin-${BITCOIN_KNOTS_VERSION}"
+    # Install Bitcoin Core — derive directory from known version (no glob in /tmp)
+    local extracted_dir="bitcoin-${BITCOIN_CORE_VERSION}"
+    if [[ ! -d "$extracted_dir" ]]; then
+        log_error "Extracted archive has no ${extracted_dir}/ directory."
+        log_error "The tarball layout is not what this version expects — aborting"
+        log_error "rather than failing later on an unexplained copy error."
+        return 1
+    fi
 
     if [[ -z "$extracted_dir" ]]; then
-        log_error "Could not find extracted Bitcoin Knots directory"
+        log_error "Could not find extracted Bitcoin Core directory"
         return 1
     fi
 
@@ -17063,16 +17358,27 @@ install_bitcoin() {
     sudo mkdir -p "$BTC_DATA"
     sudo cp "${extracted_dir}/bin/"* "$BTC_DIR/bin/"
     sudo chown -R "$POOL_USER:$POOL_USER" "$BTC_DIR"
-    rm -rf /tmp/bitcoin-*
-
-    sudo ln -sf "$BTC_DIR/bin/bitcoind" /usr/local/bin/bitcoind
-    sudo ln -sf "$BTC_DIR/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli
+    # Scoped to the extracted directory. A bare /tmp/bitcoin-* glob also matches
+    # a pre-placed tarball (bitcoin-<ver>-<arch>.tar.gz), which would delete the
+    # very file an air-gapped operator staged for the next run.
+    rm -rf "/tmp/${extracted_dir:?}"
 
     fi  # end btc_download_needed
 
+    # Outside the download guard on purpose. coin-upgrade.sh locates BTC solely
+    # via `readlink -f /usr/local/bin/bitcoind`, and pool-mode.sh writes an
+    # ExecStart pointing at it. When these lines lived inside the guard, the
+    # "already at 31.1 — skipping download" path never refreshed them, so a
+    # re-run to repair a missing or stale symlink did not repair it and
+    # coin-upgrade.sh --check kept reporting BTC as not installed.
+    if [[ -x "$BTC_DIR/bin/bitcoind" ]]; then
+        sudo ln -sf "$BTC_DIR/bin/bitcoind" /usr/local/bin/bitcoind
+        sudo ln -sf "$BTC_DIR/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli
+    fi
+
     # Generate Bitcoin configuration based on Tor/clearnet setting
     if [[ "$BTC_TOR_ENABLED" == "true" ]]; then
-        log "Configuring Bitcoin Knots for Tor network..."
+        log "Configuring Bitcoin Core for Tor network..."
         BTC_NETWORK_CONFIG="# === TOR NETWORK - PRIVACY MODE ===
 # Route all connections through Tor for IP privacy
 # Note: Initial sync will be SLOW (1-2 weeks) but privacy is maximized
@@ -17087,15 +17393,23 @@ onlynet=onion
 onlynet=ipv4
 # Do NOT listen for incoming connections (hidden node)
 listen=0
-# Do NOT advertise any external IP
-externalip=
+# Do NOT advertise any external IP.
+# There is deliberately NO 'externalip=' line here. An empty value is not treated
+# as 'unset' — Bitcoin Core passes it to Lookup(), which rejects the empty string,
+# and startup aborts with InitError. Omitting the option entirely IS the
+# do-not-advertise behaviour. (This previously shipped as a bare 'externalip='
+# and would have prevented any Tor-enabled node from starting.)
+# Do not let the router map a port for us. Bitcoin Core 30.0 changed the natpmp
+# default to enabled; leaving it at the default would have this node announcing
+# itself to the local network, defeating the point of running behind Tor.
+natpmp=0
 # Reduce connections for Tor (high latency network)
 maxconnections=60
 maxuploadtarget=5000
 # Increase timeouts for Tor latency
 peertimeout=120"
     else
-        log "Configuring Bitcoin Knots for clearnet (fastest sync)..."
+        log "Configuring Bitcoin Core for clearnet (fastest sync)..."
         BTC_NETWORK_CONFIG="# === CLEARNET - FAST SYNC MODE ===
 # Direct IPv4 connections for fastest possible sync
 # Optimized for initial block download (IBD)
@@ -17138,7 +17452,7 @@ peertimeout=60"
     fi
 
     sudo tee "$BTC_DATA/bitcoin.conf" > /dev/null << EOF
-# Bitcoin Knots Configuration
+# Bitcoin Core Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
 # Network Mode: $(if [[ "$BTC_TOR_ENABLED" == "true" ]]; then echo "TOR (Privacy)"; else echo "CLEARNET (Fast Sync)"; fi)
 # Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -17191,10 +17505,13 @@ debuglogfile=debug.log
 # === ASSUME VALID (skip signature verification for known good blocks) ===
 # This dramatically speeds up initial sync
 # Block height 912683 (Bitcoin Core v28+)
-$(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "assumevalid=00000000000000000000611fd22f2df7c8fbd0688745c3a6c3bb5109cc2a12cb"; fi)
+# assumevalid is deliberately NOT set. Bitcoin Core 31.1 ships its own
+# defaultAssumeValid at a higher height than the value previously pinned
+# here, so overriding it only ADDS full script verification during initial
+# sync. Leave it to the daemon.
 
 # === SEED NODES (official Bitcoin Core DNS seeds) ===
-$(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "# Primary official seeds (Bitcoin Knots — verified against 29.x-knots kernel/chainparams.cpp)
+$(if [[ "$BTC_TOR_ENABLED" != "true" ]]; then echo "# Primary official seeds (Bitcoin Core — kernel/chainparams.cpp)
 seednode=seed.bitcoin.sipa.be
 seednode=dnsseed.bluematt.me
 seednode=dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us
@@ -17206,7 +17523,7 @@ seednode=dnsseed.emzy.de
 seednode=seed.bitcoin.wiz.biz
 seednode=seed.mainnet.achownodes.xyz
 
-# Force DNS seed queries on every startup (verified: bitcoin-29.3.knots -help confirms support)
+# Force DNS seed queries on every startup (Bitcoin Core -help confirms support)
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
@@ -17230,7 +17547,7 @@ EOF
     # Create systemd service
     sudo tee /etc/systemd/system/bitcoind.service > /dev/null << EOF
 [Unit]
-Description=Bitcoin Knots Node
+Description=Bitcoin Core Node
 After=network-online.target
 Wants=network-online.target
 Documentation=https://bitcoin.org/en/full-node
@@ -17278,7 +17595,7 @@ EOF
     sudo systemctl daemon-reload || true
     sudo systemctl enable bitcoind || true
 
-    log_success "Bitcoin Knots $BITCOIN_KNOTS_VERSION installed"
+    log_success "Bitcoin Core $BITCOIN_CORE_VERSION installed"
     log "Data directory: $BTC_DATA"
     log "RPC Port: 8332, ZMQ Port: 28332"
     mark_progress "bitcoin"
@@ -17288,7 +17605,8 @@ EOF
 # BITCOIN CASH NODE INSTALLATION (Multi-Coin Mode)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-BCHN_VERSION="29.0.0"
+# BCHN_VERSION is defined with the other version constants at the top of this
+    # file so the version-cache seeding can reference it.
 
 install_bitcoincash() {
     if [[ "$ENABLE_BCH" != "true" ]]; then
@@ -17378,10 +17696,16 @@ install_bitcoincash() {
             log_warn "Download failed. Manual download URL:"
             log_warn "  https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases"
             echo ""
-            prompt_input "Retry? [Y/n]: "; read retry_choice
-            if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
-                log_error "Bitcoin Cash Node installation aborted"
-                return 1
+            if [[ -t 0 ]]; then
+                stty sane 2>/dev/null || true
+                prompt_input "Retry? [Y/n]: "
+                read -r retry_choice < /dev/tty || retry_choice=""
+                if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
+                    log_error "Bitcoin Cash Node installation aborted"
+                    return 1
+                fi
+            else
+                log_warn "Non-interactive session — retrying automatically (attempt $((attempt + 1)) of ${max_attempts})"
             fi
         fi
     done
@@ -17402,7 +17726,7 @@ install_bitcoincash() {
     sudo chown -R "$POOL_USER:$POOL_USER" "$BCH_DIR"
     rm -rf /tmp/bitcoin-cash-node-*
 
-    # Use different names to avoid conflict with Bitcoin Knots
+    # Use different names to avoid conflict with Bitcoin Core
     sudo ln -sf "$BCH_DIR/bin/bitcoind" /usr/local/bin/bitcoind-bch
     sudo ln -sf "$BCH_DIR/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli-bch
 
@@ -17491,7 +17815,7 @@ dnsseed=1"
 # Network Mode: $(if [[ "$BCH_TOR_ENABLED" == "true" ]]; then echo "TOR (Privacy)"; else echo "CLEARNET (Fast Sync)"; fi)
 # Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 #
-# IMPORTANT: Uses unique ports to avoid conflict with Bitcoin Knots
+# IMPORTANT: Uses unique ports to avoid conflict with Bitcoin Core
 # RPC: 8432 (not 8332), P2P: 8433 (not 8333), ZMQ: 28432
 
 # === CORE SETTINGS ===
@@ -17728,10 +18052,16 @@ install_bitcoinii() {
             log_warn "Download failed. Manual download URL:"
             log_warn "  https://github.com/Bitcoin-II/BitcoinII-Core/releases"
             echo ""
-            prompt_input "Retry? [Y/n]: "; read retry_choice
-            if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
-                log_error "Bitcoin II Core installation aborted"
-                return 1
+            if [[ -t 0 ]]; then
+                stty sane 2>/dev/null || true
+                prompt_input "Retry? [Y/n]: "
+                read -r retry_choice < /dev/tty || retry_choice=""
+                if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
+                    log_error "Bitcoin II Core installation aborted"
+                    return 1
+                fi
+            else
+                log_warn "Non-interactive session — retrying automatically (attempt $((attempt + 1)) of ${max_attempts})"
             fi
         fi
     done
@@ -18058,10 +18388,16 @@ install_bitcoincashii() {
                 fi
             fi
             if [[ $attempt -lt $max_attempts ]]; then
-                prompt_input "Retry? [Y/n]: "; read retry_choice
-                if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
-                    log_error "Bitcoin Cash II Core installation aborted"
-                    return 1
+                if [[ -t 0 ]]; then
+                    stty sane 2>/dev/null || true
+                    prompt_input "Retry? [Y/n]: "
+                    read -r retry_choice < /dev/tty || retry_choice=""
+                    if [[ "$retry_choice" == "n" || "$retry_choice" == "N" ]]; then
+                        log_error "Bitcoin Cash II Core installation aborted"
+                        return 1
+                    fi
+                else
+                    log_warn "Non-interactive session — retrying automatically (attempt $((attempt + 1)) of ${max_attempts})"
                 fi
             fi
         done
@@ -18432,7 +18768,8 @@ EOF
 # LITECOIN CORE INSTALLATION (Scrypt)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-LITECOIN_VERSION="0.21.5.4"
+# LITECOIN_VERSION is defined with the other version constants at the top of
+    # this file so the version-cache seeding can reference it.
 LTC_RPC_PORT=9332
 LTC_P2P_PORT=9333
 LTC_ZMQ_PORT=28933  # Litecoin ZMQ port (consistent with MULTI-COIN.md)
@@ -18499,7 +18836,7 @@ install_litecoin() {
 
     cd /tmp
 
-    # Download Litecoin Core (0.21.4+ releases are on GitHub)
+    # Download Litecoin Core (0.21.4+ releases are on GitHub; pinned above)
     local LTC_URL="https://github.com/litecoin-project/litecoin/releases/download/v${LITECOIN_VERSION}/litecoin-${LITECOIN_VERSION}-${LTC_ARCH}.tar.gz"
 
     log "Downloading Litecoin Core $LITECOIN_VERSION..."
@@ -18540,7 +18877,12 @@ onlynet=onion
 onlynet=ipv4
 # Do NOT listen for incoming connections (hidden node)
 listen=0
-externalip=
+# Do NOT advertise any external IP.
+# There is deliberately no 'externalip=' line. An empty value is NOT treated as
+# 'unset': the daemon passes it to Lookup(), which rejects the empty string, and
+# startup aborts with an InitError. Omitting the option is what actually
+# suppresses advertising. (This shipped as a bare 'externalip=' and would have
+# stopped any Tor-enabled node from starting.)
 # Reduce connections for Tor (high latency network)
 maxconnections=60
 # Increase timeouts for Tor latency (milliseconds)
@@ -20344,7 +20686,7 @@ EOF
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.31.12 (SHA-256d)
+# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.33.10 (SHA-256d)
 # ═══════════════════════════════════════════════════════════════════════════════
 # eCash uses the Bitcoin ABC client. The binary is named bitcoind/bitcoin-cli
 # (same as BTC/FBTC) but lives in its own directory with its own service unit
@@ -20585,6 +20927,17 @@ install_postgresql() {
     if check_command psql; then
         log "PostgreSQL already installed"
     else
+        # As in install_docker: $OS_CODENAME is never assigned globally, and an
+        # empty one here wrote ".../repos/apt -pgdg main", which apt rejects.
+        # `|| true` for the same reason as install_docker: a missing
+        # /etc/os-release must reach the error below, not kill the installer.
+        local OS_CODENAME
+        OS_CODENAME="$( . /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}" || true )"
+        [[ -n "$OS_CODENAME" ]] || OS_CODENAME="$(lsb_release -cs 2>/dev/null || true)"
+        if [[ -z "$OS_CODENAME" ]]; then
+            log_error "Could not determine the distribution codename — cannot add the PGDG repository."
+            return 1
+        fi
         curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg 2>/dev/null
         echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt ${OS_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
         wait_for_apt_lock
@@ -22869,10 +23222,16 @@ install_go() {
             echo -e "    ${GREEN}r${NC} = Retry download"
             echo -e "    ${RED}a${NC} = Abort installation"
             echo ""
-            prompt_input "Choice [r/a]: "; read choice
-            if [[ "$choice" == "a" || "$choice" == "A" ]]; then
-                log_error "Installation aborted by user"
-                exit 1
+            if [[ -t 0 ]]; then
+                stty sane 2>/dev/null || true
+                prompt_input "Choice [r/a]: "
+                read -r choice < /dev/tty || choice=""
+                if [[ "$choice" == "a" || "$choice" == "A" ]]; then
+                    log_error "Installation aborted by user"
+                    exit 1
+                fi
+            else
+                log_warn "Non-interactive session — retrying automatically (attempt $((attempt + 1)) of ${max_attempts})"
             fi
         fi
     done
@@ -22960,7 +23319,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.6.7"
+    local BUILD_VERSION="2.7.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -26990,7 +27349,11 @@ is_blockchain_synced() {
         return 0
     fi
     # Bitcoin Cash II (BCH2) - uses bitcoincashII-cli
-    if service_enabled "bitcoincashIId" && is_daemon_synced "bitcoincashII-cli" "$(get_blockchain_dir bch2)/bitcoincashii.conf"; then
+    # Lowercase: install_bitcoincashii() symlinks /usr/local/bin/bitcoincashii-cli.
+    # The capital-II binary name exists only inside $BCH2_DIR/bin and is not on PATH,
+    # so a bare capital-II invocation is command-not-found and BCH2 always reads
+    # as unsynced.
+    if service_enabled "bitcoincashIId" && is_daemon_synced "bitcoincashii-cli" "$(get_blockchain_dir bch2)/bitcoincashii.conf"; then
         return 0
     fi
     # Bitcoin II (BC2) - uses bitcoinii-cli
@@ -27284,6 +27647,21 @@ check_blockchain_health() {
     check_blockchain_daemon_health "dogecoind" "dogecoin-cli" "$(get_blockchain_dir doge)/dogecoin.conf" "Dogecoin"
     check_blockchain_daemon_health "pepecoind" "pepecoin-cli" "$(get_blockchain_dir pep)/pepecoin.conf" "PepeCoin"
     check_blockchain_daemon_health "catcoind" "catcoin-cli" "$(get_blockchain_dir cat)/catcoin.conf" "Catcoin"
+    # BCH2, BTCS and XEC were absent from this list, so those three daemons could
+    # stay down indefinitely with no alert while every other coin was watched.
+    # Service and CLI names taken from the sibling call sites that already handle
+    # them (is_daemon_synced / check_blockchain_sync), not invented here: BCH2's
+    # CLI is the LOWERCASE symlink, and XEC's needs an explicit -rpcport.
+    check_blockchain_daemon_health "bitcoincashIId" "bitcoincashii-cli" "$(get_blockchain_dir bch2)/bitcoincashii.conf" "Bitcoin Cash II"
+    check_blockchain_daemon_health "bitcoinsilverd" "bitcoinsilver-cli" "$(get_blockchain_dir btcs)/bitcoinsilver.conf" "Bitcoin Silver"
+    # No -rpcport here, unlike check_blockchain_sync's XEC entry. That function
+    # invokes $cli UNQUOTED so a two-word string word-splits; this one runs
+    # "$cli" quoted, so "ecash-cli -rpcport=9004" would be looked up as a single
+    # executable name, exit 127, and be read as "daemon not responding" — which
+    # restarts a perfectly healthy ecashd three times an hour, forever. The port
+    # is unnecessary anyway: the XEC config sets rpcport=9004 and -conf= is
+    # passed, which is exactly how the CLI is invoked elsewhere in this file.
+    check_blockchain_daemon_health "ecashd" "ecash-cli" "$(get_blockchain_dir xec)/bitcoin.conf" "eCash"
     # Aux chain daemons (merge mining)
     check_blockchain_daemon_health "namecoind" "namecoin-cli" "$(get_blockchain_dir nmc)/namecoin.conf" "Namecoin"
     check_blockchain_daemon_health "syscoind" "syscoin-cli" "$(get_blockchain_dir sys)/syscoin.conf" "Syscoin"
@@ -27869,7 +28247,7 @@ if systemctl is-enabled --quiet bitcoind-bch 2>/dev/null; then
 fi
 
 if systemctl is-enabled --quiet bitcoincashIId 2>/dev/null; then
-    check_blockchain_sync "Bitcoin Cash II" "bitcoincashII-cli" "$(get_blockchain_dir bch2)/bitcoincashii.conf" "bitcoincashIId"
+    check_blockchain_sync "Bitcoin Cash II" "bitcoincashii-cli" "$(get_blockchain_dir bch2)/bitcoincashii.conf" "bitcoincashIId"
     SHOWED_BLOCKCHAIN=true
 fi
 
@@ -30507,7 +30885,15 @@ case "$COIN" in
         COIN_SYMBOL="BCH"
         COIN_EMOJI="🟢"
         CONF="$(get_blockchain_dir bch)/bitcoin.conf"
-        CLI="bitcoin-cli-bch -conf=$CONF -chain=main"
+        # No -chain: bitcoin-cli-bch is BCHN's bitcoin-cli, and BCHN's
+        # ParseParameters rejects an unregistered command-line argument fatally
+        # ("Invalid parameter -chain" — src/util/system.cpp:437-459 →
+        # bitcoin-cli.cpp:159-165 → EXIT_FAILURE). BCHN registers only
+        # -regtest/-testnet/-testnet4/-scalenet/-chipnet (chainparamsbase.cpp:23);
+        # -chain=<chain> is a Bitcoin Core v0.19.0 addition BCHN never took. Same
+        # removal already applied to the BCH config file above. Mainnet is the
+        # default.
+        CLI="bitcoin-cli-bch -conf=$CONF"
         SERVICE_NAME="bitcoind-bch"
         CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
         ADDRESS_PREFIX="bitcoincash:q or 1"
@@ -31691,11 +32077,15 @@ if [[ -n "${WALLET_NAME:-}" ]]; then
         chmod 600 "$WALLET_BACKUP_FILE" 2>/dev/null || sudo chmod 600 "$WALLET_BACKUP_FILE" 2>/dev/null || true
         SERVER_IP=$(hostname -I | awk '{print $1}')
         echo -e "${RED}╔═══════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR WALLET NOW${NC}                        ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR WALLET NOW${NC}                         ${RED}║${NC}"
         echo -e "${RED}║${NC}                                                               ${RED}║${NC}"
-        echo -e "${RED}║${NC}  This file contains your private keys. Copy it off this      ${RED}║${NC}"
-        echo -e "${RED}║${NC}  server immediately. If lost, your funds CANNOT be           ${RED}║${NC}"
-        echo -e "${RED}║${NC}  recovered. Store it in at least two offline locations.      ${RED}║${NC}"
+        echo -e "${RED}║${NC}  This file contains your private keys. Copy it off this       ${RED}║${NC}"
+        echo -e "${RED}║${NC}  server immediately. If lost, your funds CANNOT be            ${RED}║${NC}"
+        echo -e "${RED}║${NC}  recovered. Store it in at least two offline locations.       ${RED}║${NC}"
+        echo -e "${RED}║${NC}                                                               ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}THERE IS NO SEED PHRASE.${NC} This daemon does not create         ${RED}║${NC}"
+        echo -e "${RED}║${NC}  12- or 24-word recovery phrases. There are no words to       ${RED}║${NC}"
+        echo -e "${RED}║${NC}  write down. This file IS the only backup that exists.        ${RED}║${NC}"
         echo -e "${RED}╚═══════════════════════════════════════════════════════════════╝${NC}"
         echo ""
         echo -e "  ${WHITE}Backup file:${NC}  ${GREEN}${WALLET_BACKUP_FILE}${NC}"
@@ -32033,11 +32423,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.6.7-SPIRAL_CITADEL: Create backup command
+    # V2.7.0-SPIRAL_CITADEL: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.6.7-SPIRAL_CITADEL
+# Spiral Pool Backup Utility - V2.7.0-SPIRAL_CITADEL
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32082,7 +32472,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.6.7-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.7.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32461,7 +32851,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.6.7",
+    "version": "2.7.0",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -32742,7 +33132,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.6.7-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.7.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -32795,11 +33185,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.6.7-SPIRAL_CITADEL: Create restore command
+    # V2.7.0-SPIRAL_CITADEL: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.6.7-SPIRAL_CITADEL
+# Spiral Pool Restore Utility - V2.7.0-SPIRAL_CITADEL
 # Restores backups created by spiralpool-backup
 #
 
@@ -32846,7 +33236,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.6.7-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.7.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33189,7 +33579,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.6.7-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.7.0-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -37459,7 +37849,8 @@ check_coin_sync() {
     local conf_path=$(echo "$cli_info" | cut -d'|' -f2)
 
     local progress
-    progress=$($cli_cmd -conf="$conf_path" getblockchaininfo 2>/dev/null | grep -o '"verificationprogress":[^,]*' | cut -d: -f2 | tr -d ' ')
+    # As the daemon's user — the config is 640 and owned by $POOL_USER.
+    progress=$(sudo -u "$POOL_USER" $cli_cmd -conf="$conf_path" getblockchaininfo 2>/dev/null | grep -o '"verificationprogress":[^,]*' | cut -d: -f2 | tr -d ' ')
 
     # Validate progress is a number
     if [[ -z "$progress" ]] || ! [[ "$progress" =~ ^[0-9.]+$ ]]; then
@@ -37489,7 +37880,8 @@ get_coin_sync_progress() {
     local conf_path=$(echo "$cli_info" | cut -d'|' -f2)
 
     local info
-    info=$($cli_cmd -conf="$conf_path" getblockchaininfo 2>/dev/null)
+    # As the daemon's user — the config is 640 and owned by $POOL_USER.
+    info=$(sudo -u "$POOL_USER" $cli_cmd -conf="$conf_path" getblockchaininfo 2>/dev/null)
 
     if [[ -z "$info" ]]; then
         echo "unknown"
@@ -38024,17 +38416,27 @@ all_synced() {
     return 0
 }
 
-# Wait for a daemon to be responsive (max 5 minutes)
+# Wait for a daemon to become responsive.
+#
+# Budget is 10 minutes, not 5. DigiByte reloads a ~24M-entry block index before
+# it opens RPC — coin-upgrade.sh documents that as 4-5 minutes, and slower disks
+# exceed it — so a 5-minute ceiling expired on a perfectly healthy node and the
+# run continued against a dead RPC.
+#
+# Returns 1 when the daemon never answered, so callers can tell the difference.
+# It previously always returned 0, and the caller then logged "All daemons
+# responsive" unconditionally.
 wait_for_daemon() {
     local coin="$1"
     local cli_cmd=$(get_cli_cmd "$coin")
     local name=$(get_coin_name "$coin")
     local wait_count=0
+    local max_waits=120   # 120 x 5s = 10 minutes
 
     while ! $cli_cmd getblockchaininfo &>/dev/null; do
-        if [[ $wait_count -ge 60 ]]; then
-            log "WARNING: $name daemon not responding after 5 minutes — it will continue syncing in the background"
-            return 0
+        if [[ $wait_count -ge $max_waits ]]; then
+            log "WARNING: $name daemon not responding after 10 minutes — it will continue syncing in the background"
+            return 1
         fi
         sleep 5
         wait_count=$((wait_count + 1))
@@ -38070,25 +38472,64 @@ log "Enabled coins: $enabled_coins"
 
 # Wait for all enabled daemons to be responsive
 # SHA-256d
-[[ "$ENABLE_DGB" == "true" ]] && wait_for_daemon "DGB"
-[[ "$ENABLE_BTC" == "true" ]] && wait_for_daemon "BTC"
-[[ "$ENABLE_BCH" == "true" ]] && wait_for_daemon "BCH"
-[[ "$ENABLE_BCH2" == "true" ]] && wait_for_daemon "BCH2"
-[[ "$ENABLE_BC2" == "true" ]] && wait_for_daemon "BC2"
-[[ "$ENABLE_BTCS" == "true" ]] && wait_for_daemon "BTCS"
-[[ "$ENABLE_NMC" == "true" ]] && wait_for_daemon "NMC"
-[[ "$ENABLE_SYS" == "true" ]] && wait_for_daemon "SYS"
-[[ "$ENABLE_XMY" == "true" ]] && wait_for_daemon "XMY"
-[[ "$ENABLE_FBTC" == "true" ]] && wait_for_daemon "FBTC"
-[[ "$ENABLE_XEC" == "true" ]] && wait_for_daemon "XEC"
+# Collect daemons that never answered, so the summary below is truthful
+# rather than an unconditional "All daemons responsive".
+_unresponsive_daemons=""
+
+if [[ "$ENABLE_DGB" == "true" ]]; then
+    wait_for_daemon "DGB" || _unresponsive_daemons="${_unresponsive_daemons} DGB"
+fi
+if [[ "$ENABLE_BTC" == "true" ]]; then
+    wait_for_daemon "BTC" || _unresponsive_daemons="${_unresponsive_daemons} BTC"
+fi
+if [[ "$ENABLE_BCH" == "true" ]]; then
+    wait_for_daemon "BCH" || _unresponsive_daemons="${_unresponsive_daemons} BCH"
+fi
+if [[ "$ENABLE_BCH2" == "true" ]]; then
+    wait_for_daemon "BCH2" || _unresponsive_daemons="${_unresponsive_daemons} BCH2"
+fi
+if [[ "$ENABLE_BC2" == "true" ]]; then
+    wait_for_daemon "BC2" || _unresponsive_daemons="${_unresponsive_daemons} BC2"
+fi
+if [[ "$ENABLE_BTCS" == "true" ]]; then
+    wait_for_daemon "BTCS" || _unresponsive_daemons="${_unresponsive_daemons} BTCS"
+fi
+if [[ "$ENABLE_NMC" == "true" ]]; then
+    wait_for_daemon "NMC" || _unresponsive_daemons="${_unresponsive_daemons} NMC"
+fi
+if [[ "$ENABLE_SYS" == "true" ]]; then
+    wait_for_daemon "SYS" || _unresponsive_daemons="${_unresponsive_daemons} SYS"
+fi
+if [[ "$ENABLE_XMY" == "true" ]]; then
+    wait_for_daemon "XMY" || _unresponsive_daemons="${_unresponsive_daemons} XMY"
+fi
+if [[ "$ENABLE_FBTC" == "true" ]]; then
+    wait_for_daemon "FBTC" || _unresponsive_daemons="${_unresponsive_daemons} FBTC"
+fi
+if [[ "$ENABLE_XEC" == "true" ]]; then
+    wait_for_daemon "XEC" || _unresponsive_daemons="${_unresponsive_daemons} XEC"
+fi
 # Scrypt
-[[ "$ENABLE_LTC" == "true" ]] && wait_for_daemon "LTC"
-[[ "$ENABLE_DOGE" == "true" ]] && wait_for_daemon "DOGE"
-[[ "$ENABLE_PEP" == "true" ]] && wait_for_daemon "PEP"
-[[ "$ENABLE_CAT" == "true" ]] && wait_for_daemon "CAT"
+if [[ "$ENABLE_LTC" == "true" ]]; then
+    wait_for_daemon "LTC" || _unresponsive_daemons="${_unresponsive_daemons} LTC"
+fi
+if [[ "$ENABLE_DOGE" == "true" ]]; then
+    wait_for_daemon "DOGE" || _unresponsive_daemons="${_unresponsive_daemons} DOGE"
+fi
+if [[ "$ENABLE_PEP" == "true" ]]; then
+    wait_for_daemon "PEP" || _unresponsive_daemons="${_unresponsive_daemons} PEP"
+fi
+if [[ "$ENABLE_CAT" == "true" ]]; then
+    wait_for_daemon "CAT" || _unresponsive_daemons="${_unresponsive_daemons} CAT"
+fi
 # DGB_SCRYPT uses same daemon as DGB, already waited
 
-log "All daemons responsive, monitoring sync progress..."
+if [[ "${_unresponsive_daemons:-}" == "" ]]; then
+    log "All daemons responsive, monitoring sync progress..."
+else
+    log "WARNING: these daemons never answered RPC:${_unresponsive_daemons}"
+    log "Monitoring sync progress anyway; they may still be loading their block index."
+fi
 
 # ═══════════════════════════════════════════════════════════════════════
 # EARLY WALLET GENERATION - daemons are up, no sync required for key gen
@@ -38644,14 +39085,33 @@ start_services() {
         local conf_path=$(echo "$cli_info" | cut -d'|' -f2)
         local wait_count=0
 
-        while ! $cli_cmd -conf="$conf_path" getblockchaininfo &>/dev/null; do
+        # 300 x 2s = 10 minutes. The old 30 x 2s = 60s ceiling was shorter than
+        # the block-index reload coin-upgrade.sh documents for DigiByte (4-5
+        # minutes), so it expired on every healthy DGB node and the installer
+        # went on to generate wallets and addresses against an RPC that was not
+        # yet listening.
+        local max_waits=300
+
+        # Run the CLI AS THE DAEMON'S OWN USER. The coin config is written
+        # chmod 640 owned by $POOL_USER because it contains rpcpassword in
+        # plaintext, so the operator running this installer cannot read it
+        # unless they happen to be in that group — and they are not. A bare
+        # $cli_cmd therefore fails on "could not be opened" before it ever
+        # opens a socket, so this loop burned the full 10 minutes against a
+        # perfectly healthy daemon and then warned that RPC was not answering.
+        # Widening the config to 644 would fix the symptom by publishing the
+        # RPC password; running as the right user is the actual fix.
+        while ! sudo -u "$POOL_USER" $cli_cmd -conf="$conf_path" getblockchaininfo &>/dev/null; do
             sleep 2
             wait_count=$((wait_count + 1))
-            if [[ $wait_count -ge 30 ]]; then
-                log_warn "Daemon will start in background, this is normal behaviour."
-                break
+            if [[ $wait_count -ge $max_waits ]]; then
+                log_warn "${coin}: daemon still not answering RPC after 10 minutes."
+                log_warn "Continuing — it may still be loading its block index. If wallet or"
+                log_warn "address setup fails for ${coin}, that is why; re-run once it is up."
+                return 1
             fi
         done
+        return 0
     }
 
     # Clear any StartLimitBurst failures from prior crash loops (reinstall scenario)
@@ -38671,7 +39131,7 @@ start_services() {
     fi
 
     if [[ "$ENABLE_BTC" == "true" ]]; then
-        log "Starting Bitcoin Knots..."
+        log "Starting Bitcoin Core..."
         sudo systemctl start bitcoind || log_warn "Failed to start bitcoind"
         sleep 3
         wait_for_daemon "BTC"
@@ -38907,29 +39367,38 @@ start_services() {
 
                 # If no pool wallet exists on disk the address was manually provided —
                 # nothing to back up. Mark confirmed and skip the entire backup section.
-                if [[ ! -d "$INSTALL_DIR/${_wg_coin_lower}/${_wg_wallet}" ]] && \
-                   [[ ! -d "$INSTALL_DIR/${_wg_coin_lower}/wallets/${_wg_wallet}" ]]; then
+                #
+                # Resolve through get_blockchain_dir, NOT $INSTALL_DIR: on a
+                # multi-disk install the coin lives under $CHAIN_MOUNT_POINT, so
+                # a hardcoded $INSTALL_DIR path never exists, this test is always
+                # true, and every coin's backup is skipped — after writing a
+                # .backup-confirmed marker that stops a re-run from retrying. The
+                # only copy of a freshly generated wallet's keys is then never
+                # written anywhere.
+                local _wg_coindir; _wg_coindir="$(get_blockchain_dir "$_wg_coin_lower")"
+                if [[ ! -d "${_wg_coindir}/${_wg_wallet}" ]] && \
+                   [[ ! -d "${_wg_coindir}/wallets/${_wg_wallet}" ]]; then
                     log_info "${_wg_coin}: address was manually provided, no pool wallet on server — skipping backup"
                     sudo -u "$POOL_USER" touch "${_wg_backup_base}/.backup-confirmed-${_wg_coin_lower}" 2>/dev/null || true
                     continue
                 fi
                 local _wg_cli=""
                 case "$_wg_coin_lower" in
-                    dgb)  _wg_cli="digibyte-cli -conf=$INSTALL_DIR/dgb/digibyte.conf -rpcwallet=$_wg_wallet" ;;
-                    btc)  _wg_cli="bitcoin-cli -conf=$INSTALL_DIR/btc/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    bch)  _wg_cli="bitcoin-cli -conf=$INSTALL_DIR/bch/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    bch2) _wg_cli="bitcoincashII-cli -conf=$INSTALL_DIR/bch2/bitcoincashii.conf -rpcwallet=$_wg_wallet" ;;
-                    bc2)  _wg_cli="bitcoinii-cli -conf=$INSTALL_DIR/bc2/bitcoinii.conf -rpcwallet=$_wg_wallet" ;;
-                    btcs) _wg_cli="bitcoinsilver-cli -conf=$INSTALL_DIR/btcs/bitcoinsilver.conf -rpcwallet=$_wg_wallet" ;;
-                    nmc)  _wg_cli="namecoin-cli -conf=$INSTALL_DIR/nmc/namecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    sys)  _wg_cli="syscoin-cli -conf=$INSTALL_DIR/sys/syscoin.conf -rpcwallet=$_wg_wallet" ;;
-                    xmy)  _wg_cli="myriadcoin-cli -conf=$INSTALL_DIR/xmy/myriadcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    fbtc) _wg_cli="fractal-cli -conf=$INSTALL_DIR/fbtc/fractal.conf -rpcwallet=$_wg_wallet" ;;
-                    ltc)  _wg_cli="litecoin-cli -conf=$INSTALL_DIR/ltc/litecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    doge) _wg_cli="dogecoin-cli -conf=$INSTALL_DIR/doge/dogecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    pep)  _wg_cli="pepecoin-cli -conf=$INSTALL_DIR/pep/pepecoin.conf -rpcwallet=$_wg_wallet" ;;
-                    cat)  _wg_cli="catcoin-cli -conf=$INSTALL_DIR/cat/catcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    xec)  _wg_cli="ecash-cli -conf=$INSTALL_DIR/xec/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    dgb)  _wg_cli="digibyte-cli -conf=$(get_blockchain_dir dgb)/digibyte.conf -rpcwallet=$_wg_wallet" ;;
+                    btc)  _wg_cli="bitcoin-cli -conf=$(get_blockchain_dir btc)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    bch)  _wg_cli="bitcoin-cli -conf=$(get_blockchain_dir bch)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    bch2) _wg_cli="bitcoincashii-cli -conf=$(get_blockchain_dir bch2)/bitcoincashii.conf -rpcwallet=$_wg_wallet" ;;
+                    bc2)  _wg_cli="bitcoinii-cli -conf=$(get_blockchain_dir bc2)/bitcoinii.conf -rpcwallet=$_wg_wallet" ;;
+                    btcs) _wg_cli="bitcoinsilver-cli -conf=$(get_blockchain_dir btcs)/bitcoinsilver.conf -rpcwallet=$_wg_wallet" ;;
+                    nmc)  _wg_cli="namecoin-cli -conf=$(get_blockchain_dir nmc)/namecoin.conf -rpcwallet=$_wg_wallet" ;;
+                    sys)  _wg_cli="syscoin-cli -conf=$(get_blockchain_dir sys)/syscoin.conf -rpcwallet=$_wg_wallet" ;;
+                    xmy)  _wg_cli="myriadcoin-cli -conf=$(get_blockchain_dir xmy)/myriadcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    fbtc) _wg_cli="fractal-cli -conf=$(get_blockchain_dir fbtc)/fractal.conf -rpcwallet=$_wg_wallet" ;;
+                    ltc)  _wg_cli="litecoin-cli -conf=$(get_blockchain_dir ltc)/litecoin.conf -rpcwallet=$_wg_wallet" ;;
+                    doge) _wg_cli="dogecoin-cli -conf=$(get_blockchain_dir doge)/dogecoin.conf -rpcwallet=$_wg_wallet" ;;
+                    pep)  _wg_cli="pepecoin-cli -conf=$(get_blockchain_dir pep)/pepecoin.conf -rpcwallet=$_wg_wallet" ;;
+                    cat)  _wg_cli="catcoin-cli -conf=$(get_blockchain_dir cat)/catcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    xec)  _wg_cli="ecash-cli -conf=$(get_blockchain_dir xec)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
                 esac
 
                 local _wg_backup_file="${_wg_backup_base}/wallet-${_wg_coin_lower}-$(date +%Y%m%d-%H%M%S).dat"
@@ -38957,7 +39426,17 @@ start_services() {
 
                 echo ""
                 echo -e "${RED}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-                echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR ${_wg_coin} WALLET NOW${NC}                    ${RED}║${NC}"
+                # Padding is COMPUTED, not a fixed run of spaces: this row is the
+                # only one in the box that embeds a coin symbol, and those run
+                # from 3 characters (BTC) to 10 (DGB-SCRYPT). A hardcoded pad
+                # overflowed the border for the long ones and fell short for the
+                # short ones. Interior is 67 columns; the fixed text either side
+                # of the symbol accounts for 39 of them.
+                local _wg_hdrpad=$(( 28 - ${#_wg_coin} ))
+                (( _wg_hdrpad < 1 )) && _wg_hdrpad=1
+                echo -e "${RED}║${NC}  ${WHITE}⚠  CRITICAL: BACK UP YOUR ${_wg_coin} WALLET NOW${NC}$(printf '%*s' "$_wg_hdrpad" '')${RED}║${NC}"
+                echo -e "${RED}║${NC}  ${WHITE}THERE IS NO SEED PHRASE${NC} — no 12/24 words exist for this          ${RED}║${NC}"
+                echo -e "${RED}║${NC}  wallet. The backup file below is the ONLY copy of the keys.      ${RED}║${NC}"
                 echo -e "${RED}╚═══════════════════════════════════════════════════════════════════╝${NC}"
                 echo ""
                 [[ -n "$_wg_addr" ]] && echo -e "  ${WHITE}Pool Address:${NC}  ${GREEN}${_wg_addr}${NC}" && echo ""
@@ -39462,7 +39941,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.6.7 - SPIRAL CITADEL${NC}"
+    echo -e "                                     ${DIM}V2.7.0 - SPIRAL CITADEL${NC}"
     echo ""
 }
 
@@ -40415,12 +40894,12 @@ main() {
         sudo mkdir -p "$_vc_dir"
         [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]] && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB.ver"        > /dev/null
         [[ "$ENABLE_DGB_SCRYPT" == "true" ]]                            && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB-SCRYPT.ver"  > /dev/null
-        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_KNOTS_VERSION:-29.3.knots20260508}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
-        [[ "$ENABLE_BCH" == "true" ]]   && echo "29.0.0"                    | sudo tee "$_vc_dir/BCH.ver"  > /dev/null
+        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_CORE_VERSION:-31.1}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
+        [[ "$ENABLE_BCH" == "true" ]]   && echo "$BCHN_VERSION"          | sudo tee "$_vc_dir/BCH.ver"  > /dev/null
         [[ "$ENABLE_BCH2" == "true" ]]  && echo "$BITCOINCASHII_VERSION"   | sudo tee "$_vc_dir/BCH2.ver" > /dev/null
         [[ "$ENABLE_BC2" == "true" ]]   && echo "$BITCOINII_VERSION"        | sudo tee "$_vc_dir/BC2.ver"  > /dev/null
         [[ "$ENABLE_BTCS" == "true" ]]  && echo "$BTCS_VERSION"              | sudo tee "$_vc_dir/BTCS.ver" > /dev/null
-        [[ "$ENABLE_LTC" == "true" ]]   && echo "0.21.4"               | sudo tee "$_vc_dir/LTC.ver"  > /dev/null
+        [[ "$ENABLE_LTC" == "true" ]]   && echo "$LITECOIN_VERSION"    | sudo tee "$_vc_dir/LTC.ver"  > /dev/null
         [[ "$ENABLE_DOGE" == "true" ]]  && echo "1.14.9"               | sudo tee "$_vc_dir/DOGE.ver" > /dev/null
         [[ "$ENABLE_PEP" == "true" ]]   && echo "1.1.0"                | sudo tee "$_vc_dir/PEP.ver"  > /dev/null
         [[ "$ENABLE_CAT" == "true" ]]   && echo "2.1.1"                | sudo tee "$_vc_dir/CAT.ver"  > /dev/null
@@ -40576,10 +41055,10 @@ main() {
 
     if [[ "$ENABLE_BTC" == "true" ]]; then
         if [[ ! -x "$(get_blockchain_dir btc)/bin/bitcoind" ]]; then
-            log_error "Bitcoin Knots daemon not found"
+            log_error "Bitcoin Core daemon not found"
             verify_errors=$((verify_errors + 1))
         else
-            log_success "Bitcoin Knots OK"
+            log_success "Bitcoin Core OK"
         fi
     fi
 

@@ -11,23 +11,64 @@
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
-FROM ubuntu:26.04
+# ubuntu:24.04, NOT 26.04 like the other coin images — deliberate, and the only
+# image here that differs.
+#
+# bitcoincashII v27.0.2 ships DYNAMICALLY linked binaries (the other coins ship
+# self-contained Guix builds that do not care about the base). Those binaries
+# need libminiupnpc soname 17. Ubuntu 26.04 ships only libminiupnpc21 and has no
+# libminiupnpc17 at any version, so the daemon cannot load there at all:
+#
+#   bitcoincashIId: error while loading shared libraries: libminiupnpc.so.17
+#
+# 24.04 provides libminiupnpc.so.17, libnatpmp.so.1, libevent-2.1.so.7,
+# libevent_pthreads-2.1.so.7 and libsqlite3.so.0 — the full unresolved set.
+# Symlinking .so.21 to .so.17 was rejected: a soname bump signals an ABI break,
+# so it might appear to work and then fail under load.
+FROM ubuntu:24.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Cash II Node for Spiral Pool"
-LABEL version="27.0.2"
+ARG BCH2_VERSION=27.0.2
+
+# Interpolated rather than hardcoded, so it cannot drift out of step with the
+# ARG the way four sibling images did.
+LABEL version="${BCH2_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG BCH2_VERSION=27.0.2
+
+# SHA256 of the pinned release asset (12,271,331 bytes).
+# This project publishes no SHA256SUMS, so the digest was computed from the
+# release asset. Change-detector only — not an authenticity attestation.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=d41465503f0322b2ab93e6f74621d08365d52f41136811c8cf39aeeb4866259f
 
 # Install dependencies
+#
+# The bitcoincashII v27 release binaries are DYNAMICALLY linked, unlike the
+# self-contained Guix builds the other coins ship. Without these the image
+# builds perfectly and then every binary dies the moment it is exec'd:
+#
+#   bitcoincashIId: error while loading shared libraries: libminiupnpc.so.17
+#   bitcoincashII-cli: error while loading shared libraries: libevent-2.1.so.7
+#
+# i.e. a crash-loop on first start. `ldd` on the shipped binaries reports
+# libminiupnpc, libnatpmp, libevent, libevent_pthreads and libsqlite3 as the
+# unresolved set. The -dev packages are used rather than the runtime ones
+# (libevent-2.1-7t64 and friends) because those names churn across Ubuntu
+# releases with the 64-bit time_t transition, and this file already installs
+# libzmq3-dev the same way.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     ca-certificates \
     libzmq3-dev \
+    libevent-dev \
+    libminiupnpc-dev \
+    libnatpmp-dev \
+    libsqlite3-dev \
     gosu \
     gettext-base \
     && rm -rf /var/lib/apt/lists/*
@@ -39,21 +80,44 @@ RUN useradd -r -m -s /bin/bash bitcoincashii \
 
 # Download and install Bitcoin Cash II
 # NOTE: Only x86_64 (amd64) is supported.
-# Release naming: bitcoincashII-v{VERSION}-linux-x86_64.tar.gz
-# Verified against https://github.com/BitcoincashII/bitcoincashII-core/releases
+# Release naming: the tag carries a leading "v" but the ASSET does not, and the
+# platform suffix is "linux64" -- not "linux-x86_64". Confirmed by listing the
+# release assets for tag v27.0.2 via the GitHub API: the eight published files
+# are linux64{,-qt}, linux-aarch64{,-qt}, osx-{arm64,x86_64} and win64{,-setup}.
+# An earlier "bitcoincashII-v${VERSION}-linux-x86_64.tar.gz" here 404'd, so this
+# image could not be built at all.
 WORKDIR /tmp
 RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
     && wget -q --max-redirect=5 \
-       "https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v${BCH2_VERSION}/bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" \
-    && tar -tzf "bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" > /dev/null \
-    && tar -xzf "bitcoincashII-v${BCH2_VERSION}-linux-x86_64.tar.gz" \
+       "https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v${BCH2_VERSION}/bitcoincashII-${BCH2_VERSION}-linux64.tar.gz" \
+    && echo "${SHA256}  bitcoincashII-${BCH2_VERSION}-linux64.tar.gz" | sha256sum -c - \
+    && tar -tzf "bitcoincashII-${BCH2_VERSION}-linux64.tar.gz" > /dev/null \
+    && tar -xzf "bitcoincashII-${BCH2_VERSION}-linux64.tar.gz" \
     && EXTRACTED_DIR=$(ls -d bitcoincashII-*/ 2>/dev/null | head -1 | tr -d '/') \
     && if [ -d "$EXTRACTED_DIR/bin" ]; then cp "$EXTRACTED_DIR/bin/"* /usr/local/bin/; \
        else cp "$EXTRACTED_DIR/bitcoincashIId" "$EXTRACTED_DIR/bitcoincashII-cli" /usr/local/bin/ 2>/dev/null || true; fi \
     && chmod +x /usr/local/bin/bitcoincashIId /usr/local/bin/bitcoincashII-cli 2>/dev/null || true \
     && rm -rf /tmp/*
+
+# Fail the build if the daemon or CLI cannot actually load.
+#
+# This exists because the image previously built cleanly and produced a
+# container that died instantly on exec. A successful build proves the download
+# and the checksum; it proves nothing about whether the binary RUNS. Both names
+# are checked: the entrypoint execs bitcoincashIId and docker-compose's
+# healthcheck calls bitcoincashII-cli, so either one being unresolvable is fatal
+# in production but invisible at build time.
+RUN for b in /usr/local/bin/bitcoincashIId /usr/local/bin/bitcoincashII-cli; do \
+        if ldd "$b" 2>/dev/null | grep -q "not found"; then \
+            echo "ERROR: $b has unresolved shared libraries:" >&2; \
+            ldd "$b" | grep "not found" >&2; \
+            exit 1; \
+        fi; \
+    done \
+    && bitcoincashIId --version | head -1 \
+    && bitcoincashII-cli --version | head -1
 
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\
@@ -71,7 +135,7 @@ fi\n\
 chown -R bitcoincashii:bitcoincashii /home/bitcoincashii/.bitcoincashii\n\
 \n\
 # Start Bitcoin Cash II daemon\n\
-exec gosu bitcoincashii bitcoincashIId -printtoconsole "$@"\n\
+exec gosu bitcoincashii bitcoincashIId -printtoconsole -datadir=/home/bitcoincashii/.bitcoincashii -conf=/home/bitcoincashii/.bitcoincashii/bitcoincashii.conf "$@"\n\
 ' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Expose ports

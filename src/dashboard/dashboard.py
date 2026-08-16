@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.6.7"
+__version__ = "2.7.0"
 
 import os
 import json
@@ -4341,6 +4341,90 @@ def coin_rpc(symbol, method, params=None, wallet=None):
         return None
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# BITCOIN CHAIN IDENTITY
+# ═══════════════════════════════════════════════════════════════════════════════
+# On 2026-08-08 Bitcoin split at block 961,632 over BIP-110 ("RDTS"). A node on
+# the minority chain looks identical to a healthy one in every dashboard metric —
+# online, synced, peers connected, hashrate normal — so the verdict is surfaced
+# explicitly rather than left for an operator to infer from missing blocks.
+
+BITCOIN_SPLIT_HEIGHT = 961632
+
+# Majority-chain block 961,632. Fetched 2026-08-14 from blockstream.info and
+# mempool.space, which returned identical values.
+BITCOIN_MAJORITY_BLOCK_961632 = "00000000000000000000d1e01392faa65ceeaed307f0a3159144b84146ff24ba"
+
+# The competing block at the same height on the BIP-110 chain, so the dashboard
+# can name the chain instead of only saying it is wrong.
+BITCOIN_RDTS_BLOCK_961632 = "0000000000000000000169eb6f811ddbd0daf343af7b62180cdb13e7c78dbc16"
+
+
+def populate_chain_identity(symbol, health):
+    """Fill in chain_verdict for a BTC node. No-op for other coins.
+
+    Verdicts:
+      majority — verified on the chain that has value
+      minority — verifiably NOT on it; blocks found here are near-worthless
+      unknown  — still syncing below the split height, or RPC unavailable
+
+    'unknown' is deliberately distinct from 'minority'. A node that cannot be
+    checked must not be displayed as being on the wrong chain.
+    """
+    if symbol != "BTC" or health.get("status") != "online":
+        return
+
+    # Only Bitcoin mainnet has a block 961,632 to compare against. A regtest or
+    # testnet node sits far below that height and would otherwise be reported
+    # forever as "still syncing below the split height". Matches the Go gate,
+    # which returns n/a off mainnet.
+    chain = (health.get("chain") or "").lower()
+    if chain and chain != "main":
+        health["chain_verdict"] = "n/a"
+        health["chain_verdict_detail"] = f"chain is {chain}, not Bitcoin mainnet — the BIP-110 split does not apply"
+        return
+
+    health["client_name"] = "Bitcoin Knots" if "knots" in (health.get("version") or "").lower() else "Bitcoin Core"
+
+    dep = coin_rpc(symbol, "getdeploymentinfo")
+    if isinstance(dep, dict) and "reduced_data" in (dep.get("deployments") or {}):
+        health["chain_verdict"] = "minority"
+        health["chain_verdict_detail"] = "daemon enforces BIP-110 (RDTS) and follows the minority chain"
+        return
+
+    if health.get("blocks", 0) < BITCOIN_SPLIT_HEIGHT:
+        health["chain_verdict"] = "unknown"
+        health["chain_verdict_detail"] = f"still syncing — below the split height {BITCOIN_SPLIT_HEIGHT:,}"
+        return
+
+    block_hash = coin_rpc(symbol, "getblockhash", [BITCOIN_SPLIT_HEIGHT])
+    if not block_hash:
+        health["chain_verdict"] = "unknown"
+        health["chain_verdict_detail"] = "could not read block 961,632"
+    elif block_hash == BITCOIN_MAJORITY_BLOCK_961632:
+        # Right chain — but a stale tip still blocks mining at the stratum gate,
+        # so report it here too rather than showing green while the pool refuses
+        # to start. Without this the dashboard, the Sentinel and the stratum can
+        # give three different verdicts for the same node.
+        median_time = health.get("_mediantime", 0) or 0
+        tip_age_h = ((time.time() - median_time) / 3600.0) if median_time else None
+        if tip_age_h is not None and tip_age_h > 3:
+            health["chain_verdict"] = "stale"
+            health["chain_verdict_detail"] = (
+                f"on the majority chain, but the tip is {tip_age_h:.1f}h old — "
+                f"far outside normal variance. The node may be stalled or desynced."
+            )
+        else:
+            health["chain_verdict"] = "majority"
+            health["chain_verdict_detail"] = "block 961,632 verified against the majority chain"
+    elif block_hash == BITCOIN_RDTS_BLOCK_961632:
+        health["chain_verdict"] = "minority"
+        health["chain_verdict_detail"] = "following the BIP-110 (RDTS) minority chain"
+    else:
+        health["chain_verdict"] = "minority"
+        health["chain_verdict_detail"] = "block 961,632 matches no known chain — unrecognised branch"
+
+
 def fetch_coin_node_health(symbol):
     """Fetch health status for a specific coin's node"""
     symbol = symbol.upper()
@@ -4368,7 +4452,13 @@ def fetch_coin_node_health(symbol):
         "pruned": False,
         "uptime": 0,
         "stratum_ports": node['stratum_ports'],
-        "data_dir": node['data_dir']
+        "data_dir": node['data_dir'],
+        # Chain identity (BTC only — see populate_chain_identity).
+        # "n/a" for every other coin: the 2026-08-08 BIP-110 split was a Bitcoin
+        # consensus event and does not apply to separate networks.
+        "chain_verdict": "n/a",
+        "chain_verdict_detail": "",
+        "client_name": "",
     }
 
     if not node['enabled']:
@@ -4408,6 +4498,12 @@ def fetch_coin_node_health(symbol):
                 health["sync_progress"] = round(_vp, 2)
             health["size_on_disk_gb"] = round(bc_info.get("size_on_disk", 0) / 1024 / 1024 / 1024, 2)
             health["pruned"] = bc_info.get("pruned", False)
+            # Kept for the chain-identity staleness check. Underscore-prefixed:
+            # internal-ish: it IS emitted by /api/nodes and /api/health as an int (JSON-safe),
+            # NOTE: mediantime is the median-time-past of the last 11 blocks, so
+            # it lags the actual tip by roughly an hour on a healthy chain. The
+            # 3h threshold is therefore ~2h of real dead-tip tolerance.
+            health["_mediantime"] = bc_info.get("mediantime", 0)
             # For multi-algo coins (DGB), getblockchaininfo "difficulty" is
             # whichever algo mined the last block - NOT the SHA256 difficulty.
             # Use get_sha256_difficulty() which queries getdifficulty for the
@@ -4426,6 +4522,9 @@ def fetch_coin_node_health(symbol):
         cached_ver = _get_cached_coin_version(symbol)
         if cached_ver:
             health["version"] = cached_ver
+
+        # Chain identity — must run after version is resolved (client_name reads it)
+        populate_chain_identity(symbol, health)
 
         # Get mempool info
         mempool_info = coin_rpc(symbol, "getmempoolinfo")
@@ -4646,6 +4745,13 @@ def fetch_health_data():
             node_health["chain"] = bc_info.get("chain", "")
             node_health["blocks"] = bc_info.get("blocks", 0)
             node_health["headers"] = bc_info.get("headers", 0)
+            # Needed by populate_chain_identity's staleness check. The primary
+            # coin's health is built here rather than by fetch_coin_node_health,
+            # so without this the 'stale' verdict can never fire for it — and on
+            # a BTC solo pool the primary coin IS BTC, the one node the check
+            # exists for. A dead tip would render green while the stratum gate
+            # refuses to serve work on it.
+            node_health["_mediantime"] = bc_info.get("mediantime", 0)
             node_health["verification_progress"] = bc_info.get("verificationprogress", 0)
             # Some daemons report low verificationprogress even when synced.
             # Use blocks/headers when authoritative.
@@ -4724,6 +4830,16 @@ def fetch_health_data():
     except Exception as e:
         print(f"Error fetching node health for {primary_coin}: {e}")
 
+    # Chain identity for the primary coin, computed BEFORE the cache assignment
+    # so both consumers inherit it: health_cache["node"] (served as data.node,
+    # which feeds the single-node fallback card) and the node_health.copy() taken
+    # for all_nodes_health below. Computing it only on the copy left data.node
+    # without a verdict, making the fallback card's verdict permanently dead.
+    node_health.setdefault("chain_verdict", "n/a")
+    node_health.setdefault("chain_verdict_detail", "")
+    node_health.setdefault("client_name", "")
+    populate_chain_identity(primary_coin, node_health)
+
     health_cache["pool"] = pool_health
     health_cache["node"] = node_health
     health_cache["last_update"] = time.time()
@@ -4738,6 +4854,8 @@ def fetch_health_data():
             all_nodes_health[coin_symbol]["coin"] = coin_symbol
             all_nodes_health[coin_symbol]["name"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("name", coin_symbol)
             all_nodes_health[coin_symbol]["algorithm"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("algorithm", "")
+            # Chain identity already computed on node_health above, so the copy
+            # carries it — no second RPC round trip here.
         else:
             coin_health = fetch_coin_node_health(coin_symbol)
             coin_health["algorithm"] = MULTI_COIN_NODES.get(coin_symbol, {}).get("algorithm", "")
@@ -5192,6 +5310,17 @@ def import_miners_from_sentinel():
         "qaxeplus": "qaxeplus",
         "esp32miner": "esp32miner",    # ESP32 Miner (ESP32-based)
         "esp32": "esp32miner",         # ESP32 alias (from spiralpool-scan manual add)
+        # NMMiner is ESP32/ESP32-S3 lottery firmware (NMminer1024), ~50-100 kH/s,
+        # same hardware class and power draw as the generic ESP32 Miner. Mapped as
+        # an ALIAS rather than registered as its own device type on purpose:
+        # "esp32miner" already appears in ~25 type lists across dashboard.py,
+        # settings.html and rescan-miners.sh, and a new type would have to be added
+        # to every one of them or it would silently drop out of fleet stats, power
+        # totals and the Sentinel sync. The alias inherits all of that for free —
+        # exactly how the "esp32" alias on the line above already works.
+        # The stratum side classifies it independently by user-agent
+        # (spiralrouter.go: (?i)nmminer -> MinerClassLottery, "NMMiner").
+        "nmminer": "esp32miner",       # NMMiner ESP32 lottery miner -> ESP32 bucket
         "hammer": "hammer",          # Scrypt
         "goldshell": "goldshell",    # Scrypt
         "luckyminer": "luckyminer",  # Lucky Miner LV06/LV07/LV08
@@ -5996,13 +6125,25 @@ def identify_miner(ip, timeout=5):
                     # Runs custom ESP32 Miner firmware (not AxeOS)
                     # Identified by: hostname/boardVersion containing "esp32miner"
                     # Hashrate is in kH/s range (very low compared to ASIC devices)
+                    # 'nmminer' is included here, but note NMMiner's closed-source
+                    # firmware does not serve the AxeOS-style API this scanner
+                    # probes, so in practice it is added manually rather than
+                    # discovered. Matching costs nothing and covers any build that
+                    # does expose a compatible endpoint.
                     elif ('esp32miner' in board_version or 'esp32miner' in hostname or
+                          'nmminer' in board_version or 'nmminer' in hostname or
                           'nerd-miner' in board_version or 'nerd-miner' in hostname or
                           'nerd_miner' in board_version or 'nerd_miner' in hostname):
                         # Distinguish from NerdAxe/NerdQAxe (which have ASIC chips)
                         # ESP32 Miner has no ASIC, very low hashrate
                         result["type"] = "esp32miner"
-                        if 'v2' in board_version or 'v2' in hostname:
+                        # NMMiner is checked FIRST: it is its own firmware and the
+                        # operator should see that name rather than the generic
+                        # "ESP32 Miner". It still shares the esp32miner type, so
+                        # power totals and fleet stats are unaffected.
+                        if 'nmminer' in board_version or 'nmminer' in hostname:
+                            result["model"] = "NMMiner"
+                        elif 'v2' in board_version or 'v2' in hostname:
                             result["model"] = "ESP32 Miner"
                         elif 't-display' in board_version or 't-display' in hostname or 'tdisplay' in board_version:
                             result["model"] = "ESP32 T-Display Miner"
@@ -15581,7 +15722,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.6.7"},
+        "footer": {"text": f"Spiral Pool v2.7.0"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

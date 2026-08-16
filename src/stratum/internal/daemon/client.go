@@ -963,6 +963,38 @@ func (c *Client) GetBlockHash(ctx context.Context, height uint64) (string, error
 	return hash, nil
 }
 
+// DeploymentInfo is the subset of getdeploymentinfo the chain guard needs.
+//
+// Deployments is deliberately map[string]json.RawMessage rather than a typed
+// struct: we only test for the PRESENCE of a deployment key, never its contents,
+// and a typed struct would need updating every time a chain adds a deployment.
+type DeploymentInfo struct {
+	Hash        string                     `json:"hash"`
+	Height      int64                      `json:"height"`
+	Deployments map[string]json.RawMessage `json:"deployments"`
+}
+
+// GetDeploymentInfo retrieves the daemon's active soft-fork deployments.
+//
+// This is the authoritative test for whether a Bitcoin daemon enforces BIP-110
+// (RDTS): the presence of a "reduced_data" deployment key means it does, and its
+// absence means it does not. Do NOT substitute a version-string or subver check
+// — the enforcing and non-enforcing Bitcoin Knots builds differ by one digit in
+// a datestamp, and the numbering is not stable across release series.
+func (c *Client) GetDeploymentInfo(ctx context.Context) (*DeploymentInfo, error) {
+	resp, err := c.call(ctx, "getdeploymentinfo", []interface{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	var info DeploymentInfo
+	if err := json.Unmarshal(resp.Result, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
 // GetBlock retrieves block information by hash.
 // Used for post-timeout verification to check if a block was accepted.
 //

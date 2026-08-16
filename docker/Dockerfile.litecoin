@@ -14,12 +14,22 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Litecoin Core Node for Spiral Pool"
-LABEL version="0.21.5.4"
+ARG LITECOIN_VERSION=0.21.5.6
+
+# Interpolated, not hardcoded: this label read 0.21.5.4 while the image actually
+# shipped 0.21.5.6, so `docker inspect` and image inventories reported the wrong
+# daemon version. Deriving it from the ARG makes that drift impossible.
+LABEL version="${LITECOIN_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG LITECOIN_VERSION=0.21.5.4
+# SHA256 of the pinned release asset (36,854,271 bytes).
+# Verified against the publisher's signed SHA256SUMS.asc at
+# https://download.litecoin.org/litecoin-0.21.5.6/ — the computed digest of the
+# downloaded artifact and the published one agree.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=3c0a217651a431ef446641669a0b74ce7dbcd9b9ed1a118fc830b8f6779ee83f
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,6 +53,7 @@ RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
     && wget -q --max-redirect=5 "https://download.litecoin.org/litecoin-${LITECOIN_VERSION}/linux/litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && echo "${SHA256}  litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c - \
     && tar -tzf "litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "litecoin-${LITECOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "litecoin-${LITECOIN_VERSION}/bin/"* /usr/local/bin/ \

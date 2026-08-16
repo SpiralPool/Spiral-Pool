@@ -101,7 +101,7 @@ func printNodeStatus() {
 		{"Bitcoin Cash II", "bitcoincashIId", DefaultBCH2Config},
 		{"Bitcoin II", "bitcoiniid", DefaultBC2Config},
 		{"Bitcoin Cash", "bitcoind-bch", DefaultBCHConfig},
-		{"Bitcoin Knots", "bitcoind", DefaultBTCConfig},
+		{"Bitcoin Core", "bitcoind", DefaultBTCConfig},
 		{"Bitcoin Silver", "bitcoinsilverd", DefaultBTCSConfig},
 		{"Catcoin", "catcoind", DefaultCATConfig},
 		{"DigiByte", "digibyted", DefaultDGBConfig},

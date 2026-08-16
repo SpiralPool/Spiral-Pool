@@ -1,10 +1,64 @@
-# Upgrading to Spiral Pool v2.6.7 (Spiral Citadel)
+# Upgrading to Spiral Pool v2.7.0 (Spiral Citadel)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x) and v2.6.7 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x) and v2.7.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
+
+---
+
+## Bitcoin (BTC) node upgrade — Bitcoin Knots → Bitcoin Core 31.1
+
+**This is not a routine version bump. Do not skip it.**
+
+Spiral Pool previously shipped Bitcoin Knots. Knots builds carrying the `knots20260508` datestamp or later enforce BIP-110 ("RDTS") and follow the minority chain that split from Bitcoin on 8 August 2026 at block 961,632. That chain has produced a handful of blocks, sits hundreds of blocks behind, and its coins are not traded on any exchange. Roughly 99.85% of hashpower stayed on the majority chain.
+
+Enforcement is **compiled into the binary**. Removing `consensusrules=rdts` from `bitcoin.conf` records consent and silences a warning — it does not change which chain the node follows. Only replacing the binary does that.
+
+**Why you would not otherwise notice.** A node on the minority chain behaves normally in every visible respect: miners connect, shares validate, vardiff converges, the dashboard reports healthy hashrate, sync shows 100%. The only symptom is that BTC blocks never arrive — indistinguishable from ordinary solo-mining variance. If you also merge-mine, NMC/SYS/XMY keep finding blocks normally, because AuxPoW proofs reference the parent block header and never check which chain it came from. The pool keeps looking productive while the coin that pays best earns nothing.
+
+### Running the upgrade
+
+```bash
+sudo /spiralpool/scripts/coin-upgrade.sh --coin BTC
+```
+
+The upgrade:
+
+1. **Refuses to start if a legacy (BDB) wallet is present.** Bitcoin Core 30+ cannot load one. It asks the daemon over RPC when the daemon is running; when it is not, it inspects the wallet files on disk instead (a descriptor wallet is SQLite, a legacy one is Berkeley DB), so a stopped node does not block the upgrade — that matters because the recovery paths deliberately leave BTC stopped and then tell you to re-run this command. Migrate first, under the current binary, and back up before you do — migration is one-way:
+   ```bash
+   bitcoin-cli -rpcwallet=<name> backupwallet /path/outside/datadir/<name>.bak
+   bitcoin-cli -rpcwallet=<name> migratewallet
+   ```
+   Most operators are unaffected: Spiral Pool creates descriptor wallets, and if you supplied an external address (hardware or air-gapped wallet) there is no wallet on the server at all. Check with `getwalletinfo | grep descriptors` — `true` means nothing to do.
+2. **Replaces the binary** with Bitcoin Core 31.1, downloaded from bitcoincore.org and verified against a SHA256 committed in this repository. A mismatch aborts.
+3. **Repairs the chain.** A binary swap alone is *not* sufficient. The enforcing daemon marked the majority chain's block 961,632 as rejected, and that marker persists on disk — Bitcoin Core reads the same block index, honours it, and will sit on the minority chain looking perfectly healthy. The upgrade clears it with `reconsiderblock` and waits for the reorg.
+4. **Verifies the result**, and reports what it found. Be aware of the cases where it returns success without having confirmed the hash, because they are legitimate but easy to misread: the daemon was unreachable, the node has not yet synced past height 961,632, or the reorg was accepted and the node is still downloading. Each says so explicitly rather than claiming verification. The check is also skipped entirely under `--reindex`, since the node is rebuilding for hours. In all of those cases the stratum chain gate is what actually protects you — it re-runs this check at every startup and refuses to serve work until the hash matches.
+
+### What to expect
+
+The node keeps its entire history below block 961,632 — that is shared between both chains and is not rebuilt. It discards the handful of minority-chain blocks above it and downloads the majority chain from the split forward, which is several GB and grows the longer this is left. **No reindex and no resync from genesis are required.**
+
+Two exceptions:
+
+- **Pruned nodes.** A pruned node cannot reorganise further back than its retained window (minimum 288 blocks). The split is well past that, so the block data needed to rewind is gone and a **full resync is unavoidable**. The upgrade detects this and says so rather than failing obscurely.
+- **If `reconsiderblock` does not take**, rerun with `--reindex`. Note `-reindex-chainstate` does *not* clear rejected-block markers; only a full `-reindex` rebuilds the block index.
+
+### Before you resume mining
+
+Remove `maxtipage` from `bitcoin.conf` if present. Miners on the stalled minority chain were advised to set `maxtipage=2592000` to suppress stale-tip warnings. On the majority chain that same line disables the daemon's initial-block-download gating for thirty days, so a wedged node reports `initialblockdownload: false` and every health check — the dashboard, Sentinel, and the pool's own sync gate — reads green.
+
+The upgrade **reports** this and exits non-zero, listing the offending line numbers, but it does not edit your config: doing that safely requires knowing whether the value is actually unsafe (anything at or below Core's `86400` default is stricter than the default, not weaker), which network section it sits in, and it can only be applied with the daemon stopped. Comment the line out yourself and restart:
+
+```bash
+sudo sed -i -E 's/^([[:space:]]*)(maxtipage)/\1# \2/' /spiralpool/btc/bitcoin.conf
+sudo systemctl restart bitcoind
+```
+
+Worth knowing what this does **not** break: the stratum chain gate computes tip staleness itself from `mediantime` against its own threshold and never reads the daemon's `maxtipage`, so the pool still refuses to mine a dead tip. The damage is that your monitoring disagrees with it.
+
+The pool will not mine BTC until the chain verifies, so you are not burning electricity while any of this is in progress. To mine a non-majority chain deliberately, set `allow_nonmajority_chain: true` for the coin. It also disables the stale-tip refusal, so a node wedged on the **correct** chain will mine a dead tip too — that second effect is easy to miss and is rarely what you want.
 
 ---
 
@@ -39,6 +93,21 @@ v9.26.3 required a full, txindexed node; v9.26.4 lifts that. Because every DGB n
 New installs: `install.sh` configures DGB from the pool-wide pruning choice (pruned → `prune=5000`, no `txindex`; full → `txindex=1`, `prune=0`), and `spiralctl coin prune DGB` can enable pruning at any time.
 
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
+
+---
+
+## What's new in v2.7.0
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **BTC now runs Bitcoin Core, not Bitcoin Knots.** This is the reason for the release and it is not optional — see the BTC node upgrade section at the top of this guide. Every path that acquires a Bitcoin daemon (installer, `coin-upgrade.sh`, Docker image, `pool-mode.sh`) is pinned to Core 31.1 with a checksum committed in this repository, and both "resolve the latest version" lookups are deleted.
+- **The pool refuses to mine BTC on a chain it cannot verify.** At stratum startup, after the sync gate and before any miner connects, it checks BIP-110 enforcement and block 961,632 against the majority chain. `unknown` (daemon unreachable, or still syncing below the split height) is a distinct verdict from `minority` and never reported as wrong-chain, but both block mining. Set `allow_nonmajority_chain: true` per coin to override — but note it also disables the stale-tip refusal.
+- **Sentinel alerts and a dashboard verdict row.** The alert bypasses quiet hours and distinguishes a wrong chain (red) from a stalled tip on the correct chain (amber), which have different remedies. Disable with `chain_identity_enabled: false`.
+- **Several config-handling bugs fixed that could break a daemon or delete block data.** These are independent of the chain work and affect all coins: a config parser that could emit an unparseable line, silently disable the RAM cap, or promote a `[test]`-scoped `prune` onto mainnet. Nothing is required of you — but if you keep a hand-edited `bitcoin.conf` with `[main]`/`[test]` sections, it is now read and written correctly.
+
+**If you have a `maxtipage` line in `bitcoin.conf`, remove it** — see "Before you resume mining" above.
+
+No database migrations, no config format changes. Drop-in upgrade from v2.6.7 for the pool stack; the BTC **node** upgrade is a separate, required step.
 
 ---
 
@@ -210,7 +279,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.6.7 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.7.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -449,13 +518,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.6.7`. If Sentinel is running:
+The version line should show `2.7.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.6.7` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v2.7.0` followed by `Spiral Citadel` in the startup log.
 
 ---
 
@@ -535,4 +604,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.7 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.7.0 — Built on what came before. Growing toward phi.*

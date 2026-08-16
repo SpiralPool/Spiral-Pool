@@ -6,6 +6,7 @@ package pool
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -652,11 +653,20 @@ func TestSend_SkipsWhenNoEndpoints(t *testing.T) {
 
 func TestSend_InjectsHostname(t *testing.T) {
 	t.Parallel()
-	var receivedBody []byte
+	// Send() delivers ASYNCHRONOUSLY, so this handler runs on the httptest
+	// server's goroutine while the test goroutine carries on. Assigning to a
+	// captured variable and reading it after a time.Sleep is a data race: a
+	// sleep is a guess about timing, not a synchronisation edge, and
+	// `go test -race` correctly rejected it. A buffered channel gives a real
+	// happens-before edge and drops the fixed 500ms wait, so the test is no
+	// longer load-sensitive either.
+	bodyCh := make(chan []byte, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 4096)
-		n, _ := r.Body.Read(buf)
-		receivedBody = buf[:n]
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case bodyCh <- body:
+		default: // never block the handler if the test has moved on
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
@@ -670,11 +680,10 @@ func TestSend_InjectsHostname(t *testing.T) {
 		Severity:  "info",
 		Message:   "hostname injection test",
 	})
-
-	// Give the goroutine time to complete
-	time.Sleep(500 * time.Millisecond)
-
-	if len(receivedBody) == 0 {
+	var receivedBody []byte
+	select {
+	case receivedBody = <-bodyCh:
+	case <-time.After(5 * time.Second):
 		t.Fatal("no payload received by test server")
 	}
 	if !strings.Contains(string(receivedBody), "injected-host") {

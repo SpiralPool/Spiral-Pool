@@ -68,7 +68,7 @@ func printNodeUsage() {
 	fmt.Println("  status   Show status of all installed nodes")
 	fmt.Println()
 	fmt.Println("Nodes (SHA-256d):")
-	fmt.Println("  btc        Bitcoin Knots")
+	fmt.Println("  btc        Bitcoin Core")
 	fmt.Println("  bch        Bitcoin Cash Node")
 	fmt.Println("  bch2       Bitcoin Cash II")
 	fmt.Println("  dgb        DigiByte")
@@ -111,7 +111,7 @@ func getNodeServices() []nodeService {
 		{"bch", "Bitcoin Cash", "bitcoind-bch", DefaultBCHConfig},
 		{"bch2", "Bitcoin Cash II", "bitcoincashIId", DefaultBCH2Config},
 		{"btcs", "Bitcoin Silver", "bitcoinsilverd", DefaultBTCSConfig},
-		{"btc", "Bitcoin Knots", "bitcoind", DefaultBTCConfig},
+		{"btc", "Bitcoin Core", "bitcoind", DefaultBTCConfig},
 		{"cat", "Catcoin", "catcoind", DefaultCATConfig},
 		{"dgb", "DigiByte", "digibyted", DefaultDGBConfig},
 		{"dgb-scrypt", "DigiByte-Scrypt", "digibyted-scrypt", DefaultDGBScryptConfig},

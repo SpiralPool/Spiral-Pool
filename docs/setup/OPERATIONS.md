@@ -347,6 +347,31 @@ main()
 
 ---
 
+### Bitcoin Core and the 2026 chain split
+
+Spiral Pool installs **Bitcoin Core**, pinned to a specific version and verified against a SHA256 committed in this repository. It does not install Bitcoin Knots.
+
+On 8 August 2026 at block height 961,632 Bitcoin split. BIP-110 — "RDTS", the Reduced Data Temporary Softfork — entered a mandatory signalling window, and nodes enforcing it began rejecting any block that did not signal version bit 4. Approximately 99.85% of hashpower stayed on the majority chain. The enforcing minority chain produces roughly one block every day or two and its coins are not traded on any exchange.
+
+| Build | Chain |
+|-------|-------|
+| Bitcoin Core, any current version | Majority |
+| Bitcoin Knots `29.3.knots20260507` | Majority (non-enforcing) |
+| Bitcoin Knots `29.3.knots20260508` | Minority (enforces BIP-110) |
+| Bitcoin Knots `29.4.knots20260508` | Minority (enforces BIP-110) |
+
+The datestamp suffix is the enforcement marker, not a release date — `29.4` carries the same enforcing `20260508` suffix as `29.3`. The two builds differ by one digit. Enforcement is compiled into the binary: removing `consensusrules=rdts` from `bitcoin.conf` does **not** disable it.
+
+**Why the pool refuses to start on the minority chain.** A daemon following it behaves normally in every observable way — stratum connects, shares validate, vardiff converges, the dashboard reports healthy hashrate. The only symptom is that blocks never arrive, which for a solo miner is indistinguishable from ordinary variance. At every stratum startup the pool calls `getdeploymentinfo` to detect BIP-110 enforcement and compares `getblockhash 961632` against the majority chain's block hash, and refuses to serve work unless the node is verifiably on the majority chain. The verdict is logged on every startup, pass or fail.
+
+To mine a non-majority chain deliberately, set `allow_nonmajority_chain: true` for that coin. It defaults to false. It also disables the stale-tip refusal, so a node wedged on the **correct** chain will mine a dead tip too — that second effect is easy to miss and is rarely what you want.
+
+**Merge-mined coins are unaffected, which makes this harder to notice.** AuxPoW proofs reference the parent block *header* and do not verify which chain that header belongs to — an aux chain has no copy of Bitcoin's chain and cannot check. NMC, SYS and XMY therefore keep finding and confirming blocks normally while BTC earns nothing.
+
+**If your node is already on the minority chain**, run `sudo /spiralpool/scripts/coin-upgrade.sh --coin BTC`. Replacing the binary alone is not sufficient: the enforcing daemon records a persistent rejected-block marker for the majority chain that Bitcoin Core inherits and honours, so the upgrade also clears it with `reconsiderblock` and verifies the result.
+
+---
+
 ## 2. Storage Requirements
 
 | Coin | Symbol | Approximate Storage |
@@ -357,15 +382,13 @@ main()
 | Bitcoin II | BC2 | 5 GB |
 | Bitcoin Silver | BTCS | 8 GB |
 | Litecoin | LTC | 150 GB |
-| Syscoin | SYS | 25 GB |
+| Syscoin | SYS | 25 GB + NEVM state (see note below) |
 | Dogecoin | DOGE | 80 GB |
 | DigiByte | DGB | 80 GB |
 | Fractal Bitcoin | FBTC | 10 GB |
-| 5 GB |
 | eCash | XEC | 20 GB |
 | Namecoin | NMC | 15 GB |
 | Myriad | XMY | 6 GB |
-| Bitcoin II | BC2 | 5 GB |
 | PepeCoin | PEP | 5 GB |
 | Catcoin | CAT | 5 GB |
 | DGB-Scrypt | DGB-SCRYPT | (shares DGB data) |
@@ -373,6 +396,25 @@ main()
 > Storage values are approximate and will vary based on blockchain growth and index configuration. All nodes run as full (unpruned) nodes. Plan for additional headroom.
 
 > Syscoin (SYS) is merge-mining only and requires BTC as parent chain. The SYS daemon must still be installed and synced.
+
+> **Syscoin needs extra disk and a long first start.** `syscoind` 5.x runs a
+> `sysgeth` NEVM sidecar and **will not answer RPC until that sidecar has
+> started**. On a fresh data directory sysgeth downloads a multi-GB state
+> bootstrap archive and then extracts it, holding the archive and its contents
+> at the same time, so peak free space needs to be well above the 25 GB of chain
+> data alone. First start therefore takes **minutes, not seconds** — this is
+> normal and `wait-for-node.sh` allows 30 minutes for it.
+>
+> If sysgeth runs out of space the failure is easy to misread: `syscoind` keeps
+> logging `Waiting for sysgeth startup to complete ... nevm-response-not-found`
+> and never explains itself, because the real error is in
+> `<datadir>/sysgeth.log`:
+>
+> ```
+> Fatal: Failed to apply state bootstrap: ... no space left on device
+> ```
+>
+> Check `sysgeth.log` before concluding the daemon or its config is broken.
 
 ---
 
@@ -787,4 +829,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.7*
+*Spiral Pool — Spiral Citadel 2.7.0*

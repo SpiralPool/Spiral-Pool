@@ -314,7 +314,7 @@ func classifyDevice(hint *DeviceHint) MinerClass {
 
 	// Pro (modern ASICs)
 	case strings.Contains(model, "antminer s19"):
-		return MinerClassPro
+		return MinerClassS19
 	case strings.Contains(model, "antminer s21"):
 		return MinerClassPro
 	case strings.Contains(model, "whatsminer m5"):

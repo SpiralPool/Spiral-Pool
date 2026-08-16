@@ -45,6 +45,7 @@ type coinPoolNodeManager interface {
 	SetZMQStatusHandler(handler func(status daemon.ZMQStatus))
 	SubmitBlockWithVerification(ctx context.Context, blockHex string, blockHash string, height uint64, timeouts *daemon.SubmitTimeouts) *daemon.BlockSubmitResult
 	GetBlockHash(ctx context.Context, height uint64) (string, error)
+	GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error)
 	Start(ctx context.Context) error
 	Stop() error
 	HasZMQ() bool

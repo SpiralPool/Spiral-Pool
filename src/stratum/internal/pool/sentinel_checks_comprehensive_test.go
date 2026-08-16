@@ -65,6 +65,9 @@ func (m *sentinelMockNodeMgr) SubmitBlockWithVerification(ctx context.Context, b
 func (m *sentinelMockNodeMgr) GetBlockHash(ctx context.Context, height uint64) (string, error) {
 	return "", nil
 }
+func (m *sentinelMockNodeMgr) GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error) {
+	return &daemon.DeploymentInfo{Deployments: nil}, nil
+}
 func (m *sentinelMockNodeMgr) SubmitBlock(ctx context.Context, blockHex string) error { return nil }
 func (m *sentinelMockNodeMgr) GetBlock(ctx context.Context, blockHash string) (map[string]interface{}, error) {
 	return nil, nil

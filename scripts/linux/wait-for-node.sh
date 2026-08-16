@@ -690,14 +690,41 @@ check_rpc() {
         -d '{"jsonrpc":"1.0","id":"wait","method":"getblockchaininfo","params":[]}' \
         "http://${host}:${port}/" 2>/dev/null) || return 1
 
-    # Check if we got a valid response (has "result" field)
+    # A valid response needs a NON-NULL result.
+    #
+    # `grep -q '"result"'` matched the literal key even when the value was null,
+    # so a daemon still initialising — HTTP 200 with
+    # {"result":null,"error":{"code":-28,...}} — was read as ready and the
+    # stratum was allowed to start.
     if ! echo "$response" | grep -q '"result"'; then
         return 1
     fi
+    if echo "$response" | grep -qE '"result"[[:space:]]*:[[:space:]]*null'; then
+        local rpcerr
+        rpcerr=$(echo "$response" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
+        [ -n "$rpcerr" ] && echo "  Daemon still initialising: ${rpcerr}" >&2
+        return 1
+    fi
 
-    # Check if blockchain sync is complete (initialblockdownload must be false)
+    # initialblockdownload must be PRESENT and false.
+    #
+    # Testing only for "= true" treated a MISSING field as synced, so any daemon
+    # that does not report it (pre-0.15 bases — this repo ships Catcoin,
+    # PepeCoin, BitcoinII and Bitcoin Silver) was declared ready at any height.
     local ibd
     ibd=$(echo "$response" | grep -o '"initialblockdownload":[^,}]*' | cut -d: -f2 | tr -d ' ')
+    if [ -z "$ibd" ]; then
+        # Field absent. Fall back to comparing blocks against headers rather
+        # than assuming synced.
+        local blocks headers
+        blocks=$(echo "$response" | grep -o '"blocks":[0-9]*' | cut -d: -f2)
+        headers=$(echo "$response" | grep -o '"headers":[0-9]*' | cut -d: -f2)
+        if [ -n "$blocks" ] && [ -n "$headers" ] && [ "$headers" -gt 0 ] 2>/dev/null            && [ "$blocks" -ge "$headers" ] 2>/dev/null; then
+            return 0
+        fi
+        echo "  No initialblockdownload field; blocks=${blocks:-?} headers=${headers:-?} — not ready" >&2
+        return 1
+    fi
     if [ "$ibd" = "true" ]; then
         # Still syncing — extract progress for logging
         local progress
@@ -1279,7 +1306,57 @@ if [ -n "$V2_NODES" ]; then
         elapsed=$((elapsed + RETRY_INTERVAL))
     done
 
-    echo "ERROR: Timeout waiting for all nodes after ${MAX_WAIT}s"
+    # Distinguish "still syncing" from "actually broken" before calling it an
+    # error. These have completely different remedies, and on a fresh install
+    # the first one is the expected state for hours or days.
+    _ibd_count=0
+    _down_count=0
+    _ibd_detail=""
+    while IFS=' ' read -r _sym _host _port _user _pass; do
+        [ -n "$_sym" ] || continue
+        _resp=$(curl -s --max-time 10 --user "${_user}:${_pass}" \
+            -H 'content-type: text/plain;' \
+            -d '{"jsonrpc":"1.0","id":"wait","method":"getblockchaininfo","params":[]}' \
+            "http://${_host}:${_port}/" 2>/dev/null) || _resp=""
+        if [ -z "$_resp" ] || ! echo "$_resp" | grep -q '"result"' \
+           || echo "$_resp" | grep -qE '"result"[[:space:]]*:[[:space:]]*null'; then
+            _down_count=$((_down_count + 1))
+            continue
+        fi
+        if echo "$_resp" | grep -o '"initialblockdownload":[^,}]*' | grep -q true; then
+            _ibd_count=$((_ibd_count + 1))
+            _pg=$(echo "$_resp" | grep -o '"verificationprogress":[^,}]*' | cut -d: -f2)
+            if [ -n "$_pg" ]; then
+                _pct=$(echo "$_pg" | awk '{printf "%.2f", $1 * 100}')
+                _ibd_detail="${_ibd_detail} ${_sym}=${_pct}%"
+            else
+                _ibd_detail="${_ibd_detail} ${_sym}"
+            fi
+        fi
+    done <<EOF
+$V2_NODES
+EOF
+
+    if [ "$_ibd_count" -gt 0 ] && [ "$_down_count" -eq 0 ]; then
+        echo ""
+        echo "Node(s) still completing initial block download after ${MAX_WAIT}s."
+        echo "Sync progress:${_ibd_detail}"
+        echo ""
+        echo "This is EXPECTED on a new install — a full Bitcoin sync takes a day or"
+        echo "more. The stratum deliberately will not start until a node is synced,"
+        echo "so no hashrate is wasted on a chain the node cannot validate."
+        echo "systemd will keep retrying; nothing here needs your attention."
+        echo "Watch progress with:  bitcoin-cli getblockchaininfo | grep -E 'blocks|verificationprogress'"
+        exit 1
+    fi
+
+    echo "ERROR: Timeout waiting for nodes after ${MAX_WAIT}s"
+    if [ "$_down_count" -gt 0 ]; then
+        echo "  ${_down_count} node(s) did not answer RPC at all — check they are running:"
+        echo "    systemctl status bitcoind digibyted   # etc, per enabled coin"
+        echo "    journalctl -u bitcoind -n 50 --no-pager"
+    fi
+    [ "$_ibd_count" -gt 0 ] && echo "  ${_ibd_count} node(s) still syncing:${_ibd_detail}"
     exit 1
 
 elif [ -n "$V1_INFO" ]; then

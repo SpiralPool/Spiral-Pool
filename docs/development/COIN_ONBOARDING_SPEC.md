@@ -320,4 +320,4 @@ DGB (DigiByte)
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.7 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Citadel 2.7.0 — Built on what came before. Growing toward phi.*

@@ -6,26 +6,43 @@
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║                                                                            ║
-# ║                    BITCOIN KNOTS - DOCKER IMAGE                            ║
+# ║                    BITCOIN CORE - DOCKER IMAGE                             ║
 # ║                                                                            ║
-# ║   Separate container for Bitcoin Knots node                                ║
+# ║   Separate container for the Bitcoin Core node                             ║
 # ║   For multi-coin mining support                                            ║
 # ║                                                                            ║
-# ║   Bitcoin Knots is an enhanced Bitcoin client with additional features     ║
-# ║   and bug fixes. It's fully compatible with the Bitcoin network.           ║
-# ║                                                                            ║
-# ║   Built from official GitHub release tarball — no third-party images.     ║
+# ║   Built from the official bitcoincore.org release tarball, verified        ║
+# ║   against a SHA256 committed in this repo — no third-party images.         ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
+#
+# This image installs Bitcoin Core, NOT Bitcoin Knots.
+#
+# On 2026-08-08 at block 961,632 Bitcoin split over BIP-110 ("RDTS"). Knots
+# builds carrying the knots20260508 datestamp enforce it and follow the minority
+# chain, which produces a block every day or two and whose coins are not traded.
+# Enforcement is compiled into those builds and cannot be disabled in
+# bitcoin.conf. A pool pointed at such a daemon looks completely healthy and
+# earns nothing.
+#
+# Do not reintroduce a Knots image, and do not make VERSION resolve dynamically —
+# the enforcing and non-enforcing builds differ by one digit in a datestamp.
 
 # NOTE: Only x86_64 (amd64) is supported.
 FROM --platform=linux/amd64 debian:bookworm-slim
 
-ARG VERSION=29.3.knots20260508
+ARG VERSION=31.1
 ARG ARCH=x86_64-linux-gnu
 
+# SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz.
+# Source: https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
+# Cross-verified against Guix attestations from signers achow101 and fanquake
+# in https://github.com/bitcoin-core/guix.sigs — all three agree.
+# If you bump VERSION you MUST bump this too; the build fails closed otherwise.
+ARG SHA256=b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e
+
 LABEL maintainer="Spiral Miner"
-LABEL description="Bitcoin Knots Node for Spiral Pool"
+LABEL description="Bitcoin Core Node for Spiral Pool"
 LABEL version="${VERSION}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,11 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install Bitcoin Knots binaries from official GitHub release
+# Download and install Bitcoin Core binaries from the official release.
+# The checksum is verified against the value pinned above; a mismatch fails the
+# build rather than producing an image with an unverified consensus daemon.
 RUN set -eux; \
-    MAJOR=$(echo "$VERSION" | grep -oP '^\d+'); \
-    curl -fsSL "https://github.com/bitcoinknots/bitcoin/releases/download/v${VERSION}/bitcoin-${VERSION}-${ARCH}.tar.gz" \
+    curl -fsSL "https://bitcoincore.org/bin/bitcoin-core-${VERSION}/bitcoin-${VERSION}-${ARCH}.tar.gz" \
         -o /tmp/bitcoin.tar.gz; \
+    echo "${SHA256}  /tmp/bitcoin.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/bitcoin.tar.gz -C /tmp; \
     install -m 0755 /tmp/bitcoin-${VERSION}/bin/bitcoind /usr/local/bin/; \
     install -m 0755 /tmp/bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/; \

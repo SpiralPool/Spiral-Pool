@@ -75,6 +75,13 @@ func (m *criticalMockNodeMgr) Stop() error          { return m.stopErr }
 func (m *criticalMockNodeMgr) Stats() nodemanager.ManagerStats { return nodemanager.ManagerStats{} }
 func (m *criticalMockNodeMgr) GetPrimary() *nodemanager.ManagedNode { return nil }
 
+// GetDeploymentInfo satisfies coinPoolNodeManager for the chain identity guard.
+// These tests exercise non-BTC paths, where verifyChainIdentity returns early
+// and never calls this.
+func (m *criticalMockNodeMgr) GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error) {
+	return &daemon.DeploymentInfo{Deployments: nil}, nil
+}
+
 // criticalMockDB extends mockDB with configurable behavior for functions not
 // exercised in the handleBlock tests: CleanupStaleShares, GetPoolHashrateForPool,
 // UpdatePoolStatsForPool, GetPoolHashrate.
@@ -411,6 +418,9 @@ func (m *syncTestNodeMgr) SetBlockHandler(handler func(blockHash []byte))       
 func (m *syncTestNodeMgr) SetZMQStatusHandler(handler func(status daemon.ZMQStatus))      { panic("unused") }
 func (m *syncTestNodeMgr) SubmitBlockWithVerification(ctx context.Context, blockHex string, blockHash string, height uint64, timeouts *daemon.SubmitTimeouts) *daemon.BlockSubmitResult { panic("unused") }
 func (m *syncTestNodeMgr) GetBlockHash(ctx context.Context, height uint64) (string, error) { panic("unused") }
+func (m *syncTestNodeMgr) GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error) {
+	panic("unused")
+}
 func (m *syncTestNodeMgr) Start(ctx context.Context) error                                { panic("unused") }
 func (m *syncTestNodeMgr) Stop() error                                                    { panic("unused") }
 func (m *syncTestNodeMgr) HasZMQ() bool                                                   { panic("unused") }

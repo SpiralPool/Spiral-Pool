@@ -16,7 +16,7 @@ import (
 
 // Version information (set by main.go)
 var (
-	Version   = "2.6.7"
+	Version   = "2.7.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -197,7 +197,7 @@ func printUsage() {
 	fmt.Printf("%sConfiguration Files:%s\n", ColorBold, ColorReset)
 	fmt.Printf("  Pool Config:       %s\n", DefaultConfigFile)
 	fmt.Println("  SHA-256d Coins:")
-	fmt.Printf("    Bitcoin Knots:     %s\n", DefaultBTCConfig)
+	fmt.Printf("    Bitcoin Core:     %s\n", DefaultBTCConfig)
 	fmt.Printf("    Bitcoin Cash:      %s\n", DefaultBCHConfig)
 	fmt.Printf("    Bitcoin Cash II:   %s\n", DefaultBCH2Config)
 	fmt.Printf("    DigiByte:          %s\n", DefaultDGBConfig)

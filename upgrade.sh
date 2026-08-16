@@ -783,25 +783,79 @@ _recover_sqlite_wallet() {
     return 1
 }
 
-# Attempt -salvagewallet recovery for legacy BerkeleyDB wallets.
-# Starts daemon with -salvagewallet, waits for it to finish, then calls backupwallet.
+# Attempt salvage recovery for legacy BerkeleyDB wallets.
+#
+# Two mechanisms exist, and which one applies depends on the daemon's Core base:
+#   - Core >= 0.19 REMOVED -salvagewallet and replaced it with the standalone
+#     `<coin>-wallet ... salvage` tool. Unknown command-line arguments are fatal
+#     in Core, so passing -salvagewallet to a modern daemon does not degrade —
+#     it exits immediately with a parse error.
+#   - Older daemons (Dogecoin 1.14, PepeCoin 1.1, Catcoin 2.1) predate the
+#     removal and still accept -salvagewallet.
+# Try the tool first, fall back to the flag only if no tool is present.
 _recover_salvagewallet() {
     local cn="$1" cli="$2" out_file="$3"
-    local svc_map=(
+
+    # MUST be declared -A. `local x=([k]=v)` creates an INDEXED array, where every
+    # [word] subscript is arithmetic-evaluated: unset names become 0, so all
+    # entries collapse onto index 0 and the last one wins. Without -A this
+    # returned "ecashd" for every coin and ran the eCash daemon against another
+    # coin's config and datadir.
+    local -A svc_map=(
         [dgb]="digibyted" [btc]="bitcoind" [bch]="bitcoind-bch" [bch2]="bitcoincashIId"
         [bc2]="bitcoiniid" [btcs]="bitcoinsilverd" [nmc]="namecoind" [sys]="syscoind"
         [xmy]="myriadcoind" [fbtc]="fractald" [ltc]="litecoind"
-        [doge]="dogecoind" [pep]="pepecoind" [xec]="ecashd"
+        [doge]="dogecoind" [pep]="pepecoind" [xec]="ecashd" [cat]="catcoind"
     )
     local daemon="${svc_map[$cn]:-}"
     [[ -z "$daemon" ]] && return 1
 
     local conf_flag
     conf_flag=$(echo "$cli" | grep -oP '\-conf=\S+' | head -1)
-    local wallet_flag
-    wallet_flag=$(echo "$cli" | grep -oP '\-rpcwallet=\S+' | head -1)
 
-    log_warn "Attempting -salvagewallet recovery for ${cn^^}..."
+    # Prefer the standalone wallet tool, which ships alongside the daemon.
+    local daemon_path bin_dir wallet_tool=""
+    daemon_path=$(command -v "$daemon" 2>/dev/null || echo "")
+    if [[ -n "$daemon_path" ]]; then
+        bin_dir=$(dirname "$(readlink -f "$daemon_path")")
+        wallet_tool=$(find "$bin_dir" -maxdepth 1 -type f -name '*-wallet' -perm -u+x 2>/dev/null | head -1)
+    fi
+
+    if [[ -n "$wallet_tool" ]]; then
+        # DELIBERATELY NOT AUTOMATED.
+        #
+        # `<coin>-wallet salvage` rewrites wallet.dat IN PLACE. This function is
+        # only reached because every non-destructive backup method already
+        # failed, so the wallet is very likely damaged and there is no copy of
+        # it — running a destructive repair unattended, at that moment, can turn
+        # a recoverable wallet into an unrecoverable one. It would also break
+        # this file's own stated contract that it never modifies wallet files.
+        #
+        # Previously this could not happen: -salvagewallet is an unknown argument
+        # on any Core >= 0.19 derivative, so the daemon exited with a parse error
+        # and this method was simply inert for modern coins. Automating the
+        # replacement made it dangerous rather than useful.
+        #
+        # Give the operator the exact command instead, with a backup step first.
+        local _conf_path _datadir=""
+        _conf_path=$(echo "$conf_flag" | sed 's/^-conf=//')
+        [[ -n "$_conf_path" ]] && _datadir=$(dirname "$_conf_path")
+        local _wallet_name
+        _wallet_name=$(echo "$cli" | grep -oP '\-rpcwallet=\K\S+' | head -1 || echo "")
+
+        log_warn "${cn^^}: a wallet salvage tool is available, but salvage rewrites the"
+        log_warn "wallet file in place and no readable backup exists yet — so it is NOT"
+        log_warn "run automatically. Copy the wallet aside first, then salvage:"
+        echo -e "  ${GREEN}sudo cp -a ${_datadir}/wallets/${_wallet_name} /root/${cn}-wallet-copy${NC}"
+        echo -e "  ${GREEN}sudo -u ${POOL_USER} ${wallet_tool} -datadir=${_datadir} -wallet=${_wallet_name} salvage${NC}"
+        echo -e "  ${GREEN}sudo systemctl start ${daemon}${NC}   ${DIM}# service name usually matches the daemon${NC}"
+        echo -e "  ${GREEN}sudo -u ${POOL_USER} ${cli} backupwallet ${out_file}${NC}"
+        return 1
+    fi
+
+    # Legacy daemons only (Dogecoin 1.14, PepeCoin 1.1) still accept the flag,
+    # and for them this is the long-standing working path — leave it alone.
+    log_warn "Attempting -salvagewallet recovery for ${cn^^} (legacy daemon)..."
     sudo -u "$POOL_USER" $daemon $conf_flag -salvagewallet -daemon 2>/dev/null || return 1
     sleep 10
     local deadline=$(( SECONDS + 120 ))
@@ -885,18 +939,18 @@ repair_wallet_backups() {
 
     echo ""
     echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REQUIRED BEFORE UPGRADE${NC}                              ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REQUIRED BEFORE UPGRADE${NC}                                ${RED}║${NC}"
     echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
     echo -e "${RED}║${NC}  Your pool wallets have ${WHITE}never been backed up${NC} or the backup was           ${RED}║${NC}"
-    echo -e "${RED}║${NC}  incomplete. A clean backup will be exported for each coin.             ${RED}║${NC}"
+    echo -e "${RED}║${NC}  incomplete. A clean backup will be exported for each coin.              ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
-    echo -e "${RED}║${NC}  ${WHITE}If the daemon is running:${NC} keys are exported via the RPC.             ${RED}║${NC}"
-    echo -e "${RED}║${NC}  ${WHITE}If the wallet.dat is corrupted:${NC} recovery is attempted               ${RED}║${NC}"
-    echo -e "${RED}║${NC}  automatically using SQLite recovery or -salvagewallet.                 ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}If the daemon is running:${NC} keys are exported via the RPC.                ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}If the wallet.dat is corrupted:${NC} recovery is attempted                   ${RED}║${NC}"
+    echo -e "${RED}║${NC}  automatically using SQLite recovery or -salvagewallet.                  ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
-    echo -e "${RED}║${NC}  ${WHITE}These files contain your private keys. If lost, funds are gone.${NC}        ${RED}║${NC}"
-    echo -e "${RED}║${NC}  ${YELLOW}SCP each file off this server and store it somewhere safe.${NC}            ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${WHITE}These files contain your private keys. If lost, funds are gone.${NC}         ${RED}║${NC}"
+    echo -e "${RED}║${NC}  ${YELLOW}SCP each file off this server and store it somewhere safe.${NC}              ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
     echo -e "${RED}║${NC}  ${DIM}The upgrade will NOT proceed until you confirm each backup is saved.${NC}    ${RED}║${NC}"
     echo -e "${RED}║${NC}                                                                          ${RED}║${NC}"
@@ -1008,14 +1062,24 @@ repair_wallet_backups() {
                         if [[ "$dump_ok" == "false" ]]; then
                             echo ""
                             echo -e "  ${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
-                            echo -e "  ${RED}║${NC}  ${WHITE}RECOVERY FAILED — MANUAL ACTION REQUIRED${NC}                  ${RED}║${NC}"
+                            echo -e "  ${RED}║${NC}  ${WHITE}RECOVERY FAILED — MANUAL ACTION REQUIRED${NC}                    ${RED}║${NC}"
                             echo -e "  ${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
                             echo ""
                             echo -e "  All automated recovery methods failed for ${WHITE}${cn^^}${NC}."
                             echo -e "  The wallet.dat may be too corrupted to recover automatically."
                             echo ""
                             echo -e "  ${YELLOW}Try this manually — it may still be recoverable:${NC}"
-                            echo -e "  ${WHITE}1.${NC} Start daemon with salvage: ${GREEN}sudo -u $POOL_USER ${_wbr_daemon[$cn]:-<daemon>} -conf=$INSTALL_DIR/${cn}/${cn}.conf -salvagewallet -daemon${NC}"
+                            # Take the conf path from $cli rather than guessing it. The old text
+                            # printed $INSTALL_DIR/<coin>/<coin>.conf, which is wrong for every
+                            # coin whose config is not named after its ticker (BTC's is
+                            # bitcoin.conf, FBTC's is fractal.conf, and so on).
+                            _wbr_conf=$(echo "$cli" | grep -oP '\-conf=\S+' | head -1)
+                            echo -e "  ${WHITE}1.${NC} Salvage the wallet file. On Bitcoin Core 0.19+ and its derivatives"
+                            echo -e "     ${YELLOW}-salvagewallet was removed${NC} — use the standalone tool instead:"
+                            echo -e "     ${GREEN}sudo -u $POOL_USER <coin>-wallet -wallet= salvage${NC}"
+                            echo -e "     (the tool sits beside the daemon binary; older daemons such as"
+                            echo -e "      Dogecoin/PepeCoin/Catcoin still accept ${GREEN}-salvagewallet${NC} on startup)"
+                            echo -e "     Then start the daemon: ${GREEN}sudo -u $POOL_USER ${_wbr_daemon[$cn]:-<daemon>} ${_wbr_conf} -daemon${NC}"
                             echo -e "  ${WHITE}2.${NC} Wait ~60s then: ${GREEN}sudo -u $POOL_USER $cli backupwallet /spiralpool/backups/wallet-${cn}-manual.dat${NC}"
                             echo -e "  ${WHITE}3.${NC} SCP that file off the server"
                             echo -e "  ${WHITE}4.${NC} Stop daemon: ${GREEN}sudo -u $POOL_USER $cli stop${NC}"
@@ -2818,7 +2882,8 @@ cleanup_daemon_configs() {
 
         # Remove duplicate dnsseed=1 lines (keep first occurrence only)
         local dns_count
-        dns_count=$(grep -c "^dnsseed=1" "$conf_path" 2>/dev/null || echo "0")
+        dns_count=$(grep -c "^dnsseed=1" "$conf_path" 2>/dev/null || true)
+        [[ -n "$dns_count" ]] || dns_count=0
         if [[ "$dns_count" -gt 1 ]]; then
             # Keep the first dnsseed=1, remove all subsequent ones
             awk '!seen && /^dnsseed=1/ { seen=1; print; next } /^dnsseed=1/ { next } { print }' \
@@ -2894,22 +2959,134 @@ rightsize_daemon_resources() {
 
         local changed=false
 
+        # These two edits rewrite values an operator may have set deliberately
+        # (a 16 GB dbcache on a large box, raised peer counts). The caps exist to
+        # stop a node OOMing, so they stay — but overwriting a deliberate setting
+        # with only a log_info line and no way back is not acceptable. Take a
+        # timestamped backup the first time this config is about to be changed,
+        # and say plainly that an operator value was overridden.
+        _conf_backed_up=false
+        _backup_conf_once() {
+            [[ "$_conf_backed_up" == "true" ]] && return 0
+            local _bak="${conf_path}.bak-$(date '+%Y%m%d-%H%M%S')"
+            if cp -p "$conf_path" "$_bak" 2>/dev/null; then
+                # These configs hold rpcpassword. cp -p carries the original
+                # mode, which install.sh sets to 640; tighten the copy so a
+                # backup is never more readable than its source.
+                chmod 600 "$_bak" 2>/dev/null || true
+                log_info "  - ${conf_name} (${coin_dir}): saved previous config → ${_bak}"
+                _conf_backed_up=true
+            else
+                log_warn "  - ${conf_name} (${coin_dir}): could not back up — leaving this config alone"
+                return 1
+            fi
+        }
+
+        # Resolve an integer option the way Bitcoin Core resolves it.
+        #
+        # doc/bitcoin-conf.md: "Network specific options take precedence over
+        # non-network specific options. If multiple values for the same option
+        # are found with the same precedence, the first one is generally
+        # chosen." So a value in [main] BEATS the top-level one regardless of
+        # file order, and first-wins applies only WITHIN a scope. Merging both
+        # scopes into one file-order stream read the wrong value whenever the
+        # top-level assignment came first -- capping a shadowed line while the
+        # effective value stayed uncapped, and logging success either way.
+        _conf_int() {
+            local _v
+            _v=$(tr -d '\015' < "$conf_path" 2>/dev/null | awk -v key="$1" '
+                    /^[[:space:]]*\[/ {
+                        s = tolower($0); sub(/^[[:space:]]*\[/, "", s); sub(/\].*$/, "", s); next
+                    }
+                    $0 !~ ("^[[:space:]]*" key "[[:space:]]*=") { next }
+                    {
+                        v = $0
+                        sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "", v)
+                        if (s == "main" && !gotmain) { mainv = v; gotmain = 1 }
+                        else if (s == "" && !gottop) { topv = v; gottop = 1 }
+                    }
+                    END { if (gotmain) print mainv; else if (gottop) print topv }
+                ')
+            # Strip a leading '+' first: Core parses these with atoi, so
+            # "dbcache=+16384" is 16384 to the daemon. Returning empty here made
+            # the caller treat the key as absent and skip the OOM cap entirely.
+            # get_existing_prune strips it for the same reason.
+            printf '%s' "${_v#+}" | grep -oP '^[0-9]+' || true
+        }
+
+        # Rewrite the assignment Core actually READS.
+        #
+        # Precedence is not file order (see _conf_int above): if the key appears
+        # in [main] that is the effective value and the only one worth changing;
+        # otherwise it is the first top-level one. Rewriting the first match in
+        # file order capped a shadowed line, left the effective value untouched,
+        # and still reported the cap as applied -- the multi-coin OOM this
+        # exists to prevent, permanently self-concealing behind a green log.
+        _conf_set_int() {
+            local _key="$1" _val="$2"
+            local _scope="top"
+            if tr -d '\015' < "$conf_path" 2>/dev/null | awk -v key="$_key" '
+                    /^[[:space:]]*\[/ { s=tolower($0); sub(/^[[:space:]]*\[/,"",s); sub(/\].*$/,"",s); next }
+                    s=="main" && $0 ~ ("^[[:space:]]*" key "[[:space:]]*=") { found=1 }
+                    END { exit !found }
+                '; then
+                _scope="main"
+            fi
+
+            local _tmp="${conf_path}.bak-tmp.$$"
+            if ! ( umask 077; awk -v key="$_key" -v val="$_val" -v want="$_scope" '
+                /^[[:space:]]*\[/ {
+                    s = tolower($0); sub(/^[[:space:]]*\[/, "", s); sub(/\].*$/, "", s)
+                    print; next
+                }
+                !done && ((want == "main" && s == "main") || (want == "top" && s == "")) &&
+                    $0 ~ ("^[[:space:]]*" key "[[:space:]]*=") {
+                    print key "=" val; done = 1; next
+                }
+                { print }
+            ' "$conf_path" > "$_tmp" ); then
+                rm -f "$_tmp"
+                return 1
+            fi
+            mv "$_tmp" "$conf_path" || { rm -f "$_tmp"; return 1; }
+        }
+
         # Check dbcache
         local current_cache
-        current_cache=$(grep -oP '^dbcache=\K\d+' "$conf_path" 2>/dev/null || echo "0")
+        current_cache=$(_conf_int dbcache)
+        # 10# forces base 10. Without it a leading zero is read as octal by the
+        # arithmetic comparison below, so dbcache=010000 tests as 4096 (cap
+        # silently skipped, Core reads 10000) and dbcache=016384 is an
+        # arithmetic error because 8 is not an octal digit -- also skipping the
+        # cap, which is the failure this function exists to prevent.
+        [[ -n "$current_cache" ]] && current_cache=$((10#$current_cache)) || current_cache=0
         if [[ "$current_cache" -gt "$max_cache" ]]; then
-            sed -i "s/^dbcache=${current_cache}/dbcache=${max_cache}/" "$conf_path"
-            log_info "  - ${conf_name} (${coin_dir}): dbcache ${current_cache} -> ${max_cache}"
+            _backup_conf_once || continue
+            _conf_set_int dbcache "$max_cache" || continue
+            log_warn "  - ${conf_name} (${coin_dir}): dbcache ${current_cache} -> ${max_cache} (capped for RAM safety — your value was overridden)"
             FIXES=$((FIXES + 1))
             changed=true
         fi
 
+        # Restore ownership before leaving this iteration by ANY path. The
+        # `|| continue` guards below skip the chown/chmod at the bottom of the
+        # loop; if an earlier _conf_set_int in the same iteration had already
+        # succeeded, the config was left root-owned 0600 and the daemon could no
+        # longer read it.
+        _restore_conf_owner() {
+            [[ "$changed" == "true" ]] && [[ -n "$POOL_USER" ]] || return 0
+            chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
+            chmod 0600 "$conf_path" 2>/dev/null
+        }
+
         # Check maxconnections
         local current_conn
-        current_conn=$(grep -oP '^maxconnections=\K\d+' "$conf_path" 2>/dev/null || echo "0")
+        current_conn=$(_conf_int maxconnections)
+        [[ -n "$current_conn" ]] && current_conn=$((10#$current_conn)) || current_conn=0
         if [[ "$current_conn" -gt 64 ]]; then
-            sed -i "s/^maxconnections=${current_conn}/maxconnections=64/" "$conf_path"
-            log_info "  - ${conf_name} (${coin_dir}): maxconnections ${current_conn} -> 64"
+            _backup_conf_once || { _restore_conf_owner; continue; }
+            _conf_set_int maxconnections 64 || { _restore_conf_owner; continue; }
+            log_warn "  - ${conf_name} (${coin_dir}): maxconnections ${current_conn} -> 64 (capped — your value was overridden)"
             FIXES=$((FIXES + 1))
             changed=true
         fi
@@ -3046,27 +3223,98 @@ ensure_daemon_peer_config() {
 
         local added=0
 
+        # Everything below targets MAINNET settings, so it must be written to
+        # the top-level section. Bitcoin Core scopes every option under a
+        # [main]/[test]/[regtest] header to that network, and these configs
+        # commonly end in one — a plain >> append puts mainnet peers under
+        # [test], where they do nothing. The guard reads are scoped the same
+        # way, otherwise a line written into the wrong section is mistaken for
+        # one already present and the migration reports success forever.
+
+        # Top-level portion only: stop at the first section header.
+        # Lines that apply to MAINNET: the top-level section plus [main].
+        # Stopping at the first header of any kind would treat an explicit
+        # [main] block as out of scope, which is exactly backwards.
+        _mainnet_scope() { awk '/^[[:space:]]*\[/ { s=tolower($0); sub(/^[[:space:]]*\[/,"",s); sub(/\].*$/,"",s); next } s=="" || s=="main"' "$conf_path" 2>/dev/null; }
+
+        # Insert before the first section header, or append when there is none.
+        _add_toplevel() {
+            if grep -q '^[[:space:]]*\[' "$conf_path" 2>/dev/null; then
+                # Named .bak-tmp so ha-replicate.sh's "*.bak-*" exclude covers it.
+                # A plain ".tmp" name matched none of the excludes, so an orphan
+                # left by a crash mid-write would replicate rpcpassword to the
+                # HA peer — the leak those excludes exist to prevent.
+                local _tmp="${conf_path}.bak-tmp.$$"
+                # umask here, not chmod after: the file holds rpcpassword and
+                # would otherwise exist world-readable for the width of the
+                # write. Remove it on failure rather than leaving credentials
+                # behind in an orphaned temp file.
+                if ! ( umask 077; awk -v ins="$1" '
+                    !done && /^[[:space:]]*\[/ { print ins; done=1 }
+                    { print }
+                ' "$conf_path" > "$_tmp" ); then
+                    rm -f "$_tmp"
+                    return 1
+                fi
+                # Carry owner and mode across the inode replacement HERE, not at
+                # the end of the caller's loop. The repair there is gated on a
+                # success counter that only increments when the whole
+                # `_add_toplevel A && _add_toplevel B && _add_toplevel C` chain
+                # succeeds — so a failure in the second or third call left the
+                # file already replaced, root:root 0600, and unreadable by the
+                # daemon, with the repair skipped. Doing it inside the helper
+                # means no caller can skip it.
+                chown --reference="$conf_path" "$_tmp" 2>/dev/null || true
+                chmod --reference="$conf_path" "$_tmp" 2>/dev/null || true
+                mv "$_tmp" "$conf_path" || { rm -f "$_tmp"; return 1; }
+            else
+                # A config whose last line has no trailing newline would other-
+                # wise have this appended DIRECTLY onto it, turning
+                #     rpcpassword=SECRET
+                # into
+                #     rpcpassword=SECRETaddnode=1.2.3.4:8333
+                # The daemon still starts, but the stratum's stored credential
+                # no longer matches, so every getblocktemplate fails — a total
+                # mining outage behind a healthy-looking node.
+                if [[ -s "$conf_path" ]] && [[ -n "$(tail -c 1 "$conf_path")" ]]; then
+                    printf '\n' >> "$conf_path" || return 1
+                fi
+                printf '%s\n' "$1" >> "$conf_path" || return 1
+            fi
+        }
+
         # Ensure forcednsseed=1
-        if ! grep -q "^forcednsseed=1" "$conf_path" 2>/dev/null; then
-            echo "" >> "$conf_path"
-            echo "# Force DNS seed queries on every startup (added by upgrade v2.1)" >> "$conf_path"
-            echo "forcednsseed=1" >> "$conf_path"
-            added=$((added + 1))
-            log_info "  - ${conf_name} (${coin_key}): added forcednsseed=1"
+        if ! _mainnet_scope | grep -q "^[[:space:]]*forcednsseed[[:space:]]*=[[:space:]]*1"; then
+            if _add_toplevel ""                && _add_toplevel "# Force DNS seed queries on every startup (added by upgrade v2.1)"                && _add_toplevel "forcednsseed=1"; then
+                added=$((added + 1))
+                log_info "  - ${conf_name} (${coin_key}): added forcednsseed=1"
+            else
+                log_warn "  - ${conf_name} (${coin_key}): could not write forcednsseed=1"
+            fi
         fi
 
         # Ensure fixedseeds=1 for FBTC (all DNS seeds dead)
-        if [[ "$coin_key" == "fbtc" ]] && ! grep -q "^fixedseeds=1" "$conf_path" 2>/dev/null; then
-            echo "fixedseeds=1" >> "$conf_path"
-            added=$((added + 1))
-            log_info "  - ${conf_name} (${coin_key}): added fixedseeds=1"
+        if [[ "$coin_key" == "fbtc" ]] && ! _mainnet_scope | grep -q "^[[:space:]]*fixedseeds[[:space:]]*=[[:space:]]*1"; then
+            if _add_toplevel "fixedseeds=1"; then
+                added=$((added + 1))
+                log_info "  - ${conf_name} (${coin_key}): added fixedseeds=1"
+            else
+                log_warn "  - ${conf_name} (${coin_key}): could not write fixedseeds=1"
+            fi
         fi
 
-        # Ensure addnode= entries (skip duplicates)
+        # Ensure addnode= entries (skip duplicates). Compared as a whole line
+        # with leading whitespace stripped: an unanchored substring match also
+        # matched a COMMENTED-OUT peer, so an operator who commented peers out
+        # while debugging never got them back.
         for peer in $peers_str; do
-            if ! grep -qF "$peer" "$conf_path" 2>/dev/null; then
-                echo "$peer" >> "$conf_path"
-                added=$((added + 1))
+            if ! _mainnet_scope | sed 's/^[[:space:]]*//' | grep -qxF -- "$peer" ; then
+                if _add_toplevel "$peer"; then
+                    added=$((added + 1))
+                else
+                    log_warn "  - ${conf_name} (${coin_key}): could not write ${peer}"
+                    break
+                fi
             fi
         done
 
@@ -4551,7 +4799,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.6.7 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V2.7.0 - SPIRAL CITADEL${NC}"
 echo ""
 echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
 echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
@@ -5319,6 +5567,30 @@ show_summary() {
                 echo -e "     coin-upgrade.sh will offer to switch DGB to a pruned node (prune=5000,"
                 echo -e "     ~5 GB, prunes in place). Wallets, configs, and other coins are untouched."
             fi
+            # Bitcoin: this is not a routine version bump. Spiral Pool shipped
+            # Bitcoin Knots, and knots20260508+ builds enforce BIP-110 (RDTS),
+            # following the minority chain that split at block 961,632 on
+            # 2026-08-08. Such a node behaves normally in every visible way while
+            # mining blocks that have no value, so say plainly what is at stake.
+            if grep -q '^BTC ' <<< "$upgrade_lines"; then
+                echo
+                echo -e "${RED}  ⚠  Bitcoin (BTC) — READ THIS BEFORE SKIPPING${NC}"
+                echo -e "     Spiral Pool previously shipped Bitcoin Knots. Knots builds dated"
+                echo -e "     knots20260508 or later enforce BIP-110 (RDTS) and follow a MINORITY"
+                echo -e "     CHAIN that split from Bitcoin on 8 August 2026 at block 961,632."
+                echo -e "     That chain produces a block every day or two and its coins are not"
+                echo -e "     traded anywhere."
+                echo
+                echo -e "     A node on that chain looks perfectly healthy: miners connect, shares"
+                echo -e "     validate, hashrate reads normal. The only symptom is that blocks never"
+                echo -e "     arrive — which is indistinguishable from ordinary bad luck."
+                echo
+                echo -e "     ${YELLOW}This stack upgrade does NOT fix it — coin daemons are never touched here.${NC}"
+                echo -e "     Running ${CYAN}coin-upgrade.sh${NC} (below) replaces Knots with Bitcoin Core, then"
+                echo -e "     verifies the node is on the majority chain and repairs it if not. Until"
+                echo -e "     that check passes the pool refuses to mine BTC, so you are not wasting"
+                echo -e "     electricity in the meantime."
+            fi
             echo
             echo -e "${CYAN}Coin daemon upgrades are NOT applied automatically — they may${NC}"
             echo -e "${CYAN}require a chain resync. Run manually when ready:${NC}"
@@ -5397,6 +5669,9 @@ PYEOF
     if grep -q '^DGB ' <<< "$upgrade_lines"; then
         coin_lines+="\nℹ **DigiByte v9.26.5** fixes a DigiDollar oracle startup stall that held node init for 15+ minutes, and enables optional pruning. In-place binary swap (no reindex); coin-upgrade.sh offers to switch DGB to a pruned node and preserves wallets/configs.\n"
     fi
+    if grep -q '^BTC ' <<< "$upgrade_lines"; then
+        coin_lines+="\n🔴 **Bitcoin: ACT ON THIS ONE.** Spiral Pool previously shipped Bitcoin Knots. Knots builds dated knots20260508 or later enforce BIP-110 (RDTS) and follow a minority chain that split away from Bitcoin on 8 August 2026 at block 961,632. That chain has produced a handful of blocks and its coins are not traded anywhere. A node on it looks completely healthy — shares validate, hashrate reads normal — but any block you find is worth nothing. This stack upgrade does NOT fix it — coin daemons are never touched here. Run coin-upgrade.sh to replace Knots with Bitcoin Core 31.1; it then verifies your node is on the majority chain and repairs it if not. Until that passes the pool refuses to mine BTC, so no electricity is wasted meanwhile.\n"
+    fi
 
     local embed
     embed=$(python3 - "$coin_lines" <<'PYEOF' 2>/dev/null
@@ -5414,7 +5689,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.6.7 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v2.7.0 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -5513,8 +5788,8 @@ main() {
     # Safety: warn loudly when --no-backup + --auto are combined
     if [[ "$SKIP_BACKUP" == "true" && "$AUTO_MODE" == "true" ]]; then
         log_warn "╔══════════════════════════════════════════════════════════════╗"
-        log_warn "║  WARNING: --no-backup --auto skips ALL safety prompts.      ║"
-        log_warn "║  If the upgrade fails, there is NO backup to roll back to.  ║"
+        log_warn "║  WARNING: --no-backup --auto skips ALL safety prompts.       ║"
+        log_warn "║  If the upgrade fails, there is NO backup to roll back to.   ║"
         log_warn "╚══════════════════════════════════════════════════════════════╝"
     fi
 
@@ -5767,7 +6042,7 @@ SSHDEOF
     # that capture stdout (e.g. the dashboard's pool-upgrade endpoint).
     if [[ "$AUTO_MODE" != "true" ]] && [[ -t 0 ]]; then
         echo -e "${RED}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REMINDER${NC}                                        ${RED}║${NC}"
+        echo -e "${RED}║${NC}  ${WHITE}⚠  WALLET BACKUP REMINDER${NC}                                           ${RED}║${NC}"
         echo -e "${RED}╚══════════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
         echo -e "  If your pool wallet was generated on this server, your private keys"

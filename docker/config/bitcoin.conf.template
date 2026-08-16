@@ -1,6 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# BITCOIN KNOTS - SPIRAL POOL CONFIGURATION
+# BITCOIN CORE - SPIRAL POOL CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
+# Relay and mining policy follows Bitcoin Core defaults. Note these differ from
+# Bitcoin Knots, which this pool previously shipped: Core allows larger OP_RETURN
+# payloads (datacarriersize 100000 vs 83), a lower minimum template fee
+# (blockmintxfee 1 vs 1000 sat/kvB) and bare multisig by default. That is an
+# intentional consequence of running Core, not an oversight.
 # Optimized for fast initial blockchain sync and reliable mining operations
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -84,7 +89,7 @@ txindex=1
 # ═══════════════════════════════════════════════════════════════════════════════
 # DNS SEEDS AND BOOTSTRAP NODES
 # ═══════════════════════════════════════════════════════════════════════════════
-# Multiple seeds for faster peer discovery (verified against Bitcoin Knots 29.x-knots kernel/chainparams.cpp)
+# Multiple seeds for faster peer discovery (verified against Bitcoin Core kernel/chainparams.cpp)
 dnsseed=1
 addnode=seed.bitcoin.sipa.be
 addnode=dnsseed.bluematt.me
@@ -103,5 +108,18 @@ addnode=seed.mainnet.achownodes.xyz
 # Block size limit for mining
 blockmaxweight=4000000
 
-# Minimum relay fee (default is fine for mining)
-minrelaytxfee=0.00001
+# Minimum relay fee: left at the Bitcoin Core default (100 sat/kvB).
+#
+# This previously pinned 0.00001 (1000 sat/kvB), which was Bitcoin Knots' default
+# and became a Core override once the daemon changed. The bare-metal, pool-mode
+# and test configs never pinned it, so the deployment paths disagreed about relay
+# policy. Removing it here makes FRESH installs agree on the Core default.
+#
+# NOTE: existing Docker installs are unaffected by this change. The entrypoint
+# skips template generation when a bitcoin.conf already exists, and that file
+# lives on a named volume — so a container built before this change keeps
+# minrelaytxfee=0.00001 indefinitely. That is harmless (it is a valid Core
+# setting, merely a stricter relay floor than the default), but it does mean
+# fresh and existing Docker installs differ here until the operator deletes or
+# edits their conf. Do not re-add this line without adding it to every BTC
+# config, or the paths diverge again.

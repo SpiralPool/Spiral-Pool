@@ -129,6 +129,12 @@ func (m *mockNodeMgr) SubmitBlockWithVerification(ctx context.Context, blockHex 
 	return m.submitResults[idx]
 }
 
+// GetDeploymentInfo satisfies coinPoolNodeManager for the chain identity guard.
+// These tests cover block submission, not startup, so the guard never runs here.
+func (m *mockNodeMgr) GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error) {
+	return &daemon.DeploymentInfo{Deployments: nil}, nil
+}
+
 func (m *mockNodeMgr) GetBlockHash(ctx context.Context, height uint64) (string, error) {
 	if m.blockHashErr != nil {
 		return "", m.blockHashErr

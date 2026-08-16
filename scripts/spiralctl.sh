@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.6.7}"
+VERSION="${VERSION:-2.7.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -65,6 +65,112 @@ NC='\033[0m'
 #===============================================================================
 # HELPER FUNCTIONS
 #===============================================================================
+
+# Read the EFFECTIVE mainnet value of a config key, the way the daemon reads it:
+# each line truncated at the first '#', [main] beats top-level, first assignment
+# wins within a scope, CR stripped. Dogecoin 1.14.x / PepeCoin 1.1.x predate
+# Core 0.17 and parse with boost's config_file_iterator, where a "[main]" header
+# becomes a key PREFIX ("main.prune") that nothing reads — so for those, only
+# top-level assignments exist. Prints nothing if the key is absent.
+_conf_effective() {   # <conf_file> <key>
+    [[ -f "$1" ]] || return 0
+    local _sect=1
+    case "$1" in */dogecoin.conf|*/pepecoin.conf) _sect=0 ;; esac
+    tr -d '\015' < "$1" 2>/dev/null | awk -v sect="$_sect" -v key="$2" '
+        {
+            line = $0
+            h = index(line, "#"); if (h > 0) line = substr(line, 1, h - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            if (line == "") next
+            if (line ~ /^\[/) { s = tolower(line); sub(/^\[/, "", s); sub(/\].*$/, "", s); next }
+            if (line !~ "^" key "[[:space:]]*=") next
+            v = line; sub("^" key "[[:space:]]*=[[:space:]]*", "", v)
+            if (sect && s == "main" && !gotmain) { mainv = v; gotmain = 1 }
+            else if (s == "" && !gottop) { topv = v; gottop = 1 }
+        }
+        END { if (gotmain) print mainv; else if (gottop) print topv }
+    '
+}
+
+# Resolve a config key as a BOOLEAN, the way the daemon does. _conf_effective
+# prints "" both for an absent key and for a present-but-empty one, but Core's
+# InterpretBool reads an EMPTY value as TRUE — so `txindex=` is ON to the daemon
+# while a caller checking for a digit read it as off, enabled pruning without
+# disabling txindex, and produced a config Core refuses to start from. Prints
+# 1, 0, or "" when the key is genuinely absent.
+#
+# Same scoping rules as _conf_effective, resolved in one awk pass rather than by
+# post-processing its output — an empty result there is genuinely ambiguous.
+_conf_bool() {   # <conf_file> <key>
+    [[ -f "$1" ]] || return 0
+    local _sect=1
+    case "$1" in */dogecoin.conf|*/pepecoin.conf) _sect=0 ;; esac
+    tr -d '\015' < "$1" 2>/dev/null | awk -v sect="$_sect" -v key="$2" '
+        function atoi(x,   t) {
+            sub(/^[[:space:]]+/, "", x)
+            return match(x, /^[+-]?[0-9]+/) ? substr(x, RSTART, RLENGTH) + 0 : 0
+        }
+        {
+            line = $0
+            h = index(line, "#"); if (h > 0) line = substr(line, 1, h - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            if (line == "") next
+            if (line ~ /^\[/) { s = tolower(line); sub(/^\[/, "", s); sub(/\].*$/, "", s); next }
+            # The no- negation prefix, handled exactly as
+            # get_existing_txindex in pool-mode.sh handles it. Without it the
+            # two disagreed on notxindex=0, which means the key is ON: this one
+            # reported it absent, the prune guard never fired, and prune=5000
+            # was written beside a live txindex.
+            neg = 0
+            if (line ~ ("^no" key "[[:space:]]*=")) { neg = 1; sub(/^no/, "", line) }
+            if (line !~ "^" key "[[:space:]]*=") next
+            v = line; sub("^" key "[[:space:]]*=[[:space:]]*", "", v)
+            b = (v == "" || atoi(v) != 0) ? 1 : 0
+            if (neg) b = 1 - b
+            if (sect && s == "main" && !gotmain) { mainv = b; gotmain = 1 }
+            else if (s == "" && !gottop) { topv = b; gottop = 1 }
+        }
+        END { if (gotmain) print mainv; else if (gottop) print topv }
+    '
+}
+
+# Insert a line into the TOP-LEVEL scope of a config. Appending at EOF is wrong
+# whenever the file carries a section header: the line lands inside that section
+# and never applies to mainnet. Mirrors upgrade.sh's _add_toplevel, including the
+# .bak-tmp name (ha-replicate.sh excludes "*.bak-*", so a crash mid-write cannot
+# replicate rpcpassword to the HA peer) and the umask (the temp file holds
+# rpcpassword and must never exist world-readable).
+_conf_add_toplevel() { # <conf_file> <line>
+    local _cf="$1" _line="$2"
+    if grep -q '^[[:space:]]*\[' "$_cf" 2>/dev/null; then
+        local _tmp="${_cf}.bak-tmp.$$"
+        if ! ( umask 077; awk -v ins="$_line" '
+                   !done && /^[[:space:]]*\[/ { print ins; done=1 }
+                   { print }
+                   END { if (!done) print ins }
+               ' "$_cf" > "$_tmp" ); then
+            rm -f "$_tmp"; return 1
+        fi
+        # Preserve owner and mode. mv installs the TEMP inode, so without this
+        # the config becomes root:root 0600 (from the umask above) while the
+        # daemon runs as $POOL_USER — which then cannot read its own config on
+        # the restart below. Both sibling implementations chown after this exact
+        # operation (upgrade.sh, coin-upgrade.sh); this one did not.
+        chown --reference="$_cf" "$_tmp" 2>/dev/null || true
+        chmod --reference="$_cf" "$_tmp" 2>/dev/null || true
+        mv "$_tmp" "$_cf" || { rm -f "$_tmp"; return 1; }
+    else
+        # A file whose last line has no trailing newline would otherwise get this
+        # appended directly onto it, turning "rpcpassword=SECRET" into
+        # "rpcpassword=SECRETprune=5000" — the daemon still starts, but the
+        # stratum's stored credential no longer matches and every
+        # getblocktemplate fails: a total outage behind a healthy-looking node.
+        if [[ -s "$_cf" ]] && [[ -n "$(tail -c 1 "$_cf")" ]]; then
+            printf '\n' >> "$_cf" || return 1
+        fi
+        printf '%s\n' "$_line" >> "$_cf" || return 1
+    fi
+}
 
 log_info() { echo -e "${CYAN}ℹ${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
@@ -4371,9 +4477,12 @@ cmd_coin() {
             # added without a restart — leaving the live node a full node even though
             # the config says pruned. Reconcile the two so operators never have to know
             # to restart by hand (prune=0 means NOT pruned — full node default).
-            if grep -qE "^[[:space:]]*prune=[1-9]" "$conf_file" 2>/dev/null; then
-                local current_prune
-                current_prune=$(grep -oP '^[[:space:]]*prune=\K[0-9]+' "$conf_file" | head -1)
+            # Section-aware, like the rest of this command. A raw grep here
+            # matched a prune under [test] and short-circuited to "already
+            # pruned", returning success on a node that is not pruned at all.
+            local current_prune
+            current_prune=$(_conf_effective "$conf_file" prune | sed 's/^+//' | grep -oE '^[0-9]+' || true)
+            if [[ -n "$current_prune" ]] && [[ "$current_prune" -gt 0 ]] 2>/dev/null; then
 
                 # Ask the live daemon whether it is actually pruned right now.
                 local cli live_pruned=""
@@ -4396,8 +4505,11 @@ cmd_coin() {
                 # Drift: config says pruned but the live daemon is still a full node.
                 log_warn "$coin config has prune=${current_prune} but the running daemon is NOT pruned —"
                 log_warn "it started before pruning was configured. Applying it now (restart)."
-                if grep -qE '^[[:space:]]*txindex=1' "$conf_file" 2>/dev/null; then
-                    sed -i 's/^[[:space:]]*txindex=1/#txindex=1  # disabled for pruning/' "$conf_file"
+                if [[ "$(_conf_bool "$conf_file" txindex)" == "1" ]]; then
+                    # (no)?txindex: a node with txindex ON may express it as
+                    # notxindex=0, which the plain pattern could not match — so
+                    # the guard fired and changed nothing.
+                    sed -i -E 's/^[[:space:]]*(no)?txindex[[:space:]]*=/#&/' "$conf_file"
                 fi
                 local _dd; _dd="$(_chain_dir "$coin_lower")"
                 if [[ -d "${_dd}/indexes/txindex" ]]; then
@@ -4415,10 +4527,19 @@ cmd_coin() {
                 return 0
             fi
 
-            # Check for txindex (incompatible with pruning)
-            if grep -q "^txindex=1" "$conf_file" 2>/dev/null; then
-                log_warn "Removing txindex=1 (incompatible with pruning)"
-                sed -i 's/^txindex=1/#txindex=1  # disabled for pruning/' "$conf_file"
+            # Check for txindex (Core refuses to start with txindex + prune>0).
+            # Read the effective value rather than grepping "^txindex=1": the
+            # daemon uses atoi, so "01" and "2" are also on, and a value under
+            # [test] is not on at all.
+            if [[ "$(_conf_bool "$conf_file" txindex)" == "1" ]]; then
+                log_warn "Removing txindex (incompatible with pruning)"
+                sed -i -E 's/^[[:space:]]*(no)?txindex[[:space:]]*=/#&/' "$conf_file"
+                case "$conf_file" in
+                    */dogecoin.conf|*/pepecoin.conf)
+                        log_warn "$coin predates Core 0.17: changing txindex requires a"
+                        log_warn "one-time -reindex-chainstate or the daemon refuses to start."
+                        ;;
+                esac
             fi
 
             echo ""
@@ -4432,15 +4553,78 @@ cmd_coin() {
                 return 0
             fi
 
-            # Add prune=5000 to config
-            echo "" >> "$conf_file"
-            echo "# Pruning enabled by spiralctl (saves 95%+ disk)" >> "$conf_file"
-            echo "prune=5000" >> "$conf_file"
+            # Remove any existing prune= line BEFORE appending.
+            #
+            # Config-file precedence is FIRST-wins, not last-wins (Core's
+            # util/settings.cpp GetSetting: "Take first assigned value instead
+            # of last... for backwards compatibility in the config file the
+            # precedence is reversed"; DOGE/PEP do the same via
+            # `if (mapArgs.count(strKey) == 0)`). Every config this pool
+            # generates already carries `prune=0` near the top, so appending
+            # prune=5000 left prune=0 winning: the command reported success,
+            # restarted the daemon, and the node stayed a full node.
+            # Back up first, fail-closed, as upgrade.sh and coin-upgrade.sh both
+            # do before rewriting a config. Named .bak-* so ha-replicate.sh's
+            # exclude covers it — this file holds rpcpassword.
+            # No `umask 077` wrapper: cp -p restores the SOURCE's mode after
+            # creating the file, so the umask has no effect and only implies a
+            # protection that is not there. -p is what we want — the backup
+            # should carry the config's own ownership and mode.
+            local _bk="${conf_file}.bak-prune.$$"
+            if ! cp -p "$conf_file" "$_bk"; then
+                log_error "Could not back up $conf_file — pruning NOT enabled."
+                return 1
+            fi
+            # Removed on the FAILURE paths only. An earlier version trapped
+            # RETURN and deleted it unconditionally, which also deleted it on
+            # success — seconds after the config had been rewritten and the
+            # daemon restarted into irreversible block deletion, i.e. exactly
+            # when the backup is the only way back. On a failure path the config
+            # is untouched, so the copy is worthless and leaving it behind just
+            # accumulates files containing rpcpassword.
+            _bk_discard() { rm -f "$_bk"; }
+            local _pt="${conf_file}.bak-tmp.$$"
+            if ! ( umask 077; grep -vE '^[[:space:]]*prune[[:space:]]*=' "$conf_file" > "$_pt" ); then
+                rm -f "$_pt"
+                log_error "Could not rewrite $conf_file — pruning NOT enabled."
+                _bk_discard; return 1
+            fi
+            # See _conf_add_toplevel: mv installs the temp inode, so owner and
+            # mode must be carried over or $POOL_USER's daemon cannot read the
+            # config it is about to be restarted with.
+            chown --reference="$conf_file" "$_pt" 2>/dev/null || true
+            chmod --reference="$conf_file" "$_pt" 2>/dev/null || true
+            if ! mv "$_pt" "$conf_file"; then
+                rm -f "$_pt"
+                log_error "Could not replace $conf_file — pruning NOT enabled."
+                _bk_discard; return 1
+            fi
+
+            # Insert into the TOP-LEVEL scope, not at EOF. Appending put the line
+            # inside whatever section happened to be last, where it does not
+            # apply to mainnet at all — and the old verification below grepped
+            # the whole file, so it confirmed the line existed and reported
+            # success while the node stayed a full node and the disk kept
+            # filling. Same fix already applied in upgrade.sh and coin-upgrade.sh.
+            if ! _conf_add_toplevel "$conf_file" "" \
+              || ! _conf_add_toplevel "$conf_file" "# Pruning enabled by spiralctl (saves 95%+ disk)" \
+              || ! _conf_add_toplevel "$conf_file" "prune=5000"; then
+                log_error "Could not write $conf_file — pruning NOT enabled."
+                _bk_discard; return 1
+            fi
+
+            # Verify it is the EFFECTIVE mainnet value before claiming success.
+            if [[ "$(_conf_effective "$conf_file" prune)" != "5000" ]]; then
+                log_error "prune=5000 is not the effective setting in $conf_file — check it by hand."
+                _bk_discard; return 1
+            fi
 
             # Restart the daemon
             log_info "Restarting $daemon..."
             systemctl restart "$daemon"
             log_success "$coin pruning enabled (prune=5000, ~5 GB). Daemon restarted."
+            log_info "Pre-change config saved to ${_bk} — pruning deletes block data"
+            log_info "irreversibly, so keep it until you have confirmed the node is healthy."
             log_warn "First start runs a ONE-TIME block-store prune (RPC: error -28 'Pruning"
             log_warn "blockstore…'); $coin serves no templates, so its shares are REJECTED until"
             log_warn "it completes. Duration VARIES with chain size, disk speed, and load —"
@@ -5185,7 +5369,7 @@ _alerts_groups() {
 Miner & fleet|miner_offline miner_online miner_reboot temp_warning temp_critical thermal_shutdown zombie_miner degradation auto_restart excessive_restarts chronic_issue power_event fan_failure hashboard_dead hw_error_rate group_offline group_online worker_count_drop
 Performance|hashrate_divergence share_rejection_spike share_loss_rate best_share
 Network & odds|hashrate_crash pool_hashrate_drop high_odds dry_streak difficulty_change mempool_congestion
-Coin node|coin_node_down coin_sync_behind coin_change coin_config_change block_notify_mode_change
+Coin node|coin_node_down coin_sync_behind coin_change coin_config_change block_notify_mode_change chain_identity
 Block events|block_orphaned
 Disk & backup|disk_warning disk_critical backup_stale
 Wallet & market|sats_surge price_crash payout_received missing_payout wallet_drop revenue_decline

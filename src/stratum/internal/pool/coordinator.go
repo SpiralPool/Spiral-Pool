@@ -689,6 +689,10 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	c.runMu.Unlock()
 
 	ctx, c.cancel = context.WithCancel(ctx)
+	// Release the derived context when Run returns. See Pool.Run — no-op on the
+	// normal shutdown path, and on an early error return it stops the coin pools
+	// and HA components that already started.
+	defer c.cancel()
 
 	// Start HA components if configured
 	if c.dbManager != nil {

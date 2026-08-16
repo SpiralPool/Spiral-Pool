@@ -2207,6 +2207,74 @@ check_installation() {
         echo "Please install Spiral Pool first using install.sh"
         exit 1
     fi
+    check_multi_disk_layout
+}
+
+# Refuse to run on a multi-disk install.
+#
+# install.sh's configure_multi_disk_storage can place each coin's directory on a
+# separate disk, recorded as CHAIN_MOUNT_POINT in coins.env. upgrade.sh
+# (resolve_coin_dir) and coin-upgrade.sh (_chain_dir) both honour it. This
+# script does not: SPIRALPOOL_DIR is hardcoded and every one of its ~246 coin
+# paths is built from it.
+#
+# Running anyway is destructive rather than merely wrong. setup_node would read
+# a config that is not there, back up nothing (the backup helper cannot tell
+# "absent" from "wrong path"), write a fresh config to the root disk, and
+# regenerate every systemd unit with -datadir pointing at an empty directory.
+# The result is a full resync from genesis for every coin, the root filesystem
+# filling up, and the wallets on the chain disk no longer being loaded.
+#
+# Refusing is the correct behaviour until the path handling here is reworked.
+check_multi_disk_layout() {
+    local coins_env="${SPIRALPOOL_DIR}/config/coins.env"
+    [ -f "$coins_env" ] || return 0
+
+    # Read it the way get_existing_prune reads PRUNE_ENABLED from this same
+    # file, and for the same reason: coins.env is `source`d elsewhere, so an
+    # `export ` prefix, leading whitespace, single quotes, spaces around '=' and
+    # CRLF are all legitimate shapes. The previous `grep -oP '^CHAIN_MOUNT_POINT="?\K'`
+    # matched none of them and returned empty — and an empty result here means
+    # "single disk, carry on", so a hand-edited coins.env silently disabled a
+    # guard whose failure mode is a full resync of every coin. Last-wins, because
+    # that is what sourcing the file would do.
+    local mount_point
+    mount_point=$(tr -d '\015' < "$coins_env" 2>/dev/null | awk '
+        /^[[:space:]]*(export[[:space:]]+)?CHAIN_MOUNT_POINT[[:space:]]*=/ {
+            v = $0
+            sub(/^[[:space:]]*(export[[:space:]]+)?CHAIN_MOUNT_POINT[[:space:]]*=[[:space:]]*/, "", v)
+            if (v ~ /^"/)      { sub(/^"/, "", v); sub(/".*$/, "", v) }
+            else if (v ~ /^'"'"'/) { sub(/^'"'"'/, "", v); sub(/'"'"'.*$/, "", v) }
+            else               { sub(/[[:space:]#].*$/, "", v) }
+            if (v != "") last = v
+        }
+        END { print last }
+    ')
+    [ -n "$mount_point" ] || return 0
+    [ "$mount_point" = "$SPIRALPOOL_DIR" ] && return 0
+
+    # Only refuse if coin data actually lives there.
+    local found=""
+    local d
+    for d in "$mount_point"/*/; do
+        [ -d "$d" ] || continue
+        if ls "$d"*.conf >/dev/null 2>&1; then found="$d"; break; fi
+    done
+    [ -n "$found" ] || return 0
+
+    echo -e "${RED}Error: this installation uses multi-disk chain storage.${NC}"
+    echo ""
+    echo -e "  Chain data is on:  ${YELLOW}${mount_point}${NC}"
+    echo -e "  This script assumes: ${YELLOW}${SPIRALPOOL_DIR}${NC}"
+    echo ""
+    echo "  pool-mode.sh does not yet resolve CHAIN_MOUNT_POINT. Running it here"
+    echo "  would regenerate every coin config and systemd unit against the wrong"
+    echo "  directory, repointing each daemon at an empty datadir and forcing a"
+    echo "  full resync from genesis."
+    echo ""
+    echo "  Change mining mode by editing the stratum config directly, or run"
+    echo "  coin-upgrade.sh / upgrade.sh, which both resolve the mount point."
+    exit 1
 }
 
 # Detect currently configured coins
@@ -3701,8 +3769,9 @@ _github_latest_version() {
 # Determine the target version for a coin.
 # Primary source: GitHub releases/latest (always current, no hardcoding needed).
 # Fallback: coin-upgrade.sh COIN_TARGET array (used when offline or rate-limited).
-# BTC uses a separate bitcoinknots.org fetch in its download case — coin-upgrade.sh
-# is the fallback reference for BTC here.
+# BTC deliberately has no GitHub repo entry below: its version comes only from
+# coin-upgrade.sh's pinned COIN_TARGET[BTC]. Do not add a resolver for it — see
+# the BTC download case for why a "latest version" lookup is unsafe for Bitcoin.
 _coin_upgrade_target() {
     local coin="$1"
     local _gh_repo=""
@@ -3719,7 +3788,7 @@ _coin_upgrade_target() {
         SYS)  _gh_repo="syscoin/syscoin" ;;
         XMY)  _gh_repo="myriadteam/myriadcoin" ;;
         FBTC) _gh_repo="fractal-bitcoin/fractald-release" ;;
-        # BTC: handled by live bitcoinknots.org fetch in its download case
+        # BTC: intentionally absent — pinned Bitcoin Core version only, never resolved
     esac
 
     if [[ -n "$_gh_repo" ]]; then
@@ -3824,46 +3893,48 @@ install_node_if_needed() {
             ;;
 
         BTC)
-            echo "Detecting latest Bitcoin Knots version..."
-            # Fallback: use the version pinned in coin-upgrade.sh if live fetch fails
-            local BITCOIN_KNOTS_FALLBACK; BITCOIN_KNOTS_FALLBACK=$(_coin_upgrade_target BTC) || BITCOIN_KNOTS_FALLBACK=""
+            # Bitcoin Core, pinned via coin-upgrade.sh like every other coin.
+            #
+            # This case previously scraped bitcoinknots.org and took the highest
+            # sorting version. Do not reintroduce that. Bitcoin Knots builds dated
+            # knots20260508 or later enforce BIP-110 (RDTS) and follow the minority
+            # chain that split from Bitcoin at block 961,632 on 2026-08-08, and a
+            # "latest version" lookup resolves to exactly those builds.
+            local BTC_VERSION; BTC_VERSION=$(_coin_upgrade_target BTC) \
+                || { echo -e "${RED}Cannot determine BTC target version from coin-upgrade.sh${NC}"; return 1; }
 
-            local KNOTS_PAGE; KNOTS_PAGE=$(curl -sL --connect-timeout 10 --max-time 30 "https://bitcoinknots.org/files/" 2>/dev/null)
-            if [ -n "$KNOTS_PAGE" ]; then
-                local LATEST_MAJOR; LATEST_MAJOR=$(echo "$KNOTS_PAGE" | grep -oP 'href="\K[0-9]+\.x(?=/")' | sort -t. -k1 -n | tail -1)
-                if [ -n "$LATEST_MAJOR" ]; then
-                    local VERSION_PAGE; VERSION_PAGE=$(curl -sL --connect-timeout 10 --max-time 30 "https://bitcoinknots.org/files/${LATEST_MAJOR}/" 2>/dev/null)
-                    if [ -n "$VERSION_PAGE" ]; then
-                        BITCOIN_KNOTS_VERSION=$(echo "$VERSION_PAGE" | grep -oP 'href="\K[0-9]+\.[0-9]+\.knots[0-9]+(?=/")' | sort -V | tail -1)
-                    fi
-                fi
-            fi
+            # SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz, from
+            # https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS and
+            # cross-verified against the Guix attestations of signers achow101
+            # and fanquake. Bump this whenever COIN_TARGET[BTC] changes.
+            local BTC_EXPECTED_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
 
-            if [ -z "$BITCOIN_KNOTS_VERSION" ]; then
-                if [[ -z "$BITCOIN_KNOTS_FALLBACK" ]]; then
-                    echo -e "${RED}Cannot fetch Bitcoin Knots version and coin-upgrade.sh unavailable${NC}"
-                    return 1
-                fi
-                BITCOIN_KNOTS_VERSION="$BITCOIN_KNOTS_FALLBACK"
-            fi
-
-            KNOTS_MAJOR_VERSION="${BITCOIN_KNOTS_VERSION%%.*}.x"
-
-            echo "Downloading Bitcoin Knots $BITCOIN_KNOTS_VERSION..."
+            echo "Downloading Bitcoin Core ${BTC_VERSION}..."
             cd /tmp
-            KNOTS_FILENAME="bitcoin-${BITCOIN_KNOTS_VERSION}-${ARCH_SUFFIX}.tar.gz"
+            local BTC_FILENAME="bitcoin-${BTC_VERSION}-${ARCH_SUFFIX}.tar.gz"
 
-            if [ ! -f "$KNOTS_FILENAME" ]; then
-                wget -q --show-progress --max-redirect=5 "https://bitcoinknots.org/files/${KNOTS_MAJOR_VERSION}/${BITCOIN_KNOTS_VERSION}/${KNOTS_FILENAME}"
+            # Always re-fetch rather than trusting whatever is left in /tmp.
+            rm -f "$BTC_FILENAME"
+            wget -q --show-progress --max-redirect=5 \
+                "https://bitcoincore.org/bin/bitcoin-core-${BTC_VERSION}/${BTC_FILENAME}" \
+                || { echo -e "${RED}Download failed for Bitcoin Core ${BTC_VERSION}${NC}"; return 1; }
+
+            local BTC_ACTUAL_SHA256; BTC_ACTUAL_SHA256=$(sha256sum "$BTC_FILENAME" | awk '{print $1}')
+            if [ "$BTC_ACTUAL_SHA256" != "$BTC_EXPECTED_SHA256" ]; then
+                echo -e "${RED}SHA256 mismatch for ${BTC_FILENAME} — refusing to install${NC}"
+                echo -e "${RED}  expected: ${BTC_EXPECTED_SHA256}${NC}"
+                echo -e "${RED}  actual:   ${BTC_ACTUAL_SHA256}${NC}"
+                rm -f "$BTC_FILENAME"
+                return 1
             fi
 
-            tar -xzf "$KNOTS_FILENAME"
-            EXTRACTED_DIR="bitcoin-${BITCOIN_KNOTS_VERSION}"
+            tar -xzf "$BTC_FILENAME"
+            EXTRACTED_DIR="bitcoin-${BTC_VERSION}"
 
             cp "${EXTRACTED_DIR}/bin/bitcoind" /usr/local/bin/
             cp "${EXTRACTED_DIR}/bin/bitcoin-cli" /usr/local/bin/
-            _write_version_cache BTC "$BITCOIN_KNOTS_VERSION"
-            echo -e "${GREEN}✓ Bitcoin Knots $BITCOIN_KNOTS_VERSION installed${NC}"
+            _write_version_cache BTC "$BTC_VERSION"
+            echo -e "${GREEN}✓ Bitcoin Core ${BTC_VERSION} installed${NC}"
             ;;
 
         BCH)
@@ -4095,42 +4166,316 @@ install_node_if_needed() {
     esac
 }
 
+# Back up a coin config before regenerating it.
+#
+# Every coin branch below rewrites its config wholesale with `cat > … << EOF`,
+# which destroys anything the operator hand-tuned: extra addnode/seednode lines,
+# a raised dbcache, custom maxconnections, rpcauth, wallet=, blocksdir. The
+# regeneration itself is intentional — switching pool modes changes ports and
+# merge-mining settings — but silently discarding operator edits is not, and
+# there was previously no backup of any kind.
+#
+# Keeps a timestamped copy alongside the config so nothing is unrecoverable.
+_backup_coin_conf() {
+    local conf="$1"
+    [[ -f "$conf" ]] || return 0
+
+    # Write the backup OUTSIDE the coin datadir.
+    #
+    # Two reasons, both load-bearing:
+    #   1. ha-replicate.sh excludes "*.conf" from rsync so a node's RPC
+    #      credentials are never copied to its HA peer. A file named
+    #      bitcoin.conf.bak-20260814-120000 does not match that glob. Explicit
+    #      "*.conf.bak-*" and "*.bak-*" excludes were added to cover it, but
+    #      keeping backups outside the datadir means this does not depend on
+    #      remembering to maintain those globs.
+    #   2. The daemon units carry ExecStartPre=chown -R over the datadir, so a
+    #      root-owned file dropped in there causes churn. This is the same reason
+    #      dgb_enable_pruning_config in coin-upgrade.sh backs up to BACKUP_ROOT.
+    local bakdir="${SPIRALPOOL_DIR}/backups/pool-mode-configs"
+    mkdir -p "$bakdir" 2>/dev/null || true
+    # Qualify with the coin directory. Three coins (btc, bch, xec) all use a
+    # file literally named bitcoin.conf, so keying the backup on basename alone
+    # let one coin's backup overwrite another's within the same second.
+    local _coin_dir; _coin_dir=$(basename "$(dirname "$conf")")
+    local bak="${bakdir}/${_coin_dir}-$(basename "$conf").bak-$(date '+%Y%m%d-%H%M%S')"
+
+    if cp -p "$conf" "$bak" 2>/dev/null; then
+        # The config holds rpcpassword in plaintext — never leave the copy
+        # group/world readable.
+        chmod 600 "$bak" 2>/dev/null || true
+        echo -e "${GREEN}  Saved previous config → ${bak}${NC}"
+    else
+        echo -e "${RED}  ERROR: could not back up ${conf}${NC}"
+        echo -e "${RED}  Refusing to regenerate it — your manual edits would be lost${NC}"
+        echo -e "${RED}  with no copy on disk. Free space in ${bakdir%/*} and re-run.${NC}"
+        return 1
+    fi
+}
+
 # Read existing prune setting from a coin's conf file (preserves user config).
 # For new coins (no existing conf), inherits the global PRUNE_ENABLED flag
 # from coins.env so all coins in a pruned installation start pruned.
 # Returns: sets EXISTING_PRUNE variable
+# Determine the txindex line to emit, by PRESERVING what the node already has.
+#
+# Bitcoin Core records whether the transaction index was built as a flag in the
+# block-index DB and compares it to -txindex at startup. On pre-0.17 bases a
+# mismatch in EITHER direction is fatal:
+#
+#   dogecoin 1.14.9 src/init.cpp:
+#   "You need to rebuild the database using -reindex-chainstate to change -txindex"
+#
+# So dropping txindex from a node that has the index is fatal, and so is adding
+# it to a node that does not. Regenerating this config must therefore never
+# CHANGE the setting -- only carry it forward. Modern bases (Core >= 0.17) build
+# indexes asynchronously and tolerate the change, but carrying it forward is
+# correct for them too and needs no per-coin special-casing.
+#
+# Sets EXISTING_TXINDEX to the literal line to emit, or "" for none.
+get_existing_txindex() {
+    local conf_file=$1
+    local prune_val=$2
+
+    # A pruned node must never carry txindex=1 -- Core rejects the combination
+    # outright, so this takes precedence over whatever the old config said.
+    if [ "$prune_val" != "0" ]; then
+        EXISTING_TXINDEX=""
+        return
+    fi
+
+    # No existing config: this is a new coin, so follow what install.sh writes
+    # for a full node.
+    if [ ! -f "$conf_file" ]; then
+        EXISTING_TXINDEX="txindex=1"
+        return
+    fi
+
+    # Read the effective mainnet value the way the DAEMON reads it, not the way
+    # a shell script would guess. Getting this wrong changes txindex, which is
+    # the one thing this function exists to prevent, so the awk below mirrors
+    # Bitcoin Core's parser exactly:
+    #
+    #   GetConfigOptions()  truncates each line at the first '#', then trims.
+    #   InterpretBool()     empty value  -> true
+    #                       otherwise    -> atoi(value) != 0
+    #
+    # atoi, not a word match: "true" parses to 0 and is therefore FALSE to the
+    # daemon, while "01", "2" and "-1" are all true. Section rules follow the
+    # prune reader: [main] beats top-level, first-wins within a scope, and the
+    # pre-0.17 bases have no sections at all.
+    local _sections=1
+    case "$conf_file" in
+        */dogecoin.conf|*/pepecoin.conf) _sections=0 ;;
+    esac
+
+    local _cur
+    _cur=$(tr -d '\015' < "$conf_file" 2>/dev/null | awk -v sect="$_sections" '
+        function atoi(x,   t) {
+            sub(/^[[:space:]]+/, "", x)
+            return match(x, /^[+-]?[0-9]+/) ? substr(x, RSTART, RLENGTH) + 0 : 0
+        }
+        {
+            line = $0
+            h = index(line, "#"); if (h > 0) line = substr(line, 1, h - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            if (line == "") next
+            if (line ~ /^\[/) {
+                s = tolower(line); sub(/^\[/, "", s); sub(/\].*$/, "", s)
+                next
+            }
+            # Core supports a "no" negation prefix: notxindex=1 means txindex
+            # OFF and notxindex=0 means txindex ON. Skipping these lines
+            # reported ABSENT for notxindex=0 and emitted nothing — the fatal
+            # mismatch this function exists to prevent, on a node whose index
+            # IS built.
+            neg = 0
+            if (line ~ /^notxindex[[:space:]]*=/) {
+                neg = 1
+                sub(/^no/, "", line)
+            }
+            if (line !~ /^txindex[[:space:]]*=/) next
+            v = line
+            sub(/^txindex[[:space:]]*=[[:space:]]*/, "", v)
+            b = (v == "" || atoi(v) != 0) ? 1 : 0
+            if (neg) b = 1 - b
+            if (sect && s == "main" && !gotmain) { mainv = b; gotmain = 1 }
+            else if (s == "" && !gottop) { topv = b; gottop = 1 }
+        }
+        END { if (gotmain) print mainv; else if (gottop) print topv }
+    ')
+
+    case "$_cur" in
+        1) EXISTING_TXINDEX="txindex=1" ;;
+        0) EXISTING_TXINDEX="txindex=0" ;;
+        *)
+            # Absent from the config: the daemon ran with the default (off), so
+            # the block-index DB flag is false. Emitting txindex=1 here would
+            # abort startup on a pre-0.17 base.
+            EXISTING_TXINDEX=""
+            ;;
+    esac
+}
+
 get_existing_prune() {
     local conf_file=$1
+
+    # Dogecoin 1.14.x and PepeCoin 1.1.x predate Bitcoin Core 0.17 and have NO
+    # network-section support: they parse with boost's config_file_iterator, so
+    # a "[main]" header becomes a key PREFIX ("main.prune") that nothing reads.
+    # Applying [main]-beats-top-level precedence to those files would make this
+    # tool believe a setting is effective that the daemon silently discards.
+    # For them, only top-level assignments exist.
+    local _sections_supported=1
+    case "$conf_file" in
+        */dogecoin.conf|*/pepecoin.conf) _sections_supported=0 ;;
+    esac
     # Default: read global prune flag from coins.env (set during initial install)
     local global_prune="false"
     local coins_env="$SPIRALPOOL_DIR/config/coins.env"
     if [ -f "$coins_env" ]; then
-        global_prune=$(grep -oP '^PRUNE_ENABLED=\K(true|false)$' "$coins_env" 2>/dev/null || echo "false")
+        # Tolerate the shapes this file legitimately takes: optional quotes
+        # (install.sh writes CHAIN_MOUNT_POINT quoted in the same file), any
+        # case, leading whitespace, an "export " prefix, a trailing comment, and
+        # CRLF. Take the LAST assignment, because this file is `source`d
+        # elsewhere and shell assignment is last-wins.
+        global_prune=$(tr -d '\015' < "$coins_env" 2>/dev/null \
+            | grep -oP '^[[:space:]]*(export[[:space:]]+)?PRUNE_ENABLED[[:space:]]*=[[:space:]]*"?\K(true|false)' \
+            | tail -1 | tr '[:upper:]' '[:lower:]')
+        [ -n "$global_prune" ] || global_prune="false"
     fi
     if [ "$global_prune" = "true" ]; then
         EXISTING_PRUNE=5000
     else
         EXISTING_PRUNE=0
     fi
-    # If the coin already has a conf file, preserve its existing prune setting
+    # If the coin already has a conf file, preserve its existing prune setting.
+    #
+    # This value is interpolated straight into the generated config as
+    # "prune=$EXISTING_PRUNE", so it has to be parsed the way Bitcoin Core
+    # actually reads a config file, not with a naive '^prune='.
+    #   - Only the top-level section counts. A "prune=" under [test]/[regtest]
+    #     does not apply to mainnet, and copying it up to the top level would
+    #     silently enable pruning on an unpruned mainnet node — irreversible.
+    #   - Core tolerates leading whitespace and spaces around '='.
+    #   - Only the FIRST assignment wins (config-file precedence), and taking
+    #     every match yields a multi-line value that emits a bare "1000" line
+    #     with no '=' — a fatal parse error the daemon never starts from.
+    #   - A CR from a CRLF-edited config must not survive into the comparison.
+    # Anything that is not a plain integer is ignored rather than propagated.
     if [ -f "$conf_file" ]; then
         local val
-        val=$(grep -oP '^prune=\K.*' "$conf_file" 2>/dev/null)
+        # Take the FIRST mainnet-scoped prune= assignment, whatever its value,
+        # then read it the way Core does.
+        #
+        # Two distinct mistakes were possible here, in opposite directions:
+        #   - Skipping unparseable lines and taking the first line that MATCHED
+        #     meant `prune=` followed by `prune=5000` yielded 5000, while Core
+        #     (first assignment wins) reads the empty one as 0. That turns an
+        #     archival node into a pruning one, deleting block data irreversibly.
+        #   - Requiring a bare integer rejected `prune=5000M` and `prune=+5000`,
+        #     which Core accepts (it parses with atoi semantics), so the config
+        #     was regenerated with prune=0 on an ALREADY-pruned node — which
+        #     Core refuses to start without a full resync.
+        # Taking the first assignment and then its leading digits matches Core
+        # in both directions.
+        # awk, not `grep -oP …\K.*`: grep -o emits nothing for an EMPTY match, so
+        # `prune=` was skipped entirely and the next assignment was taken as the
+        # first one — the archival-node-starts-pruning case above.
+        local _raw
+        # [main] beats top-level (doc/bitcoin-conf.md); first-wins applies only
+        # within a scope. Reading in file order got this backwards, and both
+        # error directions are destructive: reporting 0 for a pruned node writes
+        # a config Core refuses to start, and reporting a prune target for an
+        # archival node begins irreversible block deletion.
+        _raw=$(tr -d '\015' < "$conf_file" 2>/dev/null | awk -v sect="$_sections_supported" '
+                  function atoi(x) {
+                      sub(/^[[:space:]]+/, "", x)
+                      return match(x, /^[+-]?[0-9]+/) ? substr(x, RSTART, RLENGTH) + 0 : 0
+                  }
+                  /^[[:space:]]*\[/ { s=tolower($0); sub(/^[[:space:]]*\[/,"",s); sub(/\].*$/,"",s); next }
+                  {
+                      line = $0
+                      # Core negation prefix. Resolved to the literal integer the
+                      # daemon would use, because a negated option becomes a BOOL
+                      # and a double negative flips it back:
+                      #   noprune=1 -> 0     noprune=0     -> 1
+                      #   noprune=  -> 0     noprune=false -> 1  (atoi("false")==0)
+                      # Without this, `noprune` was not recognised at all and the
+                      # NEXT prune= line was taken as the first assignment, which
+                      # is not what the daemon reads.
+                      neg = 0
+                      if (line ~ /^[[:space:]]*noprune[[:space:]]*=/) {
+                          neg = 1
+                          # Splice out the two "no" characters after the leading
+                          # whitespace. NOT sub() with a backreference — awk has
+                          # no \1 in a replacement (only &), so that silently
+                          # inserted a literal backslash-1 and the line then
+                          # matched nothing at all.
+                          match(line, /^[[:space:]]*/)
+                          line = substr(line, 1, RLENGTH) substr(line, RLENGTH + 3)
+                      }
+                  }
+                  line !~ /^[[:space:]]*prune[[:space:]]*=/ { next }
+                  {
+                      v = line
+                      sub(/^[[:space:]]*prune[[:space:]]*=[[:space:]]*/, "", v)
+                      if (neg) {
+                          c = index(v, "#"); if (c > 0) v = substr(v, 1, c - 1)
+                          gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                          v = (v == "" || atoi(v) != 0) ? "0" : "1"
+                      }
+                      if (sect && s == "main" && !gotmain) { mainv = v; gotmain = 1 }
+                      else if (s == "" && !gottop) { topv = v; gottop = 1 }
+                  }
+                  END { if (gotmain) print mainv; else if (gottop) print topv }
+              ')
+        # An EXISTING config is authoritative — it is the record of what this
+        # node was actually started with. Whatever we cannot parse, the daemon
+        # reads as 0 (atoi semantics: "", "abc", "true" all yield 0 = archival),
+        # and a config with no prune line at all is archival by default. Falling
+        # through to the pool-wide default here meant that with PRUNE_ENABLED=true
+        # a `prune=` typo turned an archival node into a pruning one and began
+        # deleting blocks irreversibly. Only a coin with NO config yet (handled
+        # below) may take the global default.
+        EXISTING_PRUNE=0
+        local val
+        val=$(printf '%s' "${_raw#+}" | grep -oP '^[0-9]+' || true)
         if [ -n "$val" ]; then
-            EXISTING_PRUNE="$val"
+            # Strip leading zeros with base-10 arithmetic. The generators compare
+            # this as a STRING (`[ "$EXISTING_PRUNE" = "0" ]`) to decide whether
+            # to emit txindex, so "00" would read as pruned and silently drop the
+            # transaction index from a full archival node.
+            # Clamp before arithmetic. $((10#…)) wraps silently past 2^63, and
+            # a NEGATIVE prune reached the generated config, which the daemon
+            # refuses to start on. Treat an absurd value as unset instead.
+            if [ ${#val} -gt 18 ]; then
+                echo -e "${YELLOW}  Ignoring implausible prune value in ${conf_file}: ${val}${NC}" >&2
+                val=""
+            else
+                EXISTING_PRUNE=$((10#$val))
+            fi
             return
         fi
     fi
     # Fallback: if coins.env doesn't have PRUNE_ENABLED, check if ANY existing
-    # coin conf on this box is pruned — match that behavior for consistency
-    if [ "$global_prune" = "false" ]; then
+    # coin conf on this box is pruned — match that behavior for consistency.
+    #
+    # Only for a coin that has NO config yet. If the coin already has one and it
+    # carries no prune directive, that is a full node by Core's default, and
+    # copying another coin's prune target onto it would start irreversibly
+    # deleting block data on a node the operator never asked to prune.
+    if [ "$global_prune" = "false" ] && [ ! -f "$conf_file" ]; then
         local any_pruned=""
         for cfile in "$SPIRALPOOL_DIR"/*/; do
             local found_conf
             found_conf=$(find "$cfile" -maxdepth 1 -name '*.conf' -type f 2>/dev/null | head -1)
             if [ -n "$found_conf" ] && [ "$found_conf" != "$conf_file" ]; then
                 local pval
-                pval=$(grep -oP '^prune=\K[0-9]+' "$found_conf" 2>/dev/null | head -1)
+                pval=$(tr -d '\015' < "$found_conf" 2>/dev/null \
+                       | awk '/^[[:space:]]*\[/ { s=tolower($0); sub(/^[[:space:]]*\[/,"",s); sub(/\].*$/,"",s); next } s=="" || s=="main"' \
+                       | grep -oP '^[[:space:]]*prune[[:space:]]*=[[:space:]]*\K[0-9]+(?=[[:space:]]*(#.*)?$)' \
+                       | head -1)
                 if [ -n "$pval" ] && [ "$pval" -gt 0 ] 2>/dev/null; then
                     any_pruned="$pval"
                     break
@@ -4158,7 +4503,7 @@ setup_node() {
             # honors the pool-wide prune setting: pruned → prune=5000 and no txindex
             # (the index is dropped automatically); full → txindex=1/prune=0.
             get_existing_prune "$SPIRALPOOL_DIR/dgb/digibyte.conf"
-
+            _backup_coin_conf "$SPIRALPOOL_DIR/dgb/digibyte.conf"
             cat > "$SPIRALPOOL_DIR/dgb/digibyte.conf" << EOF
 # DIGIBYTE CORE - SPIRAL POOL CONFIGURATION
 listen=1
@@ -4178,6 +4523,16 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/dgb/debug.log
 printtoconsole=0
 # DigiDollar node: full → txindex=1; pruned (v9.26.4+) → no txindex, prune target.
+#
+# DGB is the one coin that ASSERTS txindex rather than preserving it (every
+# other coin here uses get_existing_txindex). DigiByte itself demands it:
+# v9.26.5 src/init.cpp:959 aborts with "DigiDollar requires -txindex=1. Add
+# txindex=1 to your digibyte.conf". Safe to assert because DigiByte 9.26.x is
+# Bitcoin Core 26-derived (it ships common/args.cpp, util/chaintype.h and
+# kernel/chainparams.cpp, none of which exist before Core 26) and so builds the
+# index in a background thread with no startup check. On the pre-0.17 bases
+# (dogecoin 1.14.9, pepecoin 1.1.0) the same assertion would be a fatal
+# "-reindex-chainstate to change -txindex" at startup.
 $(if [ "$EXISTING_PRUNE" = "0" ]; then echo "txindex=1"; fi)
 prune=$EXISTING_PRUNE
 # Seed nodes for peer discovery
@@ -4238,8 +4593,10 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/btc"
 
             get_existing_prune "$SPIRALPOOL_DIR/btc/bitcoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/btc/bitcoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/btc/bitcoin.conf"
             cat > "$SPIRALPOOL_DIR/btc/bitcoin.conf" << EOF
-# BITCOIN KNOTS - SPIRAL POOL CONFIGURATION
+# BITCOIN CORE - SPIRAL POOL CONFIGURATION
 chain=main
 listen=1
 maxconnections=125
@@ -4258,6 +4615,9 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/btc/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed.bitcoin.sipa.be
@@ -4285,7 +4645,7 @@ EOF
 
             cat > /etc/systemd/system/bitcoind.service << EOF
 [Unit]
-Description=Bitcoin Knots Daemon
+Description=Bitcoin Core Daemon
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=600
@@ -4323,6 +4683,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bch"
 
             get_existing_prune "$SPIRALPOOL_DIR/bch/bitcoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/bch/bitcoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/bch/bitcoin.conf"
             cat > "$SPIRALPOOL_DIR/bch/bitcoin.conf" << EOF
 # BITCOIN CASH NODE - SPIRAL POOL CONFIGURATION
 listen=1
@@ -4342,6 +4704,9 @@ par=0
 disablewallet=0
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed.flowee.cash
@@ -4411,6 +4776,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bc2"
 
             get_existing_prune "$SPIRALPOOL_DIR/bc2/bitcoinii.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/bc2/bitcoinii.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/bc2/bitcoinii.conf"
             cat > "$SPIRALPOOL_DIR/bc2/bitcoinii.conf" << EOF
 # BITCOIN II CORE - SPIRAL POOL CONFIGURATION
 # CRITICAL: BC2 addresses look IDENTICAL to Bitcoin (bc1q..., 1..., 3...)
@@ -4436,6 +4803,9 @@ pid=$SPIRALPOOL_DIR/bc2/bitcoiniid.pid
 debuglogfile=$SPIRALPOOL_DIR/bc2/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=dnsseed.bitcoin-ii.org
@@ -4513,6 +4883,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/ltc"
 
             get_existing_prune "$SPIRALPOOL_DIR/ltc/litecoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/ltc/litecoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/ltc/litecoin.conf"
             cat > "$SPIRALPOOL_DIR/ltc/litecoin.conf" << EOF
 # LITECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (N=1024, r=1, p=1)
@@ -4535,6 +4907,9 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/ltc/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed-a.litecoin.loshan.co.uk
@@ -4592,6 +4967,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/doge"
 
             get_existing_prune "$SPIRALPOOL_DIR/doge/dogecoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/doge/dogecoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/doge/dogecoin.conf"
             cat > "$SPIRALPOOL_DIR/doge/dogecoin.conf" << EOF
 # DOGECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (N=1024, r=1, p=1)
@@ -4615,6 +4992,9 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/doge/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed.multidoge.org
@@ -4681,6 +5061,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/pep"
 
             get_existing_prune "$SPIRALPOOL_DIR/pep/pepecoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/pep/pepecoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/pep/pepecoin.conf"
             cat > "$SPIRALPOOL_DIR/pep/pepecoin.conf" << EOF
 # PEPECOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (merge-mineable with LTC)
@@ -4701,6 +5083,9 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/pep/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seeds.pepecoin.org
@@ -4750,6 +5135,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/cat"
 
             get_existing_prune "$SPIRALPOOL_DIR/cat/catcoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/cat/catcoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/cat/catcoin.conf"
             cat > "$SPIRALPOOL_DIR/cat/catcoin.conf" << EOF
 # CATCOIN CORE - SPIRAL POOL CONFIGURATION
 # Algorithm: Scrypt (standalone, no merge mining)
@@ -4771,6 +5158,9 @@ disablewallet=0
 debuglogfile=$SPIRALPOOL_DIR/cat/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=catcoin.seeds.multicoin.co
@@ -4832,6 +5222,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/nmc"
 
             get_existing_prune "$SPIRALPOOL_DIR/nmc/namecoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/nmc/namecoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/nmc/namecoin.conf"
             cat > "$SPIRALPOOL_DIR/nmc/namecoin.conf" << EOF
 # NAMECOIN CORE - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin since 2011)
@@ -4854,6 +5246,9 @@ maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/nmc/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=nmc.seed.quisquis.de
@@ -4912,6 +5307,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/sys"
 
             get_existing_prune "$SPIRALPOOL_DIR/sys/syscoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/sys/syscoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/sys/syscoin.conf"
             cat > "$SPIRALPOOL_DIR/sys/syscoin.conf" << EOF
 # SYSCOIN CORE - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin)
@@ -4934,6 +5331,9 @@ maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/sys/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed1.syscoin.org
@@ -4992,6 +5392,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xmy"
 
             get_existing_prune "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/xmy/myriadcoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/xmy/myriadcoin.conf"
             cat > "$SPIRALPOOL_DIR/xmy/myriadcoin.conf" << EOF
 # MYRIAD CORE - SPIRAL POOL CONFIGURATION
 # Multi-algo (SHA256d AuxPoW) - merge-mineable with Bitcoin
@@ -5014,6 +5416,9 @@ maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/xmy/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 seednode=seed1.myriadcoin.org
@@ -5071,6 +5476,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/fbtc"
 
             get_existing_prune "$SPIRALPOOL_DIR/fbtc/fractal.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/fbtc/fractal.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/fbtc/fractal.conf"
             cat > "$SPIRALPOOL_DIR/fbtc/fractal.conf" << EOF
 # FRACTAL BITCOIN - SPIRAL POOL CONFIGURATION
 # SHA-256d AuxPoW (merge-mineable with Bitcoin)
@@ -5093,6 +5500,9 @@ maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/fbtc/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 forcednsseed=1
 fixedseeds=1
@@ -5143,6 +5553,8 @@ EOF
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/xec"
 
             get_existing_prune "$SPIRALPOOL_DIR/xec/bitcoin.conf"
+            get_existing_txindex "$SPIRALPOOL_DIR/xec/bitcoin.conf" "$EXISTING_PRUNE"
+            _backup_coin_conf "$SPIRALPOOL_DIR/xec/bitcoin.conf"
             cat > "$SPIRALPOOL_DIR/xec/bitcoin.conf" << EOF
 # ECASH (BITCOIN ABC) - SPIRAL POOL CONFIGURATION
 # SHA-256d Bitcoin ABC fork (standalone, not merge-mineable)
@@ -5166,6 +5578,9 @@ maxmempool=300
 debuglogfile=$SPIRALPOOL_DIR/xec/debug.log
 printtoconsole=0
 prune=$EXISTING_PRUNE
+# Carried forward from the existing config, never changed here: a txindex
+# mismatch against the block-index DB flag aborts startup on pre-0.17 bases.
+$EXISTING_TXINDEX
 # Seed nodes for peer discovery
 seednode=seed.bitcoinabc.org
 seednode=seeder.ecash.foundation
@@ -5676,7 +6091,7 @@ generate_config() {
     local config_tmp="${CONFIG_FILE}.tmp.$$"
     trap "rm -f '${CONFIG_FILE}.tmp.$$'" EXIT
     cat > "$config_tmp" << EOF
-# Spiral Pool v2.6.7 Configuration
+# Spiral Pool v2.7.0 Configuration
 # Generated by pool-mode.sh on $(date)
 # Mode: $([ ${#coins[@]} -eq 1 ] && echo "Solo" || echo "Multi-Coin")
 # Coins: ${coins[*]}
@@ -6193,7 +6608,22 @@ ha_safe_stratum_restart() {
     fi
 
     # Restart stratum
+    #
+    # This BLOCKS, and on a node that is still doing initial block download it
+    # blocks for a long time: the unit runs wait-for-node.sh as ExecStartPre with
+    # a 1800s budget, and systemctl restart does not return until ExecStartPre
+    # finishes. The pool deliberately refuses to serve work while a chain is in
+    # IBD, so the wait is correct — but without saying so this prints one line
+    # and then sits silently for up to half an hour, which reads as a hang.
+    # wait-for-node.sh reports real progress every 10s; it just goes to the
+    # journal, so point the operator at it.
     echo -e "${CYAN}Restarting spiralstratum...${NC}"
+    echo "  This command can sit here for up to 30 minutes, and on a fresh install"
+    echo "  the pool may not come up for DAYS — a full chain sync takes that long."
+    echo "  That is deliberate: no work is served while a node is in initial block"
+    echo "  download, so no hashrate is wasted on a chain it cannot validate."
+    echo "  systemd retries automatically until a node is ready — nothing to do."
+    echo "  Progress (updates every 10s):  journalctl -fu spiralstratum"
     systemctl restart spiralstratum
 
     # Wait for stratum to come up (max 30s)

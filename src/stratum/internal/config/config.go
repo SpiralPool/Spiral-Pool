@@ -38,18 +38,18 @@ type Config struct {
 
 // CoinConfig defines settings for a specific coin
 type CoinConfig struct {
-	Name          string       `yaml:"name"`      // e.g., "digibyte", "bitcoin", "bitcoincash", "bitcoinii"
-	Symbol        string       `yaml:"symbol"`    // e.g., "DGB", "BTC", "BCH", "BC2"
-	Algorithm     string       `yaml:"algorithm"` // e.g., "sha256d", "scrypt"
-	Enabled       bool         `yaml:"enabled"`
-	Address       string       `yaml:"address"`       // Payout address for this coin
-	Daemon        DaemonConfig `yaml:"daemon"`        // Coin-specific daemon config
+	Name           string       `yaml:"name"`      // e.g., "digibyte", "bitcoin", "bitcoincash", "bitcoinii"
+	Symbol         string       `yaml:"symbol"`    // e.g., "DGB", "BTC", "BCH", "BC2"
+	Algorithm      string       `yaml:"algorithm"` // e.g., "sha256d", "scrypt"
+	Enabled        bool         `yaml:"enabled"`
+	Address        string       `yaml:"address"`                  // Payout address for this coin
+	Daemon         DaemonConfig `yaml:"daemon"`                   // Coin-specific daemon config
 	StratumPort    int          `yaml:"stratumPort"`              // Stratum port for this coin
 	StratumV2Port  int          `yaml:"stratumV2Port"`            // Stratum V2 port (optional)
 	StratumTLSPort int          `yaml:"stratumTLSPort,omitempty"` // Stratum TLS port (optional)
 	BlockReward    float64      `yaml:"blockReward"`              // Current block reward
-	BlockTime     int          `yaml:"blockTime"`     // Target block time in seconds
-	Confirmations int          `yaml:"confirmations"` // Required confirmations before payout
+	BlockTime      int          `yaml:"blockTime"`                // Target block time in seconds
+	Confirmations  int          `yaml:"confirmations"`            // Required confirmations before payout
 }
 
 // PoolConfig defines the pool identity and coin settings
@@ -59,6 +59,31 @@ type PoolConfig struct {
 	Address           string `yaml:"address"`
 	CoinbaseText      string `yaml:"coinbaseText"`
 	SkipGenesisVerify bool   `yaml:"skipGenesisVerify,omitempty"` // Regtest/testnet only
+
+	// AllowNonMajorityChain permits mining BTC when the startup chain check
+	// cannot confirm the majority chain. Mirrors the V2 key of the same name so
+	// an operator who deliberately mines a minority chain is not forced back
+	// onto the majority one merely because V1 mode was selected.
+	//
+	// SECOND EFFECT, easy to miss: this also disables the stale-tip refusal, so
+	// a node wedged on the CORRECT chain will mine a dead tip too.
+	//
+	// Accepted under BOTH spellings on purpose. V1 config uses camelCase
+	// (skipGenesisVerify, coinbaseText), but every operator-facing document and
+	// the shared refusal message in chainguard.go name the V2 key,
+	// allow_nonmajority_chain. yaml.Unmarshal here is non-strict, so the
+	// unrecognised spelling would be discarded in silence — the operator sets
+	// the key the docs told them to, sees no error, and the pool still refuses
+	// to mine. Read both and OR them; use AllowsNonMajorityChain() rather than
+	// either field directly.
+	AllowNonMajorityChain      bool `yaml:"allowNonMajorityChain,omitempty"`
+	AllowNonMajorityChainSnake bool `yaml:"allow_nonmajority_chain,omitempty"`
+}
+
+// AllowsNonMajorityChain reports whether the operator opted out of the chain
+// gate, under either accepted spelling of the key.
+func (p PoolConfig) AllowsNonMajorityChain() bool {
+	return p.AllowNonMajorityChain || p.AllowNonMajorityChainSnake
 }
 
 // StratumConfig defines stratum server settings
@@ -97,10 +122,10 @@ type StratumRateLimitConfig struct {
 	WhitelistIPs         []string      `yaml:"whitelistIPs"`         // IPs exempt from rate limiting
 
 	// RED-TEAM: Additional security hardening options
-	WorkersPerIP         int           `yaml:"workersPerIP"`         // Max unique workers per IP (identity churn protection)
-	PreAuthTimeout       time.Duration `yaml:"preAuthTimeout"`       // Timeout for sessions before authorization (default: 10s)
-	BanPersistencePath   string        `yaml:"banPersistencePath"`   // Path to persist bans across restarts
-	PreAuthMessageLimit  int           `yaml:"preAuthMessageLimit"`  // Max messages before authorization (default: 20)
+	WorkersPerIP        int           `yaml:"workersPerIP"`        // Max unique workers per IP (identity churn protection)
+	PreAuthTimeout      time.Duration `yaml:"preAuthTimeout"`      // Timeout for sessions before authorization (default: 10s)
+	BanPersistencePath  string        `yaml:"banPersistencePath"`  // Path to persist bans across restarts
+	PreAuthMessageLimit int           `yaml:"preAuthMessageLimit"` // Max messages before authorization (default: 20)
 }
 
 // GetListenPort returns the stratum V1 listen port from the Listen address.

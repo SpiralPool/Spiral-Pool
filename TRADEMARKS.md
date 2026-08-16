@@ -138,7 +138,7 @@ This software and its documentation reference third-party products, services, an
 | Chart.js | Chart.js Contributors | Dashboard charting library (CDN-loaded) |
 | SortableJS | SortableJS Contributors | Dashboard drag-and-drop (CDN-loaded) |
 | jsDelivr | Prospect One (jsDelivr) | CDN for JavaScript library delivery |
-| Bitcoin Knots | Luke Dashjr | Bitcoin node implementation (Docker image, native installer) |
+| Bitcoin Core | Bitcoin Core Contributors | Bitcoin node implementation (Docker image, native installer) |
 | Socket.IO | Socket.IO / Automattic | Dashboard real-time WebSocket communication |
 | Spiral | Block, Inc. (spiral.xyz) | No usage — listed for clarity (see below) |
 
@@ -223,7 +223,7 @@ This software and its documentation reference third-party products, services, an
 | QNX | BlackBerry Limited (QNX Software Systems) | Installer VM detection (systemd-detect-virt) |
 | ACRN | The Linux Foundation | Installer VM detection (systemd-detect-virt) |
 
-This list includes the principal trademarks referenced in the codebase as of v2.6.7. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
+This list includes the principal trademarks referenced in the codebase as of v2.7.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
 
 ---
 
@@ -293,5 +293,5 @@ This project includes AI-generated visual assets (logo, images). AI-generated co
 
 *This notice is provided to clarify trademark ownership and usage. It is not legal advice.*
 
-*Spiral Pool v2.6.7 - Trademark Notice*
+*Spiral Pool v2.7.0 - Trademark Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

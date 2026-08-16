@@ -18,12 +18,22 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="eCash (XEC) Node for Spiral Pool"
-LABEL version="0.31.12"
+ARG ECASH_VERSION=0.33.10
+
+# Interpolated: this label read 0.31.12 while the image shipped 0.33.10.
+LABEL version="${ECASH_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG ECASH_VERSION=0.31.12
+# SHA256 of the pinned release asset (63,058,099 bytes).
+# Bitcoin ABC publishes no plain-URL SHA256SUMS, so this was computed from the
+# artifact and cross-checked by fetching the SAME file from two independent
+# hosts — github.com/Bitcoin-ABC and download.bitcoinabc.org — which are
+# byte-identical. That makes this a change-detector, not an independent
+# authenticity attestation like the Guix cross-check on the BTC image.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=82c39f5c2c191eb1770235011723f3032ecdc1e5e2571dc3296e9a68c1d7051e
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,6 +58,7 @@ RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
     fi \
     && wget -q --max-redirect=5 \
         "https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v${ECASH_VERSION}/bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && echo "${SHA256}  bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c - \
     && tar -tzf "bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "bitcoin-abc-${ECASH_VERSION}-x86_64-linux-gnu.tar.gz" \
     && install -m 755 "bitcoin-abc-${ECASH_VERSION}/bin/bitcoind" /usr/local/bin/bitcoind \

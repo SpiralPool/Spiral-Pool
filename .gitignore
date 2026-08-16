@@ -192,3 +192,10 @@ authorized_keys
 CLAUDE.md
 claude.md
 .claude/
+
+# =========================
+# Generated test output
+# =========================
+# Timestamped reports written by tests/comprehensive_test_runner.py — build
+# artifacts, not source. Regenerated on every run.
+test_results/

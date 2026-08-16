@@ -1,6 +1,6 @@
 # Specific Hazard Warnings
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-08-14
 
 **READ THIS DOCUMENT BEFORE DEPLOYING SPIRAL POOL**
 
@@ -30,6 +30,49 @@ Operating mining pool software involves direct financial risk:
 - Maintaining backups of all critical data
 - Monitoring operations continuously
 - Securing access to your systems
+
+### Bitcoin Chain Split — Mining a Chain With No Value
+
+**WARNING: YOUR NODE CAN MINE A WORTHLESS CHAIN WHILE APPEARING PERFECTLY HEALTHY**
+
+On **8 August 2026** at block height **961,632**, Bitcoin split. BIP-110 — also called RDTS, the Reduced Data Temporary Softfork — entered a mandatory signalling window, and nodes enforcing it began rejecting any block that did not signal version bit 4. Approximately **99.85% of hashpower stayed on the majority chain**. The enforcing minority chain produces roughly one block every day or two, and its coins are not traded on any exchange.
+
+> Two figures circulate and they measure different things. **2.53%** is *signalling* support — 51 of the 2,016 blocks in the window signalled BIP-110. **0.15%** is the hashpower that actually *followed* the minority chain once it split. Most miners who signalled stayed on the majority chain, which is why both numbers are correct at once.
+
+**Which builds follow which chain:**
+
+| Build | Chain | Safe to mine |
+|-------|-------|--------------|
+| Bitcoin Core (any current version) | Majority | **Yes** — this is what Spiral Pool installs |
+| Bitcoin Knots `29.3.knots20260507` | Majority | Yes, but not shipped |
+| Bitcoin Knots `29.3.knots20260508` | **Minority** | **No** |
+| Bitcoin Knots `29.4.knots20260508` | **Minority** | **No** |
+
+The datestamp suffix is the enforcement marker, **not** a release date — note that `29.4` carries the same enforcing `20260508` suffix as `29.3`. The two builds differ by **one digit**. Never select a Bitcoin daemon version by "latest".
+
+**Enforcement is compiled into the build.** Removing `consensusrules=rdts` from `bitcoin.conf` does **not** disable it — that option only records consent and silences a warning. Changing chains requires changing binaries.
+
+**WHY THIS IS DANGEROUS:**
+
+A pool whose daemon follows the minority chain **reports no fault of any kind**. Stratum accepts connections. Shares validate. Vardiff converges. The dashboard shows healthy hashrate. Sync progress reads 100%. The only symptom is that blocks never arrive — which, for a solo miner, is indistinguishable from ordinary bad luck. Expected value is **exactly zero**, and nothing in the software would tell you.
+
+**Merge mining makes this worse, not better.** AuxPoW proofs reference only the parent block *header* and do not verify which chain that header belongs to — an aux chain has no copy of Bitcoin's chain and cannot check. So NMC, SYS and XMY **keep finding and confirming blocks normally** while BTC earns nothing. Your pool continues to look productive. The only thing missing is the coin that pays best.
+
+**WHAT SPIRAL POOL DOES ABOUT IT:**
+
+- Installs and pins **Bitcoin Core**, verified against a checksum committed in this repository
+- Detects an existing Bitcoin Knots binary on install or upgrade and replaces it
+- **Refuses to mine BTC** until it has verified block 961,632 against the majority chain
+- Repairs a node stranded on the minority chain (`reconsiderblock`), because a binary swap alone does **not** move it — the enforcing daemon leaves a persistent rejected-block marker that Bitcoin Core inherits and honours
+- Alerts through Sentinel and shows a chain verdict on the dashboard
+
+**YOU ARE STILL RESPONSIBLE FOR:**
+- Not setting `allow_nonmajority_chain: true` unless you genuinely intend to mine a minority chain. Beyond permitting a minority chain, it also disables the stale-tip refusal, so a node wedged on the correct chain will mine a dead tip
+- Not installing a Bitcoin daemon by hand outside the installer
+- Not adding `maxtipage` to `bitcoin.conf` — it disables the daemon's own initial-block-download gating, so a wedged node reports `initialblockdownload: false` and the dashboard, Sentinel and sync gate all read green. The pool's chain gate is unaffected (it measures tip age itself and still refuses to mine a dead tip), so the damage is that your monitoring stops agreeing with the pool
+- Verifying the chain verdict after any manual daemon change
+
+**A proof-of-work change away from SHA-256d has been announced for the minority chain.** If it ships, SHA-256d hardware cannot mine that chain at all. As of this writing no client has been released and no activation height announced. Verify current status before making any decision based on this section.
 
 ### Electricity and Hardware Costs
 
@@ -417,6 +460,34 @@ This software:
 - Does NOT recover lost or stolen cryptocurrency
 - Sends rewards to whatever address you configure
 
+#### There is no seed phrase
+
+**WARNING: A WALLET GENERATED ON THE POOL SERVER HAS NO RECOVERY PHRASE**
+
+If you let the installer generate a wallet, the daemon creates it — and Bitcoin Core and its derivatives have never supported BIP39. **There are no 12 or 24 words.** There is nothing to write on paper. If you are used to Electrum, Sparrow, BlueWallet or a hardware wallet, the thing you are waiting for does not exist here, and assuming you missed it is how people lose funds.
+
+What exists instead is a **backup file**, created automatically at wallet generation and stored under `/spiralpool/backups/` at mode 600:
+
+| File | What it is | Restore with |
+|------|-----------|--------------|
+| `wallet-<coin>-<timestamp>.dat` | Binary wallet copy (`backupwallet`) | `<coin>-cli loadwallet <path>` |
+| `wallet-<coin>-<timestamp>.dump` | JSON export of private descriptors (`listdescriptors true`) | `<coin>-cli importdescriptors <contents>` |
+
+**That file is the only copy of your keys that will ever exist.** Copy it off the server and store it in at least two offline locations. If you lose it and lose the server, the funds are gone — there is no phrase, no support channel, and no recovery procedure that can help you.
+
+Note the backups the pool takes during upgrades and mode switches are on the **same machine**. They protect against the scripts, not against losing the box.
+
+#### Recommended: generate the wallet somewhere else
+
+The safest option, and the one the installer marks **recommended**, is to not generate a wallet on the pool server at all:
+
+1. Create the wallet on a **separate machine** — a hardware wallet, Electrum, Sparrow, or any wallet that gives you a seed phrase.
+2. Write down the seed phrase and store it offline.
+3. Copy only the **receiving address**.
+4. At the installer's wallet prompt choose **`[1] I have a wallet`** and paste that address.
+
+The private keys then never touch the pool server. A compromised or failed miner box cannot cost you the funds, and you keep a real seed phrase you can restore from anywhere. This is strictly better than option `[2]` for anything holding meaningful value.
+
 ### BCH2 Address Collision Warning
 
 **BCH2 (Bitcoin Cash II) uses IDENTICAL legacy address bytes to BCH and BTC.**
@@ -501,5 +572,5 @@ By deploying Spiral Pool, you acknowledge that:
 
 ---
 
-*Spiral Pool v2.6.7 - Specific Hazard Warnings*
+*Spiral Pool v2.7.0 - Specific Hazard Warnings*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

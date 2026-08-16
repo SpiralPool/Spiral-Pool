@@ -59,6 +59,19 @@ test_coin() {
     local rpc_pass="$8"
     local timeout="${9:-60}"
 
+    # Refuse to start if the RPC port is already held.
+    #
+    # A leftover daemon from an earlier run makes the new one exit in under a
+    # second with "Unable to bind any endpoint for RPC server", and the wait
+    # loop below then reports it as "RPC not responding after 60s" — pointing at
+    # slowness when the real cause was a stale process. Same class of misreport
+    # as the disk-full case: state the actual reason, immediately.
+    if command -v ss >/dev/null 2>&1 && ss -lnt 2>/dev/null | grep -qE "[:.]${rpc_port}[[:space:]]"; then
+        log_fail "$coin - RPC port ${rpc_port} is already in use; a daemon from an earlier run is probably still running"
+        echo "         try: sudo pkill -f ${daemon##*/} && sleep 3"
+        return 1
+    fi
+
     log_test "Starting $coin daemon..."
 
     # Start daemon
@@ -74,15 +87,52 @@ test_coin() {
         sleep 2
         waited=$((waited + 2))
         if [[ $waited -ge $timeout ]]; then
-            log_fail "$coin - RPC not responding after ${timeout}s"
+            # Report a FATAL error as a fatal error, not as a timeout.
+            #
+            # A daemon that exits two seconds in with "Disk space is too low!"
+            # was being reported as "RPC not responding after 60s", which points
+            # at slowness and sent two debugging sessions down the wrong path.
+            # The reason is already in debug.log; surface it in the headline.
+            local _fatal=""
+            if [[ -f "$datadir/debug.log" ]]; then
+                # Prefer Core's "*** " fatal marker and take the FIRST one:
+                # it states the root cause ("Disk space is too low!"), whereas
+                # the last line is usually a downstream consequence
+                # ("SaveBlockToDisk: FindBlockPos failed") that explains nothing.
+                _fatal=$(grep -oE '\*\*\* .*' "$datadir/debug.log" | head -1 | sed 's/^\*\*\* //')
+                [[ -n "$_fatal" ]] || _fatal=$(grep -oiE 'Error: .*' "$datadir/debug.log" | head -1)
+            fi
+            if [[ -n "$_fatal" ]]; then
+                log_fail "$coin - daemon exited: ${_fatal}"
+            else
+                log_fail "$coin - RPC not responding after ${timeout}s"
+            fi
+            # Free space is the most common cause and is worth stating outright.
+            local _free
+            _free=$(df -Pm "$datadir" 2>/dev/null | awk 'NR==2 {print $4}')
+            if [[ -n "$_free" ]] && [[ "$_free" -lt 2048 ]]; then
+                log_fail "$coin - only ${_free} MB free on $(df -P "$datadir" | awk 'NR==2 {print $6}') — the daemon needs headroom to write its chainstate"
+            fi
             # Check debug log for errors
             if [[ -f "$datadir/debug.log" ]]; then
                 echo "--- Last 20 lines of debug.log ---"
                 tail -20 "$datadir/debug.log"
             fi
-            # Try to stop it anyway
+            # Stop it — and if RPC is what failed, `stop` cannot work either.
+            #
+            # Without the fallback below every timeout LEAKED a running daemon,
+            # which then held the RPC port and made the NEXT run fail to bind:
+            # one slow coin turned into a cascade of unrelated-looking failures
+            # across subsequent runs. Kill by datadir so only this test's daemon
+            # is touched, never an operator's real node.
             "$cli" -conf="$conf" -datadir="$datadir" stop &>/dev/null || true
             sleep 3
+            if pgrep -f -- "-datadir=$datadir" >/dev/null 2>&1; then
+                echo "         RPC never answered, so 'stop' could not work — killing the daemon by datadir"
+                pkill -f -- "-datadir=$datadir" 2>/dev/null || true
+                sleep 2
+                pkill -9 -f -- "-datadir=$datadir" 2>/dev/null || true
+            fi
             return 1
         fi
     done
@@ -291,6 +341,21 @@ test_coin() {
     return 0
 }
 
+# An archive is only usable as a cache entry if it actually opens.
+#
+# wget -O CREATES the destination before the transfer starts, so a refused or
+# interrupted download leaves a short file that a bare `-f` test would treat as
+# a valid cache for ever. That produced a misleading "binary not found in
+# archive" instead of "the download failed".
+archive_ok() {
+    local f="$1"
+    [[ -s "$f" ]] || return 1
+    case "$f" in
+        *.zip) unzip -qt "$f" >/dev/null 2>&1 ;;
+        *)     tar -tzf "$f" >/dev/null 2>&1 ;;
+    esac
+}
+
 # Download and extract a tarball
 # Args: coin url filename
 download_extract() {
@@ -303,12 +368,24 @@ download_extract() {
     local filename=$(basename "$url")
     local dl_path="$TEST_BASE/downloads/$filename"
 
-    if [[ -f "$dl_path" ]]; then
+    if [[ -f "$dl_path" ]] && archive_ok "$dl_path"; then
         log_test "$coin - using cached download: $filename"
     else
+        if [[ -f "$dl_path" ]]; then
+            log_test "$coin - cached $filename is unreadable, discarding it"
+            rm -f "$dl_path"
+        fi
         log_test "$coin - downloading $filename..."
         if ! wget -q --show-progress -O "$dl_path" "$url" 2>&1; then
+            # wget created the file before the transfer; leaving it behind would
+            # poison every later run.
+            rm -f "$dl_path"
             log_fail "$coin - download failed: $url"
+            return 1
+        fi
+        if ! archive_ok "$dl_path"; then
+            rm -f "$dl_path"
+            log_fail "$coin - downloaded archive is truncated or corrupt: $filename"
             return 1
         fi
     fi
@@ -433,7 +510,9 @@ EOF
 
 test_btc() {
     local coin="btc"
-    local url="https://bitcoinknots.org/files/29.x/29.3.knots20260210/bitcoin-29.3.knots20260210-${ARCH_SUFFIX}.tar.gz"
+    # Bitcoin Core, matching the pin in coin-upgrade.sh / install.sh. Never Knots:
+    # knots20260508 and later enforce BIP-110 (RDTS) and follow the minority chain.
+    local url="https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralbtc"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8332
@@ -451,7 +530,7 @@ test_btc() {
     mkdir -p "$datadir"
 
     cat > "$conf" << EOF
-# Bitcoin Knots Configuration
+# Bitcoin Core Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
 # Network Mode: CLEARNET (Fast Sync)
 
@@ -515,9 +594,9 @@ seednode=dnsseed.emzy.de
 seednode=seed.bitcoin.wiz.biz
 seednode=seed.mainnet.achownodes.xyz
 
-dnsseed=seed.bitcoin.sipa.be
-dnsseed=dnsseed.bluematt.me
-dnsseed=seed.btc.petertodd.net
+seednode=seed.bitcoin.sipa.be
+seednode=dnsseed.bluematt.me
+seednode=seed.btc.petertodd.net
 EOF
 
     # Wallet: pool-btc, bech32, prefix bc1. Parent chain for SHA-256d merge mining.
@@ -526,7 +605,7 @@ EOF
 
 test_bch() {
     local coin="bch"
-    local url="https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v29.0.0/bitcoin-cash-node-29.0.0-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v29.1.0/bitcoin-cash-node-29.1.0-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralbch"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8432
@@ -781,7 +860,7 @@ EOF
 
 test_sys() {
     local coin="sys"
-    local url="https://github.com/syscoin/syscoin/releases/download/v5.0.5/syscoin-5.0.5-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/syscoin/syscoin/releases/download/v5.1.0/syscoin-5.1.0-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralsys"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8370
@@ -843,7 +922,19 @@ pid=$datadir/syscoind.pid
 EOF
 
     # Wallet: pool-sys, legacy, prefix S or sys1q. Merge-mineable with BTC (legacy API).
-    test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 60 "pool-sys" "legacy" "S|sys1q" "legacy"
+    # 600s, not the usual 60. Syscoin 5.x is the only coin here that will not
+    # serve RPC until its sysgeth NEVM sidecar has bootstrapped, and on a cold
+    # datadir that means downloading and installing geth first:
+    #
+    #   StartGethNode: Geth Started with pid 1450
+    #   Waiting for sysgeth startup ... (bootstrap=downloading) elapsed=2  timeout=7200
+    #   Waiting for sysgeth startup ... (bootstrap=installing)  elapsed=66 timeout=7200
+    #
+    # syscoind allows itself up to 7200s for that phase. At 60s this test was
+    # reporting a perfectly healthy daemon as "RPC not responding", and because
+    # the cleanup path needs RPC to issue `stop`, every such failure ALSO leaked
+    # a running syscoind that blocked the next run's port bind.
+    test_coin "$coin" "$daemon" "$cli" "$conf" "$datadir" "$rpc_port" "$rpc_user" "$rpc_pass" 600 "pool-sys" "legacy" "S|sys1q" "legacy"
 }
 
 test_xmy() {
@@ -996,7 +1087,7 @@ EOF
 
 test_xec() {
     local coin="xec"
-    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.31.12/bitcoin-abc-0.31.12-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.33.10/bitcoin-abc-0.33.10-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralxec"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=9004
@@ -1078,7 +1169,7 @@ EOF
 
 test_ltc() {
     local coin="ltc"
-    local url="https://github.com/litecoin-project/litecoin/releases/download/v0.21.4/litecoin-0.21.4-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/litecoin-project/litecoin/releases/download/v0.21.5.6/litecoin-0.21.5.6-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralltc"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=9332
@@ -1392,7 +1483,13 @@ for coin in $COINS_TO_TEST; do
         pep)  test_pep  ;;
         cat)  test_cat  ;;
         *)    log_fail "Unknown coin: $coin" ;;
-    esac
+    # A failing coin must NOT abort the remaining ones. This script runs under
+    # `set -e`, so a single non-zero return killed the whole run and the coins
+    # after it were never tested at all — one broken coin hid twelve others,
+    # which is precisely backwards for a verification tool. Each coin already
+    # records its own PASS/FAIL via log_pass/log_fail, and the summary below
+    # reports the totals and sets the exit status.
+    esac || true
 done
 
 # Summary

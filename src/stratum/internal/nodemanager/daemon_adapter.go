@@ -344,6 +344,30 @@ func (m *Manager) GetBlockHash(ctx context.Context, height uint64) (string, erro
 	return hash, nil
 }
 
+// GetDeploymentInfo gets active soft-fork deployments from the best node.
+//
+// Used by the Bitcoin chain identity guard to detect BIP-110 (RDTS) enforcement,
+// which is the difference between mining Bitcoin and mining a minority chain
+// whose blocks have no value.
+func (m *Manager) GetDeploymentInfo(ctx context.Context) (*daemon.DeploymentInfo, error) {
+	node, err := m.SelectNode(OpRead)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+	info, err := node.Client.GetDeploymentInfo(ctx)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		m.monitor.RecordFailure(node, err)
+		return nil, err
+	}
+
+	m.monitor.RecordSuccess(node, responseTime)
+	return info, nil
+}
+
 // GetBlock gets block info by hash from best node.
 func (m *Manager) GetBlock(ctx context.Context, blockHash string) (map[string]interface{}, error) {
 	node, err := m.SelectNode(OpRead)

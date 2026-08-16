@@ -52,7 +52,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="2.6.7"
+SCRIPT_VERSION="2.7.0"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -113,6 +113,8 @@ RSYNC_BLOCKCHAIN_FLAGS=(
     --compress-level=6         # Balanced compression
     --timeout=600              # 10 minute timeout on stalled I/O (prevents indefinite hangs)
     --exclude="*.conf"         # NEVER overwrite target's config (has node-specific RPC credentials)
+    --exclude="*.conf.bak-*"   # Config backups hold the same credentials — "*.conf" does not match these
+    --exclude="*.bak-*"        # Any timestamped backup: same reasoning, belt and braces
     --exclude="settings.json"  # Node-specific runtime settings (different RPC auth per node)
     --exclude="*.pid"          # PID files are node-specific
     --exclude=".lock"          # Lock files are node-specific

@@ -75,6 +75,27 @@ wsl --install -d Ubuntu
 
 ---
 
+## Bitcoin Core and the 2026 Chain Split
+
+`docker/Dockerfile.bitcoin` builds **Bitcoin Core**, pinned via `ARG VERSION` and verified against `ARG SHA256` — a checksum committed in this repository and taken from `bitcoincore.org/bin/bitcoin-core-<version>/SHA256SUMS`. A mismatch fails the image build rather than producing a container with an unverified consensus daemon. The image does not build Bitcoin Knots.
+
+On 8 August 2026 at block height 961,632 Bitcoin split over BIP-110 ("RDTS"). Nodes enforcing it reject any block that does not signal version bit 4; roughly 99.85% of hashpower stayed on the majority chain, and the enforcing minority chain produces about one block every day or two with no exchange support.
+
+| Build | Chain |
+|-------|-------|
+| Bitcoin Core, any current version | Majority |
+| Bitcoin Knots `29.3.knots20260507` | Majority (non-enforcing) |
+| Bitcoin Knots `29.3.knots20260508` | Minority (enforces BIP-110) |
+| Bitcoin Knots `29.4.knots20260508` | Minority (enforces BIP-110) |
+
+The datestamp suffix is the enforcement marker, not a release date. Enforcement is compiled in — `consensusrules=rdts` in `bitcoin.conf` does not control it.
+
+**If you override `VERSION` at build time you must override `SHA256` to match**, or the build fails closed. Do not point either at a "latest" tag: the enforcing and non-enforcing Knots builds differ by one digit in a datestamp, so a latest-resolver is precisely how a node ends up on the minority chain.
+
+The stratum container refuses to serve BTC work unless it can verify the daemon is on the majority chain, checking `getdeploymentinfo` and `getblockhash 961632` at startup. Set `allow_nonmajority_chain: true` for the coin only if you intend to mine a non-majority chain. It also disables the stale-tip refusal, so a node wedged on the **correct** chain will mine a dead tip too — that second effect is easy to miss and is rarely what you want.
+
+---
+
 ## Quick Start — Single-Coin Mode
 
 ### Step 1: Configure

@@ -257,7 +257,7 @@ func getAllNodes() []nodeInfo {
 		{"Bitcoin Cash II", "bch2", DefaultBCH2Config, "bitcoincashIId"},
 		{"Bitcoin II", "bc2", DefaultBC2Config, "bitcoiniid"},
 		{"Bitcoin Cash", "bch", DefaultBCHConfig, "bitcoind-bch"},
-		{"Bitcoin Knots", "btc", DefaultBTCConfig, "bitcoind"},
+		{"Bitcoin Core", "btc", DefaultBTCConfig, "bitcoind"},
 		{"Bitcoin Silver", "btcs", DefaultBTCSConfig, "bitcoinsilverd"},
 		{"Catcoin", "cat", DefaultCATConfig, "catcoind"},
 		{"DigiByte", "dgb", DefaultDGBConfig, "digibyted"},

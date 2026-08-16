@@ -48,6 +48,7 @@ const (
 	MinerClassMid                // NerdQAxe, BitAxe Hex/Gamma (~1-10 TH/s)
 	MinerClassHigh               // Antminer S9, S15, older gen (~10-20 TH/s)
 	MinerClassPro                // Antminer S19+, S21, Whatsminer M50+ (~100-200+ TH/s)
+	MinerClassS19                // Antminer S19 series specifically (~90-141 TH/s)
 
 	// Avalon-specific classes for granular difficulty assignment
 	// These provide explicit support for Canaan/Avalon hardware across all generations.
@@ -90,6 +91,8 @@ func (c MinerClass) String() string {
 		return "high"
 	case MinerClassPro:
 		return "pro"
+	case MinerClassS19:
+		return "s19"
 	// Avalon-specific classes
 	case MinerClassAvalonNano:
 		return "avalon_nano"
@@ -125,6 +128,12 @@ func (c MinerClass) Vendor() string {
 		return "proxy"
 	case MinerClassHashMarketplace:
 		return "marketplace"
+	case MinerClassS19:
+		// S19 only. MinerClassPro is deliberately NOT included: it covers
+		// Whatsminer M50+ as well as Antminer S21, and Whatsminer is MicroBT,
+		// not Bitmain — labelling the whole Pro tier "bitmain" would be wrong
+		// for every Whatsminer on it.
+		return "bitmain"
 	default:
 		return "generic"
 	}
@@ -210,6 +219,18 @@ var DefaultProfiles = map[MinerClass]MinerProfile{
 		MinDiff:         3260,   // Same as InitialDiff - prevents vardiff dropping below optimal (was 2000)
 		MaxDiff:         100000, // Cap for ~430 TH/s (covers S9 to S17 class with headroom)
 		TargetShareTime: 1,      // 1 share per second target
+	},
+	// Antminer S19 Series: dedicated profile for the 90-141 TH/s class.
+	// Models: S19 (95T), S19j Pro (104T), S19k Pro (120T), S19 XP (141T).
+	// Split out of MinerClassPro so S21 and Whatsminer M50+ (200T+) no longer
+	// share a vardiff tier with hardware half their speed — this gives S19s a
+	// tighter, more stable difficulty range and lower rejection rates.
+	MinerClassS19: {
+		Class:           MinerClassS19,
+		InitialDiff:     24000, // ~100 TH/s × 1s / 2^32 = 23,283 — S19 baseline
+		MinDiff:         16384, // floor for low-power S19s (~70 TH/s) and Braiins eco modes
+		MaxDiff:         65536, // cap for ~280 TH/s — covers S19 XP Hyd, prevents S21 spillover
+		TargetShareTime: 1,     // 1 share per second target
 	},
 	MinerClassPro: {
 		Class:           MinerClassPro,
@@ -671,6 +692,11 @@ func NewSpiralRouterWithBlockTime(blockTimeSec int) *SpiralRouter {
 		{`(?i)bitaxe/bm1366`, MinerClassLow, "BitAxe (BM1366)"},
 		{`(?i)bitaxe/bm1397`, MinerClassLow, "BitAxe (BM1397)"},
 		{`(?i)bitaxe`, MinerClassLow, "BitAxe"},
+
+		// Antminer S19 series — Vnish, Braiins, LuxOS and some stock alternate
+		// user-agents. MUST precede the generic 'antminer' and 'bmminer'
+		// patterns below, or the broader tiers claim these first.
+		{`(?i)antminer.?s19|s19k|s19j|s19.?pro|s19.?xp|s19.?hydro|s19a`, MinerClassS19, "Antminer S19 Series"},
 
 		// Bitmain stock firmware — sends "bmminer/{version}"
 		// Source: bitmaintech/bmminer-mix config.h [CONFIRMED]

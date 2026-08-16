@@ -124,12 +124,17 @@ func TestVerifyDefaultProfilesValid(t *testing.T) {
 				t.Errorf("Class %s has MaxDiff>=1 trillion - REGRESSION: unexpected default value", class.String())
 			}
 
-			// MinDiff should equal InitialDiff (except lottery, unknown, and farm_proxy).
+			// MinDiff should equal InitialDiff (except lottery, unknown, farm_proxy, s19).
 			// Lottery: MinDiff lower to support tiny ESP32 miners.
 			// Unknown: MinDiff=100 (low floor), InitialDiff=500 — wide range for vardiff.
 			// FarmProxy: InitialDiff is the optimistic starting point (500K), while MinDiff
 			// is the floor that prevents vardiff dropping below a single-miner equivalent.
-			if class != MinerClassLottery && class != MinerClassUnknown && class != MinerClassFarmProxy && profile.MinDiff != profile.InitialDiff {
+			// S19: the series spans ~70 TH/s (eco-mode / underclocked) to ~255 TH/s
+			// (S19 XP Hyd) — a 3.6x spread. InitialDiff 24000 targets the ~100 TH/s
+			// baseline, so a 70 TH/s unit needs 1.47s per share against a 1s target and
+			// requires headroom below the start. MinDiff 16384 is that floor.
+			if class != MinerClassLottery && class != MinerClassUnknown && class != MinerClassFarmProxy &&
+				class != MinerClassS19 && profile.MinDiff != profile.InitialDiff {
 				t.Errorf("Class %s: MinDiff (%.6f) != InitialDiff (%.6f)",
 					class.String(), profile.MinDiff, profile.InitialDiff)
 			}

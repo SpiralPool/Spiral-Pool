@@ -77,7 +77,7 @@ fi\n\
 chown -R bitcoinii:bitcoinii /home/bitcoinii/.bitcoinii\n\
 \n\
 # Start Bitcoin II daemon (binary uses capital II: bitcoinIId)\n\
-exec gosu bitcoinii bitcoinIId -printtoconsole "$@"\n\
+exec gosu bitcoinii bitcoinIId -printtoconsole -datadir=/home/bitcoinii/.bitcoinii -conf=/home/bitcoinii/.bitcoinii/bitcoinii.conf "$@"\n\
 ' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Expose ports

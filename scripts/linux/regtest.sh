@@ -243,7 +243,7 @@ setup_coin() {
             TARBALL_DIR="digibyte-9.26.5"
             ;;
         btc)
-            COIN_SYMBOL=BTC; COIN_NAME="Bitcoin (Knots)"; COIN_ALGO=sha256d
+            COIN_SYMBOL=BTC; COIN_NAME="Bitcoin Core"; COIN_ALGO=sha256d
             DAEMON_CMD="${BITCOIND:-bitcoind}"; CLI_CMD="${BITCOINCLI:-bitcoin-cli}"
             RPC_PORT_DEF=18550; P2P_PORT_DEF=18551; ZMQ_PORT_DEF=29342
             STRATUM_PORT_DEF=16337; STRATUM_V2_PORT_DEF=17335; API_PORT_DEF=14004; METRICS_PORT_DEF=19104
@@ -252,12 +252,15 @@ setup_coin() {
             POOL_ID=btc_regtest; DATA_DIR=.bitcoin
             DAEMON_LOG=bitcoind-regtest.log; DAEMON_STARTUP=bitcoind-startup.log
             PKILL_PATTERN="bitcoind.*regtest"
-            GITHUB_URL="https://github.com/bitcoinknots/bitcoin"
+            GITHUB_URL="https://github.com/bitcoin/bitcoin"
             GBT_RULES='["segwit"]'
-            # Auto-install info (Bitcoin Knots)
-            DAEMON_VERSION="29.3.knots20260210"
-            DOWNLOAD_URL="https://github.com/bitcoinknots/bitcoin/releases/download/v29.3.knots20260210/bitcoin-29.3.knots20260210-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="bitcoin-29.3.knots20260210"
+            # Auto-install info (Bitcoin Core — never Knots; knots20260508 and later
+            # enforce BIP-110/RDTS and follow the minority chain. Regtest is a local
+            # throwaway chain so this cannot mine the wrong chain, but keeping the
+            # dev daemon aligned with production avoids surprising behaviour drift.)
+            DAEMON_VERSION="31.1"
+            DOWNLOAD_URL="https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="bitcoin-31.1"
             ;;
         bch)
             COIN_SYMBOL=BCH; COIN_NAME="Bitcoin Cash"; COIN_ALGO=sha256d

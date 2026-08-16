@@ -14,12 +14,21 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Cash Node for Spiral Pool"
-LABEL version="29.0.0"
+ARG BCHN_VERSION=29.1.0
+
+# Interpolated: this label read 29.0.0 while the image shipped 29.1.0.
+LABEL version="${BCHN_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG BCHN_VERSION=29.0.0
+# SHA256 of the pinned release asset (33,320,761 bytes).
+# BCHN publishes no plain-URL SHA256SUMS, so this was computed from the
+# downloaded artifact. It is a change-detector — a substituted asset fails the
+# build — not an independent authenticity attestation like BTC's Guix
+# cross-check. Verify against the release's detached signature if you need one.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=2d52f6c3091351095839415bfd9ad6ee5cdd34aa6c726f2078ae28aa9015acc4
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,6 +52,7 @@ RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
     && wget -q --max-redirect=5 "https://github.com/bitcoin-cash-node/bitcoin-cash-node/releases/download/v${BCHN_VERSION}/bitcoin-cash-node-${BCHN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && echo "${SHA256}  bitcoin-cash-node-${BCHN_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c - \
     && tar -tzf "bitcoin-cash-node-${BCHN_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "bitcoin-cash-node-${BCHN_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "bitcoin-cash-node-${BCHN_VERSION}/bin/"* /usr/local/bin/ \

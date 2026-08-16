@@ -56,7 +56,7 @@ type Pool struct {
 	db             database.Database
 	apiServer      *api.Server
 	metricsServer  *metrics.Metrics
-	coinImpl       coin.Coin // Coin implementation for algorithm-specific validation
+	coinImpl       coin.Coin              // Coin implementation for algorithm-specific validation
 	submitTimeouts *daemon.SubmitTimeouts // Coin-aware block submission timeouts
 
 	// Merge mining (AuxPoW) support
@@ -140,11 +140,11 @@ type Pool struct {
 	// AF-1 FIX: haRole uses atomic.Int32 to eliminate the data race between
 	// handleRoleChange (writer) and handleBlock/handleAuxBlocks (readers).
 	// Stores ha.Role cast to int32. Zero value = ha.RoleUnknown.
-	haRole     atomic.Int32 // stores ha.Role as int32; use .Store()/.Load()
-	walRecoveryRunning atomic.Bool // re-entrancy guard for recoverWALAfterPromotion
-	roleCtx    context.Context
-	roleCancel context.CancelFunc
-	roleMu     sync.Mutex
+	haRole             atomic.Int32 // stores ha.Role as int32; use .Store()/.Load()
+	walRecoveryRunning atomic.Bool  // re-entrancy guard for recoverWALAfterPromotion
+	roleCtx            context.Context
+	roleCancel         context.CancelFunc
+	roleMu             sync.Mutex
 
 	// Shutdown coordination
 	wg     sync.WaitGroup
@@ -1381,102 +1381,102 @@ func (p *Pool) handleShare(share *protocol.Share) *protocol.ShareResult {
 		// keep fixed initial difficulty. Without this guard, difficulty ramps to impossible
 		// levels for CPU miners even though config says varDiff: enabled: false.
 		if p.cfg.Stratum.Difficulty.VarDiff.Enabled {
-		stats := p.vardiffEngine.GetStats(state)
+			stats := p.vardiffEngine.GetStats(state)
 
-		// Trace logging for hashrate estimation
-		estimatedHashrate := p.vardiffEngine.EstimateSessionHashrate(state)
-		p.logger.Debugw("hashrate_trace",
-			"sessionId", share.SessionID,
-			"assignedDiff", share.Difficulty,
-			"actualDiff", result.ActualDifficulty,
-			"targetTime", state.TargetTime(),
-			"estimatedHashrateGHs", estimatedHashrate/1e9,
-			"totalShares", stats.TotalShares,
-			"userAgent", share.UserAgent,
-		)
-		var newDiff float64
-		var changed bool
+			// Trace logging for hashrate estimation
+			estimatedHashrate := p.vardiffEngine.EstimateSessionHashrate(state)
+			p.logger.Debugw("hashrate_trace",
+				"sessionId", share.SessionID,
+				"assignedDiff", share.Difficulty,
+				"actualDiff", result.ActualDifficulty,
+				"targetTime", state.TargetTime(),
+				"estimatedHashrateGHs", estimatedHashrate/1e9,
+				"totalShares", stats.TotalShares,
+				"userAgent", share.UserAgent,
+			)
+			var newDiff float64
+			var changed bool
 
-		// Get shares since last retarget (NOT total shares) for accurate rate calculation.
-		// Uses window-based counting to ensure elapsedSec matches share count period.
-		sharesSinceRetarget := state.SharesSinceRetarget()
+			// Get shares since last retarget (NOT total shares) for accurate rate calculation.
+			// Uses window-based counting to ensure elapsedSec matches share count period.
+			sharesSinceRetarget := state.SharesSinceRetarget()
 
-		// Check if we need aggressive retargeting:
-		// 1. During initial ramp-up (first 10 shares), OR
-		// 2. When share rate is way off target (>2x deviation)
-		// Aggressive mode is limited to early session to prevent oscillation.
-		needsAggressive := stats.TotalShares <= 10 || p.vardiffEngine.ShouldAggressiveRetarget(state)
+			// Check if we need aggressive retargeting:
+			// 1. During initial ramp-up (first 10 shares), OR
+			// 2. When share rate is way off target (>2x deviation)
+			// Aggressive mode is limited to early session to prevent oscillation.
+			needsAggressive := stats.TotalShares <= 10 || p.vardiffEngine.ShouldAggressiveRetarget(state)
 
-		if needsAggressive && sharesSinceRetarget >= 2 {
-			elapsedSec := time.Since(stats.LastRetargetTime).Seconds()
+			if needsAggressive && sharesSinceRetarget >= 2 {
+				elapsedSec := time.Since(stats.LastRetargetTime).Seconds()
 
-			// MINER-SPECIFIC COOLDOWN: cgminer-based miners (Avalon) need longer cooldown
-			// because cgminer doesn't apply new difficulty to work-in-progress.
-			// It can take 10-30+ seconds before cgminer starts using new difficulty.
-			// - cgminer/Avalon: 30 second cooldown (allows difficulty to actually apply)
-			// - Other miners (NMAxe, NerdQAxe++, BFGMiner): 5 second cooldown
-			// Uses configurable patterns via SpiralRouter.IsSlowDiffApplier()
-			minRetargetInterval := 5.0
-			if p.stratumServer.IsSlowDiffApplier(share.UserAgent) {
-				minRetargetInterval = 30.0
-			}
-
-			// EXPONENTIAL BACKOFF: If difficulty is already optimal (consecutive no-changes),
-			// increase cooldown to prevent rapid retarget attempts. This stabilizes sessions
-			// that have converged to their optimal difficulty.
-			// Backoff multiplier: 1x, 2x, 3x, 4x (capped at 4x = 120s for cgminer, 20s for others)
-			backoffCount := state.ConsecutiveNoChange()
-			if backoffCount > 0 {
-				backoffMultiplier := float64(backoffCount + 1)
-				if backoffMultiplier > 4.0 {
-					backoffMultiplier = 4.0
+				// MINER-SPECIFIC COOLDOWN: cgminer-based miners (Avalon) need longer cooldown
+				// because cgminer doesn't apply new difficulty to work-in-progress.
+				// It can take 10-30+ seconds before cgminer starts using new difficulty.
+				// - cgminer/Avalon: 30 second cooldown (allows difficulty to actually apply)
+				// - Other miners (NMAxe, NerdQAxe++, BFGMiner): 5 second cooldown
+				// Uses configurable patterns via SpiralRouter.IsSlowDiffApplier()
+				minRetargetInterval := 5.0
+				if p.stratumServer.IsSlowDiffApplier(share.UserAgent) {
+					minRetargetInterval = 30.0
 				}
-				minRetargetInterval *= backoffMultiplier
+
+				// EXPONENTIAL BACKOFF: If difficulty is already optimal (consecutive no-changes),
+				// increase cooldown to prevent rapid retarget attempts. This stabilizes sessions
+				// that have converged to their optimal difficulty.
+				// Backoff multiplier: 1x, 2x, 3x, 4x (capped at 4x = 120s for cgminer, 20s for others)
+				backoffCount := state.ConsecutiveNoChange()
+				if backoffCount > 0 {
+					backoffMultiplier := float64(backoffCount + 1)
+					if backoffMultiplier > 4.0 {
+						backoffMultiplier = 4.0
+					}
+					minRetargetInterval *= backoffMultiplier
+				}
+
+				if elapsedSec > minRetargetInterval {
+					oldDiff := stats.CurrentDifficulty
+					newDiff, changed = p.vardiffEngine.AggressiveRetarget(state, sharesSinceRetarget, elapsedSec)
+					if changed {
+						p.logger.Infow("VARDIFF retarget",
+							"sessionId", share.SessionID,
+							"totalShares", stats.TotalShares,
+							"sharesSinceRetarget", sharesSinceRetarget,
+							"elapsedSec", elapsedSec,
+							"oldDiff", oldDiff,
+							"newDiff", newDiff,
+							"factor", newDiff/oldDiff,
+							"sessionMaxDiff", state.MaxDiff(),
+							"sessionMinDiff", state.MinDiff(),
+							"sessionTargetTime", state.TargetTime(),
+						)
+					}
+				}
 			}
 
-			if elapsedSec > minRetargetInterval {
-				oldDiff := stats.CurrentDifficulty
-				newDiff, changed = p.vardiffEngine.AggressiveRetarget(state, sharesSinceRetarget, elapsedSec)
+			// Normal vardiff when not in aggressive mode
+			if !changed {
+				newDiff, changed = p.vardiffEngine.RecordShare(state)
 				if changed {
-					p.logger.Infow("VARDIFF retarget",
+					p.logger.Debugw("VARDIFF adjusted",
 						"sessionId", share.SessionID,
-						"totalShares", stats.TotalShares,
-						"sharesSinceRetarget", sharesSinceRetarget,
-						"elapsedSec", elapsedSec,
-						"oldDiff", oldDiff,
 						"newDiff", newDiff,
-						"factor", newDiff/oldDiff,
-						"sessionMaxDiff", state.MaxDiff(),
-						"sessionMinDiff", state.MinDiff(),
-						"sessionTargetTime", state.TargetTime(),
 					)
 				}
 			}
-		}
 
-		// Normal vardiff when not in aggressive mode
-		if !changed {
-			newDiff, changed = p.vardiffEngine.RecordShare(state)
+			// Send new difficulty to miner (block already handled at start of Accepted block)
 			if changed {
-				p.logger.Debugw("VARDIFF adjusted",
-					"sessionId", share.SessionID,
-					"newDiff", newDiff,
-				)
-			}
-		}
-
-		// Send new difficulty to miner (block already handled at start of Accepted block)
-		if changed {
-			if session, ok := p.stratumServer.GetSession(share.SessionID); ok {
-				if err := p.stratumServer.SendDifficulty(session, newDiff); err != nil {
-					p.logger.Warnw("Failed to send difficulty update",
-						"sessionId", share.SessionID,
-						"newDiff", newDiff,
-						"error", err,
-					)
+				if session, ok := p.stratumServer.GetSession(share.SessionID); ok {
+					if err := p.stratumServer.SendDifficulty(session, newDiff); err != nil {
+						p.logger.Warnw("Failed to send difficulty update",
+							"sessionId", share.SessionID,
+							"newDiff", newDiff,
+							"error", err,
+						)
+					}
 				}
 			}
-		}
 		} // end if varDiff.Enabled
 	}
 
@@ -3064,6 +3064,11 @@ func (p *Pool) verifyBlockAcceptance(blockHash string, blockHeight uint64) bool 
 // Run starts all pool components and blocks until shutdown.
 func (p *Pool) Run(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
+	// Release the derived context when Run returns. On the normal path ctx is
+	// already cancelled by the time we get here (Run blocks on <-ctx.Done()),
+	// so this is a no-op; on an early error return it stops the subsystems
+	// that did start before the failure instead of leaving them on a live ctx.
+	defer p.cancel()
 
 	// Record server start time for accurate hashrate calculation
 	p.startTime = time.Now()
@@ -3072,6 +3077,17 @@ func (p *Pool) Run(ctx context.Context) error {
 	// This prevents miners from wasting hashrate on stale blocks during IBD
 	if err := p.waitForSync(ctx); err != nil {
 		return fmt.Errorf("sync gate failed: %w", err)
+	}
+
+	// CHAIN GATE: confirm a Bitcoin daemon follows the majority chain.
+	//
+	// V1 is not a legacy path that operators opt into — cmd/spiralpool falls
+	// back to it automatically, with only a WARN, whenever the V2 config fails
+	// to load. Without this, a YAML typo silently disables the one protection
+	// this release exists to provide, and the pool mines a chain whose blocks
+	// are worth nothing while reporting itself perfectly healthy.
+	if err := p.verifyChainIdentity(ctx); err != nil {
+		return fmt.Errorf("chain gate failed: %w", err)
 	}
 
 	// CLEANUP: Remove stale shares from previous sessions
@@ -4930,12 +4946,84 @@ func classifyRejectionMetric(errStr string) string {
 // NOTE: After improper shutdown, nodes may need to resync which can take 1+ hours
 // depending on disk speed (HDD vs SSD). This function waits indefinitely but logs
 // warnings after extended periods to help operators diagnose issues.
+// verifyChainIdentity refuses to start the V1 pool when a Bitcoin daemon is not
+// verifiably on the majority chain. Mirrors CoinPool.verifyChainIdentity.
+//
+// Only BTC is gated: the 2026-08-08 BIP-110 split was a Bitcoin consensus event,
+// and merge-mined children inherit their parent chain via AuxPoW from this same
+// daemon. Runs after the sync gate, so the node has had a chance to reach the
+// split height, and before any miner connects.
+func (p *Pool) verifyChainIdentity(ctx context.Context) error {
+	// Resolve the SYMBOL. cfg.Pool.Coin is a coin NAME, not a symbol: Validate()
+	// requires it to be a key of SupportedCoins, and those keys are full
+	// lowercase names ("bitcoin", "litecoin", ...). "btc" is not among them and
+	// is rejected outright. Comparing Pool.Coin against "BTC" therefore never
+	// matched for the only legal Bitcoin value, which made this entire gate dead
+	// code for every V1 install — bare-metal single-coin, Docker single-coin and
+	// Windows alike, i.e. exactly the automatic-fallback population it exists for.
+	info, err := p.cfg.GetCoinInfo()
+	if err != nil {
+		// Unreachable in practice: Validate() runs first and rejects anything
+		// GetCoinInfo cannot resolve. Skip rather than block, so an unforeseen
+		// config shape cannot take down a non-Bitcoin pool.
+		p.logger.Warnw("CHAIN GATE: could not resolve coin info, skipping chain check",
+			"coin", p.cfg.Pool.Coin, "error", err)
+		return nil
+	}
+	if !strings.EqualFold(info.Symbol, "BTC") {
+		return nil
+	}
+
+	var cc daemon.ChainCheck
+	for attempt := 1; ; attempt++ {
+		checkCtx, cancel := context.WithTimeout(ctx, chainCheckTimeout)
+		cc = daemon.CheckBitcoinChain(checkCtx, p.daemonClient, time.Now())
+		cancel()
+
+		// Retry ONLY an unreachable daemon. The sync gate above already proved
+		// it answers RPC, so this is a transient blip. A minority or stale
+		// verdict is conclusive and must not be delayed by retries.
+		if !cc.Unreachable || attempt >= chainCheckAttempts {
+			break
+		}
+		p.logger.Warnw("CHAIN GATE: daemon unreachable, retrying before deciding",
+			"attempt", attempt, "of", chainCheckAttempts)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(chainCheckBackoff):
+		}
+	}
+
+	allowed, reason := cc.AllowMining(p.cfg.Pool.AllowsNonMajorityChain())
+	fields := []interface{}{
+		"coin", "BTC",
+		"chainVerdict", string(cc.Verdict),
+		"tipHeight", cc.TipHeight,
+		"tipAge", cc.TipAge.Round(time.Second).String(),
+		"rdtsEnforcing", cc.RDTSEnforcing,
+		"blockAtSplitHeight", cc.SplitBlockHash,
+		"daemonReachable", !cc.Unreachable,
+	}
+
+	if !allowed {
+		p.logger.Errorw("CHAIN GATE: refusing to mine — "+reason, fields...)
+		return fmt.Errorf("%s", reason)
+	}
+	if (cc.Verdict != daemon.VerdictMajority && cc.Verdict != daemon.VerdictNotApplicable) || cc.TipStale {
+		p.logger.Warnw("CHAIN GATE: MINING WITHOUT A CLEAN VERDICT — "+reason, fields...)
+		return nil
+	}
+	p.logger.Infow("CHAIN GATE: "+reason, fields...)
+	return nil
+}
+
 func (p *Pool) waitForSync(ctx context.Context) error {
 	const (
 		syncThreshold = 0.990 // 99.0% - realistic threshold that accounts for verificationProgress drift
 		checkInterval = 10 * time.Second
-		warnAfter     = 30 * time.Minute  // Warn after 30 minutes
-		warnInterval  = 15 * time.Minute  // Repeat warning every 15 minutes
+		warnAfter     = 30 * time.Minute // Warn after 30 minutes
+		warnInterval  = 15 * time.Minute // Repeat warning every 15 minutes
 	)
 
 	p.logger.Info("SYNC GATE: Waiting for daemon to complete synchronization...")
@@ -4996,7 +5084,13 @@ func (p *Pool) waitForSync(ctx context.Context) error {
 			//
 			// Some daemons (BC2, etc.) report low verificationProgress even
 			// when fully synced. Fall back to blocks >= headers for any coin.
-			blocksSynced := bcInfo.Headers > 0 && bcInfo.Blocks >= bcInfo.Headers
+			// Floor under the fallback, same as the V2 gate. Without it a
+			// daemon reporting blocks=5, headers=5, IBD=false passes and mining
+			// begins at height 5 on a node that has barely started.
+			const minPlausibleHeight = 1000
+			blocksSynced := bcInfo.Headers > 0 &&
+				bcInfo.Blocks >= bcInfo.Headers &&
+				bcInfo.Headers >= minPlausibleHeight
 			if bcInfo.Chain == "regtest" || (!bcInfo.InitialBlockDownload && (bcInfo.VerificationProgress >= syncThreshold || blocksSynced)) {
 				p.logger.Infow("✅ SYNC GATE PASSED: Daemon is fully synced",
 					"blocks", bcInfo.Blocks,

@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.6.7 - SPIRAL CITADEL EDITION                            ║
+║  Spiral Sentinel v2.7.0 - SPIRAL CITADEL EDITION                            ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.6.7"
+__version__ = "2.7.0"
 __codename__ = "SPIRAL_CITADEL"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -299,6 +299,8 @@ _RPC_ALLOWED_METHODS = frozenset({
     "getblockcount", "getdifficulty", "getconnectioncount", "getmempoolinfo",
     "getnettotals", "uptime", "getbestblockhash", "validateaddress",
     "getnetworkhashps", "scantxoutset",
+    # Chain identity guard (see check_chain_identity): both are read-only.
+    "getblockhash", "getdeploymentinfo",
 })
 
 def _rpc_call(host, port, method, params=None, timeout=10, auth=None):
@@ -1085,6 +1087,7 @@ DEFAULT_CONFIG = {
         "disk_critical": 300,        # 5 min - disk space critical
         "mempool_congestion": 3600,  # 1 hour - BTC mempool congestion
         "backup_stale": 86400,       # 24 hours - stale backup alert (re-alert daily)
+        "chain_identity": 21600,     # 6 hours - BTC following a minority chain (see check_chain_identity)
     },
     # Wallet balance drop alert - alerts when solo mining wallet loses funds unexpectedly
     "wallet_drop_alert_enabled": True,
@@ -1164,6 +1167,12 @@ DEFAULT_CONFIG = {
     # DRY STREAK ALERTING — Alert when no block found for an extended period
     # ═══════════════════════════════════════════════════════════════════════════════
     "dry_streak_enabled": True,            # Alert when no block found for too long
+    # Chain identity: alert when the BTC node is not verifiably on the majority
+    # chain. Default on. Turn it off if you deliberately mine a non-majority
+    # chain — the stratum has a matching allow_nonmajority_chain setting, and
+    # without this an operator who made that choice gets a permanent 6-hourly
+    # red alert they never asked for.
+    "chain_identity_enabled": True,
     "dry_streak_multiplier": 5,            # Alert after N × expected interval without a block
     # ═══════════════════════════════════════════════════════════════════════════════
     # NETWORK DIFFICULTY CHANGE ALERTS — Alert on significant difficulty swings
@@ -4007,6 +4016,287 @@ def check_stuck_syncs(state):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# BITCOIN CHAIN IDENTITY — is the BTC node on the chain that has value?
+# ═══════════════════════════════════════════════════════════════════════════════
+# On 2026-08-08 at block height 961,632 Bitcoin split. BIP-110 ("RDTS") entered a
+# mandatory signalling window and nodes enforcing it began rejecting blocks that
+# did not signal version bit 4. Roughly 99.85% of hashpower stayed on the
+# majority chain; the enforcing minority chain has produced a handful of blocks.
+#
+# This alert exists because nothing else would catch it. A node on the minority
+# chain looks completely healthy — RPC responds, sync progress is 100%, hashrate
+# is normal, no dry-streak fires if merge-mined coins keep finding blocks. The
+# only symptom is that BTC blocks never arrive.
+
+BITCOIN_SPLIT_HEIGHT = 961632
+
+# Hash of block 961,632 on the majority chain. Fetched 2026-08-14 from two
+# independent explorers (blockstream.info, mempool.space) which agreed exactly.
+BITCOIN_MAJORITY_BLOCK_961632 = "00000000000000000000d1e01392faa65ceeaed307f0a3159144b84146ff24ba"
+
+# The competing block at the same height on the BIP-110 minority chain, so the
+# alert can name the chain rather than just say "not the right one".
+# Source: https://bip110.org/change-chains/ plus contemporaneous reporting.
+BITCOIN_RDTS_BLOCK_961632 = "0000000000000000000169eb6f811ddbd0daf343af7b62180cdb13e7c78dbc16"
+
+# A BTC tip older than this is anomalous on the majority chain (~10 min blocks)
+# and normal on the minority chain (a block every day or two).
+BITCOIN_MAX_TIP_AGE_SECS = 3 * 3600
+
+# Cooldown is tracked in state.last_alerts (persisted), not a module global — a
+# module global resets on every Sentinel restart, so a restart loop would re-alert
+# each time. Every sibling check uses state.last_alerts for exactly this reason.
+
+
+def _chain_split_block_field(block_hash, tip_height):
+    """Render the block-961,632 field without ever implying the check failed.
+
+    Three different states used to collapse into the single word "unreadable",
+    which reads like a malfunction rather than a finding:
+      - the node has not synced to the split height yet, so the block does not
+        exist locally. Nothing failed; there is simply nothing to read.
+      - the hash was read.
+      - the RPC genuinely failed.
+    """
+    if block_hash:
+        return f"`{block_hash[:32]}…`"
+    # `0` means the height was not reported, not "genesis" — the sibling Tip
+    # height field renders that same 0 as "unknown", so claiming the node is
+    # 961,632 blocks behind would contradict it.
+    if isinstance(tip_height, int) and 0 < tip_height < BITCOIN_SPLIT_HEIGHT:
+        behind = BITCOIN_SPLIT_HEIGHT - tip_height
+        plural = "block" if behind == 1 else "blocks"
+        return f"not reached yet — node is {behind:,} {plural} below the split height"
+    return "could not be read from the daemon"
+
+
+def create_chain_identity_embed(reason, block_hash, tip_height, tip_age_hrs, rdts_enforcing, stale_only=False):
+    """Discord embed for a BTC chain-identity problem.
+
+    Two distinct conditions share this alert type and must NOT share wording:
+      - stale_only: the node is verifiably on the majority chain but its tip has
+        stopped advancing. Nothing is wrong with the chain; the node lost peers
+        or wedged. Telling this operator their blocks are worthless and to run a
+        daemon migration would be both wrong and actively unhelpful.
+      - otherwise: the node is on a minority chain. Written for an operator who
+        has never heard of BIP-110.
+    """
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+
+    if stale_only:
+        desc = (
+            f"```diff\n- BITCOIN TIP HAS STOPPED ADVANCING\n```\n"
+            f"Your Bitcoin node is on the **correct chain**, but its tip is "
+            f"**{tip_age_hrs:.1f} hours old**. Bitcoin produces a block roughly every "
+            f"10 minutes, so this is far outside normal variance.\n\n"
+            f"**This is not the chain-split problem.** Block 961,632 verified correctly — "
+            f"you are on the majority chain. The node has simply stopped keeping up.\n\n"
+            f"**Likely causes:** lost peer connections, a stalled or crashed daemon, "
+            f"disk full, or a network/firewall change.\n\n"
+            f"**What to check:**\n"
+            f"```\nbitcoin-cli getblockchaininfo\nbitcoin-cli getpeerinfo | grep -c subver\n"
+            f"sudo systemctl status bitcoind\n```\n"
+            f"The pool will not mine BTC on a stale tip, so you are not wasting electricity "
+            f"while you look into it."
+        )
+        return {
+            "title": "⚠️ Bitcoin: tip has stopped advancing",
+            "description": desc,
+            "color": 0xFF9800,
+            "fields": [
+                {"name": "Tip height", "value": f"{tip_height:,}" if tip_height else "unknown", "inline": True},
+                {"name": "Tip age", "value": f"{tip_age_hrs:.1f}h" if tip_age_hrs is not None else "unknown", "inline": True},
+                {"name": "Chain", "value": "majority (verified)", "inline": True},
+            ],
+            "footer": {"text": f"Spiral Sentinel · {ts}"},
+        }
+
+    desc = (
+        f"```diff\n- BITCOIN IS ON THE WRONG CHAIN\n```\n"
+        f"Your Bitcoin node is following a **minority chain**, not the Bitcoin "
+        f"that exchanges, wallets and other miners use.\n\n"
+        f"**What happened:** on 8 August 2026 a disputed rule change (BIP-110) split "
+        f"Bitcoin in two at block 961,632. About 99.85% of mining power stayed on the "
+        f"main chain. The other chain produces roughly one block every day or two and "
+        f"its coins are not traded anywhere.\n\n"
+        f"**Why this matters:** any block you find on this chain is very unlikely to be "
+        f"worth anything. Everything else looks fine — miners connect, shares are "
+        f"accepted, hashrate reads normal — so nothing else would tell you.\n\n"
+        f"**What to do:** run the coin upgrade to move to Bitcoin Core and repair the "
+        f"chain automatically:\n"
+        f"```\nsudo /spiralpool/scripts/coin-upgrade.sh --coin BTC\n```\n"
+        f"The pool refuses to mine BTC until this is resolved, so you are not wasting "
+        f"electricity in the meantime.\n\n"
+        f"**Detected:** {reason}"
+    )
+    fields = [
+        {"name": "Block 961,632", "value": _chain_split_block_field(block_hash, tip_height), "inline": False},
+        {"name": "Tip height", "value": f"{tip_height:,}" if tip_height else "unknown", "inline": True},
+        {"name": "Tip age", "value": f"{tip_age_hrs:.1f}h" if tip_age_hrs is not None else "unknown", "inline": True},
+        {"name": "Enforcing BIP-110", "value": "yes" if rdts_enforcing else "no", "inline": True},
+    ]
+    return {
+        "title": "🔴 Bitcoin: wrong chain detected",
+        "description": desc,
+        "color": 0xE03131,
+        "fields": fields,
+        "footer": {"text": f"Spiral Sentinel · {ts}"},
+    }
+
+
+def check_chain_identity(state):
+    """Alert when the BTC node is not verifiably on Bitcoin's majority chain.
+
+    Fires on any of: BIP-110 enforcement detected, block 961,632 hash mismatch,
+    or a BTC tip older than BITCOIN_MAX_TIP_AGE_SECS.
+
+    Deliberately silent when the daemon is unreachable or still syncing below the
+    split height — those are unknowns, not wrong-chain verdicts, and alerting on
+    them would train operators to ignore this.
+    """
+    if not CONFIG.get("chain_identity_enabled", True):
+        return
+
+    btc = get_coin_by_symbol("BTC")
+    if not btc or not btc.get("enabled", True):
+        return
+    rpc_port = btc.get("rpc_port")
+    if not rpc_port:
+        return
+
+    info = _rpc_call("127.0.0.1", rpc_port, "getblockchaininfo", timeout=5)
+    # isinstance, not truthiness: _rpc_call returns result["result"] verbatim, so a
+    # daemon returning any JSON type gives a truthy non-dict and info.get() raises.
+    # This check is not individually wrapped in the monitor loop, so a raise here
+    # skips every later check in the cycle (dry streak, disk, mempool, reports,
+    # state.save) for as long as the daemon keeps returning that shape.
+    if not isinstance(info, dict):
+        return  # unreachable or unusable — not a verdict
+
+    # Only Bitcoin mainnet has a block 961,632. Off mainnet the split does not
+    # apply, and a regtest binary listing a reduced_data deployment would
+    # otherwise fire the full red wrong-chain alert. Matches the Go gate and the
+    # dashboard, both of which return n/a off mainnet.
+    chain = (info.get("chain") or "").lower()
+    if chain and chain != "main":
+        return
+
+    blocks = info.get("blocks", 0) or 0
+    median_time = info.get("mediantime", 0) or 0
+    tip_age_secs = (time.time() - median_time) if median_time else None
+    tip_age_hrs = (tip_age_secs / 3600.0) if tip_age_secs is not None else None
+
+    # Enforcement check — conclusive on its own.
+    rdts_enforcing = False
+    dep = _rpc_call("127.0.0.1", rpc_port, "getdeploymentinfo", timeout=5)
+    if isinstance(dep, dict):
+        rdts_enforcing = "reduced_data" in (dep.get("deployments") or {})
+
+    reason = None
+    block_hash = None
+    # True when the node is verifiably on the MAJORITY chain and only its tip is
+    # stale. Selects a different embed: the wrong-chain text tells the operator
+    # their blocks are worthless and to run coin-upgrade.sh, which would be the
+    # wrong diagnosis and the wrong remedy for a node that just lost its peers.
+    stale_only = False
+
+    if rdts_enforcing:
+        if blocks < BITCOIN_SPLIT_HEIGHT:
+            # Enforcing, but not yet at the split. The verdict is conclusive and
+            # worth alerting on, but the wording must not claim a present-tense
+            # fact the node has not reached yet, and there is no block 961,632 to
+            # read — which previously rendered as "Block 961,632: unreadable" and
+            # read like the check had failed. chainguard.go words this case the
+            # same way.
+            reason = ("the daemon enforces BIP-110 (RDTS), so it will follow the "
+                      "minority chain once it reaches the split height")
+        else:
+            reason = "the daemon enforces BIP-110 (RDTS), so it follows the minority chain"
+        # Read the hash anyway when the node is past the split. Enforcement alone
+        # is conclusive, but the embed shows this field, and leaving it unset made
+        # a genuine detection report "Block 961,632: unreadable" — which reads
+        # like the check failed rather than like it found the wrong chain.
+        if blocks >= BITCOIN_SPLIT_HEIGHT:
+            block_hash = _rpc_call("127.0.0.1", rpc_port, "getblockhash",
+                                   [BITCOIN_SPLIT_HEIGHT], timeout=5) or None
+    elif blocks >= BITCOIN_SPLIT_HEIGHT:
+        block_hash = _rpc_call("127.0.0.1", rpc_port, "getblockhash", [BITCOIN_SPLIT_HEIGHT], timeout=5)
+        if not block_hash:
+            return  # could not read it — unknown, not a verdict
+        if block_hash == BITCOIN_RDTS_BLOCK_961632:
+            reason = "block 961,632 matches the BIP-110 minority chain"
+        elif block_hash != BITCOIN_MAJORITY_BLOCK_961632:
+            reason = "block 961,632 matches neither the majority chain nor the known minority chain"
+        elif tip_age_secs is not None and tip_age_secs > BITCOIN_MAX_TIP_AGE_SECS:
+            # Right chain, dead tip. This is a DIFFERENT problem from being on the
+            # wrong chain and must not reuse the wrong-chain embed: that text tells
+            # the operator their blocks are worthless and to run coin-upgrade.sh,
+            # neither of which applies to a node that simply lost its peers.
+            stale_only = True
+            reason = (f"on the majority chain but the tip is {tip_age_hrs:.1f}h old, "
+                      f"far outside normal variance — the node may be stalled")
+    # Below the split height there is nothing to compare; stay silent.
+
+    if not reason:
+        return
+
+    now = time.time()
+    alert_key = "chain_identity:BTC"
+    cooldown = ALERT_COOLDOWNS.get("chain_identity", 21600)
+    if now - state.last_alerts.get(alert_key, 0) < cooldown:
+        return
+
+    embed = create_chain_identity_embed(reason, block_hash, blocks, tip_age_hrs, rdts_enforcing, stale_only)
+
+    # Only start the cooldown if the alert was actually DELIVERED. send_alert
+    # returns False on several suppression paths (maintenance mode, HA
+    # non-master, startup grace, disabled_alerts, transport failure); stamping
+    # the latch on a suppressed alert buys 6 hours of silence for a message
+    # nobody received. Quiet hours, batching and the blockchain-not-ready gate
+    # cannot suppress this particular alert — it is registered in
+    # ALERT_BYPASS_QUIET and IMMEDIATE_ALERT_TYPES and exempted from that gate.
+    #
+    # That gate alone is not enough, because send_alert keeps its OWN rate
+    # limiter keyed on the bare alert_type and stamps it BEFORE the transport
+    # runs. So a Discord outage or DNS blip leaves state.last_alerts["chain_identity"]
+    # set even though nothing was sent, and every retry then dies inside
+    # send_alert's own limiter — costing the full 6 hours of silence from one
+    # transient failure, which is exactly what the retry was written to prevent.
+    #
+    # Snapshot that key and restore it when delivery fails, which undoes the
+    # premature stamp without touching a legitimate cooldown from an earlier
+    # successful send. (Restoring rather than deleting matters: send_alert also
+    # returns False when it is genuinely rate-limited, and that stamp must
+    # survive.)
+    _sa_key = "chain_identity"
+    _had_stamp = _sa_key in state.last_alerts
+    _prev_stamp = state.last_alerts.get(_sa_key)
+
+    if send_alert(_sa_key, embed, state):
+        state.last_alerts[alert_key] = now
+    else:
+        if _had_stamp:
+            state.last_alerts[_sa_key] = _prev_stamp
+        else:
+            state.last_alerts.pop(_sa_key, None)
+
+    # Throttle the journal line on its own latch, stamped unconditionally.
+    # The cooldown above is deliberately only stamped on successful delivery so
+    # a suppressed alert is retried — but that means a persistently suppressed
+    # alert (quiet hours, maintenance mode, HA replica) reaches this point on
+    # every monitor cycle, and this used to emit an identical ERROR line each
+    # time: thousands a day, indefinitely. The condition still gets recorded,
+    # once per cooldown, whether or not Discord accepted it.
+    log_key = "chain_identity:BTC:logged"
+    if now - state.last_alerts.get(log_key, 0) >= cooldown:
+        state.last_alerts[log_key] = now
+        if stale_only:
+            logger.error(f"CHAIN IDENTITY: BTC is on the majority chain but its tip is stale — {reason}")
+        else:
+            logger.error(f"CHAIN IDENTITY: BTC is not on the majority chain — {reason}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # DRY STREAK ALERTING — no block found for N × expected interval
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6104,7 +6394,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.6.7-SPIRAL_CITADEL"
+                "sentinel_version": "V2.7.0-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6123,7 +6413,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.6.7-SPIRAL_CITADEL"
+                "sentinel_version": "V2.7.0-SPIRAL_CITADEL"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -6368,6 +6658,7 @@ ALERT_BYPASS_QUIET = {
     "temp_critical": True,         # Hardware emergency
     "hashrate_crash": False,       # Suppress during quiet hours — visible in intel reports
     "coin_node_down": True,        # Node emergency
+    "chain_identity": True,        # Mining a minority chain earns nothing — do not sit on this until morning
     "ha_vip_change": True,         # HA failover event
     "ha_state_change": True,       # HA cluster state change
     "ha_promoted": True,           # Node promoted to master - always alert
@@ -6478,6 +6769,12 @@ def get_alert_cooldowns():
         # Per-coin health alerts (1 hour cooldown to prevent spam)
         "coin_node_down": 3600,
         "coin_sync_behind": 3600,
+        # Must be here as well as in DEFAULT_CONFIG. Sentinel merges an operator's
+        # saved config with `config.update(user_config)`, which replaces the whole
+        # alert_cooldowns sub-dict — so an UPGRADED install's ALERT_COOLDOWNS would
+        # lack this key and send_alert's rate limiter would silently never engage
+        # for it, while a fresh install's would. Same value, same behaviour, both.
+        "chain_identity": 21600,       # 6 hours
         # HA/VIP alerts (no cooldown for state changes)
         "ha_vip_change": 0,
         "ha_state_change": 0,
@@ -6753,6 +7050,7 @@ IMMEDIATE_ALERT_TYPES = {
     "block_orphaned",     # Block orphaned - critical loss event (P0 audit fix)
     "temp_critical",      # Hardware thermal emergency
     "coin_node_down",     # Node emergency
+    "chain_identity",     # Mining a minority chain earns nothing — do not batch this
     "excessive_restarts", # Hardware issue needs attention
     "chronic_issue",      # Recurring problem needs investigation
     # Important operational alerts
@@ -12839,7 +13137,12 @@ def send_alert(alert_type, embed, state=None, miner_name=None):
 
     # Skip all notifications if blockchain not synced (except startup and scheduled reports)
     # Scheduled reports should always fire on schedule - they contain cached data anyway
-    if alert_type not in ["startup_summary", "block_found"] + SCHEDULED_REPORT_TYPES and not is_blockchain_ready():
+    # chain_identity is exempt on purpose. The stratum chain gate REFUSES TO START
+    # the BTC pool when the chain cannot be verified, so no pool ever reports a
+    # block height, so is_blockchain_ready() is False by construction — exactly
+    # when this alert most needs to go out. Gating it on readiness would mean the
+    # alert explaining why the pool is down can never be delivered.
+    if alert_type not in ["startup_summary", "block_found", "chain_identity"] + SCHEDULED_REPORT_TYPES and not is_blockchain_ready():
         logger.debug(f"Alert blocked by blockchain not ready: {alert_type}")
         return False
 
@@ -19865,6 +20168,7 @@ def monitor_loop(state):
                 if coin_health:  # only on a fresh check, not a cached no-op (keeps the streak honest)
                     handle_coin_health_alerts(coin_health, state)
                 check_stuck_syncs(state)
+                check_chain_identity(state)
                 check_dry_streak(state)
                 check_difficulty_changes(state)
                 check_disk_space(state)

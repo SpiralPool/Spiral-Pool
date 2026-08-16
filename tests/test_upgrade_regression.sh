@@ -1068,10 +1068,22 @@ test_stratum_build_deploy_split() {
     local main_body
     main_body=$(sed -n '/^main()/,/^}/p' "$UPGRADE_SCRIPT")
 
+    # Match CALL SITES, not prose. A bare grep for the name also matches the
+    # comment above the call ("Must run BEFORE stop_services"), which sits
+    # earlier in the body — so stop_services resolved to the comment's line and
+    # this ordering check failed against correct code.
+    #
+    # Strip comments rather than anchoring to line-start: calls are not always
+    # bare statements (deploy_stratum is invoked as "$UPDATE_STRATUM && deploy_stratum").
+    # Blanking the comment text preserves line numbering, so the reported
+    # positions still refer to real lines in main().
+    local main_code
+    main_code=$(echo "$main_body" | sed 's/#.*//')
+
     local build_line stop_line deploy_line
-    build_line=$(echo "$main_body" | grep -n 'build_stratum' | head -1 | cut -d: -f1)
-    stop_line=$(echo "$main_body" | grep -n 'stop_services' | head -1 | cut -d: -f1)
-    deploy_line=$(echo "$main_body" | grep -n 'deploy_stratum' | head -1 | cut -d: -f1)
+    build_line=$(echo "$main_code" | grep -n 'build_stratum' | head -1 | cut -d: -f1)
+    stop_line=$(echo "$main_code" | grep -n 'stop_services' | head -1 | cut -d: -f1)
+    deploy_line=$(echo "$main_code" | grep -n 'deploy_stratum' | head -1 | cut -d: -f1)
 
     if [[ -n "$build_line" ]] && [[ -n "$stop_line" ]] && [[ "$build_line" -lt "$stop_line" ]]; then
         pass "build_stratum called before stop_services (build L${build_line}, stop L${stop_line})"

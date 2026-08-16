@@ -16,6 +16,12 @@ Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
   - FBTC indexing provider cycle fix (getdifficulty=1 fallback)
   - Network difficulty display in Est. Time to Block widget
   - Block alert retry queue (persist failed Discord notifications to disk)
+  - MinerClassS19: dedicated miner class for the Antminer S19 series, split out
+    of MinerClassPro so S21/Whatsminer M50+ no longer share a vardiff tier with
+    90-141 TH/s hardware (tighter difficulty range, lower rejection rates)
+    - spiralrouter.go: MinerClassS19 constant, String(), Vendor(), DefaultProfiles
+      entry (InitialDiff 24000, MinDiff 16384, MaxDiff 65536), user-agent regex
+    - devicehints.go: classifyDevice() routes "antminer s19" to MinerClassS19
   - Sync check interval fix (60s → 30s)
   - Block dedup hash-only fix (removed worker-name dedup)
   - Per-coin all-time best share difficulty (lifetime_stats persistence)
@@ -47,6 +53,24 @@ MESKONE0722 — https://github.com/MESKONE0722/Spiral-Pool
   - BTCS (Bitcoin Silver) coin implementation and Docker support
   - BCH2/BTCS install.sh integration (ports, RPC users, enable flags)
   - config/coins.manifest.yaml entries for BCH2 and BTCS
+
+---
+
+## Provenance Notes by Release
+
+v2.7.0 (Spiral Citadel) — Bitcoin chain-identity release
+  - The BIP-110 / RDTS chain-split remediation that this release is named for
+    is original to this repository, not ported: the daemon pinning and checksum
+    gates, the stratum chain gate (internal/daemon/chainguard.go), the Sentinel
+    chain_identity alert, the dashboard verdict row, and the coin-upgrade.sh
+    reconsiderblock repair path.
+  - Upstream work DOES ship in this release: Kamakhu's MinerClassS19, adopted
+    from that fork during this cycle and credited in full above. Verified
+    against the shipping code: InitialDiff 24000 / MinDiff 16384 /
+    MaxDiff 65536 in spiralrouter.go, and classifyDevice() routing
+    "antminer s19" in devicehints.go.
+  - The adopted commit was reviewed for personal or health information before
+    merge; none was present in the code that was taken.
 
 ---
 

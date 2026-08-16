@@ -260,6 +260,25 @@ type CoinPoolConfig struct {
 	// SkipGenesisVerify disables genesis block hash verification at startup.
 	// USE ONLY FOR REGTEST/TESTNET — regtest has a different genesis hash than mainnet.
 	SkipGenesisVerify bool `yaml:"skip_genesis_verify,omitempty"`
+
+	// AllowNonMajorityChain permits mining when the startup chain check cannot
+	// confirm the daemon follows Bitcoin's majority chain.
+	//
+	// Defaults to false and should stay false. On 2026-08-08 Bitcoin split at
+	// block 961,632 over BIP-110 (RDTS). A daemon following the minority chain
+	// behaves normally in every observable way — stratum connects, shares
+	// validate, the dashboard shows healthy hashrate — while producing blocks
+	// that are unlikely to have any value. The only symptom is that blocks never
+	// arrive, which for a solo miner is indistinguishable from bad luck.
+	//
+	// Set this true ONLY if you genuinely intend to mine a non-majority chain.
+	//
+	// SECOND EFFECT, easy to miss: this also disables the STALE TIP refusal. That
+	// check is unrelated to the chain split — it stops the pool serving work when
+	// the node's tip has stopped advancing (lost peers, wedged daemon, full disk)
+	// regardless of which chain it is on. Setting this flag accepts both risks,
+	// not just the chain-identity one.
+	AllowNonMajorityChain bool `yaml:"allow_nonmajority_chain,omitempty"`
 }
 
 // CoinStratumConfig defines stratum settings for a specific coin.

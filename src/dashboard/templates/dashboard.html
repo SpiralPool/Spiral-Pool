@@ -3804,7 +3804,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.6.7</span>
+            <span>Spiral Pool Dashboard v2.7.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -6421,8 +6421,11 @@
             } else if (height) {
                 finderEl.textContent = `Block #${height.toLocaleString()}`;
             } else if (finder) {
-                const safeFinder = escapeHtml(finder);
-                finderEl.textContent = `by ${safeFinder}`;
+                // textContent does not parse HTML, so it needs no escaping — and
+                // escaping here is actively wrong: the entities are not decoded,
+                // so a worker named "Bob's Rig" would display as "Bob&#39;s Rig".
+                // (The innerHTML branch above does need escapeHtml.)
+                finderEl.textContent = `by ${finder}`;
             } else {
                 finderEl.textContent = '--';
             }
@@ -6459,7 +6462,10 @@
             if (!str) return '';
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            // innerHTML escapes & < >, but NOT quotes. Several callers place the
+            // result in an attribute (title="${...}"), where an unescaped " ends
+            // the attribute early. Escape both quote forms too.
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Format hashrate - algorithm aware
@@ -8820,6 +8826,36 @@
             }
         }
 
+        // Chain identity indicator (BTC only).
+        //
+        // On 2026-08-08 Bitcoin split at block 961,632 over BIP-110 ("RDTS"). A node
+        // on the minority chain is indistinguishable from a healthy one in every other
+        // stat on this card — online, synced, peers connected, hashrate normal — while
+        // any block it finds is near-worthless. So the verdict gets its own row rather
+        // than being something an operator has to infer from blocks never arriving.
+        //
+        // Renders nothing for coins where this does not apply (chain_verdict 'n/a').
+        function renderChainVerdict(node) {
+            const v = node.chain_verdict;
+            if (!v || v === 'n/a') return '';
+            const detail = escapeHtml(node.chain_verdict_detail || '');
+            let label, color;
+            if (v === 'majority') {
+                label = 'Majority ✓'; color = 'var(--neon-green, #00e676)';
+            } else if (v === 'minority') {
+                label = 'MINORITY ⚠'; color = 'var(--neon-red, #ff5252)';
+            } else if (v === 'stale') {
+                // Right chain, dead tip. The stratum gate refuses to mine on this,
+                // so it must not render as green here.
+                label = 'Stale tip ⚠'; color = 'var(--neon-orange, #ff9800)';
+            } else {
+                label = 'Unverified'; color = 'var(--text-muted, #888)';
+            }
+            return `<div class="health-stat" title="${detail}">`
+                 + `<span class="health-stat-label">Chain</span>`
+                 + `<span class="health-stat-value" style="color:${color};font-weight:600">${label}</span></div>`;
+        }
+
         // Format uptime in human readable form
         function formatUptimeHealth(seconds) {
             if (!seconds || seconds <= 0) return '--';
@@ -8979,8 +9015,9 @@
                                 <div class="health-stats-grid">
                                     <div class="health-stat">
                                         <span class="health-stat-label">Version</span>
-                                        <span class="health-stat-value">${escapeHtml(n.version || '--')}</span>
+                                        <span class="health-stat-value">${escapeHtml(n.client_name ? n.client_name + ' ' + (n.version || '') : (n.version || '--'))}</span>
                                     </div>
+                                    ${renderChainVerdict(n)}
                                     <div class="health-stat">
                                         <span class="health-stat-label">Block Height</span>
                                         <span class="health-stat-value">${formatNumber(n.blocks || 0)}</span>
@@ -9044,7 +9081,8 @@
                         </div>
                         <div class="health-card-body">
                             <div class="health-stats-grid">
-                                <div class="health-stat"><span class="health-stat-label">Version</span><span class="health-stat-value">${escapeHtml(node.version || '--')}</span></div>
+                                <div class="health-stat"><span class="health-stat-label">Version</span><span class="health-stat-value">${escapeHtml(node.client_name && node.version ? node.client_name + ' ' + node.version : (node.version || node.client_name || '--'))}</span></div>
+                                ${renderChainVerdict(node)}
                                 <div class="health-stat"><span class="health-stat-label">Block Height</span><span class="health-stat-value">${formatNumber(node.blocks || 0)}</span></div>
                                 <div class="health-stat"><span class="health-stat-label">Sync</span><span class="health-stat-value">${(node.sync_progress || 0).toFixed(2)}%</span></div>
                                 <div class="health-stat"><span class="health-stat-label">Peers</span><span class="health-stat-value">${node.connections || 0}</span></div>

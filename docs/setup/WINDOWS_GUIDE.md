@@ -230,6 +230,24 @@ For TLS connections, use `stratum+ssl://` with the TLS port (typically stratum p
 
 ---
 
+## Bitcoin Core and the 2026 Chain Split
+
+Both installation paths end up on **Bitcoin Core**, pinned and checksum-verified, though the pin lives in a different place for each: Path A (Docker) pins it in `docker/Dockerfile.bitcoin`, and Path B (WSL2 + `install.sh`) pins it in the installer. `install-windows.ps1` itself downloads no Bitcoin daemon — it sets up the host and hands off. Neither path installs Bitcoin Knots.
+
+On 8 August 2026 at block 961,632 Bitcoin split over BIP-110 ("RDTS"). Knots builds carrying the `knots20260508` datestamp or later enforce it and follow a minority chain that produces roughly one block every day or two, with no exchange support. About 99.85% of hashpower stayed on the majority chain. The datestamp is the enforcement marker, not a release date, and enforcement is compiled into the binary — it cannot be turned off in `bitcoin.conf`.
+
+A node on the minority chain looks completely healthy: miners connect, shares are accepted, hashrate reads normally. The only symptom is that blocks never arrive. The pool therefore verifies chain identity at every startup and **refuses to mine BTC** until the node is confirmed on the majority chain.
+
+**Do not install a Bitcoin daemon by hand alongside Spiral Pool.** If you already have one, check it with:
+
+```
+bitcoin-cli getblockhash 961632
+```
+
+The majority chain returns `00000000000000000000d1e01392faa65ceeaed307f0a3159144b84146ff24ba`. Anything else means the node is not on the chain that has value.
+
+---
+
 ## Troubleshooting
 
 ### Docker Desktop won't start

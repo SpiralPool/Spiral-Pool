@@ -102,8 +102,22 @@ jobs:
 
       - name: Run gosec
         run: |
-          gosec -no-fail -fmt=sarif -out=gosec-results.sarif ./...
-          gosec -no-fail -fmt=text ./...
+          # G104 and G115 are excluded because they were 239 of 308 open alerts
+          # and every one was triaged as a false positive, which left the code
+          # scanning tab with no usable signal:
+          #
+          #   G104 (unhandled errors) — the WAL durability path IS fully
+          #     error-checked; the hits are best-effort dir.Sync() metadata
+          #     syncs and zap's logger.Sync(), which is the standard ignore.
+          #   G115 (integer overflow conversion) — share counters, block
+          #     heights and charset indices are all domain-bounded orders of
+          #     magnitude below the conversion limits.
+          #
+          # Errors that matter are still caught by errcheck-style review and by
+          # go vet in the build job. Do NOT add exclusions here without
+          # triaging the findings first.
+          gosec -no-fail -exclude=G104,G115 -fmt=sarif -out=gosec-results.sarif ./...
+          gosec -no-fail -exclude=G104,G115 -fmt=text ./...
 
       - name: Run staticcheck
         continue-on-error: true

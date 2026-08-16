@@ -47,6 +47,44 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | Fractal Bitcoin | FBTC | 8340 | 8341 | 28340 |
 | eCash | XEC | 9004 | 8343 | 28335 |
 
+## Bitcoin Chain Identity
+
+Spiral Pool installs Bitcoin Core only. Bitcoin split on 8 August 2026 at block 961,632 over BIP-110 ("RDTS"); the pool verifies at every stratum startup that the BTC daemon is on the majority chain and refuses to serve work otherwise.
+
+| Constant | Value |
+|----------|-------|
+| Split height | `961632` |
+| Majority chain block 961,632 | `00000000000000000000d1e01392faa65ceeaed307f0a3159144b84146ff24ba` |
+| BIP-110 chain block 961,632 | `0000000000000000000169eb6f811ddbd0daf343af7b62180cdb13e7c78dbc16` |
+| Enforcement RPC | `getdeploymentinfo` → `deployments.reduced_data` present = enforcing |
+| Max tip age before stale | 3 hours |
+
+**Verdicts:**
+
+| Verdict | Meaning | Mining |
+|---------|---------|--------|
+| `majority` | Block 961,632 verified against the majority chain | Allowed — **unless the tip is stale** |
+| `minority` | Verifiably not on the majority chain | Blocked |
+| `unknown` | Daemon unreachable, or still syncing below the split height | Blocked |
+| `n/a` | Not Bitcoin mainnet (regtest/testnet/signet), so the split does not apply | Allowed |
+
+`unknown` is deliberately distinct from `minority` so a temporarily unreachable daemon is never reported as wrong-chain. Note that `majority` alone is not sufficient: a tip older than 3 hours also blocks mining, because a stalled node on the right chain produces work that can never confirm.
+
+**Config key:** `allow_nonmajority_chain: true` per coin permits mining anyway. Defaults to false. It also disables the stale-tip refusal, so a node wedged on the **correct** chain will mine a dead tip too — that second effect is easy to miss and is rarely what you want.
+
+**Manual check:**
+
+```bash
+bitcoin-cli getblockhash 961632   # must equal the majority hash above
+bitcoin-cli getdeploymentinfo | grep reduced_data   # no output = not enforcing
+```
+
+**Repair:** `sudo /spiralpool/scripts/coin-upgrade.sh --coin BTC`. Replacing the binary alone is insufficient — an RDTS-enforcing daemon persists a rejected-block marker for the majority chain that Bitcoin Core inherits and honours; the upgrade clears it with `reconsiderblock`.
+
+**Do not set `maxtipage`** in `bitcoin.conf`. It disables the daemon's initial-block-download gating, so a wedged node reports `initialblockdownload: false` and every health surface reads normal. The chain gate itself is unaffected — it computes tip age from `mediantime` against its own threshold and never reads `maxtipage` — so the pool still refuses to mine a stale tip. What breaks is agreement between your monitoring and the pool.
+
+---
+
 ## Multi Coin Smart Port
 
 | Feature | Port | Notes |
@@ -473,4 +511,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.6.7*
+*Spiral Pool — Spiral Citadel 2.7.0*

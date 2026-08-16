@@ -118,7 +118,7 @@ func runConfigValidate(args []string) error {
 		{"Bitcoin Cash", DefaultBCHConfig, "bch"},
 		{"Bitcoin Cash II", DefaultBCH2Config, "bch2"},
 		{"Bitcoin Silver", DefaultBTCSConfig, "btcs"},
-		{"Bitcoin Knots", DefaultBTCConfig, "btc"},
+		{"Bitcoin Core", DefaultBTCConfig, "btc"},
 		{"Catcoin", DefaultCATConfig, "cat"},
 		{"DigiByte", DefaultDGBConfig, "dgb"},
 		{"DigiByte-Scrypt", DefaultDGBScryptConfig, "dgb-scrypt"},

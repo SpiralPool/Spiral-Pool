@@ -215,6 +215,7 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `chain_identity_enabled` | bool | `true` | Alert when the BTC node is not verifiably on Bitcoin's majority chain (BTC only) |
 | `dry_streak_enabled` | bool | `true` | Alert when no block found for N × ETB |
 | `dry_streak_multiplier` | int | `3` | ETB multiple before dry streak alert fires |
 | `difficulty_alert_enabled` | bool | `true` | Alert on significant network difficulty changes |
@@ -394,6 +395,11 @@ When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap
 | `coin_node_down` | Coin's blockchain node unreachable | Bypasses | 3600s |
 | `coin_sync_behind` | Coin node syncing, blocks behind | Respects | 3600s |
 | `coin_config_change` | Mode switch, coin add/remove | Respects | None |
+| `chain_identity` | BTC node not verifiably on Bitcoin's majority chain — BIP-110 enforcement detected, block 961,632 hash mismatch, or a tip older than 3h | Bypasses | 21600s |
+
+**`chain_identity`** is BTC-only and covers two distinct conditions with different wording: following a minority chain (red — blocks found there are unlikely to have value), and a stalled tip on the correct chain (amber — the node lost peers or wedged; the chain itself is fine). It is silent when the daemon is unreachable or still syncing below the split height, since neither is a wrong-chain verdict. Disable with `chain_identity_enabled: false` if you deliberately mine a non-majority chain — the stratum has a matching `allow_nonmajority_chain` setting. It can also be toggled at runtime with `spiralctl alerts disable chain_identity` (it is listed under the **Coin node** group), which writes `disabled_alerts` rather than the config key.
+
+Three suppression paths are deliberately bypassed, because every one of them is a state in which a wrong-chain node keeps mining worthless blocks while the alert waits: it bypasses quiet hours, it is never batched into a digest, and it is exempt from the "blockchain not ready" gate that holds back most alerts during startup. Its cooldown is also only started once the alert is actually **delivered**, so an alert suppressed by maintenance mode or HA replica status is retried rather than silently absorbing six hours of silence. The matching journal line is throttled separately, so a long suppression window cannot flood the log.
 
 ---
 
@@ -804,4 +810,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Citadel 2.6.7*
+*Spiral Sentinel &mdash; Spiral Citadel 2.7.0*

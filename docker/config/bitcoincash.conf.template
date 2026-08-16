@@ -6,7 +6,10 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # NETWORK SETTINGS
 # ═══════════════════════════════════════════════════════════════════════════════
-chain=main
+# NOTE: no `chain=main`. Bitcoin Cash Node does not register a -chain
+# option (only -regtest/-testnet/-testnet4/-scalenet/-chipnet), and unlike
+# Bitcoin Core it treats an unknown config key as FATAL — it never took
+# upstream PR #13799. Mainnet is the default; naming it kills the daemon.
 listen=1
 port=8433
 
@@ -36,7 +39,8 @@ zmqpubrawtx=tcp://0.0.0.0:28432
 zmqpubrawblock=tcp://0.0.0.0:28432
 
 # High water mark for ZMQ (prevents message drops under load)
-zmqpubhashblockhwm=1000
+# NOTE: no `zmqpubhashblockhwm`. BCHN registers six ZMQ options and no hwm
+# variant; an unknown key is fatal here (see above).
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERFORMANCE TUNING - OPTIMIZED FOR FAST SYNC
@@ -96,7 +100,8 @@ blockmaxsize=32000000
 excessiveblocksize=32000000
 
 # Accept large blocks from peers
-excessiveacceptdepth=12
+# NOTE: no `excessiveacceptdepth`. That is a Bitcoin Unlimited option and
+# does not exist in BCHN; an unknown key is fatal here (see above).
 
 # Minimum relay fee
 minrelaytxfee=0.00001

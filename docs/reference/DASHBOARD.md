@@ -224,7 +224,7 @@ All sections below the stats bar are drag-to-reorder (SortableJS). Order persist
 | **Hashrate History** | Chart.js line chart with period selector: 1h, 24h, 7d, 30d |
 | **Mining Devices** | Miner cards grid (grouped or flat view). Per-miner: hashrate, power, temp, fan, shares, status, pool URL. Click for detail modal with per-miner chart. |
 | **Earnings Calculator** | Block reward, coin price (multi-currency), expected blocks/month, per-block value, monthly average, electricity cost (daily/monthly kWh, cost, net profit, margin) |
-| **System Health** | Stratum status + blockchain node health cards. Per-node: sync progress, connections, block height. Restart buttons. |
+| **System Health** | Stratum status + blockchain node health cards. Per-node: sync progress, connections, block height, client name and version. Restart buttons. **BTC cards also carry a chain verdict row** — see below. |
 | **Activity Feed** | Unified event timeline (blocks, alerts, miner events) |
 
 ### Layout Templates
@@ -413,6 +413,29 @@ Per-device-type control endpoints for AxeOS, CGMiner, Whatsminer, BraiinsOS, Vni
 | GET | `/api/nodes/<symbol>/sync` | User | Sync progress |
 | POST | `/api/stratum/restart` | Admin | Restart stratum service |
 
+#### Chain identity fields (BTC only)
+
+`/api/nodes`, `/api/nodes/<symbol>` and `/api/health` carry four extra fields on Bitcoin nodes. Bitcoin split on 8 August 2026 at block 961,632 over BIP-110 ("RDTS"), and a node on the minority chain is indistinguishable from a healthy one on every other stat this dashboard shows — sync reads 100%, connections are normal, block height advances. That is why the verdict gets its own row.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `chain_verdict` | string | `majority`, `minority`, `stale`, `unknown`, or `n/a` |
+| `chain_verdict_detail` | string | Reasoning, shown as the row's tooltip |
+| `client_name` | string | Daemon implementation (e.g. `Bitcoin Core`), rendered beside the version |
+| `_mediantime` | int | Tip `mediantime`, used to compute tip age. Present only when the node is online. |
+
+| Verdict | Card rendering | Meaning |
+|---------|----------------|---------|
+| `majority` | green | Block 961,632 verified against the majority chain |
+| `minority` | **red** | Verifiably on a chain whose blocks are unlikely to have value |
+| `stale` | amber | Correct chain, but the tip is older than 3 hours — the node is wedged or lost peers. A different problem with a different remedy, so it is deliberately not shown as a wrong-chain error. |
+| `unknown` | grey, "Unverified" | Daemon unreachable, or still syncing below the split height |
+| `n/a` | **no row at all** | Not Bitcoin, or not mainnet — the question does not arise |
+
+Note the distinction between the wire value and the label: the card prints **Unverified** for `unknown`. No payload ever carries the string `unverified`, so match on `unknown` when consuming the API.
+
+The fields are always present. Non-BTC coins carry `chain_verdict: "n/a"` with empty detail and client name, and `renderChainVerdict` returns nothing for `n/a`, so no row is drawn — rather than an empty or misleading one. Payloads cached by an older version predate the fields entirely and also render no row. The dashboard reports only; the stratum enforces this independently at startup (see [REFERENCE.md](REFERENCE.md#bitcoin-chain-identity)).
+
 ### Management
 
 | Method | Endpoint | Auth | Description |
@@ -532,4 +555,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Spiral Citadel 2.6.7*
+*Spiral Dash &mdash; Spiral Citadel 2.7.0*
