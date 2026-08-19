@@ -133,8 +133,12 @@ func TestVerifyDefaultProfilesValid(t *testing.T) {
 			// (S19 XP Hyd) — a 3.6x spread. InitialDiff 24000 targets the ~100 TH/s
 			// baseline, so a 70 TH/s unit needs 1.47s per share against a 1s target and
 			// requires headroom below the start. MinDiff 16384 is that floor.
+			// NerdNOS: same shape as S19. The add-on board runs ~150-200 GH/s; InitialDiff
+			// 203 targets the ~175 GH/s midpoint, so slower units need room below it.
+			// Pinning MinDiff to InitialDiff here would
+			// recreate exactly the MinerClassLow behaviour this class exists to avoid.
 			if class != MinerClassLottery && class != MinerClassUnknown && class != MinerClassFarmProxy &&
-				class != MinerClassS19 && profile.MinDiff != profile.InitialDiff {
+				class != MinerClassS19 && class != MinerClassNerdNOS && profile.MinDiff != profile.InitialDiff {
 				t.Errorf("Class %s: MinDiff (%.6f) != InitialDiff (%.6f)",
 					class.String(), profile.MinDiff, profile.InitialDiff)
 			}

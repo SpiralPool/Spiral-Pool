@@ -280,6 +280,12 @@ func classifyDevice(hint *DeviceHint) MinerClass {
 
 	// Classification based on device model (most reliable)
 	switch {
+	// NerdNOS: BM1397 add-on board for the NerdMiner. MUST precede the "nerdminer"
+	// case below — the host is a NerdMiner, so a model string naming both is likely,
+	// and it would otherwise be read as lottery.
+	case strings.Contains(model, "nerdnos"), strings.Contains(model, "nerd nos"):
+		return MinerClassNerdNOS
+
 	// Lottery miners (ESP32-only, no ASIC)
 	case strings.Contains(model, "nerdminer"):
 		return MinerClassLottery
@@ -333,7 +339,12 @@ func classifyDevice(hint *DeviceHint) MinerClass {
 		}
 		return MinerClassLow // 1-2x BM1370 = ~1-2 TH/s
 	case asic == "bm1397":
-		return MinerClassMid // BM1397 used in various configs
+		// The BM1397 is the BitAxe Max chip, used singly on hobby boards. Recognised
+		// BitAxe models are already claimed by the model switch above, so this arm is
+		// reached mainly by NerdNOS. MinerClassMid (InitialDiff == MinDiff == 1165,
+		// 1s target) pinned these boards at ~12x their target share time with no way
+		// to descend.
+		return MinerClassNerdNOS
 	}
 
 	// Classification based on observed hashrate (fallback)

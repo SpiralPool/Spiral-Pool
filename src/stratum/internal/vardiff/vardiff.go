@@ -68,6 +68,10 @@ type SessionState struct {
 	// rapid retarget attempts when difficulty is already optimal.
 	consecutiveNoChange atomic.Uint64
 
+	// idleDescent opts this session into timer-driven downward retarget.
+	// Set per miner class at session creation — see Engine.IdleDescend.
+	idleDescent atomic.Bool
+
 	// Configuration (immutable after init)
 	minDiff    float64
 	maxDiff    float64
@@ -499,6 +503,85 @@ func (e *Engine) ShouldAggressiveRetarget(state *SessionState) bool {
 	// - Shares too SLOW (ratio > 2.0): Trigger at 2x slower - conservative due to cgminer delays
 	// CRITICAL FIX: Must match thresholds in AggressiveRetarget (0.8 and 2.0)
 	return ratio < 0.8 || ratio > 2.0
+}
+
+// SetIdleDescent opts a session into (or out of) timer-driven downward retarget.
+// Call once after session creation, based on the miner's class.
+func SetIdleDescent(state *SessionState, enabled bool) {
+	state.idleDescent.Store(enabled)
+}
+
+// IdleDescentEnabled reports whether idle descent is active for this session.
+func IdleDescentEnabled(state *SessionState) bool {
+	return state.idleDescent.Load()
+}
+
+// IdleDescend halves the difficulty of a session that has produced no accepted share
+// for idleFactor multiples of its target share time. Returns (difficulty, changed).
+//
+// Every other retarget path in this package runs from an accepted share. That leaves a
+// gap: a session issued a difficulty above its hardware's reach produces no accepted
+// shares, so the signal vardiff needs to lower the difficulty is the very thing the
+// difficulty prevents. Nothing else in the system closes that loop, and the session
+// stays stranded for as long as it stays connected.
+//
+// This matters because it is what lets InitialDiff be calibrated for the middle of a
+// wide miner class instead of its slowest member. MinerClassLottery spans roughly
+// 1 KH/s (Arduino, LeafMiner) to 430 KH/s (ESP32-D0WD NerdMiner) behind user-agents
+// that cannot distinguish them, so some members will always start above their reach.
+//
+// Opt-in per session via SetIdleDescent, and deliberately NOT enabled globally:
+//   - Classes with MinDiff == InitialDiff (Low, Mid, High, Pro, most Avalon tiers) have
+//     nowhere to descend to, so this would only burn cycles.
+//   - cgminer-based miners routinely go share-free while working in progress. The
+//     asymmetric decrease caps and 30s retarget cooldowns elsewhere exist specifically
+//     to tolerate that; reading those quiet stretches as "stranded" would fight them.
+//
+// Descent is geometric rather than a jump to MinDiff so that a session which merely hit
+// an unlucky gap recovers in one accepted share instead of restarting its ramp.
+func (e *Engine) IdleDescend(state *SessionState, idleFactor float64) (float64, bool) {
+	current := math.Float64frombits(state.difficultyBits.Load())
+
+	if !state.idleDescent.Load() || idleFactor <= 0 {
+		return current, false
+	}
+	// Already at the floor - nothing to give.
+	if current <= state.minDiff {
+		return current, false
+	}
+
+	// Last sign of life. lastShareNano is zero until the first accepted share, so fall
+	// back to lastRetargetNano, which is stamped at session creation and on every
+	// retarget - that makes the first idle window run from when the session began.
+	last := state.lastShareNano.Load()
+	if r := state.lastRetargetNano.Load(); r > last {
+		last = r
+	}
+	if last == 0 {
+		return current, false
+	}
+
+	idleSec := float64(time.Now().UnixNano()-last) / float64(time.Second)
+	// Guard against a backward clock jump (NTP resync, VM drift), matching the
+	// handling in RecordShare and AggressiveRetarget.
+	if idleSec <= 0 {
+		return current, false
+	}
+	if idleSec < idleFactor*e.getTargetTime(state) {
+		return current, false
+	}
+
+	newDiff := current / 2
+	if newDiff < state.minDiff {
+		newDiff = state.minDiff
+	}
+
+	state.difficultyBits.Store(math.Float64bits(newDiff))
+	// Restart the idle window so the next halving needs another full window.
+	state.lastRetargetNano.Store(time.Now().UnixNano())
+	state.sharesSinceRetarget.Store(0)
+
+	return newDiff, true
 }
 
 // GetTargetTime returns the effective target time for a session (exported for testing/logging).

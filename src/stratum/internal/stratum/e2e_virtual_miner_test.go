@@ -72,14 +72,15 @@ type TestMinerClass struct {
 // TestMinerClasses defines all miner types to test
 // Uses REAL stratum user-agent strings (confirmed from firmware source code).
 // Expected difficulty values must match DefaultProfiles in spiralrouter.go:
-//   - Lottery: 0.001
+//   - Lottery: 0.004
+//   - NerdNOS: 203 (~175 GH/s × 5s / 2^32, BM1397 add-on board below the Low tier)
 //   - Low: 580 (500 GH/s × 5s / 2^32, optimized for 5s target share time)
 //   - Mid: 1165 (5 TH/s × 1s / 2^32, optimized for 1s target share time)
 //   - Pro: 25600 (110 TH/s × 1s / 2^32, optimized for 1s target share time)
 //   - Unknown: 500 (default, used for cgminer/bfgminer which cover huge hashrate ranges)
 var TestMinerClasses = []TestMinerClass{
-	{"NerdMinerV2", "NerdMinerV2/1.5.3", 0.001, 500e3},           // 500 KH/s - Lottery (confirmed UA from BitMaker-hub)
-	{"ESP32Miner", "esp32-miner/2.0", 0.001, 200e3},              // 200 KH/s - Lottery
+	{"NerdMinerV2", "NerdMinerV2/1.5.3", 0.004, 500e3},           // 500 KH/s - Lottery (confirmed UA from BitMaker-hub)
+	{"ESP32Miner", "esp32-miner/2.0", 0.004, 200e3},              // 200 KH/s - Lottery
 	{"BitAxeBM1366", "bitaxe/BM1366/v2.9.31", 580, 500e9},        // 500 GH/s - Low (confirmed UA from ESP-Miner)
 	{"BitAxeBM1368", "bitaxe/BM1368/v2.9.31", 580, 500e9},        // 500 GH/s - Low
 	{"BitAxeBM1370", "bitaxe/BM1370/v2.9.31", 580, 400e9},        // 400 GH/s - Low (single BM1370)

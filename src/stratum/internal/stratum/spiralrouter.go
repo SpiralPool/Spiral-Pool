@@ -44,6 +44,7 @@ type MinerClass int
 const (
 	MinerClassUnknown MinerClass = iota
 	MinerClassLottery            // ESP32 Miner, NMiner, Arduino (~50-500 KH/s)
+	MinerClassNerdNOS            // NerdNOS add-on board, BM1397 (~150-200 GH/s)
 	MinerClassLow                // BitAxe Ultra, NMAxe (~400-600 GH/s)
 	MinerClassMid                // NerdQAxe, BitAxe Hex/Gamma (~1-10 TH/s)
 	MinerClassHigh               // Antminer S9, S15, older gen (~10-20 TH/s)
@@ -83,6 +84,8 @@ func (c MinerClass) String() string {
 	switch c {
 	case MinerClassLottery:
 		return "lottery"
+	case MinerClassNerdNOS:
+		return "nerdnos"
 	case MinerClassLow:
 		return "low"
 	case MinerClassMid:
@@ -192,18 +195,61 @@ var DefaultProfiles = map[MinerClass]MinerProfile{
 		MaxDiff:         1000000, // 1M ceiling — 2x S19 Pro class (500k), lets vardiff find optimal
 		TargetShareTime: 1,       // 1 share per second target
 	},
+	// The lottery class spans ~1 KH/s (Arduino, LeafMiner) to ~430 KH/s (ESP32-D0WD
+	// "CYD" NerdMiner), and the user-agent cannot separate those bands: a 78 KH/s
+	// single-core ESP32 and a 430 KH/s CYD both send "NerdMinerV2/{version}".
+	//
+	// InitialDiff therefore targets the middle of the measured modern range rather
+	// than either end. The previous 0.001 implied ~72 KH/s hardware and, after
+	// block-time scaling on a 15s chain (×0.25 → 0.00025), issued modern boards a
+	// difficulty roughly 20x below their capability — a share every ~2.5s, which on
+	// DigiByte produced a sustained reject storm and repeated bans.
+	//
+	// MinDiff stays at the old floor deliberately. It only binds for miners vardiff
+	// has already walked down, so raising it would strand the sub-100 KH/s boards
+	// (Arduino ~1 KH/s, LeafMiner ~3 KH/s) that share this class. Slow boards that
+	// cannot reach InitialDiff are walked down by vardiff's idle descent instead
+	// (see vardiff.IdleDescend) rather than by lowering the floor for everyone.
 	MinerClassLottery: {
 		Class:           MinerClassLottery,
-		InitialDiff:     0.001,  // ~500 KH/s × 60s / 2^32 = 0.007, start lower
-		MinDiff:         0.0001, // Can go even lower for tiny miners
+		InitialDiff:     0.004,  // ~286 KH/s × 60s / 2^32 — mid of measured 250-430 KH/s
+		MinDiff:         0.0001, // ~7 KH/s floor — still serves Arduino/LeafMiner boards
 		MaxDiff:         100,    // Cap for lottery miners (up to ~4 MH/s)
 		TargetShareTime: 60,     // 1 share per minute is fine
 	},
+	// NerdNOS: an add-on board that attaches to a NerdMiner and lifts it to ~150-200
+	// GH/s using a BM1397 — the same chip as the BitAxe Max. The host NerdMiner runs
+	// NerdMiner_v2 built with -D NERD_NOS, which is why the user-agent is a sibling of
+	// the lottery one: same firmware family, but the hashing is done by the attached
+	// ASIC rather than the ESP32. So it is not a lottery miner — it is roughly a
+	// million times faster — but it is also well below MinerClassLow,
+	// whose MinDiff == InitialDiff == 580 is calibrated for ~500 GH/s hardware.
+	// Placed there, a ~174 GH/s board lands on that floor and cannot descend,
+	// sitting at ~2.9x its target share time indefinitely. Hence its own tier.
+	//
+	// No Scrypt profile: BM1397 is a SHA-256d ASIC and cannot mine Scrypt, so a
+	// Scrypt lookup correctly falls back to MinerClassUnknown.
+	MinerClassNerdNOS: {
+		Class:           MinerClassNerdNOS,
+		InitialDiff:     203,  // ~175 GH/s × 5s / 2^32 — midpoint of the 150-200 GH/s range
+		MinDiff:         140,  // ~120 GH/s — headroom below the range for slower clocks
+		MaxDiff:         1200, // ~1 TH/s — headroom for overclock and vardiff convergence
+		TargetShareTime: 5,    // matches MinerClassLow — same single-ASIC cadence
+	},
+	// MinerClassLow is named for the ~400-600 GH/s BitAxe/NMAxe baseline, but it takes
+	// in considerably more than that: the sgminer/cpuminer/ccminer user-agent patterns
+	// resolve here, as does every DeviceHints device reporting under 1 TH/s. MaxDiff is
+	// sized for that intake rather than for the named baseline, which is why its headroom
+	// ratio is far looser than the neighbouring classes'.
+	//
+	// When reading MaxDiff here, note this is the one class on a 5s target while its
+	// siblings quote their ceilings at 1s. The same MaxDiff therefore buys a 5x lower
+	// hashrate ceiling here than the same number would in Mid/High/Pro.
 	MinerClassLow: {
 		Class:           MinerClassLow,
 		InitialDiff:     580,   // ~500 GH/s × 5s / 2^32 = 582, optimal for 5s target
 		MinDiff:         580,   // Same as InitialDiff - prevents vardiff from dropping below optimal (was 500, caused 12% hashrate loss)
-		MaxDiff:         150000, // Cap for ~645 GH/s (covers NMAxe at 500 GH/s with headroom)
+		MaxDiff:         150000, // ~129 TH/s at this class's 5s target
 		TargetShareTime: 5,     // 1 share per 5 seconds (was 1s - caused ~36% hashrate loss from overhead)
 	},
 	MinerClassMid: {
@@ -653,6 +699,14 @@ func NewSpiralRouterWithBlockTime(blockTimeSec int) *SpiralRouter {
 		// ----------------------------------------------------------------
 		// TIER 1: CONFIRMED — verified in manufacturer source code
 		// ----------------------------------------------------------------
+
+		// NerdNOS: BM1397 add-on board for the NerdMiner, ~150-200 GH/s. The host runs
+		// NerdMiner_v2 built with -D NERD_NOS and sends "NerdNOS/{version}".
+		// Source: BitMaker-hub/NerdMiner_v2 (NERD_NOS build target) [CONFIRMED]
+		// MUST precede the nerdminerv2 pattern below: same firmware family, so a
+		// and first match wins — a user-agent naming both must not resolve to lottery,
+		// which would hand an ASIC a fractional difficulty and flood the pool.
+		{`(?i)nerdnos|nerd.?nos`, MinerClassNerdNOS, "NerdNOS"},
 
 		// NerdMiner V2: ESP32 lottery miner, ~78 KH/s
 		// Source: BitMaker-hub/NerdMiner_v2 — sends "NerdMinerV2/{version}" [CONFIRMED]

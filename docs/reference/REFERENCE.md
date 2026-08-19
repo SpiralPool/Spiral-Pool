@@ -228,7 +228,8 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
 | Unknown | (unrecognized devices) | Varies | 500 | 100 | 1,000,000 | 1s |
-| Lottery | ESP32, Arduino | 50-500 KH/s | 0.001 | 0.0001 | 100 | 60s |
+| Lottery | ESP32, Arduino | 1-500 KH/s | 0.004 | 0.0001 | 100 | 60s |
+| NerdNOS | NerdNOS add-on board (BM1397) | 150-200 GH/s | 203 | 140 | 1,200 | 5s |
 | Low | BitAxe Ultra/Supra, NMAxe, Lucky LV06 | 400-600 GH/s | 580 | 580 | 150,000 | 5s |
 | Mid | NerdQAxe++, BitAxe Hex/Gamma, FutureBit Apollo | 1-10 TH/s | 1,165 | 1,165 | 50,000 | 1s |
 | High | Antminer S9/S15, older gen | 10-20 TH/s | 3,260 | 3,260 | 100,000 | 1s |

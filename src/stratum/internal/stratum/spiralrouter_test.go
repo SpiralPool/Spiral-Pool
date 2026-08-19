@@ -19,6 +19,13 @@ func TestSpiralRouterDetection(t *testing.T) {
 		// TIER 1: CONFIRMED — verified in manufacturer source code
 		// ========================================================================
 
+		// NerdNOS — sends "NerdNOS/{version}" [CONFIRMED: NerdMiner_v2 NERD_NOS build]
+		// A BM1397 add-on board (~150-200 GH/s), not a lottery miner, despite running on
+		// a NerdMiner host and sharing its firmware family.
+		{"NerdNOS/1.0", MinerClassNerdNOS, "NerdNOS"},
+		{"nerdnos/0.9.2", MinerClassNerdNOS, "NerdNOS"},
+		{"NerdNos/2.1.0", MinerClassNerdNOS, "NerdNOS"},
+
 		// NerdMiner V2 — sends "NerdMinerV2/{version}" [CONFIRMED: BitMaker-hub/NerdMiner_v2]
 		{"NerdMinerV2/2.6.0", MinerClassLottery, "NerdMiner V2"},
 		{"nerdminerv2/1.0", MinerClassLottery, "NerdMiner V2"},
@@ -170,21 +177,28 @@ func TestSpiralRouterDifficulties(t *testing.T) {
 		expectedDiff float64
 	}{
 		// ========================================================================
-		// LOTTERY — InitialDiff 0.001, TargetShareTime 60s
+		// LOTTERY — InitialDiff 0.004, TargetShareTime 60s
 		// ========================================================================
-		{"NerdMinerV2/2.6.0", 0.001},
-		{"HAN_SOLOminer/1.0", 0.001},
-		{"NMMiner/v0.6.30", 0.001},
-		{"LeafMiner/1.0", 0.001},
-		{"nminer/1.0", 0.001},
-		{"NMiner", 0.001},
-		{"bitmaker", 0.001},
-		{"bitmaker/2.1", 0.001},
-		{"ESP32 Miner V2", 0.001},
-		{"esp32-miner", 0.001},
-		{"arduino miner/0.1", 0.001},
-		{"sparkminer/1.0", 0.001},
-		{"lottery miner/1.0", 0.001},
+		{"NerdMinerV2/2.6.0", 0.004},
+		{"HAN_SOLOminer/1.0", 0.004},
+		{"NMMiner/v0.6.30", 0.004},
+		{"LeafMiner/1.0", 0.004},
+		{"nminer/1.0", 0.004},
+		{"NMiner", 0.004},
+		{"bitmaker", 0.004},
+		{"bitmaker/2.1", 0.004},
+		{"ESP32 Miner V2", 0.004},
+		{"esp32-miner", 0.004},
+		{"arduino miner/0.1", 0.004},
+		{"sparkminer/1.0", 0.004},
+		{"lottery miner/1.0", 0.004},
+
+		// ========================================================================
+		// NERDNOS — InitialDiff 203, TargetShareTime 5s
+		// BM1397 ASIC on NerdMiner_v2 firmware: must NOT land in lottery above.
+		// ========================================================================
+		{"NerdNOS/1.0", 203},
+		{"nerdnos/0.9.2", 203},
 
 		// ========================================================================
 		// LOW — InitialDiff 580, TargetShareTime 5s
@@ -772,7 +786,7 @@ func TestGetInitialDifficultyForAlgorithm(t *testing.T) {
 		{"cgminer/4.12", AlgorithmSHA256d, 500},    // Unknown SHA-256d
 		{"cgminer/4.12", AlgorithmScrypt, 8000},     // Unknown Scrypt
 
-		{"NerdMinerV2/2.0", AlgorithmSHA256d, 0.001},  // Lottery SHA-256d
+		{"NerdMinerV2/2.0", AlgorithmSHA256d, 0.004},  // Lottery SHA-256d
 		{"NerdMinerV2/2.0", AlgorithmScrypt, 0.1},      // Lottery Scrypt
 
 		{"unknown-miner", AlgorithmSHA256d, 500},     // Unknown SHA-256d
@@ -901,5 +915,63 @@ func TestSlowDiffApplier(t *testing.T) {
 
 	if router.IsSlowDiffApplier("bmminer/2.0.0") {
 		t.Error("bmminer should not be detected as slow diff applier")
+	}
+}
+
+// TestNerdNOSNotClassifiedAsLottery locks in the pattern ordering that keeps a BM1397
+// ASIC out of the lottery tier.
+//
+// The NerdNOS is an add-on board for a NerdMiner host running NerdMiner_v2 built with
+// -D NERD_NOS, so a user-agent naming both is plausible. Pattern matching is
+// first-match-wins, so if the nerdminerv2 pattern were to precede the nerdnos one, a
+// ~150-200 GH/s ASIC would be issued a fractional lottery difficulty - roughly a
+// million times too low - and flood the pool with shares.
+func TestNerdNOSNotClassifiedAsLottery(t *testing.T) {
+	router := NewSpiralRouter()
+
+	userAgents := []string{
+		"NerdNOS/1.0",
+		"NerdMinerV2-NerdNOS/1.0",
+		"NerdNOS NerdMinerV2/2.6.0",
+		"nerd_nos/1.2",
+	}
+
+	for _, ua := range userAgents {
+		t.Run(ua, func(t *testing.T) {
+			class, name := router.DetectMiner(ua)
+			if class == MinerClassLottery {
+				t.Fatalf("%q classified as lottery (name=%q) - an ASIC would receive a fractional difficulty", ua, name)
+			}
+			if class != MinerClassNerdNOS {
+				t.Errorf("%q: expected MinerClassNerdNOS, got %s (name=%q)", ua, class.String(), name)
+			}
+		})
+	}
+}
+
+// TestNerdNOSProfileAllowsDescent is the reason this class exists rather than reusing
+// MinerClassLow. Low pins MinDiff == InitialDiff == 580 for ~500 GH/s hardware, so a
+// ~174 GH/s board lands on that floor and can never retarget down from it.
+func TestNerdNOSProfileAllowsDescent(t *testing.T) {
+	router := NewSpiralRouter()
+	profile := router.GetProfile(MinerClassNerdNOS)
+
+	if profile.MinDiff >= profile.InitialDiff {
+		t.Errorf("MinDiff (%v) must sit below InitialDiff (%v) so slower BM1397 clocks can descend",
+			profile.MinDiff, profile.InitialDiff)
+	}
+
+	// A 174 GH/s board should land within one retarget of its target share time.
+	const hashrate = 175e9 // midpoint of the 150-200 GH/s range
+	optimal := hashrate * float64(profile.TargetShareTime) / 4294967296.0
+	if optimal < profile.MinDiff || optimal > profile.MaxDiff {
+		t.Errorf("optimal difficulty %.1f for 175 GH/s falls outside [%v, %v]",
+			optimal, profile.MinDiff, profile.MaxDiff)
+	}
+
+	lowProfile := router.GetProfile(MinerClassLow)
+	if optimal >= lowProfile.MinDiff {
+		t.Errorf("175 GH/s optimal (%.1f) is not below MinerClassLow's floor (%v) - the split would be pointless",
+			optimal, lowProfile.MinDiff)
 	}
 }

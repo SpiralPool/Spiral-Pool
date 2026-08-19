@@ -1044,14 +1044,14 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 1. TCP connect to pool:3333
 2. Create Session (atomic session ID, unique extranonce1)
 3. Spiral Router classifies "esp32-miner/1.0" -> MinerClass.Lottery
-4. Profile: InitialDiff=0.001, MinDiff=0.0001, MaxDiff=100, TargetShareTime=60s
+4. Profile: InitialDiff=0.004, MinDiff=0.0001, MaxDiff=100, TargetShareTime=60s
 5. Initialize VARDIFF SessionState (all atomic fields)
-6. Subscribe response + set_difficulty(0.001)
+6. Subscribe response + set_difficulty(0.004)
 7. Authorize "DAddr.esp32worker"
 8. mining.notify with job
 9. Miner hashes ~60 seconds, submits share
 10. Validate: rate limit -> job lookup -> dup check -> hash -> diff check
-11. share_diff >= 0.001 -> VALID, < network_diff -> not a block
+11. share_diff >= 0.004 -> VALID, < network_diff -> not a block
 12. Ring buffer push (lock-free CAS), metrics update
 13. VARDIFF: 1 share in 60s, ratio ~1.0, within 50% variance -> no adjustment
 14. Batch writer drains ring buffer -> WAL -> PostgreSQL COPY

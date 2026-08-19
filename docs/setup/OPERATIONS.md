@@ -28,7 +28,8 @@ When a miner connects, Spiral Pool performs the following sequence:
 
 | User-Agent           | Detected Class | InitialDiff |
 |----------------------|----------------|-------------|
-| `ESP32-Miner/v1.0`  | Lottery        | 0.001       |
+| `ESP32-Miner/v1.0`  | Lottery        | 0.004       |
+| `NerdNOS/1.0`        | NerdNOS        | 203         |
 | `ESP-Miner/v2.1.5`  | Low            | 580         |
 | `AvalonMiner A1566`  | Avalon Pro     | 45,000      |
 | `Antminer S21`       | Pro            | 25,600      |

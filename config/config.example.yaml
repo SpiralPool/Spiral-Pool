@@ -11,7 +11,8 @@
 # All miners connect to the SAME port. The pool automatically detects miner type
 # from the user-agent string during mining.subscribe and sets appropriate difficulty:
 #
-#   Lottery (ESP32 Miner):            0.001   (target: 60s shares)
+#   Lottery (ESP32 Miner):            0.004   (target: 60s shares)
+#   NerdNOS (BM1397 add-on board):    203     (target: 5s shares)
 #   Low (BitAxe Ultra, NMAxe):        580     (target: 5s shares)
 #   Mid (NerdQAxe, BitAxe Hex):       1165    (target: 1s shares)
 #   High (Antminer S9, older gen):    3260    (target: 1s shares)

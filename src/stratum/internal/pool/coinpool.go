@@ -756,6 +756,8 @@ func (cp *CoinPool) setupCallbacks() {
 			switch profile.Class.String() {
 			case "lottery":
 				maxDiff = 100
+			case "nerdnos":
+				maxDiff = 1200
 			case "low":
 				maxDiff = 150000
 			case "mid":
@@ -791,6 +793,10 @@ func (cp *CoinPool) setupCallbacks() {
 			targetShareTime,
 		)
 		cp.sessionStates.Store(sessionID, state)
+		// Lottery only: that class spans ~1 KH/s to ~430 KH/s behind user-agents that
+		// cannot tell them apart, so some members start above their reach. Other classes
+		// either have MinDiff == InitialDiff or tolerate quiet stretches by design.
+		vardiff.SetIdleDescent(state, profile.Class == stratum.MinerClassLottery)
 		cp.logger.Infow("VARDIFF configured with miner profile",
 			"sessionId", sessionID,
 			"class", profile.Class.String(),
@@ -2281,6 +2287,10 @@ func (cp *CoinPool) Start(ctx context.Context) error {
 		}
 		cp.sessionCleanupLoop(ctx)
 	}()
+
+	// Recover sessions stranded above their hardware's reach (see vardiffIdleLoop).
+	cp.wg.Add(1)
+	go cp.vardiffIdleLoop(ctx)
 
 	cp.running = true
 	cp.logger.Infow("Coin pool started successfully",
@@ -4381,6 +4391,65 @@ func (cp *CoinPool) recoverWALBlocks(ctx context.Context, walDir string) {
 			"filesRemoved", cleaned,
 			"retentionDays", DefaultWALRetentionDays,
 		)
+	}
+}
+
+// vardiffIdleLoop walks difficulty down for sessions that have gone quiet.
+//
+// Every retarget path in ProcessShare runs inside the accepted-share branch, so a
+// session issued a difficulty above its hardware's reach produces no accepted shares
+// and has no route back down. This loop supplies that signal on a timer. It is opt-in
+// per session (see vardiff.IdleDescend for why it is not enabled for every class).
+func (cp *CoinPool) vardiffIdleLoop(ctx context.Context) {
+	defer cp.wg.Done()
+
+	ticker := time.NewTicker(vardiffIdleInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !cp.cfg.Stratum.Difficulty.VarDiff.Enabled {
+				continue
+			}
+
+			cp.sessionStates.Range(func(key, value interface{}) bool {
+				sessionID := key.(uint64)
+				state := value.(*vardiff.SessionState)
+
+				// Resolve the session before mutating difficulty, so a descent is never
+				// recorded for a miner that has already gone away. Orphaned state is
+				// reaped by sessionCleanupLoop.
+				session, ok := cp.stratumServer.GetSession(sessionID)
+				if !ok {
+					return true
+				}
+
+				newDiff, changed := cp.vardiffEngine.IdleDescend(state, vardiffIdleFactor)
+				if !changed {
+					return true
+				}
+
+				if err := cp.stratumServer.SendDifficulty(session, newDiff); err != nil {
+					cp.logger.Warnw("Failed to send idle-descent difficulty update",
+						"sessionId", sessionID,
+						"newDiff", newDiff,
+						"error", err,
+					)
+					return true
+				}
+
+				cp.logger.Infow("VARDIFF idle descent",
+					"sessionId", sessionID,
+					"newDiff", newDiff,
+					"targetTime", state.TargetTime(),
+					"note", "no accepted share within idle window - lowering difficulty",
+				)
+				return true
+			})
+		}
 	}
 }
 
