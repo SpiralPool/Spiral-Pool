@@ -199,7 +199,7 @@ func TestWALRotate_CreatesArchiveAndNewFile(t *testing.T) {
 	preRotateEntryCount := wal.entryCount
 
 	// Perform rotation
-	if err := wal.rotate(); err != nil {
+	if err := rotateLocked(t, wal); err != nil {
 		t.Fatalf("rotate() failed: %v", err)
 	}
 
@@ -260,7 +260,7 @@ func TestWALRotate_ArchiveContainsData(t *testing.T) {
 	}
 	preRotateSize := wal.currentSize
 
-	if err := wal.rotate(); err != nil {
+	if err := rotateLocked(t, wal); err != nil {
 		t.Fatalf("rotate() failed: %v", err)
 	}
 
@@ -303,7 +303,7 @@ func TestWALRotate_WritesAfterRotation(t *testing.T) {
 		}
 	}
 
-	if err := wal.rotate(); err != nil {
+	if err := rotateLocked(t, wal); err != nil {
 		t.Fatalf("rotate() failed: %v", err)
 	}
 
@@ -350,7 +350,7 @@ func TestCleanupArchives_KeepsThreeMostRecent(t *testing.T) {
 			t.Fatalf("Write() failed before rotation %d: %v", i, err)
 		}
 
-		if err := wal.rotate(); err != nil {
+		if err := rotateLocked(t, wal); err != nil {
 			t.Fatalf("rotate() %d failed: %v", i, err)
 		}
 		// Small sleep to ensure unique archive timestamps
@@ -527,7 +527,7 @@ func TestWALMultipleRotations_ArchiveCleanupWorks(t *testing.T) {
 		if err := wal.Write(share); err != nil {
 			t.Fatalf("Write() %d failed: %v", i, err)
 		}
-		if err := wal.rotate(); err != nil {
+		if err := rotateLocked(t, wal); err != nil {
 			t.Fatalf("rotate() %d failed: %v", i, err)
 		}
 		time.Sleep(2 * time.Millisecond)
@@ -549,4 +549,17 @@ func TestWALMultipleRotations_ArchiveCleanupWorks(t *testing.T) {
 	if totalFiles > 4 {
 		t.Errorf("Total WAL files = %d, expected ≤4 (3 archives + current)", totalFiles)
 	}
+}
+
+// rotateLocked performs a WAL rotation the way production does: holding w.mu.
+//
+// WAL.rotate assumes its caller already holds the mutex - WAL.Write, the only
+// production caller, locks across it. Calling wal.rotate() bare from a test races
+// the syncLoop goroutine that NewWAL starts, which reads w.file and w.writer under
+// that same mutex in Sync. That race is a defect in the tests, not in the WAL.
+func rotateLocked(t *testing.T, w *WAL) error {
+	t.Helper()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.rotate()
 }

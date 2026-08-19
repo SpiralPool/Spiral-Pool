@@ -386,6 +386,12 @@ readLoop:
 }
 
 // rotate creates a new WAL file, archiving the old one.
+// rotate closes the current WAL file, archives it, and opens a fresh one.
+//
+// The caller MUST already hold w.mu. rotate touches w.file, w.writer and
+// w.currentSize without locking, and the background syncLoop goroutine reads
+// w.file/w.writer under the same mutex via Sync. Write is the only production
+// caller and holds the lock across this call.
 func (w *WAL) rotate() error {
 	// Flush and close current file
 	if err := w.writer.Flush(); err != nil {

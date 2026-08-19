@@ -97,6 +97,16 @@ func TestDuplicateTrackerMemoryGrowth(t *testing.T) {
 	// Note: Memory measurements in Go are inherently variable due to GC timing
 	// In parallel test execution, heap can temporarily grow significantly
 	maxExpectedGrowthMB := 100.0 // Generous limit for parallel test execution
+	if raceEnabled {
+		// This bound is inherently noisy: HeapAlloc is process-wide, so allocations
+		// from other tests in this package - and from their background goroutines,
+		// which outlive the test that started them - land inside the measurement.
+		// Under -race everything allocates more and runs slower, widening that
+		// overlap: measured ~0.15 MB running alone versus ~105 MB against the
+		// 100 MB bound during a full-package run. The trackedJobs assertion above
+		// is the real leak check; relax this one under -race rather than lose it.
+		maxExpectedGrowthMB = 250.0
+	}
 	if heapGrowthMB > maxExpectedGrowthMB {
 		t.Errorf("Excessive memory growth: %.2f MB (limit: %.2f MB)",
 			heapGrowthMB, maxExpectedGrowthMB)
