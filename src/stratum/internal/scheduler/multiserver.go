@@ -375,8 +375,11 @@ func (ms *MultiServer) handleMinerClassified(sessionID uint64, profile stratum.M
 		if useConfig && cfgDiff.Initial > 0 {
 			initialDiff = cfgDiff.Initial
 		}
-		// Only send if different from what was already sent at subscribe time
-		if initialDiff != session.GetDifficulty() {
+		// Only send if different from what was already sent at subscribe time.
+		// Compare at wire precision: the session holds what was announced, which is
+		// quantized, so an unrounded profile value would never compare equal and this
+		// would re-announce the difficulty the miner already has.
+		if stratum.QuantizeDifficulty(initialDiff) != session.GetDifficulty() {
 			session.SetDifficulty(initialDiff)
 			if err := ms.server.SendDifficulty(session, initialDiff); err != nil {
 				ms.logger.Warnw("Failed to send post-classify difficulty",

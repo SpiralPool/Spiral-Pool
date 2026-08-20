@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -1106,6 +1107,25 @@ func (s *Server) SendMessageToSession(sessionID uint64, message string) bool {
 	return true
 }
 
+// QuantizeDifficulty rounds a difficulty to the precision the stratum wire carries.
+//
+// SendDifficulty renders the value with %f, which is six decimal places. Anything
+// finer than that never reaches the miner, so the pool must not hold a different
+// number: the miner mines to what it was announced, and validating against an
+// unrounded value opens a band of shares that meet the announcement and still
+// reject as low-difficulty. Every producer of a difficulty destined for a session
+// passes it through here so both sides agree by construction.
+//
+// A positive difficulty below the wire's resolution floors at 1e-6 rather than
+// rounding to zero, which would be a division by zero on both sides.
+func QuantizeDifficulty(difficulty float64) float64 {
+	q := math.Round(difficulty*1e6) / 1e6
+	if q <= 0 {
+		return 1e-6
+	}
+	return q
+}
+
 // SendDifficulty sends a mining.set_difficulty message to a session.
 // This is called by VARDIFF when the difficulty needs to be adjusted.
 // IMPORTANT: Updates session.Difficulty to track what difficulty the miner is working at.
@@ -1119,6 +1139,8 @@ func (s *Server) SendDifficulty(session *protocol.Session, difficulty float64) e
 	if session == nil || session.Conn == nil {
 		return fmt.Errorf("invalid session")
 	}
+
+	difficulty = QuantizeDifficulty(difficulty)
 
 	// Build the JSON-RPC notification
 	// Format: {"id":null,"method":"mining.set_difficulty","params":[difficulty]}
