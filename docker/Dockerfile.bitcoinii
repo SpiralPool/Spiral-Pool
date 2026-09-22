@@ -18,12 +18,18 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin II Core Node for Spiral Pool"
-LABEL version="29.1.0"
+LABEL version="31.1.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG BITCOINII_VERSION=29.1.0
+ARG BITCOINII_VERSION=31.1.0
+
+# SHA256 of BitcoinII-v31.1-Linux-CLI.tar.gz (8,839,080 bytes), the 31.1.0 asset.
+# Bitcoin II publishes no checksum file: this is the digest GitHub records for the
+# release asset, matched against an independent download of it.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=78a88df783c2e15d09ea73c05065f7477cad34086b6e995991f7adeae781603f
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,18 +49,22 @@ RUN useradd -r -m -s /bin/bash bitcoinii \
 # Download and install Bitcoin II Core
 # NOTE: Only x86_64 (amd64) is supported.
 # IMPORTANT: Bitcoin II binaries use capital "II": bitcoinIId, bitcoinII-cli
-# Note: release archive uses BitcoinII-VERSION-x86_64-linux-CLI naming (capitalized BitcoinII)
-# The extracted directory may be BitcoinII-VERSION-ARCH-linux-CLI or BitcoinII-VERSION
+# Note: from v31.1.0 the release archive is BitcoinII-v<major.minor>-Linux-CLI.tar.gz
+# ("v" prefix, no patch digit, no arch token), and the daemon is named bitcoinII-d.
+# It is installed as bitcoinIId so the entrypoint and symlinks below stay unchanged.
 WORKDIR /tmp
 RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
-    && wget -q --max-redirect=5 "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${BITCOINII_VERSION}/BitcoinII-${BITCOINII_VERSION}-x86_64-linux-CLI.tar.gz" \
-    && tar -tzf "BitcoinII-${BITCOINII_VERSION}-x86_64-linux-CLI.tar.gz" > /dev/null \
-    && tar -xzf "BitcoinII-${BITCOINII_VERSION}-x86_64-linux-CLI.tar.gz" \
+    && BC2_TARBALL="BitcoinII-v${BITCOINII_VERSION%.*}-Linux-CLI.tar.gz" \
+    && wget -q --max-redirect=5 "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${BITCOINII_VERSION}/${BC2_TARBALL}" \
+    && echo "${SHA256}  ${BC2_TARBALL}" | sha256sum -c - \
+    && tar -tzf "${BC2_TARBALL}" > /dev/null \
+    && tar -xzf "${BC2_TARBALL}" \
     && EXTRACTED_DIR=$(ls -d BitcoinII-*/ 2>/dev/null | head -1 | tr -d '/') \
     && if [ -d "$EXTRACTED_DIR/bin" ]; then cp "$EXTRACTED_DIR/bin/"* /usr/local/bin/; \
-       else cp "$EXTRACTED_DIR/bitcoinIId" "$EXTRACTED_DIR/bitcoinII-cli" /usr/local/bin/ 2>/dev/null || true; fi \
+       else cp "$EXTRACTED_DIR/bitcoinII-d" /usr/local/bin/bitcoinIId \
+            && cp "$EXTRACTED_DIR/bitcoinII-cli" /usr/local/bin/; fi \
     && chmod +x /usr/local/bin/bitcoinIId /usr/local/bin/bitcoinII-cli 2>/dev/null || true \
     && ln -sf /usr/local/bin/bitcoinIId /usr/local/bin/bitcoiniid \
     && ln -sf /usr/local/bin/bitcoinII-cli /usr/local/bin/bitcoinii-cli \

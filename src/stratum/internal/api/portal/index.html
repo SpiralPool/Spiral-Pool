@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Spiral Pool Miner Portal</title>
+<link rel="stylesheet" href="/portal/portal.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Miner Portal</h1>
+    <p class="lede">Look up your mining on this pool by the wallet address in your worker name.</p>
+  </header>
+
+  <form id="lookup" autocomplete="off">
+    <label for="address">Wallet address</label>
+    <div class="row">
+      <input id="address" name="address" type="text" spellcheck="false" maxlength="100" required>
+      <button type="submit">Look up</button>
+    </div>
+  </form>
+
+  <p id="status" role="status" aria-live="polite"></p>
+  <section id="results"></section>
+
+  <footer>
+    <p>Read-only. Hashrate and shares cover the last 24 hours of shares the pool has kept;
+      shares are trimmed when the pool restarts. Workers cover the last 15 minutes.
+      Blocks are listed under the address that found them.</p>
+  </footer>
+</main>
+<script src="/portal/portal.js"></script>
+</body>
+</html>

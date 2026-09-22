@@ -92,8 +92,10 @@ CPUMINER="${CPUMINER:-minerd}"
 
 # Database credentials (must match config-bc2-regtest.yaml)
 DB_NAME="${DB_NAME:-spiralstratum_regtest}"
-DB_USER="${DB_USER:-spiralstratum}"
-DB_PASS="${DB_PASS:-spiralstratum}"
+# Its own login: install.sh's pool connects as spiralstratum, and the setup
+# below would reset that role's password on a machine running a real pool.
+DB_USER="${DB_USER:-spiralregtest}"
+DB_PASS="${DB_PASS:-spiralregtest}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
@@ -195,7 +197,9 @@ cleanup() {
 
     # Fallback: kill by name in case PIDs were stale
     pkill -9 -f "regtest-cpuminer" 2>/dev/null || true
-    pkill -9 -f "spiralpool.*-config" 2>/dev/null || true
+    # Only this checkout's pool binary: a broader pattern also matched a real
+    # /spiralpool/bin/spiralstratum -config ... running on the same machine.
+    pkill -9 -f "$POOL_BINARY -config" 2>/dev/null || true
     bc2cli stop 2>/dev/null || true
     pkill -9 -f "bitcoiniid.*regtest" 2>/dev/null || true
 
@@ -330,7 +334,7 @@ log_step "Step 2/10: Start bitcoinIId (regtest)"
 log_info "Stopping any existing regtest processes..."
 bc2cli stop 2>/dev/null || true
 # Kill any leftover pool/miner from a previous run (port conflicts)
-pkill -f "spiralpool.*config" 2>/dev/null || true
+pkill -f "$POOL_BINARY -config" 2>/dev/null || true
 pkill -f "minerd.*$STRATUM_PORT" 2>/dev/null || true
 sleep 2
 
@@ -520,6 +524,8 @@ else
     sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || \
     sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || true
     sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || true
+    # A database left by an older run is owned by the previous login
+    sudo -u postgres psql -c "ALTER DATABASE $DB_NAME OWNER TO $DB_USER;" 2>/dev/null || true
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" 2>/dev/null || true
 
     # Verify the connection actually works after setup
@@ -856,20 +862,30 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     fi
 
     # ── 5/8. Block status: confirmed → paid ───────────────────────────────
-    FIRST_HASH=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-        "SELECT hash FROM blocks_bc2_regtest WHERE blockheight = $FIRST_POOL_BLOCK AND status = 'confirmed' LIMIT 1;" 2>/dev/null | tr -d ' ') || true
+    # The pool makes this transition itself, and on regtest it usually has by now:
+    # a block matures in seconds, so it is already "paid" when we look. Accept
+    # either state — "paid" is the same transition, already carried out.
+    FIRST_BLOCK_ROW=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -F'|' -c \
+        "SELECT hash, status FROM blocks_bc2_regtest WHERE blockheight = $FIRST_POOL_BLOCK AND status IN ('confirmed', 'paid') LIMIT 1;" 2>/dev/null | tr -d ' ') || true
+    FIRST_HASH="${FIRST_BLOCK_ROW%%|*}"
+    FIRST_STATUS="${FIRST_BLOCK_ROW##*|}"
 
     if [[ -n "$FIRST_HASH" ]]; then
-        PAID_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
-            "UPDATE blocks_bc2_regtest SET status = 'paid', confirmationprogress = 1.0
-             WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
-             AND (status = 'confirmed' AND 'paid' IN ('orphaned', 'paid'));" 2>/dev/null) || true
-
-        if [[ "$PAID_RESULT" == *"UPDATE 1"* ]]; then
-            log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed → paid (status guard passed)"
+        if [[ "$FIRST_STATUS" == "paid" ]]; then
+            log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed → paid already done by the pool"
             PAYMENT_PASS=$((PAYMENT_PASS + 1))
         else
-            log_warn "[5/8] Block $FIRST_POOL_BLOCK: confirmed → paid failed ($PAID_RESULT)"
+            PAID_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+                "UPDATE blocks_bc2_regtest SET status = 'paid', confirmationprogress = 1.0
+                 WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
+                 AND (status = 'confirmed' AND 'paid' IN ('orphaned', 'paid'));" 2>/dev/null) || true
+
+            if [[ "$PAID_RESULT" == *"UPDATE 1"* ]]; then
+                log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed → paid (status guard passed)"
+                PAYMENT_PASS=$((PAYMENT_PASS + 1))
+            else
+                log_warn "[5/8] Block $FIRST_POOL_BLOCK: confirmed → paid failed ($PAID_RESULT)"
+            fi
         fi
 
         # ── 6/8. Verify paid is terminal ──────────────────────────────────
@@ -885,7 +901,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
             log_warn "[6/8] Block $FIRST_POOL_BLOCK: paid → pending was NOT blocked ($REVERT_RESULT)"
         fi
     else
-        log_warn "[5/8] No confirmed block at height $FIRST_POOL_BLOCK — skipping status tests"
+        log_warn "[5/8] No confirmed or paid block at height $FIRST_POOL_BLOCK — skipping status tests"
         log_warn "[6/8] Skipped — depends on check 5"
     fi
 
@@ -1070,7 +1086,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     log_step "Step 8e: Daemon-down resilience (4 checks)"
 
     RESIL_LOG="$LOG_DIR/spiralpool-regtest.log"
-    PRE_STOP_LINES=$(wc -l < "$RESIL_LOG")
+    PRE_STOP_BYTES=$(stat -c%s "$RESIL_LOG" 2>/dev/null || echo 0)  # byte offset: cannot drift like a line count
 
     # ── 1/4. Stop the daemon ──────────────────────────────────────────────
     log_info "Stopping daemon to simulate node failure..."
@@ -1089,9 +1105,9 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     sleep 20
 
     # Check pool log for error messages that appeared AFTER daemon stop
-    if tail -n +$((PRE_STOP_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
+    if tail -c +$((PRE_STOP_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
        grep -qiE "zmq.*error|zmq.*fail|rpc.*error|rpc.*fail|daemon.*fail|connection.*refuse|dial.*error|connect:.*refuse"; then
-        DETECTED_MSG=$(tail -n +$((PRE_STOP_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
+        DETECTED_MSG=$(tail -c +$((PRE_STOP_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
             grep -iE "zmq.*error|zmq.*fail|rpc.*error|rpc.*fail|daemon.*fail|connection.*refuse|dial.*error|connect:.*refuse" | head -1) || true
         log_ok "[2/4] Pool detected daemon failure"
         log_info "  Log: ${DETECTED_MSG:-(message extracted)}"
@@ -1109,7 +1125,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
 
     # ── 3/4. Restart daemon ───────────────────────────────────────────────
     log_info "Restarting daemon..."
-    PRE_RESTART_LINES=$(wc -l < "$RESIL_LOG")
+    PRE_RESTART_BYTES=$(stat -c%s "$RESIL_LOG" 2>/dev/null || echo 0)
 
     "$BITCOINIID" \
         -regtest \
@@ -1151,7 +1167,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     RECONNECT_WAIT=0
     RECONNECTED=0
     while [[ $RECONNECT_WAIT -lt 90 ]]; do
-        if tail -n +$((PRE_RESTART_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
+        if tail -c +$((PRE_RESTART_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
            grep -qiE "zmq.*recover|zmq.*connect|zmq.*stabil|rpc.*success|new.*job|block.*template|getblocktemplate"; then
             RECONNECTED=1
             break
@@ -1161,7 +1177,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     done
 
     if [[ $RECONNECTED -eq 1 ]]; then
-        RECOVERY_MSG=$(tail -n +$((PRE_RESTART_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
+        RECOVERY_MSG=$(tail -c +$((PRE_RESTART_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
             grep -iE "zmq.*recover|zmq.*connect|zmq.*stabil|rpc.*success|new.*job|block.*template" | head -1) || true
         log_ok "[4/4] Pool reconnected to daemon"
         log_info "  Log: ${RECOVERY_MSG:-(recovery detected)}"

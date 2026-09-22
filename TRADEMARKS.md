@@ -103,7 +103,7 @@ This software and its documentation reference third-party products, services, an
 | Syscoin | Syscoin Foundation | Protocol implementation (merge-mining) |
 | Myriad, Myriadcoin | Myriadcoin community | Protocol implementation (merge-mining) |
 | Fractal Bitcoin | Fractal Bitcoin community | Protocol implementation (merge-mining) |
-| , community | Protocol implementation |
+| eCash | Bitcoin ABC / eCash community | Protocol implementation |
 | PepeCoin | PepeCoin community | Protocol implementation (merge-mining) |
 | Catcoin | Catcoin community | Protocol implementation |
 | Bitcoin II | Bitcoin II community | Protocol implementation |
@@ -223,7 +223,7 @@ This software and its documentation reference third-party products, services, an
 | QNX | BlackBerry Limited (QNX Software Systems) | Installer VM detection (systemd-detect-virt) |
 | ACRN | The Linux Foundation | Installer VM detection (systemd-detect-virt) |
 
-This list includes the principal trademarks referenced in the codebase as of v2.7.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
+This list includes the principal trademarks referenced in the codebase as of v3.0.0. Additional trademarks may be referenced in code, configuration, or documentation not enumerated here.
 
 ---
 
@@ -293,5 +293,5 @@ This project includes AI-generated visual assets (logo, images). AI-generated co
 
 *This notice is provided to clarify trademark ownership and usage. It is not legal advice.*
 
-*Spiral Pool v2.7.0 - Trademark Notice*
+*Spiral Pool v3.0.0 - Trademark Notice*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

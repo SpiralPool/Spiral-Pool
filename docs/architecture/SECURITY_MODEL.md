@@ -12,11 +12,11 @@ Security controls implemented in Spiral Pool as documented below. Values shown a
 
 | Control | Value | Source |
 |---------|-------|--------|
-| TLS minimum version | TLS 1.2 | `internal/stratum/server.go:245` |
+| TLS minimum version | TLS 1.2 | `internal/stratum/server.go` (`loadTLSConfig`) |
 | TLS listener | Separate port per coin (V1+2 offset) | Per-coin config |
-| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go:603` |
-| V2 message size limit | 1,048,576 bytes (1 MB) | `internal/stratum/v2/types.go:28` |
-| Ban persistence | Saved to `/spiralpool/data/bans.json` | `internal/config/config.go:1412` |
+| V1 message size limit | 16,384 bytes (16 KB) | `internal/stratum/server.go` (`messageLoop`, partial-buffer cap) |
+| V2 message size limit | 1,048,576 bytes (1 MB) | `internal/stratum/v2/types.go` (`MaxMessageSize`) |
+| Ban persistence | Saved to `/spiralpool/data/bans.json` | `internal/config/config.go` (`BanPersistencePath` default) |
 | Keepalive monitoring | Idle connection detection | Configurable timeout |
 
 ## Protocol Security (FSM)
@@ -41,8 +41,8 @@ Source: `pkg/protocol/protocol.go:109-184` (connection FSM: `authorized`/`subscr
 
 | Control | Value | Source |
 |---------|-------|--------|
-| Max messages before auth | 20 | `internal/config/config.go:1408` |
-| Auth timeout | 10 seconds | `internal/config/config.go:1402` (default) |
+| Max messages before auth | 20 | `internal/config/config.go` (`PreAuthMessageLimit` default) |
+| Auth timeout | 10 seconds | `internal/config/config.go` (`PreAuthTimeout` default) |
 
 These prevent subscribe-spam attacks and connection slot exhaustion. Connections that exceed either limit are dropped.
 
@@ -52,9 +52,9 @@ Pre-parse validation applied to all incoming JSON before the standard parser pro
 
 | Control | Value | Source |
 |---------|-------|--------|
-| Max nesting depth | 32 levels | `internal/stratum/v1/handler.go:36` |
-| Max array elements | 100 (const), 101 accepted | `internal/stratum/v1/handler.go:37` (comma count > 100 rejects; 100 commas = 101 elements max accepted, 102 is first rejected) |
-| Max object keys | 50 (const), 51 accepted | `internal/stratum/v1/handler.go:38` (comma count > 50 rejects; 50 commas = 51 keys max accepted, 52 is first rejected) |
+| Max nesting depth | 32 levels | `internal/stratum/v1/handler.go` (`maxJSONDepth`) |
+| Max array elements | 100 (const), 101 accepted | `internal/stratum/v1/handler.go` (`maxArrayLen`; comma count > 100 rejects; 100 commas = 101 elements max accepted, 102 is first rejected) |
+| Max object keys | 50 (const), 51 accepted | `internal/stratum/v1/handler.go` (`maxObjectKeys`; comma count > 50 rejects; 50 commas = 51 keys max accepted, 52 is first rejected) |
 
 These prevent deeply nested JSON attacks, oversized arrays, and large objects from reaching the JSON parser.
 
@@ -65,9 +65,9 @@ Rate limiting is **disabled by default** for compatibility with hashrate marketp
 | Parameter | Default | Recommended (private pool) | Source |
 |-----------|---------|---------------------------|--------|
 | `rateLimiting.enabled` | `false` | `true` | Config |
-| `connectionsPerIP` | 0 (disabled) | 100 | `internal/config/config.go:92` |
-| `sharesPerSecond` | 0 (disabled) | 50 | `internal/config/config.go:94` (struct), `:1391` (default comment) |
-| `workersPerIP` | 0 (disabled) | 100 | `internal/config/config.go:100` (struct), `:1392` (default comment) |
+| `connectionsPerIP` | 0 (disabled) | 100 | `internal/config/config.go` (`StratumRateLimitConfig.ConnectionsPerIP`) |
+| `sharesPerSecond` | 0 (disabled) | 50 | `internal/config/config.go` (`StratumRateLimitConfig.SharesPerSecond`) |
+| `workersPerIP` | 0 (disabled) | 100 | `internal/config/config.go` (`StratumRateLimitConfig.WorkersPerIP`) |
 
 Example configuration for private pools:
 
@@ -126,4 +126,4 @@ Prometheus metrics endpoint (`/metrics` on port 9100) is protected by `SPIRAL_ME
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0*
+*Spiral Pool — Spiral Covenant 3.0.0*

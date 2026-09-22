@@ -174,8 +174,23 @@ id_ecdsa
 *.pub
 known_hosts
 authorized_keys
+# Credential material. These stay deliberately broad so a stray dump like
+# db_password.txt or api_secret.json can never be committed — but they are
+# unanchored globs, and *_password* once swallowed
+# tests/test_config_redacted_passwords.py: a security test that was therefore
+# absent from the repo and from every release archive. Source files are
+# exempted below so a legitimate file is never silently excluded for merely
+# naming the thing it tests.
 *_secret*
 *_password*
+!*_secret*.py
+!*_password*.py
+!*_secret*.go
+!*_password*.go
+!*_secret*.sh
+!*_password*.sh
+!*_secret*.md
+!*_password*.md
 
 # =========================
 # Archives

@@ -32,9 +32,15 @@ import (
 
 // eCash mainnet address constants
 const (
-	XECP2PKHVersion  byte   = 0x00
-	XECP2SHVersion   byte   = 0x05
-	XECCashAddrPrefix        = "ecash"
+	XECP2PKHVersion   byte = 0x00
+	XECP2SHVersion    byte = 0x05
+	XECCashAddrPrefix      = "ecash"
+	// eCash uses a different CashAddr prefix per network, and the prefix is
+	// part of the checksum, so a regtest address cannot be verified against
+	// the mainnet one. Without these the pool refused every address its own
+	// regtest daemon generates ("invalid address length: 52").
+	XECCashAddrPrefixTestnet = "ectest"
+	XECCashAddrPrefixRegtest = "ecregtest"
 )
 
 // eCash network parameters
@@ -80,8 +86,11 @@ func (c *ECashCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 
 	addrLower := strings.ToLower(address)
 
-	// CashAddr format: "ecash:q..." or bare "q..."/"p..."
+	// CashAddr format: "ecash:q..." (mainnet), "ectest:q..." / "ecregtest:q..."
+	// on the test networks, or bare "q..."/"p..."
 	if strings.HasPrefix(addrLower, XECCashAddrPrefix+":") ||
+		strings.HasPrefix(addrLower, XECCashAddrPrefixTestnet+":") ||
+		strings.HasPrefix(addrLower, XECCashAddrPrefixRegtest+":") ||
 		strings.HasPrefix(addrLower, "q") ||
 		strings.HasPrefix(addrLower, "p") {
 		return c.decodeCashAddr(address)
@@ -96,10 +105,17 @@ func (c *ECashCoin) DecodeAddress(address string) ([]byte, AddressType, error) {
 func (c *ECashCoin) decodeCashAddr(address string) ([]byte, AddressType, error) {
 	addrLower := strings.ToLower(address)
 
-	// Strip prefix if present
+	// Strip the network prefix, remembering which one it was: the prefix feeds
+	// the checksum, so a regtest address must be verified against "ecregtest"
+	// and not against "ecash".
 	bare := addrLower
-	if strings.HasPrefix(addrLower, XECCashAddrPrefix+":") {
-		bare = addrLower[len(XECCashAddrPrefix)+1:]
+	prefix := XECCashAddrPrefix
+	for _, p := range []string{XECCashAddrPrefixRegtest, XECCashAddrPrefixTestnet, XECCashAddrPrefix} {
+		if strings.HasPrefix(addrLower, p+":") {
+			prefix = p
+			bare = addrLower[len(p)+1:]
+			break
+		}
 	}
 
 	if len(bare) < 34 {
@@ -108,7 +124,7 @@ func (c *ECashCoin) decodeCashAddr(address string) ([]byte, AddressType, error) 
 
 	// Decode and verify BCH polymod checksum against the "ecash" network prefix.
 	// Rejects addresses checksummed for other networks (e.g. BCH "bitcoincash:").
-	decoded, err := decodeCashAddrDataWithPrefix(XECCashAddrPrefix, bare)
+	decoded, err := decodeCashAddrDataWithPrefix(prefix, bare)
 	if err != nil {
 		return nil, AddressTypeUnknown, fmt.Errorf("CashAddr decode failed: %w", err)
 	}

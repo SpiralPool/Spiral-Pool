@@ -910,7 +910,7 @@ func (s *Server) handleMessage(session *protocol.Session, msg []byte) {
 
 				// Send current job if available
 				if job := s.currentJob.Load(); job != nil {
-					s.sendJob(session, job)
+					s.sendJob(session, job, session.MinerAddress)
 				}
 			}
 		}
@@ -964,23 +964,26 @@ func (s *Server) BroadcastJob(job *protocol.Job) {
 	}
 	s.jobMu.Unlock()
 
-	// Broadcast to all sessions
+	// Broadcast to authorized sessions only. Each coinbase pays the miner's own
+	// address, which is unknown until authorize; a job sent earlier would pay the
+	// pool address and its shares would fail validation against the miner's
+	// coinbase. Sessions get their first job right after authorize (handleMessage).
 	s.sessions.Range(func(id uint64, session *protocol.Session) bool {
-		if session.IsSubscribed() {
-			s.sendJob(session, job)
+		if session.IsAuthorized() {
+			s.sendJob(session, job, session.MinerAddress)
 		}
 		return true
 	})
 }
 
-// sendJob sends a job to a single session.
-func (s *Server) sendJob(session *protocol.Session, job *protocol.Job) {
+// sendJob sends a job to a single session, with the coinbase paying payoutAddress.
+func (s *Server) sendJob(session *protocol.Session, job *protocol.Job, payoutAddress string) {
 	if session == nil || session.Conn == nil || job == nil {
 		return
 	}
 
 	// Build the mining.notify message using V1 handler
-	notifyMsg, err := s.v1Handler.BuildNotify(job)
+	notifyMsg, err := s.v1Handler.BuildNotify(job, payoutAddress)
 	if err != nil {
 		s.logger.Warnw("Failed to build notify message",
 			"sessionId", session.ID,
@@ -1177,11 +1180,14 @@ func (s *Server) SendDifficulty(session *protocol.Session, difficulty float64) e
 	// CRITICAL: Send current job to force cgminer to start using new difficulty.
 	// cgminer only applies set_difficulty when it receives a new job.
 	// Use clean_jobs=false to allow existing work to continue (grace period handles it).
-	if currentJob := s.currentJob.Load(); currentJob != nil {
+	// Authorized sessions only: before authorize the payout address is unknown, so the
+	// job would pay the pool address; the job sent right after authorize applies the
+	// difficulty instead.
+	if currentJob := s.currentJob.Load(); currentJob != nil && session.IsAuthorized() {
 		// Clone job with clean_jobs=false for this session-specific send
 		jobToSend := currentJob.Clone()
 		jobToSend.CleanJobs = false
-		s.sendJob(session, jobToSend)
+		s.sendJob(session, jobToSend, session.MinerAddress)
 	}
 
 	s.logger.Debugw("Sent difficulty update",
@@ -1254,6 +1260,21 @@ func (s *Server) GetDefaultTargetTime() float64 {
 	}
 	// Fallback if no router configured
 	return 5.0
+}
+
+// GetInitialDifficultyForUserAgent returns the Spiral Router's starting difficulty
+// for a miner's user agent, under whatever algorithm SetAlgorithm configured.
+// Returns 0 — meaning "no opinion" — when there is no router or no user agent.
+//
+// Stratum V2 needs this: it has no `mining.subscribe` user agent, so it cannot
+// call the router the way the V1 path does, but SetupConnection does carry a
+// vendor string. V2 reaches it through this method rather than the package-level
+// helper, so a Scrypt pool's profiles are not answered from SHA-256d's.
+func (s *Server) GetInitialDifficultyForUserAgent(userAgent string) float64 {
+	if s.spiralRouter == nil || userAgent == "" {
+		return 0
+	}
+	return s.spiralRouter.GetInitialDifficulty(userAgent)
 }
 
 // SetDifficultyChangeHandler sets the callback for when session difficulty changes.
@@ -1343,7 +1364,10 @@ func (s *Server) GetCurrentJob() *protocol.Job {
 // s.jobs is shared across sessions on DIFFERENT coins — invalidating all
 // jobs when one coin switches would corrupt other coins' job state.
 // Multi-port share validation uses each coin pool's own job manager, not s.jobs.
-func (s *Server) SendJobToSession(session *protocol.Session, job *protocol.Job) {
+//
+// payoutAddress is the address the coinbase pays; it must be the same address the
+// coin pool validates this session's shares with.
+func (s *Server) SendJobToSession(session *protocol.Session, job *protocol.Job, payoutAddress string) {
 	if session == nil || job == nil {
 		return
 	}
@@ -1368,7 +1392,7 @@ func (s *Server) SendJobToSession(session *protocol.Session, job *protocol.Job) 
 	}
 	s.jobMu.Unlock()
 
-	s.sendJob(session, job)
+	s.sendJob(session, job, payoutAddress)
 }
 
 // Stats returns server statistics.

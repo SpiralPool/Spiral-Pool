@@ -1,0 +1,90 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors */
+
+.explorer-page {
+    margin: 0;
+    padding: 24px 16px;
+    background: #0a0e17;
+    color: #d8e2f0;
+    font-family: "Rajdhani", system-ui, sans-serif;
+    font-size: 16px;
+}
+
+.explorer-container { max-width: 1100px; margin: 0 auto; }
+
+.explorer-header h1 {
+    font-family: "Orbitron", system-ui, sans-serif;
+    color: #00d4ff;
+    margin: 8px 0 4px;
+    font-size: 1.8rem;
+}
+
+.explorer-home { color: #00d4ff; text-decoration: none; }
+.explorer-lede, .explorer-hint { color: #8a97ab; margin: 4px 0; }
+.explorer-hint { font-size: 0.9rem; }
+
+.explorer-controls { margin: 20px 0; display: grid; gap: 8px; }
+.explorer-controls label { font-weight: 600; }
+
+#explorer-search { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#explorer-coin, #explorer-query {
+    background: #111827;
+    color: #d8e2f0;
+    border: 1px solid #1f2a3c;
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-family: "Share Tech Mono", ui-monospace, monospace;
+    font-size: 0.95rem;
+}
+
+#explorer-coin { max-width: 260px; }
+#explorer-query { flex: 1 1 320px; min-width: 0; }
+
+#explorer-search button, .explorer-link {
+    background: transparent;
+    border: 1px solid #00d4ff;
+    color: #00d4ff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+#explorer-search button { padding: 9px 18px; font-weight: 600; }
+
+.explorer-link {
+    border: 0;
+    padding: 0;
+    text-align: left;
+    font-family: "Share Tech Mono", ui-monospace, monospace;
+    text-decoration: underline;
+    word-break: break-all;
+}
+
+#explorer-status { min-height: 1.4em; color: #8a97ab; }
+#explorer-status.error { color: #ff6b6b; }
+
+.explorer-card {
+    border: 1px solid #1f2a3c;
+    border-radius: 8px;
+    background: #0f1522;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.explorer-card h2 { margin: 0 0 12px; font-size: 1.2rem; color: #00d4ff; }
+.explorer-card h3 { margin: 16px 0 6px; font-size: 1rem; color: #8a97ab; }
+
+.explorer-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 20px; }
+.explorer-fact .label { display: block; color: #8a97ab; font-size: 0.8rem; }
+.explorer-fact .value { font-family: "Share Tech Mono", ui-monospace, monospace; word-break: break-all; }
+
+.explorer-note { color: #f0b429; }
+
+.explorer-table-wrap { overflow-x: auto; }
+.explorer-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.explorer-table th, .explorer-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1f2a3c; }
+.explorer-table th { color: #8a97ab; font-weight: 600; white-space: nowrap; }
+.explorer-table td { font-family: "Share Tech Mono", ui-monospace, monospace; }
+
+.explorer-found { color: #39d98a; font-weight: 600; }

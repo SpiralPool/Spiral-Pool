@@ -263,9 +263,12 @@ The single most useful block for spam control. Every value is in **seconds**.
 | `sats_surge_lookback_days` | 7 | Window for baseline comparison |
 | `sats_surge_sample_interval` | 3600 | Sample period (s) |
 | `sats_surge_cooldown_hours` | 24 | Per-coin re-alert cooldown |
+| `simpleswap_enabled` | true | SimpleSwap link inside the surge alert |
 | `odds_alert_threshold` | 40 | High-luck/odds alert sensitivity |
 
 **Silence:** `"sats_surge_enabled": false` and raise `sats_change_alert_pct` to a number you'll never hit (e.g. 999).
+
+**Keep the surge alert, drop the exchange link:** `"simpleswap_enabled": false`, or `sudo spiralctl config set simpleswap off`. Absent from a config file, the key reads as `true`.
 
 ---
 
@@ -467,8 +470,8 @@ Already handled — `alert_batching_enabled: true` digests miner alerts within 5
 ]
 ```
 
-### "Sentinel keeps alerting about ZMQ on "
- doesn't support ZMQ — polling fallback is by design. Either ignore or:
+### "Sentinel keeps alerting about ZMQ on a coin"
+If a node's ZMQ is unreliable and you are content to run on the RPC polling fallback, silence the health alert (every shipped coin supports ZMQ, so this is about a specific flaky node, not a coin that lacks it):
 ```json
 "infra_zmq_health_alert": false
 ```

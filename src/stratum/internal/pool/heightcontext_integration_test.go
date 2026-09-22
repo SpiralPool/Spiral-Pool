@@ -215,11 +215,13 @@ func TestMetricsClassificationDeadlineExpiry(t *testing.T) {
 		t.Errorf("Expected 1 deadline abort, got %d", metrics.DeadlineAborts.Load())
 	}
 
-	// Deadline usage should be close to 1.0
+	// Deadline usage should be at least ~1.0. The upper bound is loose because
+	// the timer can fire late when the host is busy (parallel tests on a VM
+	// syncing a chain ran it at 1.2); only an early fire indicates a bug.
 	if len(metrics.DeadlineUsages) != 1 {
 		t.Fatalf("Expected 1 deadline usage record, got %d", len(metrics.DeadlineUsages))
 	}
-	if metrics.DeadlineUsages[0] < 0.9 || metrics.DeadlineUsages[0] > 1.1 {
+	if metrics.DeadlineUsages[0] < 0.9 || metrics.DeadlineUsages[0] > 5.0 {
 		t.Errorf("Deadline usage should be ~1.0, got %f", metrics.DeadlineUsages[0])
 	}
 }

@@ -298,9 +298,15 @@ func (c *BitcoinCashIICoin) ShareDifficultyMultiplier() float64 {
 }
 
 // GBTRules returns the rules for getblocktemplate.
-// BCH2 uses BCH consensus rules — no SegWit rules required.
+// Despite the name, Bitcoin Cash II Core is built on Bitcoin Core 27 and refuses
+// the call without the segwit rule: bitcoincashII v27.0.2 answers error -8,
+// "getblocktemplate must be called with the segwit rule set", to an empty rules
+// list, to {} and to no parameters at all. Returning no rules therefore left the
+// pool unable to fetch a single template — miners on BCH2 would idle forever.
+// This is the rule declared in the call; whether the coinbase carries a witness
+// commitment is decided separately by SupportsSegWit.
 func (c *BitcoinCashIICoin) GBTRules() []string {
-	return []string{}
+	return []string{"segwit"}
 }
 
 // DefaultRPCPort returns the default RPC port.

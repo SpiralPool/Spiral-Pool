@@ -59,10 +59,16 @@ def validate_manifest(path: Path, verbose: bool = False) -> tuple[bool, list[str
         return False, [f"Manifest not found at {path}"], []
 
     try:
-        with open(path) as f:
+        # The manifest is UTF-8 (coin names, box-drawing comments). Without an
+        # explicit encoding Python uses the locale's, which on a Windows host
+        # is cp1252 and cannot decode it -- the validator died on a
+        # UnicodeDecodeError before reaching a single check.
+        with open(path, encoding="utf-8") as f:
             manifest = yaml.safe_load(f)
     except yaml.YAMLError as e:
         return False, [f"YAML parse error: {e}"], []
+    except UnicodeDecodeError as e:
+        return False, [f"Manifest is not valid UTF-8: {e}"], []
 
     if not manifest:
         return False, ["Empty manifest"], []

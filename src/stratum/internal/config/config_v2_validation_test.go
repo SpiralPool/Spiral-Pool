@@ -472,6 +472,43 @@ func TestV2SetDefaults_PaymentsAlwaysEnabled(t *testing.T) {
 // Helper: minimal valid V2 config for testing
 // =============================================================================
 
+func TestV2Validate_BTCSAddressPrefixes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		address string
+		valid   bool
+	}{
+		{"bs1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", true},
+		{"BJ98t1WpEZ73CNmQviecrnyiWrnqRhWNLy", true},
+		{"3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy", true},
+		// regtest, as bitcoinsilverd -regtest hands them out
+		{"bcrt1qqut7se5j59ahuny4yk3yw8772flvc6nfkfng3r", true},
+		{"mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn", true},
+		{"2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc", true},
+		// other chains
+		{"bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", false},
+		{"1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", false},
+		{"ltc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.address, func(t *testing.T) {
+			t.Parallel()
+			cfg := minimalValidV2Config()
+			cfg.Coins[0].Symbol = "BTCS"
+			cfg.Coins[0].PoolID = "btcs_sha256_1"
+			cfg.Coins[0].Address = tt.address
+
+			err := cfg.Validate()
+			if tt.valid && err != nil {
+				t.Errorf("expected %s to be accepted, got: %v", tt.address, err)
+			}
+			if !tt.valid && (err == nil || !strings.Contains(err.Error(), "BTCS address must start")) {
+				t.Errorf("expected %s to be rejected as a BTCS address, got: %v", tt.address, err)
+			}
+		})
+	}
+}
+
 func minimalValidV2Config() *ConfigV2 {
 	return &ConfigV2{
 		Version: 2,

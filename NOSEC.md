@@ -28,14 +28,14 @@ Spiral Pool manages external processes as core functionality:
 
 ### SimpleSwap — No Pool Server Involvement in Financial Transactions
 
-Spiral Pool includes an optional SimpleSwap.io swap alert feature. When enabled, `SpiralSentinel` appends a SimpleSwap.io link to `sats_surge` alerts (fired when a mined coin rises 25%+ against BTC over 7 days).
+Spiral Pool includes an optional SimpleSwap.io swap alert feature. When enabled, `SpiralSentinel` appends a SimpleSwap.io link to `sats_surge` alerts (fired when a mined coin rises 25%+ against BTC over 7 days). It is on by default and can be turned off on its own with `sudo spiralctl config set simpleswap off`, which keeps the surge alert and drops only the link.
 
 **Decision: The pool server has no involvement in any swap transaction.**
 
 | Property | Detail |
 |----------|--------|
-| Config file | `/etc/spiralpool/simpleswap.conf` (chmod 600, root:root) |
-| Config stores | `SIMPLESWAP_ENABLED` only |
+| Config file | The Sentinel config (`~/.spiralsentinel/config.json`, chmod 600, owned by the pool user) |
+| Config stores | `simpleswap_enabled` only — a boolean |
 | API key | Not used, not stored — operator uses the SimpleSwap website directly |
 | BTC address | Not stored — operator enters it on the SimpleSwap website |
 | Pool server role | Sends the alert link only; no API calls, no coin transfers |
@@ -47,7 +47,7 @@ Spiral Pool includes an optional SimpleSwap.io swap alert feature. When enabled,
 - No risk of the pool being classified as a money transmitter or financial intermediary
 - No attack surface from stored exchange credentials
 
-**Operator responsibilities:** Operators are solely responsible for complying with all applicable AML/KYC requirements, tax reporting obligations, and SimpleSwap.io's Terms of Service. See TERMS.md (Section 5D) and WARNINGS.md for full details.
+**Operator responsibilities:** Operators are solely responsible for complying with all applicable AML/KYC requirements, tax reporting obligations, and SimpleSwap.io's Terms of Service. See TERMS.md (Section 5C) and WARNINGS.md for full details.
 
 ---
 
@@ -235,9 +235,9 @@ When `CLOUD_DETECTED` is set during installation (100+ providers auto-detected p
 - Tor cloud block: `install.sh:10434` — `if [[ -n "${CLOUD_DETECTED:-}" ]]; then TOR_ENABLED="false" ...`
 - HA standalone enforcement: `install.sh` (`select_ha_mode`) — options 2/3 auto-revert to standalone when `CLOUD_DETECTED` is set
 - ZMQ bindings: all `zmqpubhashblock`, `zmqpubrawtx`, `zmqpubrawblock` entries use `tcp://127.0.0.1:PORT` in all coin daemon configs
-- Metrics UFW: `install.sh:14564` — subnet `ufw allow` skipped; loopback-only rules applied on cloud
-- Dashboard UFW: `install.sh:14545` — `if [[ -z "$CLOUD_DETECTED" ]]; then sudo ufw allow $DASHBOARD_PORT/tcp; fi`
-- IPv6: `install.sh` (`configure_network`) — `net.ipv6.conf.all.disable_ipv6 = 1` written to `/etc/sysctl.conf`
+- Metrics UFW: `install.sh` (`setup_system`, metrics firewall block) — subnet `ufw allow` skipped; loopback-only rules applied on cloud
+- Dashboard UFW: `install.sh` (`setup_system`, dashboard firewall block) — `if [[ -z "$CLOUD_DETECTED" ]]; then sudo ufw allow $DASHBOARD_PORT/tcp; fi`
+- IPv6: `install.sh` (`setup_system`, sysctl block) — `net.ipv6.conf.all.disable_ipv6 = 1` written to `/etc/sysctl.conf`
 
 ---
 
@@ -279,5 +279,5 @@ Operators should review this document and conduct their own security assessment 
 
 ---
 
-*Spiral Pool v2.7.0 - Security Architecture Decisions*
+*Spiral Pool v3.0.0 - Security Architecture Decisions*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

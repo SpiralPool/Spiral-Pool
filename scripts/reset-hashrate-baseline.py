@@ -31,16 +31,35 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Mirror SpiralSentinel.py's DATA_DIR resolution: primary ~/.spiralsentinel,
-# fallback $SPIRALPOOL_INSTALL_DIR/config/sentinel (used when ProtectHome blocks home).
 INSTALL_DIR = Path(os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool"))
+
+# Mirroring SpiralSentinel.py's resolution is not enough, because that resolution
+# depends on the sandbox rather than on the filesystem: under ProtectHome=yes the
+# daemon cannot use its home directory and keeps state in the install directory,
+# while this script runs as an ordinary user and would find the home copy first.
+# The reset would then be written to a file the service never reads, and report
+# success. The daemon records the config file it actually opened; that file's
+# directory is the DATA_DIR holding state.json.
+MARKER = INSTALL_DIR / "data" / "sentinel-config-path"
 CANDIDATES = [
-    Path.home() / ".spiralsentinel" / "state.json",
     INSTALL_DIR / "config" / "sentinel" / "state.json",
+    Path.home() / ".spiralsentinel" / "state.json",
 ]
 
 
+def published_state_file():
+    """The state file beside the config the running service reported, or None."""
+    try:
+        published = MARKER.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return Path(published).parent / "state.json" if published else None
+
+
 def find_state_file():
+    published = published_state_file()
+    if published is not None and published.exists():
+        return published
     for p in CANDIDATES:
         if p.exists():
             return p

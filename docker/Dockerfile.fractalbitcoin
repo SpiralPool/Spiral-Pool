@@ -17,12 +17,18 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Fractal Bitcoin Node for Spiral Pool"
-LABEL version="0.3.0"
+LABEL version="0.4.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-ARG FBTC_VERSION=0.3.0
+ARG FBTC_VERSION=0.4.0
+
+# SHA256 of fractald-0.4.0-x86_64-linux-gnu.tar.gz (17,133,369 bytes).
+# Fractal Bitcoin publishes no checksum file: this is the digest GitHub records
+# for the release asset, matched against an independent download of it.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=26f44e52e8d720c44cfb6954a900f2e5042d0c9d8285d4252916fce958a1d90f
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,6 +54,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
         echo "ERROR: Fractal Bitcoin only provides x86_64 binaries. Current arch: $ARCH" && exit 1; \
     fi && \
     wget -q --max-redirect=5 "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${FBTC_VERSION}/fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && echo "${SHA256}  fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c - \
     && tar -tzf "fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" > /dev/null \
     && tar -xzf "fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz" \
     && cp "fractald-${FBTC_VERSION}-x86_64-linux-gnu/bin/"* /usr/local/bin/ \

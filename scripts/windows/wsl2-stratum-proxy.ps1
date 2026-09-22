@@ -322,6 +322,17 @@ if ($wslIP -eq $lanIP) {
 }
 
 
+# ─── Stratum V2 opt-in ────────────────────────────────────────────────────────
+# install.sh records ENABLE_V2_STRATUM in coins.env and leaves V2 off unless the
+# operator asked for it. Forward V2 ports only when the pool in WSL2 enabled it.
+$v2Enabled = $false
+try {
+    $v2Check = @('--exec', 'grep', '-q', '^ENABLE_V2_STRATUM=true', '/spiralpool/config/coins.env')
+    $v2Args = if ($selectedDistro) { @('-d', $selectedDistro) + $v2Check } else { $v2Check }
+    & wsl @v2Args 2>&1 | Out-Null
+    $v2Enabled = ($LASTEXITCODE -eq 0)
+} catch {}
+
 # ─── Coin / port selection ────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ──────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -350,7 +361,7 @@ if ($sel -match '^[Cc]$') {
 } elseif ($sel -match '^[Aa][Ll][Ll]$') {
     foreach ($c in $COIN_PORTS) {
         $selectedPorts += $c.V1
-        if ($c.V2  -gt 0) { $selectedPorts += $c.V2 }
+        if ($v2Enabled -and $c.V2 -gt 0) { $selectedPorts += $c.V2 }
         if ($c.TLS -gt 0) { $selectedPorts += $c.TLS }
     }
     $selectedLabel = 'All coins'
@@ -363,7 +374,7 @@ if ($sel -match '^[Cc]$') {
         exit 1
     }
     $selectedPorts += $coin.V1
-    if ($coin.V2  -gt 0) { $selectedPorts += $coin.V2 }
+    if ($v2Enabled -and $coin.V2 -gt 0) { $selectedPorts += $coin.V2 }
     if ($coin.TLS -gt 0) { $selectedPorts += $coin.TLS }
     $selectedLabel = "$($coin.Code) - $($coin.Name)"
 }
@@ -376,6 +387,15 @@ $allSpiralPorts = $COIN_PORTS | ForEach-Object {
 }
 foreach ($port in $allSpiralPorts) {
     netsh interface portproxy delete v4tov4 listenport=$port listenaddress=0.0.0.0 2>&1 | Out-Null
+}
+# With V2 off, also drop the V2 firewall rules earlier runs of this script created.
+if (-not $v2Enabled) {
+    foreach ($c in $COIN_PORTS) {
+        if ($c.V2 -gt 0) {
+            Get-NetFirewallRule -DisplayName "SpiralPool-Stratum-$($c.V2)" -ErrorAction SilentlyContinue |
+                Remove-NetFirewallRule -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ─── Add portproxy rules ──────────────────────────────────────────────────────

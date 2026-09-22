@@ -50,6 +50,8 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | Command | Description |
 |---|---|
 | `spiralctl mining [action] [options]` | Mining mode management (Go binary) |
+| `spiralctl v2 pubkey` | Print the Stratum V2 authority public key for miners and proxies (Go binary) |
+| `spiralctl v2 keygen [--rotate]` | Create or replace the Stratum V2 keys (Go binary) |
 | `spiralctl pool stats` | Pool hashrate and worker statistics (Go binary) |
 | `spiralctl stats [blocks [N]]` | Quick pool stats; `stats blocks` shows last N blocks |
 | `spiralctl scan` | Scan network for miners |
@@ -66,6 +68,9 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl miner nick <IP> <name>` | Set a display name for a miner in Sentinel |
 | `spiralctl miner nick list` | List all configured miner nicknames |
 | `spiralctl miner nick clear <IP>` | Remove a miner nickname |
+| `spiralctl miner group [list \| <IP> <name> \| clear <IP>]` | Manage fleet groups (same store as the dashboard; drives the group offline/online alerts) |
+| `spiralctl miner tag [list \| <IP> <t1,t2> \| clear <IP>]` | Manage fleet tags (same store as the dashboard) |
+| `spiralctl miner control <IP> <action>` | Send one command (`info`, `sleep`, `wake`, `restart`, `power`) to a miner, as automation would |
 
 ### Data
 
@@ -82,7 +87,9 @@ All documentation and MOTD references use `spiralctl` exclusively.
 |---|---|
 | `spiralctl coin enable <TICKER>` | Add a supported coin (installs daemon, generates wallet, updates config) |
 | `spiralctl coin disable <TICKER>` | Stop and disable a coin daemon |
-| `spiralctl coin status` | Show all coins and their enabled/disabled state |
+| `spiralctl coin status` | Show all coins and their enabled/disabled state (`coin list` is an alias) |
+| `spiralctl coin prune <TICKER>` | Enable blockchain pruning for a coin to reclaim disk (requires a full resync) |
+| `spiralctl coin storage` | Measure each enabled chain on disk against its published size figure |
 | `spiralctl coin-upgrade` | In-place coin daemon binary upgrade (config and data preserved) |
 | `spiralctl add-coin <TICKER>` | Add a custom/unsupported coin from GitHub (advanced) |
 | `spiralctl remove-coin <TICKER>` | Remove a custom coin's generated files (wallet and blockchain data preserved) |
@@ -322,7 +329,7 @@ spiralctl node [status|start|stop|restart] [coin|all]
 - `stop` - Stop daemon(s) (requires root)
 - `restart` - Restart daemon(s) (requires root)
 
-**Coin values:** `bc2`, `bch`, `btc`, `cat`, `dgb`, `dgb-scrypt`, `doge`, `fbtc`, `ltc`, `nmc`, `pep`, ``, `sys`, `xec`, `xmy`, `all`
+**Coin values:** `bc2`, `bch`, `bch2`, `btc`, `btcs`, `cat`, `dgb`, `dgb-scrypt`, `doge`, `fbtc`, `ltc`, `nmc`, `pep`, `sys`, `xec`, `xmy`, `all`
 
 **Note:** DGB-SCRYPT shares the DigiByte daemon with DGB. Stopping/restarting DGB-SCRYPT alone is not supported.
 
@@ -369,6 +376,9 @@ spiralctl mining [status|solo|multi|merge] [options]
 - `multi <coin,coin,...>` - Switch to multi-coin mining
 - `merge enable [chains]` - Enable merge mining
 - `merge disable` - Disable merge mining
+- `payout` - Show where found blocks pay (configured wallet, or the miner's worker name)
+- `payout wallet` - Pay every block to the configured wallet (default)
+- `payout worker` - Pay each miner at the address in its own worker name, after an on-screen disclosure. Single-operator use only: you must own every wallet and rig, and the stratum port must not be reachable from outside your network. Parent chain only — merge-mined auxiliary chains always pay their configured address
 
 **Examples:**
 ```
@@ -377,7 +387,46 @@ spiralctl mining solo dgb
 spiralctl mining multi btc,bch,dgb
 spiralctl mining merge enable
 spiralctl mining merge disable
+spiralctl mining payout
+spiralctl mining payout wallet
+spiralctl mining payout worker
 ```
+
+---
+
+### spiralctl v2
+
+Stratum V2 key management. Delegates to the Go spiralctl binary. Requires root.
+
+Stratum V2 miners and proxies authenticate the pool with its **authority public key**, so the operator has to read that key off the pool and configure it on each client. The pool creates the keys itself the first time a V2 port starts; `keygen` is only needed to create them ahead of time or to replace them.
+
+```
+spiralctl v2 pubkey              # print the authority public key
+spiralctl v2 keygen              # create the keys if they are missing
+spiralctl v2 keygen --rotate     # replace the keys
+```
+
+| Option | Description |
+|---|---|
+| `--dir DIR` | Directory holding `authority.key` and `static.key`. Defaults to `stratum-v2/` next to `config.yaml`; `global.stratum_v2_key_dir` overrides it in the config. |
+| `--rotate` | `keygen` only. Moves the existing keys aside as `.bak-<UTC timestamp>` before generating new ones. |
+
+`pubkey` prints two lines — the hex form first, then the base58 form that Stratum Reference Implementation configs take (the translator's `authority_pubkey`, for example):
+
+```
+8a3f...c91d
+9auMaAz1zPN...
+```
+
+If no key exists yet, `pubkey` says so and names the directory rather than creating one silently.
+
+**`--rotate` disconnects every V2 client.** The old keys are kept as `.bak-<timestamp>` files, but each miner and proxy must be given the new authority key before it can connect again. Restart the pool afterwards:
+
+```
+sudo systemctl restart spiralstratum
+```
+
+Keys created by root are chowned to match the owner of the config directory, so the pool user can still read them.
 
 ---
 
@@ -430,7 +479,7 @@ spiralctl wallet [--coin <coin>] [--auto]
 ```
 
 **Options:**
-- `--coin <coin>` - Specific coin (dgb, dgb-scrypt, btc, bch, bc2, nmc, sys, xmy, fbtc, xec, ltc, doge, pep, cat)
+- `--coin <coin>` - Specific coin (bc2, bch, bch2, btc, btcs, cat, dgb, dgb-scrypt, doge, fbtc, ltc, nmc, pep, sys, xec, xmy)
 - `--auto` - Auto-generate wallet address if none exists
 
 **Examples:**
@@ -495,7 +544,7 @@ spiralctl ha [status|enable|disable|credentials|setup|failback|promote|validate|
 - `disable [--yes|-y]` - Disable HA on this node (requires root)
 - `promote` - Promote this node to primary (requires root)
 - `failback` - Rejoin cluster after failover (requires root)
-- `credentials` - Show HA cluster credentials (requires root)
+- `credentials` - Show HA cluster credentials (requires root). Also accepts `creds` and `info` as aliases.
 - `setup` - Run HA setup wizard
 - `validate` - Validate HA configuration
 - `service` - Manage HA services
@@ -587,6 +636,9 @@ spiralctl config [show|list|get|set] [key] [value]
 - `discord_webhook` - Discord webhook URL
 - `telegram_token` - Telegram bot token
 - `telegram_chat_id` - Telegram chat ID
+- `missing_payout_days` - Grace days before an unpaid found block alerts (default 7)
+- `missing_payout_max_days` - Backstop: alert after N days regardless (0 = off, default 0)
+- `simpleswap` - `on`/`off` for the SimpleSwap link inside `sats_surge` alerts (default `on`). Off keeps the surge alert and drops only the link; a config file without the key reads as `on`.
 
 **Examples:**
 ```
@@ -594,6 +646,7 @@ spiralctl config show
 spiralctl config get expected_hashrate
 spiralctl config set expected_hashrate 50
 spiralctl config set discord_webhook https://discord.com/api/webhooks/...
+spiralctl config set simpleswap off
 spiralctl config validate
 spiralctl config notify-test
 spiralctl config list-cooldowns
@@ -614,13 +667,13 @@ spiralctl alerts [menu|list|disable|enable|reset] [alert_type]
 
 **Actions:**
 - `menu` (default when run with no arguments on a terminal) - Interactive toggle menu: every alert/report is numbered and shown with its on/off state; type a number (or a name) to flip it, `r` to reset all, `s` to save & restart Sentinel, `q` to quit without saving. Edits are held in memory and written once on save.
-- `list` - Show every alert and report grouped by domain, each marked `on` or `DISABLED` (non-interactive; also the default when stdout is not a terminal)
+- `list` - Show every alert and report grouped by domain, each marked `on` or `DISABLED` (non-interactive; also the default when stdout is not a terminal). Also accepts `show` and `status` as aliases.
 - `disable <alert_type>` - Stop sending a specific alert or report
 - `enable <alert_type>` - Resume sending it
 - `reset` - Clear all mutes (re-enable everything)
 
 **Notes:**
-- Reports are alert types: `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`.
+- Reports are alert types: `6h_report`, `weekly_report`, `monthly_earnings`, `quarterly_report`, `special_date`, `maintenance_reminder`, `update_available`.
 - `block_found` can never be disabled — the command rejects it.
 - Unknown/mistyped names are rejected; run `spiralctl alerts list` for the valid set.
 - Backed by the `disabled_alerts` list in the Sentinel `config.json`. Changes require
@@ -715,6 +768,42 @@ spiralctl miner nick clear <IP>      Remove a miner's nickname
 
 Nicknames are stored in Sentinel's `config.json` and used in all alert messages and reports. Changes take effect after Sentinel is restarted.
 
+**Groups and tags**
+
+```
+spiralctl miner group <IP> <group-name>   Assign a miner to a group
+spiralctl miner group list                List groups and their members
+spiralctl miner group clear <IP>          Remove a miner from its group
+spiralctl miner tag <IP> <t1,t2,...>      Set a miner's tags (comma-separated)
+spiralctl miner tag list                  List all tagged miners
+spiralctl miner tag clear <IP>            Remove a miner's tags
+```
+
+These are the same fleet groups and tags the dashboard's Fleet page manages: they are
+stored in `/spiralpool/dashboard/data/miner_groups.json` and `miner_tags.json`, so a group
+set here shows up on the dashboard and feeds Sentinel's `group_offline` / `group_online`
+alerts (Sentinel re-reads the file at most once a minute). A miner belongs to one group at a
+time — assigning it to a new group removes it from the old one. Group names accept letters,
+digits, spaces and `_ - . ( )` up to 64 characters, matching what the dashboard accepts.
+
+**Sending one command to a miner**
+
+```
+spiralctl miner control <IP> info
+spiralctl miner control <IP> sleep|wake|restart
+spiralctl miner control <IP> power <low|normal|high|watts>
+```
+
+Runs the same driver and stored login Sentinel's automation uses, so it is the way to test
+whether a miner accepts a command. `info` reports what the pool can do with that miner and
+whether a login is stored. `OK` means the miner accepted the command, not that it took
+effect. Requires root (it re-runs as the pool user) and needs
+`/spiralpool/bin/miner_control.py`, which the installer deploys. A miner missing from
+Sentinel's list needs `--type`; an Avalon whose model is not set on the Automation page
+needs `--model nano3s`, `avalon_q` or `mini3`. See
+[MINER_SUPPORT.md](MINER_SUPPORT.md) for what each firmware family supports.
+
+
 **Examples:**
 ```
 spiralctl miner nick 192.168.1.50 "Antminer S21"
@@ -752,6 +841,61 @@ Stop and disable a coin daemon. Wallet data and blockchain data are preserved.
 ```
 spiralctl coin disable <TICKER>
 ```
+
+---
+
+### spiralctl coin storage
+
+Report what each enabled chain actually occupies, next to the figure Spiral
+Pool publishes for it.
+
+```
+spiralctl coin storage
+```
+
+Reads `size_on_disk` from each running daemon's `getblockchaininfo` and
+compares it with `chain_gb` in `config/coins.manifest.yaml`, the single source
+the installers and every storage table are checked against. A chain that has
+outgrown its figure is flagged with the shortfall.
+
+Why it exists: the published figures were badly wrong before v3.0.0 and no
+amount of cross-checking between documents could have revealed it, because
+every copy agreed with every other copy and all of them were stale — eCash was
+listed at 20 GB against a real ~155 GB, Fractal Bitcoin at 10 GB against a
+documented 2 TB. Chains only grow, so any static figure is a snapshot. The
+daemons know their own size; this asks them.
+
+- **Pruned nodes** are identified and excluded from the comparison — the
+  published figure is a full-node size, and a pruned chain is capped near 5 GB
+  regardless of it.
+- **Stopped or unresponsive daemons** are reported as such rather than skipped,
+  so a missing row never reads as a passing one.
+- When a chain has genuinely outgrown its figure, correct `chain_gb` in the
+  manifest. `tests/test_coin_storage_consistency.py` then requires both
+  installers and all four documents to match, so it cannot be fixed in one
+  place and left stale in five others.
+
+---
+
+### spiralctl coin prune
+
+Enable blockchain pruning for a coin to save disk space. Sets `prune=5000` (5 GB) in the
+daemon's config file and restarts it. All pool operations — mining, ZMQ, block submission —
+work normally against a pruned node.
+
+```
+spiralctl coin prune <TICKER>
+```
+
+Run without a ticker to print the usage and savings summary. Requires root.
+
+Approximate savings: BTC ~600 GB to 5 GB, BCH ~200 GB to 5 GB, LTC ~100 GB to 5 GB,
+DGB ~80 GB to 5 GB.
+
+DigiByte supports pruning as of DigiByte Core v9.26.4; DigiDollar runs pruned and `txindex`
+is dropped automatically.
+
+> **This requires a full resync** — the blockchain data is re-downloaded from scratch.
 
 ---
 
@@ -916,6 +1060,9 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 | `/spiralpool/bin/spiralctl` | Go binary for mining/pool/external/gdpr commands |
 | `/spiralpool/config/config.yaml` | Pool configuration (coins, ports, stratum) |
 | `~<POOL_USER>/.spiralsentinel/config.json` | Sentinel configuration (webhooks, thresholds); home dir detected dynamically via `getent` |
+| `/spiralpool/config/sentinel/config.json` | Fallback Sentinel configuration, used when the home-directory copy above is absent |
+| `/spiralpool/config/etcd-auth.conf` | etcd root password (mode 640, root-owned); sourced to authenticate `etcdctl` calls |
+| `/spiralpool/config/patroni-api.conf` | Patroni REST API credentials (mode 600, root-only) |
 | `/spiralpool/data/miners.json` | Discovered miners database |
 | `/spiralpool/scripts/blockchain-export.sh` | Blockchain export script |
 | `/spiralpool/scripts/blockchain-restore.sh` | Blockchain restore script |
@@ -927,7 +1074,6 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 |---|---|
 | `0` | Success |
 | `1` | General error or invalid usage |
-| `2` | Command not found / missing dependency |
 
 ## SUPPORTED COINS
 
@@ -937,7 +1083,7 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 
 **AuxPoW merge-mining pairs (6):** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP
 
-**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, XEC
+**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, DGB, XEC
 
 ## SEE ALSO
 

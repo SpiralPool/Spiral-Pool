@@ -8,7 +8,6 @@
 # ║   Separate container for Bitcoin Silver (BTCS) node                        ║
 # ║   BTC-style consensus, SHA-256d, 5-min blocks, SegWit+Taproot              ║
 # ║   NOTE: Only x86_64 (amd64) is supported.                                  ║
-# ║   NOTE: No pre-built binaries available — built from source.               ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
@@ -16,33 +15,26 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Silver Node for Spiral Pool"
-LABEL version="source-ff5c3c3"
+ARG BTCS_VERSION=31.1.3
+LABEL version="${BTCS_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Pinned to a specific verified commit for supply chain security.
-# Source: https://github.com/bitcoin-silver/core
-# Commit: ff5c3c3d381fa3c783862768d5a2e4fbb50f0931 (2025-03-27, "Fix libraries")
-# To update: verify the new commit hash against the repository, then change this ARG.
-ARG BTCS_COMMIT=ff5c3c3d381fa3c783862768d5a2e4fbb50f0931
+# SHA256 of bitcoinsilver-31.1.3-x86_64-linux-gnu.tar.gz (26,769,941 bytes).
+# Bitcoin Silver publishes no signed checksum file: this is the digest GitHub
+# records for the release asset, matched against an independent download of it.
+# If you bump the version above you MUST bump this too — the build fails closed.
+ARG SHA256=6743ecef53501687574a5f761ddb41dcce960953e0e0b6ef362ab69268767c4c
 
-# Install build dependencies
+# Install dependencies. The release binaries link libzmq, libevent and SQLite.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
     curl \
     wget \
     ca-certificates \
     libzmq3-dev \
-    libboost-all-dev \
-    libssl-dev \
     libevent-dev \
-    libdb5.3++-dev \
-    autoconf \
-    automake \
-    libtool \
-    pkg-config \
+    libsqlite3-0 \
     gosu \
     gettext-base \
     && rm -rf /var/lib/apt/lists/*
@@ -52,29 +44,20 @@ RUN useradd -r -m -s /bin/bash bitcoinsilver \
     && mkdir -p /home/bitcoinsilver/.bitcoinsilver \
     && chown -R bitcoinsilver:bitcoinsilver /home/bitcoinsilver
 
-# Build Bitcoin Silver from source, pinned to a specific verified commit.
-# Uses targeted shallow fetch (not HEAD) to prevent supply chain attacks.
+# Download and install Bitcoin Silver. From 31.1.0 releases are tagged
+# version<ver> and ship bitcoinsilver-<ver>-x86_64-linux-gnu/bin/.
 # NOTE: Only x86_64 (amd64) is supported.
 WORKDIR /tmp
 RUN if [ "$(dpkg --print-architecture)" != "amd64" ]; then \
         echo "ERROR: Only x86_64 (amd64) is supported." && exit 1; \
     fi \
-    && git init bitcoinsilver \
-    && cd bitcoinsilver \
-    && git remote add origin https://github.com/bitcoin-silver/core.git \
-    && git fetch --depth=1 origin ${BTCS_COMMIT} \
-    && git checkout FETCH_HEAD \
-    && ./autogen.sh \
-    && ./configure \
-        --disable-tests \
-        --disable-bench \
-        --without-gui \
-        --without-miniupnpc \
-        --prefix=/usr/local \
-    && make -j$(nproc) \
-    && make install \
-    && cd / \
-    && rm -rf /tmp/bitcoinsilver
+    && BTCS_ARCHIVE="bitcoinsilver-${BTCS_VERSION}-x86_64-linux-gnu" \
+    && wget -q --max-redirect=5 "https://github.com/bitcoin-silver/core/releases/download/version${BTCS_VERSION}/${BTCS_ARCHIVE}.tar.gz" \
+    && echo "${SHA256}  ${BTCS_ARCHIVE}.tar.gz" | sha256sum -c - \
+    && tar -tzf "${BTCS_ARCHIVE}.tar.gz" > /dev/null \
+    && tar -xzf "${BTCS_ARCHIVE}.tar.gz" \
+    && cp "${BTCS_ARCHIVE}/bin/bitcoinsilverd" "${BTCS_ARCHIVE}/bin/bitcoinsilver-cli" /usr/local/bin/ \
+    && rm -rf /tmp/*
 
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\

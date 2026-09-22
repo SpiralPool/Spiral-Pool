@@ -22,7 +22,7 @@ global:
   log_level: debug        # Verbose for integration testing
   log_format: text        # Human-readable during testing
   metrics_port: 19124
-  api_port: 14026
+  api_port: 14028
   api_enabled: true
 
   sentinel:
@@ -50,8 +50,8 @@ global:
 database:
   host: localhost
   port: 5432
-  user: spiralstratum
-  password: "spiralstratum"
+  user: spiralregtest
+  password: "spiralregtest"
   database: spiralstratum_pep_regtest
   maxConnections: 50
   batching:
@@ -94,7 +94,7 @@ coins:
     nodes:
       - id: regtest-primary
         host: 127.0.0.1
-        port: 18570               # PEP regtest RPC port
+        port: 18572               # PEP regtest RPC port (must match RPC_PORT_DEF in regtest.sh)
         user: spiraltest
         password: "spiraltest"
         priority: 0

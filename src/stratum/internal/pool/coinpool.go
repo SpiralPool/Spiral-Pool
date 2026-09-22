@@ -158,9 +158,7 @@ type CoinPool struct {
 	multiPortSessions api.MultiPortSessionProvider
 
 	// V2 Stratum (optional, enabled when PortV2 > 0)
-	v2Server         *stratumv2.Server
-	v2JobAdapter     *stratumv2.JobManagerAdapter
-	v2ShareValidator *stratumv2.ShareValidator
+	v2Server *stratumv2.Server
 
 	// Lifecycle
 	wg       sync.WaitGroup
@@ -177,6 +175,7 @@ type CoinPoolConfig struct {
 	DBPool            *database.PostgresDB
 	Logger            *zap.Logger
 	MetricsServer     *metrics.Metrics // Shared metrics server from coordinator
+	V2KeyDir          string           // Stratum V2 authority and static keys; empty = throwaway keys
 }
 
 // NewCoinPool creates a new per-coin pool instance.
@@ -238,6 +237,8 @@ func NewCoinPool(cfg *CoinPoolConfig) (*CoinPool, error) {
 		Connection:     cfg.CoinConfig.Stratum.Connection,
 		VersionRolling: cfg.CoinConfig.Stratum.VersionRolling,
 		JobRebroadcast: cfg.CoinConfig.Stratum.JobRebroadcast,
+		// Carried through so the job manager can gate per-miner payout on it.
+		PayoutFromWorkerName: cfg.CoinConfig.Stratum.PayoutFromWorkerName,
 		RateLimiting: config.StratumRateLimitConfig{
 			PreAuthMessageLimit: 20,
 			PreAuthTimeout:      10 * time.Second,
@@ -532,14 +533,57 @@ func NewCoinPool(cfg *CoinPoolConfig) (*CoinPool, error) {
 	// ═══════════════════════════════════════════════════════════════════════════
 	// V2 STRATUM SERVER (optional — enabled when port_v2 > 0)
 	// ═══════════════════════════════════════════════════════════════════════════
-	if cfg.CoinConfig.Stratum.PortV2 > 0 {
+	v2Enabled := cfg.CoinConfig.Stratum.PortV2 > 0
+	var v2Keys *stratumv2.ServerKeys
+	if v2Enabled && cfg.V2KeyDir != "" {
+		// Persistent keys: miners pin the authority public key, so it must survive restarts.
+		keys, created, keyErr := stratumv2.LoadServerKeys(cfg.V2KeyDir)
+		if keyErr != nil {
+			log.Errorw("Stratum V2 disabled for this coin: cannot load its keys",
+				"dir", cfg.V2KeyDir, "error", keyErr)
+			v2Enabled = false
+		} else {
+			v2Keys = keys
+			for _, path := range created {
+				log.Infow("Created Stratum V2 key file", "file", path)
+			}
+		}
+	}
+	if v2Enabled {
 		v2Cfg := stratumv2.DefaultServerConfig()
 		v2Cfg.Port = cfg.CoinConfig.Stratum.PortV2
 		v2Cfg.ListenAddr = "0.0.0.0"
-		// Derive initial V2 share target from configured initial difficulty
-		// This ensures V2 miners get the same starting difficulty as V1 miners
+		v2Cfg.Keys = v2Keys
+		// V2 channels follow the coin's vardiff settings and target share time.
+		v2Cfg.VarDiff = cfg.CoinConfig.Stratum.Difficulty.VarDiff
+		v2Cfg.VarDiffTargetTime = cp.stratumServer.GetDefaultTargetTime()
+		// V2 miners get the same starting difficulty as V1 miners
 		if cfg.CoinConfig.Stratum.Difficulty.Initial > 0 {
-			v2Cfg.DefaultTargetNBits = stratumv2.DifficultyToNBits(cfg.CoinConfig.Stratum.Difficulty.Initial)
+			v2Cfg.InitialDifficulty = cfg.CoinConfig.Stratum.Difficulty.Initial
+		}
+		// A V1 miner's starting difficulty comes from its user agent, through the
+		// Spiral Router. V2 has no user agent, so every V2 channel was opened at
+		// the one number in config however large or small the device was — the
+		// failure the router exists to prevent, reintroduced on the newer
+		// protocol. V2 does carry something better: OpenMiningChannel states the
+		// device's own hashrate. Prefer that, since a number the miner reports
+		// beats one inferred from a string, and fall back to the router on the
+		// SetupConnection vendor when a miner declares no hashrate.
+		//
+		// This sets the pool's opening offer only. A miner's max_target floor is
+		// applied afterwards and still wins, because the SV2 specification says
+		// the pool must respect it.
+		v2Cfg.InitialDifficultyFor = func(vendorID string, nominalHashRate float64) float64 {
+			if nominalHashRate > 0 {
+				targetTime := cp.stratumServer.GetDefaultTargetTime()
+				if targetTime <= 0 {
+					targetTime = 4
+				}
+				// The relation the router already uses: hashrate × seconds ÷ 2^32.
+				// It holds for every algorithm, so no algorithm branch is needed.
+				return nominalHashRate * targetTime / 4294967296.0
+			}
+			return cp.stratumServer.GetInitialDifficultyForUserAgent(vendorID)
 		}
 
 		v2Srv, v2Err := stratumv2.NewServer(v2Cfg, log)
@@ -547,20 +591,14 @@ func NewCoinPool(cfg *CoinPoolConfig) (*CoinPool, error) {
 			return nil, fmt.Errorf("failed to create V2 server: %w", v2Err)
 		}
 
-		// Create V2 job adapter (talks to same primary daemon independently)
-		primaryNode := nodeMgr.GetPrimary()
-		if primaryNode == nil {
-			return nil, fmt.Errorf("V2 server requires at least one configured node, but GetPrimary() returned nil")
-		}
-		v2JobAdapt := stratumv2.NewJobManagerAdapter(poolCfg, stratumCfg, primaryNode.Client, cfg.Logger)
-
-		// Create V2 share validator with coin-specific algorithm
-		algorithm := coinImpl.Algorithm() // "sha256d" or "scrypt"
-		v2ShareVal := stratumv2.NewShareValidator(v2JobAdapt, primaryNode.Client, algorithm, cfg.Logger)
-
-		// Wire interfaces
-		v2Srv.SetJobProvider(v2JobAdapt)
-		v2Srv.SetShareHandler(v2ShareVal)
+		// V2 channels mine the job manager's jobs, and their shares go through the
+		// same validation, block submission and share pipeline as multi-port shares.
+		v2Srv.SetPipeline(&stratumv2.Pipeline{
+			CurrentJob:  cp.jobManager.GetCurrentJob,
+			MerkleRoot:  shares.ShareMerkleRoot,
+			ShareTarget: cp.shareValidator.ShareTarget,
+			SubmitShare: cp.HandleMultiPortShare,
+		})
 
 		// Wire V1 rate limiter to V2 server for consistent DDoS protection
 		// Both protocols share the same per-IP rate limiter so bans are unified
@@ -569,12 +607,10 @@ func NewCoinPool(cfg *CoinPoolConfig) (*CoinPool, error) {
 		}
 
 		cp.v2Server = v2Srv
-		cp.v2JobAdapter = v2JobAdapt
-		cp.v2ShareValidator = v2ShareVal
 
 		log.Infow("V2 Stratum server configured",
 			"port", cfg.CoinConfig.Stratum.PortV2,
-			"algorithm", algorithm,
+			"algorithm", coinImpl.Algorithm(),
 		)
 	}
 
@@ -612,6 +648,9 @@ func (cp *CoinPool) setupCallbacks() {
 		}
 
 		go cp.stratumServer.BroadcastJob(job)
+		if cp.v2Server != nil {
+			go cp.v2Server.BroadcastJob(job)
+		}
 	})
 
 	// Stratum server sends shares to pool for processing
@@ -809,34 +848,6 @@ func (cp *CoinPool) setupCallbacks() {
 		if session, ok := cp.stratumServer.GetSession(sessionID); ok {
 			if cp.metricsServer != nil {
 				cp.metricsServer.RecordWorkerConnection(session.MinerAddress, session.WorkerName)
-			}
-
-			// SOLO MINING: Set miner's wallet address for direct coinbase routing
-			// This enables trustless SOLO mining where block rewards go directly to
-			// the miner's wallet address (extracted from their stratum username).
-			// Format: "WalletAddress.WorkerName" -> MinerAddress = "WalletAddress"
-			if session.MinerAddress != "" {
-				if err := cp.jobManager.SetSoloMinerAddress(session.MinerAddress); err != nil {
-					cp.logger.Warnw("SOLO mining: invalid miner address, using pool address",
-						"minerAddress", session.MinerAddress,
-						"error", err,
-						"note", "Miner should connect with valid wallet address as username",
-					)
-				} else {
-					// CRITICAL: Force a new job with the miner's address
-					// Without this, the miner continues working on the OLD job
-					// which has the pool's address in the coinbase output.
-					cp.logger.Infow("SOLO mining: forcing job refresh with miner's address",
-						"minerAddress", session.MinerAddress,
-					)
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					if err := cp.jobManager.RefreshJob(ctx, true); err != nil {
-						cp.logger.Warnw("SOLO mining: failed to refresh job",
-							"error", err,
-						)
-					}
-					cancel()
-				}
 			}
 		}
 	})
@@ -1150,6 +1161,9 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 	// this job. Submitting a block with a stale prevBlockHash guarantees rejection.
 	// ═══════════════════════════════════════════════════════════════════════════
 	finalStatus := "pending"
+	// A candidate rejected before submission never reaches the insert below, so the
+	// status update at the end has no row to update. Tracked so it inserts instead.
+	blockRowInserted := false
 	rejectReason := "" // V1 PARITY: for WAL RejectReason field
 	orphanReason := "" // V1 PARITY: for WAL/log structured reason
 	var lastErr error
@@ -1313,7 +1327,7 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 				}
 				if jobFound && job != nil {
 					emergencyEntry.CoinBase1 = job.CoinBase1
-					emergencyEntry.CoinBase2 = job.CoinBase2
+					emergencyEntry.CoinBase2 = job.CoinBase2For(share.MinerAddress)
 					emergencyEntry.Version = job.Version
 					emergencyEntry.NBits = job.NBits
 					emergencyEntry.NTime = share.NTime
@@ -1419,6 +1433,7 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 			)
 		} else {
 			preSubmitCancel()
+			blockRowInserted = true
 		}
 
 		// HA: Cross-node block submission dedup via Redis SETNX.
@@ -1885,18 +1900,46 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 		)
 	}
 
-	// Update block status in database (from "submitting" to final status)
+	// Update block status in database (from "submitting" to final status).
+	// A candidate dropped before submission (stale race, duplicate candidate, moved
+	// chain tip) has no row yet, so record it with its final status the way the
+	// single-coin pool does, rather than updating a row that was never written.
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if err := cp.db.UpdateBlockStatusForPool(dbCtx, cp.poolID, share.BlockHeight, result.BlockHash, finalStatus, 0); err != nil {
-		dbCancel()
-		cp.logger.Errorw("Failed to update block status in database",
-			"height", share.BlockHeight,
-			"hash", result.BlockHash,
-			"status", finalStatus,
-			"error", err,
-		)
+	if blockRowInserted {
+		if err := cp.db.UpdateBlockStatusForPool(dbCtx, cp.poolID, share.BlockHeight, result.BlockHash, finalStatus, 0); err != nil {
+			dbCancel()
+			cp.logger.Errorw("Failed to update block status in database",
+				"height", share.BlockHeight,
+				"hash", result.BlockHash,
+				"status", finalStatus,
+				"error", err,
+			)
+		} else {
+			dbCancel()
+		}
 	} else {
-		dbCancel()
+		unsubmitted := &database.Block{
+			Height:            share.BlockHeight,
+			NetworkDifficulty: cp.GetMiningDifficulty(),
+			Status:            finalStatus,
+			Type:              "block",
+			Miner:             share.MinerAddress,
+			Source:            share.WorkerName,
+			Reward:            rewardCoins,
+			Hash:              result.BlockHash,
+			Created:           time.Now().UTC(),
+		}
+		if err := cp.db.InsertBlockForPool(dbCtx, cp.poolID, unsubmitted); err != nil {
+			dbCancel()
+			cp.logger.Errorw("Failed to record unsubmitted block in database",
+				"height", share.BlockHeight,
+				"hash", result.BlockHash,
+				"status", finalStatus,
+				"error", err,
+			)
+		} else {
+			dbCancel()
+		}
 	}
 
 	_ = lastErr // Used in WAL entry above
@@ -1916,13 +1959,13 @@ func (cp *CoinPool) handleBlock(share *protocol.Share, result *protocol.ShareRes
 		}
 
 		// Send block found message only to the miner who found it
-		cp.startCelebration(share.SessionID, share.BlockHeight, share.MinerAddress, share.WorkerName, rewardCoins, cp.coinSymbol)
+		cp.startCelebration(share.SessionID, share.BlockHeight, share.MinerAddress, share.WorkerName, rewardCoins, cp.coinSymbol, result.BlockHash)
 	}
 }
 
 // startCelebration sends a block found message to all miners when a block is found.
 // The finder gets a direct message, ALL miners get a broadcast, and Avalon LEDs are triggered.
-func (cp *CoinPool) startCelebration(sessionID uint64, height uint64, miner, worker string, reward float64, coinSymbol string) {
+func (cp *CoinPool) startCelebration(sessionID uint64, height uint64, miner, worker string, reward float64, coinSymbol, blockHash string) {
 	// Check if celebration is enabled in config
 	if cp.celebrationConfig == nil || !cp.celebrationConfig.Enabled {
 		cp.logger.Debugw("Celebration disabled, skipping block announcement",
@@ -1953,14 +1996,21 @@ func (cp *CoinPool) startCelebration(sessionID uint64, height uint64, miner, wor
 
 	// Trigger full RGB LED celebration via block-celebrate.sh
 	// The script handles Avalon LED discovery, 12-phase color sequences, and state restore
-	go func(hours int) {
+	go func(hours int, hash string) {
 		scriptPath := "/spiralpool/scripts/block-celebrate.sh"
 		if _, err := os.Stat(scriptPath); err != nil {
 			cp.logger.Debugw("Celebration script not found, skipping LED celebration", "path", scriptPath)
 			return
 		}
 		durationSecs := strconv.Itoa(hours * 3600)
-		cmd := exec.Command(scriptPath, "--duration", durationSecs)
+		// Name the block. block-celebrate.sh records it so that if this block is
+		// later orphaned, Sentinel can withdraw it and end the celebration -- and
+		// so a celebration standing for several blocks is only ended by the last.
+		args := []string{"--duration", durationSecs}
+		if hash != "" {
+			args = append(args, "--block", hash)
+		}
+		cmd := exec.Command(scriptPath, args...)
 		if err := cmd.Start(); err != nil {
 			cp.logger.Warnw("Failed to start celebration script", "error", err)
 			return
@@ -1975,7 +2025,7 @@ func (cp *CoinPool) startCelebration(sessionID uint64, height uint64, miner, wor
 		if err := cmd.Wait(); err != nil {
 			cp.logger.Debugw("Celebration script exited with error", "error", err)
 		}
-	}(durationHours)
+	}(durationHours, blockHash)
 
 	cp.logger.Infow("Block celebration started",
 		"coin", coinSymbol,
@@ -2228,9 +2278,6 @@ func (cp *CoinPool) Start(ctx context.Context) error {
 
 	// Start V2 stratum server (if configured)
 	if cp.v2Server != nil {
-		if err := cp.v2JobAdapter.Start(ctx); err != nil {
-			return fmt.Errorf("failed to start V2 job adapter: %w", err)
-		}
 		if err := cp.v2Server.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start V2 server: %w", err)
 		}
@@ -3512,7 +3559,7 @@ func (cp *CoinPool) handleAuxBlocks(share *protocol.Share, auxResults []protocol
 			)
 
 			// Celebrate merge-mined block (same light show as parent blocks)
-			cp.startCelebration(share.SessionID, auxResult.Height, share.MinerAddress, share.WorkerName, float64(auxResult.CoinbaseValue)/1e8, auxResult.Symbol)
+			cp.startCelebration(share.SessionID, auxResult.Height, share.MinerAddress, share.WorkerName, float64(auxResult.CoinbaseValue)/1e8, auxResult.Symbol, auxResult.BlockHash)
 
 			// FIX: Update WAL entry from "aux_submitting" to "aux_pending" after successful submission.
 			// Without this, the WAL entry stays in "aux_submitting" forever and crash recovery

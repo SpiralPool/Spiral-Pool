@@ -440,7 +440,10 @@ func (v *ValidatorV2) ValidateWithCoin(share *protocol.Share) *protocol.ShareRes
 	// If it doesn't meet the expected difficulty, check against MinDifficulty as fallback.
 	// This handles vardiff transitions where miners (especially cgminer/Avalon) continue
 	// submitting shares at the old difficulty until they receive a new job.
-	if !meetsShareTarget {
+	// A hash that meets the network target is a block and is never rejected here:
+	// when the share difficulty is above the network difficulty (a low-difficulty
+	// chain, regtest), a block can miss the share target.
+	if !meetsShareTarget && !meetsNetworkTarget {
 		actualDiff := v.coinHashToDifficulty(hashInt)
 
 		// AUDIT: Log difficulty context for rejected share
@@ -563,6 +566,12 @@ func (v *ValidatorV2) coinDifficultyToTarget(difficulty float64) *big.Int {
 	return difficultyToTarget(difficulty)
 }
 
+// ShareTarget returns the hash target a share of the given stratum difficulty must
+// meet, including the coin's share difficulty multiplier.
+func (v *ValidatorV2) ShareTarget(difficulty float64) *big.Int {
+	return v.coinDifficultyToTarget(difficulty)
+}
+
 // coinHashToDifficulty converts a hash value to stratum difficulty, accounting
 // for the coin's share difficulty multiplier. Returns difficulty in the same
 // scale as stratum difficulty values sent to miners.
@@ -614,7 +623,7 @@ func (v *ValidatorV2) checkAuxTargets(
 		}
 		return nil
 	}
-	cb2, err := hex.DecodeString(job.CoinBase2)
+	cb2, err := hex.DecodeString(job.CoinBase2For(share.MinerAddress))
 	if err != nil {
 		if auditDebugEnabled {
 			fmt.Printf("AUDIT_AUX_ERROR jobID=%s error=cb2_decode detail=%v\n", share.JobID, err)

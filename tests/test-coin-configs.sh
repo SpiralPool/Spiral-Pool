@@ -697,9 +697,8 @@ EOF
 
 test_bc2() {
     local coin="bc2"
-    # BC2 uses -CLI suffix, not -gnu
-    local bc2_arch="x86_64-linux-CLI"
-    local url="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-${bc2_arch}.tar.gz"
+    # From v31.1.0 the asset is BitcoinII-v<major.minor>-Linux-CLI (x86_64 only)
+    local url="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v31.1.0/BitcoinII-v31.1-Linux-CLI.tar.gz"
     local rpc_user="spiralbc2"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8339
@@ -710,10 +709,10 @@ test_bc2() {
 
     download_extract "$coin" "$url" || return 1
 
-    # BC2 uses capital II: bitcoinIId, bitcoinII-cli
-    local daemon=$(find "$TEST_BASE/$coin/extract" -name "bitcoinIId" -type f | head -1)
+    # BC2 uses capital II: bitcoinII-d (bitcoinIId before v31.1.0), bitcoinII-cli
+    local daemon=$(find "$TEST_BASE/$coin/extract" -type f \( -name "bitcoinII-d" -o -name "bitcoinIId" \) | head -1)
     local cli=$(find "$TEST_BASE/$coin/extract" -name "bitcoinII-cli" -type f | head -1)
-    [[ -z "$daemon" ]] && { log_fail "$coin - bitcoinIId not found in archive"; return 1; }
+    [[ -z "$daemon" ]] && { log_fail "$coin - bitcoinII-d not found in archive"; return 1; }
     chmod +x "$daemon" "$cli"
 
     mkdir -p "$datadir"
@@ -860,7 +859,7 @@ EOF
 
 test_sys() {
     local coin="sys"
-    local url="https://github.com/syscoin/syscoin/releases/download/v5.1.0/syscoin-5.1.0-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/syscoin/syscoin/releases/download/v5.1.2/syscoin-5.1.2-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralsys"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8370
@@ -1013,7 +1012,7 @@ test_fbtc() {
         return 0
     fi
 
-    local url="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.3.0/fractald-0.3.0-x86_64-linux-gnu.tar.gz"
+    local url="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.4.0/fractald-0.4.0-x86_64-linux-gnu.tar.gz"
     local rpc_user="spiralfbtc"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8340
@@ -1087,7 +1086,7 @@ EOF
 
 test_xec() {
     local coin="xec"
-    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.33.10/bitcoin-abc-0.33.10-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.33.12/bitcoin-abc-0.33.12-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralxec"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=9004
@@ -1169,7 +1168,7 @@ EOF
 
 test_ltc() {
     local coin="ltc"
-    local url="https://github.com/litecoin-project/litecoin/releases/download/v0.21.5.6/litecoin-0.21.5.6-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/litecoin-project/litecoin/releases/download/v0.21.5.8/litecoin-0.21.5.8-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralltc"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=9332

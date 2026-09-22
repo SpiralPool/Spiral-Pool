@@ -4,7 +4,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Spiral Pool - Windows Installer v2.7.0
+    Spiral Pool - Windows Installer v3.0.0
 
 .DESCRIPTION
     Fully automated installation of Spiral Pool using Docker Desktop for Windows.
@@ -18,7 +18,7 @@
     - Sets up auto-start and health monitoring
 
 .NOTES
-    Version: 2.7.0
+    Version: 3.0.0
     Author: Spiral Pool Contributors
     Status: EXPERIMENTAL
 
@@ -64,7 +64,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Script:InstallDir = "$DataDrive\SpiralPool"
-$Script:Version = "2.7.0"
+$Script:Version = "3.0.0"
 $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -72,20 +72,20 @@ $Script:LogFile = "$env:TEMP\spiralpool-install.log"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 $Script:CoinConfig = @{
-    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="80 GB";   CliName="digibyte-cli" }
-    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  V2Port=4334;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="600 GB";  CliName="bitcoin-cli" }
-    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  V2Port=5334;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="250 GB";  CliName="bitcoin-cli" }
-    BCH2         = @{ Container="bitcoincashii";  RpcPort=8533;  P2pPort=8534;  ZmqPort=28533; RpcUser="spiralbch2"; StratumPort=5336;  V2Port=5337;  TlsPort=5338;  PoolCoin="bitcoincashii";   Profile="bch2";       Algo="SHA256d"; Storage="20 GB";   CliName="bitcoincashII-cli" }
+    DGB          = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3333;  V2Port=3334;  TlsPort=3335;  PoolCoin="digibyte";        Profile="dgb";        Algo="SHA256d"; Storage="40 GB";   CliName="digibyte-cli" }
+    BTC          = @{ Container="bitcoin";        RpcPort=8332;  P2pPort=8333;  ZmqPort=28332; RpcUser="spiralbtc";  StratumPort=4333;  V2Port=4334;  TlsPort=4335;  PoolCoin="bitcoin";         Profile="btc";        Algo="SHA256d"; Storage="780 GB";  CliName="bitcoin-cli" }
+    BCH          = @{ Container="bitcoincash";    RpcPort=8432;  P2pPort=8433;  ZmqPort=28432; RpcUser="spiralbch";  StratumPort=5333;  V2Port=5334;  TlsPort=5335;  PoolCoin="bitcoincash";     Profile="bch";        Algo="SHA256d"; Storage="220 GB";  CliName="bitcoin-cli" }
+    BCH2         = @{ Container="bitcoincashii";  RpcPort=8533;  P2pPort=8534;  ZmqPort=28533; RpcUser="spiralbch2"; StratumPort=5336;  V2Port=5337;  TlsPort=5338;  PoolCoin="bitcoincashii";   Profile="bch2";       Algo="SHA256d"; Storage="15 GB";   CliName="bitcoincashII-cli" }
     BC2          = @{ Container="bitcoinii";      RpcPort=8339;  P2pPort=8338;  ZmqPort=28338; RpcUser="spiralbc2";  StratumPort=6333;  V2Port=6334;  TlsPort=6335;  PoolCoin="bitcoinii";       Profile="bc2";        Algo="SHA256d"; Storage="10 GB";   CliName="bitcoinii-cli" }
-    BTCS         = @{ Container="bitcoinsilver";  RpcPort=10567; P2pPort=10566; ZmqPort=28567; RpcUser="spiralbtcs"; StratumPort=11335; V2Port=11336; TlsPort=11337; PoolCoin="bitcoinsilver";   Profile="btcs";       Algo="SHA256d"; Storage="15 GB";   CliName="bitcoin-silver-cli" }
+    BTCS         = @{ Container="bitcoinsilver";  RpcPort=10567; P2pPort=10566; ZmqPort=28567; RpcUser="spiralbtcs"; StratumPort=11335; V2Port=11336; TlsPort=11337; PoolCoin="bitcoinsilver";   Profile="btcs";       Algo="SHA256d"; Storage="8 GB";   CliName="bitcoin-silver-cli" }
     NMC          = @{ Container="namecoin";       RpcPort=8336;  P2pPort=8334;  ZmqPort=28336; RpcUser="spiralnmc";  StratumPort=14335; V2Port=14336; TlsPort=14337; PoolCoin="namecoin";        Profile="nmc";        Algo="SHA256d"; Storage="15 GB";   CliName="namecoin-cli" }
     SYS          = @{ Container="syscoin";        RpcPort=8370;  P2pPort=8369;  ZmqPort=28370; RpcUser="spiralsys";  StratumPort=15335; V2Port=15336; TlsPort=15337; PoolCoin="syscoin";         Profile="sys";        Algo="SHA256d"; Storage="25 GB";   CliName="syscoin-cli" }
     XMY          = @{ Container="myriadcoin";     RpcPort=10889; P2pPort=10888; ZmqPort=28889; RpcUser="spiralxmy";  StratumPort=17335; V2Port=17336; TlsPort=17337; PoolCoin="myriadcoin";      Profile="xmy";        Algo="SHA256d"; Storage="8 GB";    CliName="myriadcoin-cli" }
-    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; V2Port=18336; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="10 GB";   CliName="bitcoin-cli" }
-    XEC          = @{ Container="ecash";          RpcPort=9004;  P2pPort=8343;  ZmqPort=28335; RpcUser="spiralxec";  StratumPort=18338; V2Port=18339; TlsPort=18340; PoolCoin="ecash";            Profile="xec";        Algo="SHA256d"; Storage="20 GB";   CliName="bitcoin-cli" }
-    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="150 GB";  CliName="litecoin-cli" }
-    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="80 GB";   CliName="dogecoin-cli" }
-    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="80 GB";   CliName="digibyte-cli" }
+    FBTC         = @{ Container="fractalbitcoin"; RpcPort=8340;  P2pPort=8341;  ZmqPort=28340; RpcUser="spiralfbtc"; StratumPort=18335; V2Port=18336; TlsPort=18337; PoolCoin="fractalbitcoin";  Profile="fbtc";       Algo="SHA256d"; Storage="3100 GB";   CliName="bitcoin-cli" }
+    XEC          = @{ Container="ecash";          RpcPort=9004;  P2pPort=8343;  ZmqPort=28335; RpcUser="spiralxec";  StratumPort=18338; V2Port=18339; TlsPort=18340; PoolCoin="ecash";            Profile="xec";        Algo="SHA256d"; Storage="160 GB";   CliName="bitcoin-cli" }
+    LTC          = @{ Container="litecoin";       RpcPort=9332;  P2pPort=9333;  ZmqPort=28933; RpcUser="spiralltc";  StratumPort=7333;  V2Port=7334;  TlsPort=7335;  PoolCoin="litecoin";        Profile="ltc";        Algo="Scrypt";  Storage="240 GB";  CliName="litecoin-cli" }
+    DOGE         = @{ Container="dogecoin";       RpcPort=22555; P2pPort=22556; ZmqPort=28555; RpcUser="spiraldoge"; StratumPort=8335;  V2Port=8337;  TlsPort=8342;  PoolCoin="dogecoin";        Profile="doge";       Algo="Scrypt";  Storage="190 GB";   CliName="dogecoin-cli" }
+    "DGB-SCRYPT" = @{ Container="digibyte";       RpcPort=14022; P2pPort=12024; ZmqPort=28532; RpcUser="spiraldgb";  StratumPort=3336;  V2Port=3337;  TlsPort=3338;  PoolCoin="digibyte-scrypt"; Profile="dgb-scrypt"; Algo="Scrypt";  Storage="40 GB";   CliName="digibyte-cli" }
     PEP          = @{ Container="pepecoin";       RpcPort=33873; P2pPort=33874; ZmqPort=28873; RpcUser="spiralpep";  StratumPort=10335; V2Port=10336; TlsPort=10337; PoolCoin="pepecoin";        Profile="pep";        Algo="Scrypt";  Storage="5 GB";    CliName="pepecoin-cli" }
     CAT          = @{ Container="catcoin";        RpcPort=9932;  P2pPort=9933;  ZmqPort=28932; RpcUser="spiralcat";  StratumPort=12335; V2Port=12336; TlsPort=12337; PoolCoin="catcoin";         Profile="cat";        Algo="Scrypt";  Storage="5 GB";    CliName="catcoin-cli" }
 }
@@ -135,7 +135,7 @@ function Write-Banner {
     Write-Host ""
     Write-Host "                          SPIRAL POOL" -ForegroundColor White
     Write-Host "                       WINDOWS INSTALLER" -ForegroundColor Green
-    Write-Host "                           v2.7.0" -ForegroundColor DarkGray
+    Write-Host "                           v3.0.0" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "           Solo Mining Pool - SHA256d & Scrypt (17 Coins)" -ForegroundColor Cyan
     Write-Host ""
@@ -239,9 +239,9 @@ function Show-Help {
   INTERACTIVE MODE:
     When run without -Unattended, the installer presents a coin selection menu:
 
-    SHA256d: DGB (~80GB), BTC (~600GB), BCH (~250GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
-             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~10GB), XEC (~20GB)
-    Scrypt:  LTC (~150GB), DOGE (~80GB), DGB-SCRYPT (~80GB), PEP (~5GB), CAT (~5GB)
+    SHA256d: DGB (~40GB), BTC (~780GB), BCH (~220GB), BCH2 (~15GB), BC2 (~10GB), BTCS (~8GB)
+             NMC (~15GB), SYS (~25GB), XMY (~8GB), FBTC (~3100GB), XEC (~160GB)
+    Scrypt:  LTC (~240GB), DOGE (~190GB), DGB-SCRYPT (~40GB), PEP (~5GB), CAT (~5GB)
 
     You will be prompted for:
     - Wallet address for the selected coin
@@ -407,13 +407,13 @@ function Show-SoloCoinMenu {
         Write-Host ""
         Write-Host "   [1] " -NoNewline -ForegroundColor Cyan
         Write-Host "DGB  - DigiByte" -NoNewline -ForegroundColor Green
-        Write-Host "        ~80 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
+        Write-Host "        ~40 GB   Port 3333   (Recommended)" -ForegroundColor DarkGray
         Write-Host "   [2] " -NoNewline -ForegroundColor Cyan
         Write-Host "BTC  - Bitcoin" -NoNewline -ForegroundColor Yellow
-        Write-Host "         ~600 GB  Port 4333" -ForegroundColor DarkGray
+        Write-Host "         ~780 GB  Port 4333" -ForegroundColor DarkGray
         Write-Host "   [3] " -NoNewline -ForegroundColor Cyan
         Write-Host "BCH  - Bitcoin Cash" -NoNewline -ForegroundColor White
-        Write-Host "    ~250 GB  Port 5333" -ForegroundColor DarkGray
+        Write-Host "    ~220 GB  Port 5333" -ForegroundColor DarkGray
         Write-Host "   [4] " -NoNewline -ForegroundColor Cyan
         Write-Host "BCH2 - Bitcoin Cash II" -NoNewline -ForegroundColor White
         Write-Host "  ~15 GB   Port 5336" -ForegroundColor DarkGray
@@ -434,22 +434,22 @@ function Show-SoloCoinMenu {
         Write-Host "     ~8 GB    Port 17335" -ForegroundColor DarkGray
         Write-Host "  [10] " -NoNewline -ForegroundColor Cyan
         Write-Host "FBTC - Fractal Bitcoin" -NoNewline -ForegroundColor White
-        Write-Host " ~10 GB   Port 18335" -ForegroundColor DarkGray
+        Write-Host " ~3100 GB Port 18335" -ForegroundColor DarkGray
         Write-Host "  [11] " -NoNewline -ForegroundColor Cyan
         Write-Host "XEC  - eCash" -NoNewline -ForegroundColor White
-        Write-Host "          ~20 GB   Port 18338" -ForegroundColor DarkGray
+        Write-Host "          ~160 GB Port 18338" -ForegroundColor DarkGray
         Write-Host ""
         Write-Host "  Scrypt Coins:" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "  [12] " -NoNewline -ForegroundColor Cyan
         Write-Host "LTC  - Litecoin" -NoNewline -ForegroundColor Green
-        Write-Host "       ~150 GB  Port 7333" -ForegroundColor DarkGray
+        Write-Host "       ~240 GB  Port 7333" -ForegroundColor DarkGray
         Write-Host "  [13] " -NoNewline -ForegroundColor Cyan
         Write-Host "DOGE - Dogecoin" -NoNewline -ForegroundColor White
-        Write-Host "       ~80 GB   Port 8335" -ForegroundColor DarkGray
+        Write-Host "       ~190 GB  Port 8335" -ForegroundColor DarkGray
         Write-Host "  [14] " -NoNewline -ForegroundColor Cyan
         Write-Host "DGB  - DigiByte (Scrypt)" -NoNewline -ForegroundColor White
-        Write-Host " ~80 GB   Port 3336" -ForegroundColor DarkGray
+        Write-Host " ~40 GB   Port 3336" -ForegroundColor DarkGray
         Write-Host "  [15] " -NoNewline -ForegroundColor Cyan
         Write-Host "PEP  - PepeCoin" -NoNewline -ForegroundColor White
         Write-Host "       ~5 GB    Port 10335" -ForegroundColor DarkGray
@@ -547,8 +547,8 @@ function Test-PortAvailability {
     $coinInfo = $Script:CoinConfig[$SelectedCoin]
 
     $portsToCheck = @(
+        # No Stratum V2 port: this installer does not configure V2 (see Limitations)
         @{ Port = [int]$coinInfo.StratumPort; Name = "$SelectedCoin Stratum V1" }
-        @{ Port = [int]$coinInfo.V2Port; Name = "$SelectedCoin Stratum V2" }
         @{ Port = [int]$coinInfo.TlsPort; Name = "$SelectedCoin Stratum TLS" }
         @{ Port = [int]$(if ($Config.ApiPort) { $Config.ApiPort } else { 4000 }); Name = "REST API" }
         @{ Port = [int]$(if ($Config.DashboardPort) { $Config.DashboardPort } else { 1618 }); Name = "Dashboard" }
@@ -1010,10 +1010,10 @@ function Set-WSL2Networking {
         if (-not [string]::IsNullOrEmpty($wslIP) -and $wslIP -notmatch "error") {
             Write-Log "WSL2 VM IP detected: $wslIP" "INFO"
 
-            # Public ports (stratum, P2P, dashboard, API, metrics) — LAN-accessible
+            # Public ports (stratum V1/TLS, P2P, dashboard, API, metrics) — LAN-accessible.
+            # No Stratum V2: this installer does not configure it (see Limitations).
             $publicPorts = @(
                 $coinInfo.StratumPort,
-                $coinInfo.V2Port,
                 $coinInfo.TlsPort,
                 $coinInfo.P2pPort,
                 4000,
@@ -1165,7 +1165,7 @@ function Set-Firewall {
 
     .DESCRIPTION
         Reads coin port information from coins.manifest.yaml and creates
-        firewall rules for all necessary ports: stratum (V1, V2, TLS),
+        firewall rules for all necessary ports: stratum (V1, TLS),
         common ports (API, Dashboard, Metrics), and optionally RPC/ZMQ.
     #>
     [CmdletBinding(SupportsShouldProcess)]
@@ -1230,11 +1230,7 @@ function Set-Firewall {
                     $seenPorts["$($coin.StratumV1)"] = $true
                 }
 
-                # Stratum V2
-                if ($coin.StratumV2 -gt 0 -and -not $seenPorts.ContainsKey("$($coin.StratumV2)")) {
-                    $rules += @{ Name = "$sym Stratum V2"; Port = $coin.StratumV2; Desc = "$name mining (Stratum V2)" }
-                    $seenPorts["$($coin.StratumV2)"] = $true
-                }
+                # No Stratum V2 rule: this installer does not configure V2 (see Limitations)
 
                 # Stratum TLS
                 if ($coin.StratumTls -gt 0 -and -not $seenPorts.ContainsKey("$($coin.StratumTls)")) {
@@ -1242,16 +1238,14 @@ function Set-Firewall {
                     $seenPorts["$($coin.StratumTls)"] = $true
                 }
 
-                Write-Log "Added firewall rules for $sym (Stratum: $($coin.StratumV1), $($coin.StratumV2), $($coin.StratumTls))" "INFO"
+                Write-Log "Added firewall rules for $sym (Stratum: $($coin.StratumV1), $($coin.StratumTls))" "INFO"
             }
         } else {
             # Fallback to Config-based ports (when manifest is missing)
             $stratumPort = if ($Config.StratumPort) { [int]$Config.StratumPort } else { 3333 }
-            $stratumV2Port = $stratumPort + 1
             $stratumTlsPort = if ($Config.StratumTlsPort) { [int]$Config.StratumTlsPort } else { $stratumPort + 2 }
 
             $rules += @{ Name = "Stratum V1"; Port = $stratumPort; Desc = "Mining connections (Stratum V1)" }
-            $rules += @{ Name = "Stratum V2"; Port = $stratumV2Port; Desc = "Mining connections (Stratum V2 binary)" }
             $rules += @{ Name = "Stratum TLS"; Port = $stratumTlsPort; Desc = "Encrypted mining connections" }
         }
 
@@ -1487,6 +1481,14 @@ function New-EnvironmentFile {
                 $grafanaPassword += [char]$grafChars[$grafBuf[0] % $grafChars.Count]
             }
         }
+        # Pool admin API key: required by the admin endpoints and by the miner list
+        $adminApiKey = ""
+        while ($adminApiKey.Length -lt 32) {
+            $grafRng.GetBytes($grafBuf)
+            if ($grafBuf[0] -lt $grafMaxUnbiased) {
+                $adminApiKey += [char]$grafChars[$grafBuf[0] % $grafChars.Count]
+            }
+        }
     } finally {
         $grafRng.Dispose()
     }
@@ -1494,7 +1496,7 @@ function New-EnvironmentFile {
     $coinEnvKey = ($Config.Coin.ToUpper() -replace '-SCRYPT', '') -replace '-', '_'
 
     $envContent = @"
-# Spiral Pool v2.7.0 Docker Configuration
+# Spiral Pool v3.0.0 Docker Configuration
 # Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 # Mode: Single-Coin ($($Config.Coin)) via Docker profile: $($coinInfo.Profile)
 
@@ -1564,7 +1566,7 @@ DASHBOARD_CORS_ORIGINS=
 # ═══════════════════════════════════════════════════════════════════════════════
 GRAFANA_ADMIN_PASSWORD=$grafanaPassword
 SPIRAL_METRICS_TOKEN=
-ADMIN_API_KEY=
+ADMIN_API_KEY=$adminApiKey
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # NOTIFICATIONS (optional - configure later)

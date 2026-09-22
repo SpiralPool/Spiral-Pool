@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v2.7.1 - SPIRAL CITADEL EDITION                            ║
+║  Spiral Sentinel v3.0.0 - SPIRAL COVENANT EDITION                           ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,8 +28,8 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "2.7.1"
-__codename__ = "SPIRAL_CITADEL"
+__version__ = "3.0.0"
+__codename__ = "SPIRAL_COVENANT"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
 from urllib.parse import urlparse, quote as url_quote
@@ -189,6 +189,40 @@ def local_now():
     """Get current time in the configured display timezone for user-facing reports."""
     return datetime.now(get_display_tz())
 
+def fmt_display_time(value):
+    """Format a timestamp in the configured display timezone.
+
+    Accepts an ISO-8601 string (pool API timestamps are UTC), a datetime, or a
+    Unix timestamp. Naive datetimes and ISO strings without an offset are
+    assumed to be UTC, matching what the pool API emits. Returns the value
+    unchanged as a string if it cannot be parsed, so a malformed timestamp
+    degrades the alert rather than raising inside an alert path.
+    """
+    try:
+        dt = value
+        if isinstance(value, str):
+            text = value.strip()
+            if text[-1:] in ("Z", "z"):
+                text = text[:-1] + "+00:00"
+            # datetime.fromisoformat before Python 3.11 accepts only 3 or 6
+            # fractional digits. Go's time.Time JSON encoding trims trailing
+            # zeros, so the pool API emits anywhere from 1 to 6. Normalize.
+            frac = re.search(r"\.(\d+)", text)
+            if frac:
+                text = text[:frac.start()] + "." + (frac.group(1) + "000000")[:6] + text[frac.end():]
+            dt = datetime.fromisoformat(text)
+        elif isinstance(value, bool):
+            return str(value)
+        elif isinstance(value, (int, float)):
+            dt = datetime.fromtimestamp(value, tz=timezone.utc)
+        if not isinstance(dt, datetime):
+            return str(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(get_display_tz()).strftime('%Y-%m-%d %H:%M:%S %Z')
+    except (ValueError, TypeError, OverflowError, OSError):
+        return str(value)
+
 # === SECURITY: IP ADDRESS VALIDATION ===
 def validate_miner_ip(ip_str):
     """
@@ -301,6 +335,9 @@ _RPC_ALLOWED_METHODS = frozenset({
     "getnetworkhashps", "scantxoutset",
     # Chain identity guard (see check_chain_identity): both are read-only.
     "getblockhash", "getdeploymentinfo",
+    # Block payout audit (see check_block_payouts): reads a found block's
+    # coinbase to confirm it paid us. Read-only, and asked once per block.
+    "getblock",
 })
 
 def _rpc_call(host, port, method, params=None, timeout=10, auth=None):
@@ -579,6 +616,33 @@ PAUSE_FILE = DATA_DIR / "maintenance_pause"
 # Shared data directory - accessible by both admin user and dashboard service
 SHARED_DATA_DIR = INSTALL_DIR / "data"
 
+# Which config file is in force depends on the sandbox the process runs in, not
+# on the filesystem: under ProtectHome=yes the daemon cannot use the home copy
+# and falls back to the install directory, while spiralctl and the dashboard run
+# as an ordinary user, find the home copy and read that one. The two then drift
+# apart — on the production pool they differed by a day and 57 bytes — and every
+# check reports on whichever it happened to pick, so `config validate` can pass
+# on a file the service has never read. Resolving it again in each tool cannot
+# fix that, because each tool resolves it correctly for itself. The running
+# service records the answer instead.
+SENTINEL_CONFIG_PATH_MARKER = SHARED_DATA_DIR / "sentinel-config-path"
+
+
+def publish_config_path():
+    """Record which config file this process is actually reading.
+
+    Only the daemon calls this. A --status, --test or --reload run resolves the
+    path as the invoking user, which is normally the home copy, and publishing
+    that would aim every other tool at the file the service is not using.
+    """
+    try:
+        SHARED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        SENTINEL_CONFIG_PATH_MARKER.write_text(f"{CONFIG_FILE}\n", encoding="utf-8")
+    except OSError as e:
+        # Not fatal: the readers fall back to their own resolution, which is the
+        # behaviour that shipped before this marker existed.
+        logger.warning(f"Could not publish config path to {SENTINEL_CONFIG_PATH_MARKER}: {e}")
+
 # === MAINTENANCE MODE ===
 def is_maintenance_mode():
     """Check if maintenance mode is active (alerts paused).
@@ -762,6 +826,14 @@ try:
     _HA_AVAILABLE = True
 except ImportError:
     _HA_AVAILABLE = False
+
+# Miner automation (schedules, sleep windows, power modes) if its modules are installed
+try:
+    import miner_automation
+    import miner_control
+    _AUTOMATION_AVAILABLE = True
+except ImportError:
+    _AUTOMATION_AVAILABLE = False
 
 # HA state for alert coordination
 _ha_manager = None
@@ -1037,6 +1109,30 @@ DEFAULT_CONFIG = {
     "health_warn_threshold": 70,
     "net_drop_threshold_phs": 48,
     "net_reset_threshold_phs": 52,
+    "hashrate_crash_enabled": True,        # Alert when network hashrate drops sharply
+    # Master switches and update policy. install.sh writes all five into every
+    # generated config and Sentinel reads them; they are declared here so the
+    # defaults live in one place rather than only at each call site.
+    "alerts_enabled": True,                # Master switch for every alert but block_found
+    "health_monitoring_enabled": True,     # Auto-restart and zombie detection
+    "update_check_enabled": True,          # Check for Spiral Pool releases
+    "update_check_interval": 21600,        # Seconds between update checks (6 hours)
+    "auto_update_mode": "notify",          # "auto", "notify", or "disabled"
+    # Documented in docs/reference/SENTINEL.md and read with an inline default
+    # at a single call site each. Declared here so the defaults live in one
+    # place; every value below is the call-site default, unchanged.
+    "hostname_override": "",               # Override hostname in alert footers
+    "thermal_shutdown_enabled": True,      # Sleep a miner that stays over temp_critical
+    "thermal_shutdown_sustained_sec": 90,  # Seconds over temp_critical before acting
+    "hw_error_rate_threshold": 25,         # Hardware error rate (%) that raises an alert
+    "expected_fleet_ths_disabled": False,  # Stop comparing fleet hashrate to expected_fleet_ths
+    "price_crash_enabled": True,           # Alert on a sharp fiat price drop
+    "price_crash_pct": 15,                 # Drop (%) that counts as a crash
+    "payout_check_interval": 3600,         # Seconds between wallet payout checks
+    "missing_payout_days": 7,              # Grace days before an unpaid found block alerts
+    "revenue_decline_pct": 50,             # Alert when pace is this far below last month
+    "zmq_stale_threshold": 300,            # Seconds without a ZMQ message before stale
+    "ha_replication_lag_threshold": 10 * 1024 * 1024,  # Bytes of replication lag before alerting
     "auto_restart_enabled": True,
     "auto_restart_min_offline": 20,
     "auto_restart_cooldown": 1800,
@@ -1049,6 +1145,11 @@ DEFAULT_CONFIG = {
     "sats_surge_lookback_days": 7,         # Compare against sat value from N days ago
     "sats_surge_sample_interval": 3600,    # Record sat values every N seconds (1 hour)
     "sats_surge_cooldown_hours": 24,       # Don't re-alert for same coin within N hours
+    # SimpleSwap swap link carried inside sats_surge alerts. Off switch is
+    # separate from the alert so the surge notification can be kept without
+    # the third-party exchange link.
+    "simpleswap_enabled": True,            # Append a SimpleSwap link to sats surge alerts
+    "high_odds_enabled": True,             # Alert when block-finding odds stay favourable
     "odds_alert_threshold": 40,
     # Historical data settings
     "history_sample_interval": 900,  # 15 minutes between samples
@@ -1177,6 +1278,16 @@ DEFAULT_CONFIG = {
     # without this an operator who made that choice gets a permanent 6-hourly
     # red alert they never asked for.
     "chain_identity_enabled": True,
+    # Coin daemon version check: ask coin-upgrade.sh --list every 6h whether any
+    # daemon is behind its target. Default on. Listed here so it shows up in
+    # "spiralctl config show" like its neighbours, rather than existing only as
+    # an undiscoverable CONFIG.get() default.
+    "coin_version_check_enabled": True,
+    # Consecutive failed upstream checks before saying so. The check runs
+    # every 6 hours, so 4 is a full day of being unable to ask. Low enough to
+    # catch a genuinely dead feed, high enough that one GitHub blip is quiet.
+    "coin_version_check_fail_threshold": 4,
+    "block_payout_audit_enabled": True,   # verify a found block paid us
     "dry_streak_multiplier": 5,            # Alert after N × expected interval without a block
     # ═══════════════════════════════════════════════════════════════════════════════
     # NETWORK DIFFICULTY CHANGE ALERTS — Alert on significant difficulty swings
@@ -1647,6 +1758,7 @@ def load_config():
         "NTFY_URL": "ntfy_url",
         "NTFY_TOKEN": "ntfy_token",
         "WEBHOOK_URL": "webhook_url",
+        "WEBHOOK_HEADERS": "webhook_headers",   # JSON object, e.g. {"Authorization": "Bearer x"}
         "SMTP_HOST": "smtp_host",
         "SMTP_PORT": "smtp_port",
         "SMTP_USERNAME": "smtp_username",
@@ -1672,6 +1784,20 @@ def load_config():
                     config[config_key] = int(env_value)
                 except ValueError:
                     pass
+            elif config_key == "webhook_headers":
+                # A malformed value must not take the headers away from a
+                # config file that had valid ones: leave the existing value in
+                # place and say so, rather than silently sending unauthenticated.
+                try:
+                    _parsed = json.loads(env_value)
+                except (ValueError, TypeError):
+                    _parsed = None
+                if isinstance(_parsed, dict):
+                    config[config_key] = _parsed
+                else:
+                    logger.warning(
+                        "WEBHOOK_HEADERS is not a JSON object — ignoring it and keeping the configured headers")
+                    continue
             else:
                 config[config_key] = env_value
             # AUDIT FIX (CR-1): Never log credential values — mask sensitive env overrides
@@ -1680,6 +1806,28 @@ def load_config():
                 logger.info(f"Config override from env: {config_key}=****")
             else:
                 logger.info(f"Config override from env: {config_key}={env_value[:20]}..." if len(str(env_value)) > 20 else f"Config override from env: {config_key}={env_value}")
+
+    # Per-coin wallet addresses from the environment, for Docker.
+    #
+    # docker-compose.yml passes <SYMBOL>_WALLET_ADDRESS for all sixteen coins,
+    # but only three of them — BCH2, BTCS and XEC — were ever read, because
+    # those three literals happened to be written as os.environ.get() in
+    # DEFAULT_CONFIG while the other thirteen were plain "YOUR_<X>_ADDRESS"
+    # placeholders. An operator setting BTC_POOL_ADDRESS in .env got a
+    # container that passed it in and a Sentinel that ignored it, then watched
+    # a wallet it was never monitoring. Read them here, for every coin, so the
+    # list cannot drift again as coins are added.
+    #
+    # DGB-SCRYPT's symbol carries a hyphen; environment variables cannot, so it
+    # is looked up as DGB_SCRYPT_WALLET_ADDRESS.
+    for _coin_cfg in config.get("coins", []):
+        _sym = str(_coin_cfg.get("symbol", "")).replace("-", "_").upper()
+        if not _sym:
+            continue
+        _addr = os.environ.get(f"{_sym}_WALLET_ADDRESS")
+        if _addr:
+            _coin_cfg["wallet_address"] = _addr
+            logger.info(f"Config override from env: {_sym} wallet_address={_addr[:12]}...")
 
     # Fallback: Auto-discover admin API key and metrics token from pool's config.yaml if not set.
     # This mirrors dashboard.py:get_stratum_admin_api_key() fallback logic.
@@ -1901,7 +2049,14 @@ def get_enabled_coins():
     if CONFIG.get("wallet_address") and CONFIG.get("pool_id"):
         # User has configured Sentinel manually - use their config
         # Try to detect the correct coin symbol from pool
-        detected = auto_detect_pool_coin() if AUTO_DETECTED_COIN is None else AUTO_DETECTED_COIN
+        # Cache it, exactly as the MULTI_COIN branch above and the fallback
+        # below already do. This branch is taken by any manually configured
+        # Sentinel (wallet_address + pool_id both set) and used to re-issue the
+        # /api/pools request on EVERY call -- an HTTP GET with a 10s timeout, on
+        # a function called per block by check_for_orphans.
+        if AUTO_DETECTED_COIN is None:
+            AUTO_DETECTED_COIN = auto_detect_pool_coin()
+        detected = AUTO_DETECTED_COIN
         if detected:
             # Multi-coin mode: auto_detect returns a list — use that directly
             if isinstance(detected, list):
@@ -2510,13 +2665,18 @@ def fetch_pool_stats_by_symbol(symbol):
 
     return None
 
+def _pool_admin_headers():
+    """X-API-Key for pool API lists that expose wallet addresses (/api/pools/{id}/miners)."""
+    key = CONFIG.get("pool_admin_api_key", "")
+    return {"X-API-Key": key} if key else {}
+
 def fetch_pool_miners_for_coin(coin):
     """Fetch miner stats for a specific coin pool"""
     try:
         pool_url = CONFIG.get("pool_api_url", "http://localhost:4000")
         pool_id = coin.get("pool_id", "")
         url = f"{pool_url}/api/pools/{pool_id}/miners"
-        data = _http(url, timeout=10)
+        data = _http(url, timeout=10, headers=_pool_admin_headers())
         if data and isinstance(data, list):
             return {m.get("miner", ""): m for m in data}
         return {}
@@ -4298,6 +4458,574 @@ def check_chain_identity(state):
             logger.error(f"CHAIN IDENTITY: BTC is on the majority chain but its tip is stale — {reason}")
         else:
             logger.error(f"CHAIN IDENTITY: BTC is not on the majority chain — {reason}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COIN DAEMON VERSION ALERTING — a pending upgrade nobody is told about
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# upgrade.sh prints a pending-upgrade table, but only at the end of a pool
+# upgrade, only to the console, and only once. A consensus release that lands
+# months later is never mentioned again. That gap is not cosmetic: COIN_RISK in
+# coin-upgrade.sh records that a BC2 node below 31.1.0 "is not following BC2
+# mainnet", and that a Litecoin pool on 0.21.5.6 or older "can produce blocks
+# upgraded nodes reject". Both keep mining and keep finding blocks while they do
+# it, so nothing surfaces without being asked. check_chain_identity already
+# covers this for BTC by detecting the symptom; this covers every other coin by
+# noticing the version.
+#
+# Versions are NOT compared here. coin-upgrade.sh --list already does it, and
+# its comments record what that cost to get right: ask the binary rather than a
+# cache, keep build suffixes so Knots never compares equal to Core, and pad to
+# four components so 31.1 matches 31.1.0. Reimplementing any of that in Python
+# would recreate the exact failure this release exists to remove, in the tool
+# meant to report it. --list also skips the banner, the root check and the ENV
+# check, so it needs no privileges.
+
+COIN_VERSION_CHECK_INTERVAL = 21600  # 6h — daemon releases are rare
+_last_coin_version_check = 0
+
+
+def _run_coin_upgrade(mode, timeout=120):
+    """Run coin-upgrade.sh in a read-only mode and return its stdout, or None.
+
+    None means the question could not be asked — no script, a non-zero exit, a
+    timeout. Every caller has to keep that distinct from an empty answer, which
+    means "asked, nothing to report".
+    """
+    script = INSTALL_DIR / "scripts" / "coin-upgrade.sh"
+    if not script.is_file():
+        return None
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["bash", str(script), mode],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except Exception as e:
+        logger.debug(f"coin-upgrade.sh {mode} failed: {e}")
+        return None
+    if result.returncode != 0:
+        logger.debug(f"coin-upgrade.sh {mode} exited {result.returncode}")
+        return None
+    return result.stdout or ""
+
+
+def get_upstream_coin_releases():
+    """Return [{coin, target, upstream}] for coins with a newer stable release.
+
+    Answers a different question from get_pending_coin_upgrades: not "is this
+    daemon behind the version we install?" but "has anything newer than the
+    version we install been released at all?". COIN_TARGET is a static table
+    shipped with each Spiral Pool release, so without this a daemon release
+    published after this version is invisible until the pool itself is upgraded.
+
+    The script decides what counts as a stable release; this only reports it.
+    Returns (rows, unreachable). Empty rows means nothing newer. None rows means
+    the check could not run at all — which includes having no network, so it must
+    never read as "all current". `unreachable` names the coins whose feed did not
+    answer on a run that otherwise worked: the script still exits 0 for those, so
+    without naming them a partial failure is indistinguishable from good news.
+    """
+    # Larger budget than --list: this one reaches release feeds, once per
+    # installed coin on a cold cache, at up to 8s each. The monitor loop is
+    # blocked meanwhile, so the ceiling matters -- 8s x 15 coins is 120s, and
+    # this leaves headroom above it rather than being killed mid-sweep and
+    # discarding the answers already collected.
+    out = _run_coin_upgrade("--list-upstream", timeout=180)
+    if out is None:
+        return None, []
+    rows = []
+    unreachable = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "unreachable":
+            unreachable.append(parts[1].upper())
+            continue
+        if len(parts) != 3:
+            continue
+        coin, target, upstream = parts
+        rows.append({"coin": coin.upper(), "target": target, "upstream": upstream})
+    return rows, unreachable
+
+
+def get_pending_coin_upgrades():
+    """Return [{coin, installed, target, risk}] for daemons behind their target.
+
+    Empty list when everything is current. None when the answer is unknown —
+    the script is missing, failed or timed out — so the caller can stay silent
+    rather than report "all current" on no evidence.
+    """
+    out = _run_coin_upgrade("--list")
+    if out is None:
+        return None
+
+    pending = []
+    unreadable = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) != 4:
+            continue  # not a data row
+        coin, installed, target, risk = parts
+        # get_installed_version() answers "unknown" when the binary ran but
+        # printed no parseable version, and "error" when it printed nothing at
+        # all; list_upgrades filters only "not_installed", so both arrive here
+        # in the INSTALLED column and no version comparison ever happened. They
+        # are a failed read, not a daemon behind target — reporting them would
+        # put a red "can follow the wrong chain" verdict on a node that may be
+        # perfectly current. Every real version has two numeric components (the
+        # targets, and the \d+\.\d+ the version regex captures), and a build
+        # suffix like 29.3.knots20260210 still matches.
+        if not re.match(r"^v?\d+\.\d+", installed):
+            unreadable.append(f"{coin.upper()} ({installed})")
+            continue
+        pending.append({
+            "coin": coin.upper(),
+            "installed": installed,
+            "target": target,
+            "risk": risk.upper(),
+        })
+
+    if unreadable:
+        logger.warning("COIN VERSIONS: could not read the installed version for "
+                       + ", ".join(unreadable) + " — not reported as upgrades")
+        # Nothing was established: every row was a failed read. "[]" would be
+        # reported to the caller as "checked, nothing pending", so answer with
+        # the same "unknown" a script that would not run produces.
+        if not pending:
+            return None
+    return pending
+
+
+def create_coin_upgrade_embed(pending, upstream=None, unreachable=None):
+    """Discord embed for daemons behind target, and newer releases upstream.
+
+    Two findings share one alert because they share one question from the
+    operator's side - "is there anything I should be doing about my coin
+    daemons?" - but they get separate sections and separate calls to action,
+    because only the first is something coin-upgrade.sh can act on.
+    """
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    upstream = upstream or []
+    unreachable = unreachable or []
+    risk_rank = {"MAJOR": 0, "MINOR": 1, "PATCH": 2}
+    rows = sorted(pending, key=lambda p: (risk_rank.get(p["risk"], 3), p["coin"]))
+    major = [p for p in rows if p["risk"] == "MAJOR"]
+
+    if not rows:
+        # Nothing to install; the only news is that upstream has moved on.
+        head = ("```\nNEWER COIN RELEASES AVAILABLE\n```\n"
+                "A newer stable release exists for the daemons below. This version of "
+                "Spiral Pool installs the version shown as targeted, so nothing is "
+                "behind and there is nothing to do right now.\n\n")
+        color = COLORS.get("blue", COLORS["yellow"])
+        title = "\u26d3\ufe0f Newer Coin Releases Available"
+    elif major:
+        head = ("```diff\n- COIN DAEMON UPGRADE REQUIRED\n```\n"
+                "A daemon below its target version can follow the wrong chain or "
+                "produce blocks that upgraded nodes reject — while still reporting "
+                "healthy and still finding blocks.\n\n")
+        color = COLORS["red"]
+        title = "⛓️ Coin Daemon Upgrade Required"
+    else:
+        head = ("```\nCOIN DAEMON UPDATES AVAILABLE\n```\n"
+                "These are routine updates. No consensus risk is recorded for them.\n\n")
+        color = COLORS["yellow"]
+        title = "⛓️ Coin Daemon Updates Available"
+
+    lines = []
+    for p in rows:
+        mark = {"MAJOR": "🔴", "MINOR": "🟡", "PATCH": "🟢"}.get(p["risk"], "⚪")
+        lines.append(f"{mark} **{p['coin']}**  `{p['installed']}` → `{p['target']}`  ({p['risk']})")
+
+    desc = head + "\n".join(lines)
+    if rows:
+        desc += (
+            "\n\n**Review what each upgrade needs, then apply it:**\n"
+            "```\nsudo /spiralpool/scripts/coin-upgrade.sh --check\n"
+            "sudo /spiralpool/scripts/coin-upgrade.sh --coin <TICKER>\n```"
+        )
+        if major:
+            desc += ("\nMAJOR entries may require `--reindex`; `--check` states which.")
+
+    if upstream:
+        # Deliberately no coin-upgrade.sh command here. This release installs the
+        # targeted version; pointing --coin at an untested release would skip the
+        # pinned checksum and the risk note that make an upgrade safe, and for
+        # Namecoin the newest release ships no binaries at all. The only action
+        # is upgrading Spiral Pool, once a release that moves the target exists.
+        if rows:
+            desc += "\n\n**Also released upstream, newer than this version installs:**\n\n"
+        desc += "\n".join(
+            f"\U0001F535 **{u['coin']}**  targets `{u['target']}`  -  upstream `{u['upstream']}`"
+            for u in sorted(upstream, key=lambda u: u["coin"]))
+        desc += ("\n\nThese are *not* installed by `coin-upgrade.sh`, which stays on the "
+                 "tested target. A future Spiral Pool release is what moves it.")
+
+    if unreachable:
+        # Named explicitly, because the alternative is an operator reading the
+        # sections above as a complete answer when they cover only the coins
+        # whose release feed actually replied.
+        desc += ("\n\n**Could not check:** "
+                 + ", ".join(f"`{c}`" for c in sorted(unreachable))
+                 + "\nNo release feed answered for these. That is **not** a statement "
+                   "that they are up to date.")
+
+    fields = []
+    if rows:
+        fields.append({"name": "Daemons behind", "value": f"`{len(rows)}`", "inline": True})
+    if major:
+        fields.append({"name": "Consensus risk", "value": f"`{len(major)}`", "inline": True})
+    if upstream:
+        fields.append({"name": "Newer upstream", "value": f"`{len(upstream)}`", "inline": True})
+
+    return _embed(title, desc, color, fields,
+                  footer=f"🌀 Spiral Sentinel v{__version__} • {ts}")
+
+
+def create_version_check_failing_embed(coins, runs, threshold):
+    """Discord embed for an upstream release check that has stopped working.
+
+    This alert exists because the check it reports on fails silently by nature:
+    when a release feed does not answer there is nothing newer to list, which
+    looks exactly like good news. An operator waiting to hear about a consensus
+    release would wait forever and read the silence as reassurance.
+    """
+    ts = local_now().strftime('%Y-%m-%d %H:%M:%S')
+    hours = runs * (COIN_VERSION_CHECK_INTERVAL // 3600)
+    names = ", ".join(f"`{c}`" for c in coins)
+    desc = (
+        "```\nUPSTREAM VERSION CHECK FAILING\n```\n"
+        f"No release feed has answered for {names} in the last **{runs}** checks "
+        f"(about {hours}h).\n\n"
+        "This is **not** a statement that those daemons are up to date \u2014 it means "
+        "the question could not be asked. While this persists, a new consensus "
+        "release would go unreported and the silence would look identical to "
+        "'nothing new'.\n\n"
+        "**Check it by hand:**\n"
+        "```\nsudo /spiralpool/scripts/coin-upgrade.sh --check-upstream\n```\n"
+        "Usually DNS, egress or a rate limit on this host. Mute with "
+        "`spiralctl alerts disable coin_version_check_failing`."
+    )
+    # Through _embed(), like every other creator here: it truncates to Discord's
+    # limits (an over-length description is a silent 400, not an error you see),
+    # appends the hostname so a multi-box operator knows which pool is speaking,
+    # and stamps the embed. Hand-building the dict skipped all three quietly.
+    fields = [
+        {"name": "Feeds affected", "value": f"`{len(coins)}`", "inline": True},
+        {"name": "Consecutive failures", "value": f"`{runs}` (threshold `{threshold}`)", "inline": True},
+    ]
+    return _embed("\U0001F4E1 Upstream Version Check Failing", desc,
+                  COLORS.get("orange", COLORS["yellow"]), fields,
+                  footer=f"\U0001F300 Spiral Sentinel v{__version__} \u2022 {ts}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOCK PAYOUT AUDIT
+# ═══════════════════════════════════════════════════════════════════════════════
+# A solo pool finds a block every few weeks or months, and that block is the
+# entire product. Nothing ever verified where its coinbase actually paid. An
+# address edited in config and never picked up by a running stratum, a coin
+# configured with another coin's address, a wallet reloaded under a different
+# label — each produces a pool that mines perfectly, alerts nothing, and pays
+# someone else. The failure is invisible precisely because it can only show up
+# on the rarest event the pool has.
+#
+# This reads each found block's coinbase and checks that one output pays an
+# address we expect. It is deliberately silent whenever it cannot be certain:
+# per-worker payout and a multi-port wallet map both mean the paying address is
+# legitimately not the coin's configured one, and an audit that cried wolf on
+# those would be muted long before it ever caught anything real.
+
+
+def _per_worker_payout_configured():
+    """True when a block may legitimately pay an address other than the coin's.
+
+    Reads the stratum's own config, which is where the switch lives. An absent
+    or unreadable file reports False — the audit's default is to run, and the
+    alert it raises names exactly what it compared, so a surprising verdict can
+    be checked rather than merely believed.
+    """
+    path = INSTALL_DIR / "config" / "config.yaml"
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                line = raw.split("#", 1)[0].strip()
+                if line.startswith("payout_from_worker_name:"):
+                    if line.split(":", 1)[1].strip().strip('"').strip("'").lower() in (
+                            "true", "yes", "on", "1"):
+                        return True
+                elif line.startswith("wallet_map:"):
+                    return True
+    except (OSError, UnicodeDecodeError):
+        return False
+    return False
+
+
+def _expected_payout_addresses(coin):
+    """The addresses a block for this coin is expected to pay.
+
+    Placeholders are excluded: "YOUR_DGB_ADDRESS" is not an address, and
+    treating it as one would make every block look misdirected on a pool that
+    simply has not finished being configured.
+    """
+    wanted = str(coin or "").upper()
+    found = set()
+    for entry in CONFIG.get("coins", []) or []:
+        if str(entry.get("symbol", "")).upper() != wanted:
+            continue
+        addr = str(entry.get("wallet_address") or "").strip()
+        if addr and not addr.startswith("YOUR_"):
+            found.add(addr)
+    single = str(CONFIG.get("wallet_address") or "").strip()
+    if single and not single.startswith("YOUR_") and str(get_primary_coin() or "").upper() == wanted:
+        found.add(single)
+    return found
+
+
+def _coin_rpc_port(coin):
+    wanted = str(coin or "").upper()
+    for entry in CONFIG.get("coins", []) or []:
+        if str(entry.get("symbol", "")).upper() == wanted:
+            try:
+                return int(entry.get("rpc_port") or 0)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def audit_block_coinbase(coin, block_hash):
+    """Read a found block's coinbase. None means it could not be read at all.
+
+    None is not "nothing was paid" — the caller has to keep those apart, or a
+    node that was briefly down would be reported as a misdirected block.
+    """
+    port = _coin_rpc_port(coin)
+    if not port or not block_hash:
+        return None
+    block = _rpc_call("127.0.0.1", port, "getblock", [block_hash, 2], timeout=20)
+    if not isinstance(block, dict):
+        return None
+    txs = block.get("tx") or []
+    if not txs or not isinstance(txs[0], dict):
+        return None
+
+    paid = {}
+    commitments = 0
+    for vout in txs[0].get("vout") or []:
+        try:
+            value = float(vout.get("value") or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        spk = vout.get("scriptPubKey") or {}
+        # Core 22+ reports a single "address"; older daemons report a list, and
+        # the pool runs both. Reading only one of them would leave every block
+        # on the other kind of node looking as though it paid nobody.
+        addresses = spk.get("addresses") or []
+        if not addresses and spk.get("address"):
+            addresses = [spk["address"]]
+        if value <= 0:
+            # Zero-value outputs are commitments (SegWit, DigiDollar oracle),
+            # not payments.
+            commitments += 1
+            continue
+        for addr in addresses:
+            paid[addr] = paid.get(addr, 0.0) + value
+
+    return {
+        "paid": paid,
+        "commitment_outputs": commitments,
+        "total": sum(paid.values()),
+        "height": block.get("height"),
+    }
+
+
+def check_block_payouts(state):
+    """Confirm each found block's coinbase paid an address we expect, once."""
+    if not CONFIG.get("block_payout_audit_enabled", True):
+        return
+    statuses = getattr(state, "known_block_statuses", None)
+    if not isinstance(statuses, dict) or not statuses:
+        return
+    if _per_worker_payout_configured():
+        return      # the paying address is legitimately not the configured one
+
+    for block_hash, entry in list(statuses.items()):
+        if not isinstance(entry, dict) or entry.get("payout_audited"):
+            continue
+        coin = entry.get("coin") or get_primary_coin()
+        expected = _expected_payout_addresses(coin)
+        if not expected:
+            continue      # nothing to compare against is not a finding
+        result = audit_block_coinbase(coin, block_hash)
+        if result is None:
+            continue      # could not read it; try again next cycle, do not mark
+
+        entry["payout_audited"] = True
+        if set(result["paid"]) & expected:
+            logger.info(
+                f"BLOCK PAYOUT OK: {coin} block {block_hash[:16]} paid "
+                f"{result['total']:.8f} to a configured address "
+                f"({result['commitment_outputs']} commitment output(s))")
+            continue
+
+        logger.error(
+            f"BLOCK PAYOUT MISMATCH: {coin} block {block_hash[:16]} paid "
+            f"{sorted(result['paid'])} — none of the expected {sorted(expected)}")
+        alert_key = f"block_payout_mismatch:{block_hash}"
+        cooldown = ALERT_COOLDOWNS.get("block_payout_mismatch", 86400)
+        if time.time() - state.last_alerts.get(alert_key, 0) < cooldown:
+            continue
+        embed = create_block_payout_mismatch_embed(coin, block_hash, entry, result, expected)
+        # Same stamp-restore idiom as the other block-critical alerts: send_alert
+        # stamps its own limiter before the transport runs, so a webhook outage
+        # would otherwise buy a day of silence about a block that paid elsewhere.
+        _had = "block_payout_mismatch" in state.last_alerts
+        _prev = state.last_alerts.get("block_payout_mismatch")
+        if send_alert("block_payout_mismatch", embed, state):
+            state.last_alerts[alert_key] = time.time()
+        elif _had:
+            state.last_alerts["block_payout_mismatch"] = _prev
+        else:
+            state.last_alerts.pop("block_payout_mismatch", None)
+
+
+def create_block_payout_mismatch_embed(coin, block_hash, entry, result, expected):
+    """The block paid somewhere we did not expect. Say exactly what was compared."""
+    paid_lines = "\n".join(
+        f"{addr}  —  {amount:.8f}" for addr, amount in sorted(result["paid"].items())
+    ) or "no paying output at all"
+    return _embed(
+        title="BLOCK PAID AN UNEXPECTED ADDRESS",
+        desc=(
+            f"**{coin}** block at height **{entry.get('height', result.get('height', '?'))}** "
+            f"was found by this pool, and none of its coinbase outputs pays an address this "
+            f"pool is configured to use.\n\n"
+            f"This does not un-find the block — it is already on the chain. It means the "
+            f"reward went somewhere else, and that every block found under this configuration "
+            f"will do the same until it is corrected."
+        ),
+        color=COLORS["red"],
+        fields=[
+            {"name": "Block", "value": f"`{block_hash}`", "inline": False},
+            {"name": "Paid to", "value": f"```\n{paid_lines}\n```", "inline": False},
+            {"name": "Expected any of", "value": "```\n" + "\n".join(sorted(expected)) + "\n```",
+             "inline": False},
+            {"name": "Commitment outputs", "value": str(result["commitment_outputs"]),
+             "inline": True},
+            {"name": "What to check", "value":
+                "The coin's `wallet_address` in Sentinel's config and the pool's own "
+                "`config.yaml`. A stratum that has not been restarted since the address "
+                "changed will keep paying the old one.", "inline": False},
+        ],
+    )
+
+
+def check_coin_versions(state):
+    """Alert when a coin daemon is behind target, or a newer release exists.
+
+    Two questions, one alert: "is a daemon behind the version we install?" and
+    "has anything newer than that been released at all?". The second exists
+    because COIN_TARGET is a static table shipped with each Spiral Pool release
+    -- without it, a daemon release published after this version is invisible
+    until the pool itself is upgraded.
+    """
+    global _last_coin_version_check
+
+    if not CONFIG.get("coin_version_check_enabled", True):
+        return
+
+    now = time.time()
+    if now - _last_coin_version_check < COIN_VERSION_CHECK_INTERVAL:
+        return
+    _last_coin_version_check = now
+
+    pending = get_pending_coin_upgrades() or []
+    upstream, unreachable = get_upstream_coin_releases()
+    upstream_ok = upstream is not None   # None = the check could not run at all
+    upstream = upstream or []
+
+    # A feed that did not answer is not a feed with no news. Count consecutive
+    # failures per coin so a flaky feed stays quiet while a dead one is raised:
+    # alerting on the first miss would fire on every GitHub blip and train the
+    # operator to mute the one alert that matters when a consensus release lands.
+    # Only counted when the check itself ran -- a script that could not run at all
+    # says nothing about any particular feed.
+    if upstream_ok:
+        fails = state.upstream_check_failures
+        if not isinstance(fails, dict):      # persisted state can come back as anything
+            fails = state.upstream_check_failures = {}
+        for coin in [c for c in fails if c not in unreachable]:
+            fails.pop(coin, None)            # answered, or no longer installed
+        for coin in unreachable:
+            fails[coin] = int(fails.get(coin, 0)) + 1
+
+        threshold = max(1, int(CONFIG.get("coin_version_check_fail_threshold", 4)))
+        persistent = sorted(c for c, n in fails.items() if n >= threshold)
+        if unreachable:
+            logger.warning(
+                "COIN VERSIONS: no release feed answered for "
+                + ", ".join(f"{c} (x{fails[c]})" for c in sorted(unreachable))
+                + " - this is NOT a statement that they are up to date")
+
+        if persistent:
+            _fk = "coin_version_check_failing:" + ",".join(persistent)
+            _fcool = ALERT_COOLDOWNS.get("coin_version_check_failing", 86400)
+            if now - state.last_alerts.get(_fk, 0) >= _fcool:
+                _runs = max(fails[c] for c in persistent)
+                _embed = create_version_check_failing_embed(persistent, _runs, threshold)
+                _fsa = "coin_version_check_failing"
+                _fhad = _fsa in state.last_alerts
+                _fprev = state.last_alerts.get(_fsa)
+                if send_alert(_fsa, _embed, state):
+                    state.last_alerts[_fk] = now
+                elif _fhad:
+                    state.last_alerts[_fsa] = _fprev
+                else:
+                    state.last_alerts.pop(_fsa, None)
+
+    if not pending and not upstream:
+        return  # None (unknown) and [] (nothing to report) are both silence
+
+    # Re-alert when the SET of pending coins changes, so a newly released
+    # consensus upgrade is not swallowed by a cooldown started for an unrelated
+    # routine one.
+    signature = ",".join(sorted(
+        [f"{p['coin']}:{p['target']}" for p in pending]
+        + [f"up:{u['coin']}:{u['upstream']}" for u in upstream]))
+    # NOTE: prune_stale_miner_state() treats any last_alerts key containing ":"
+    # as "alert_type:miner_name" and drops it once the stamp is older than 30
+    # days. That is harmless while this cooldown stays well under 30 days — the
+    # stamp has expired long before the pruner reaches it — but raising the
+    # cooldown past STALE_AGE would let the pruner silently reopen it.
+    alert_key = f"coin_upgrade_available:{signature}"
+    cooldown = ALERT_COOLDOWNS.get("coin_upgrade_available", 86400)
+    if now - state.last_alerts.get(alert_key, 0) < cooldown:
+        return
+
+    embed = create_coin_upgrade_embed(pending, upstream, unreachable)
+
+    # Same stamp-restore idiom as check_chain_identity: send_alert stamps its own
+    # limiter on the bare type BEFORE the transport runs, so a webhook outage
+    # would otherwise buy a full day of silence for a message nobody received.
+    _sa_key = "coin_upgrade_available"
+    _had_stamp = _sa_key in state.last_alerts
+    _prev_stamp = state.last_alerts.get(_sa_key)
+
+    if send_alert(_sa_key, embed, state):
+        state.last_alerts[alert_key] = now
+    else:
+        if _had_stamp:
+            state.last_alerts[_sa_key] = _prev_stamp
+        else:
+            state.last_alerts.pop(_sa_key, None)
+
+    log_key = f"{alert_key}:logged"
+    if now - state.last_alerts.get(log_key, 0) >= cooldown:
+        state.last_alerts[log_key] = now
+        parts = [f"{p['coin']} {p['installed']}->{p['target']} ({p['risk']})" for p in pending]
+        parts += [f"{u['coin']} upstream {u['upstream']} > target {u['target']}" for u in upstream]
+        logger.warning("COIN VERSIONS: " + ", ".join(parts))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6398,7 +7126,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V2.7.1-SPIRAL_CITADEL"
+                "sentinel_version": "V3.0.0-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -6417,7 +7145,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V2.7.1-SPIRAL_CITADEL"
+                "sentinel_version": "V3.0.0-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -6699,6 +7427,7 @@ ALERT_BYPASS_QUIET = {
     "zombie_miner": False,         # Stale miner, can wait
     "power_event": False,          # Power fluctuation, informational
     "auto_restart": False,         # Self-healing worked, informational
+    "automation_failed": False,    # Scheduled sleep/wake/power change failed, can wait
     "miner_reboot": False,         # Miner rebooted, informational
     "degradation": False,          # Hashrate degradation, can wait
     "hashrate_divergence": False,  # Pool/miner discrepancy, can wait
@@ -6757,9 +7486,19 @@ def get_alert_cooldowns():
         "miner_offline": 0,            # No cooldown - always alert immediately
         "miner_online": 0,             # No cooldown - always alert immediately
         "auto_restart": 1800,          # 30 minutes - prevent spam from repeated attempts
+        "automation_failed": 3600,     # 1 hour - Sentinel itself retries every 5 minutes
         "excessive_restarts": 3600,    # 1 hour - prevent spam from flapping
         "chronic_issue": 3600,         # 1 hour - prevent spam
         "hashrate_divergence": 3600,   # 1 hour - pool/miner discrepancy
+        # Daemon releases are rare; a day between reminders is enough to be
+        # noticed without becoming background noise that gets muted.
+        "coin_upgrade_available": 86400,  # 24 hours
+        # The check runs every 6h; this is raised only after the threshold of
+        # consecutive failures, so a day between reminders is plenty.
+        "coin_version_check_failing": 86400,  # 24 hours
+        # Keyed per block hash at the call site, so a mismatch on one block can
+        # never mute the alert for the next one.
+        "block_payout_mismatch": 86400,   # 24 hours
         # Fleet/network alerts
         "power_event": 600,            # 10 minutes
         "hashrate_crash": 21600,       # 6 hours - prevent repeated crash alerts on sustained drops
@@ -7509,6 +8248,160 @@ def emergency_stop_axeos(ip, timeout=10):
     return False
 
 
+# === MINER AUTOMATION ===
+# The dashboard's Automation page writes schedule rules, per-miner settings and
+# auto-restart overrides to automation.json, and device credentials to
+# device_credentials.json, both in SHARED_DATA_DIR. Sentinel re-reads them when
+# they change. What the rules have done (which miners are asleep) is kept in
+# DATA_DIR so a restarted Sentinel still wakes them.
+AUTOMATION_FILE = SHARED_DATA_DIR / "automation.json"
+DEVICE_CREDENTIALS_FILE = SHARED_DATA_DIR / "device_credentials.json"
+AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
+_automation_cache = {"mtime": None, "settings": None}
+_credentials_cache = {"mtime": None, "credentials": {}}
+_automation_runner = None
+_low_hashrate_since = {}  # display name -> when it was first seen below expected hashrate
+
+
+def _file_mtime(path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def load_automation_settings():
+    """Automation settings, re-read when automation.json changes.
+
+    A file that cannot be parsed keeps the previous settings, so a bad write never
+    wakes sleeping miners or drops overrides. Invalid rules are logged and skipped.
+    """
+    if not _AUTOMATION_AVAILABLE:
+        return {"version": 1, "rules": [], "devices": {}}
+    mtime = _file_mtime(AUTOMATION_FILE)
+    if _automation_cache["settings"] is not None and mtime == _automation_cache["mtime"]:
+        return _automation_cache["settings"]
+    try:
+        raw = miner_automation.read_json(AUTOMATION_FILE)
+    except ValueError as e:
+        logger.error(f"Automation: cannot read {AUTOMATION_FILE}: {e}; keeping the previous settings")
+        return _automation_cache["settings"] or miner_automation.default_automation()
+    settings, errors = miner_automation.validate_automation(raw if raw is not None else miner_automation.default_automation())
+    for error in errors:
+        logger.warning(f"Automation: {sanitize_log_input(error)}")
+    _automation_cache.update(mtime=mtime, settings=settings)
+    return settings
+
+
+def _device_credentials(ip):
+    mtime = _file_mtime(DEVICE_CREDENTIALS_FILE)
+    if mtime != _credentials_cache["mtime"]:
+        try:
+            data = miner_automation.read_json(DEVICE_CREDENTIALS_FILE) or {}
+        except ValueError as e:
+            logger.error(f"Automation: cannot read device credentials: {e}")
+            data = {}
+        _credentials_cache.update(mtime=mtime, credentials=data if isinstance(data, dict) else {})
+    creds = _credentials_cache["credentials"].get(ip)
+    return creds if isinstance(creds, dict) else {}
+
+
+def automation_device(ip, miner_type, port=None):
+    """The device dict miner_control expects: address, type, Avalon model and credentials."""
+    device = {"ip": ip, "type": miner_type,
+              "model": load_automation_settings()["devices"].get(ip, {}).get("model", "")}
+    if port:
+        device["port"] = port
+    creds = _device_credentials(ip)
+    for key in ("username", "password"):
+        if isinstance(creds.get(key), str) and creds[key]:
+            device[key] = creds[key]
+    return device
+
+
+def find_miner(name):
+    """(ip, type, port) for a miner's display name, or (None, None, None).
+
+    Resolves through the per-cycle lookups first: polling can replace a miner's
+    configured name with its worker name, which a name match would miss.
+    """
+    ip, miner_type = _miner_ip_lookup.get(name), _miner_type_lookup.get(name)
+    for mtype, miners in MINERS.items():
+        for m in miners:
+            matched = m.get("ip") == ip if ip else m.get("name") == name
+            if matched:
+                return m.get("ip"), miner_type or mtype, m.get("port", 4028)
+    return (ip, miner_type, 4028) if ip and miner_type else (None, None, None)
+
+
+def _get_automation_runner():
+    global _automation_runner
+    if _automation_runner is None:
+        state = None
+        try:
+            state = miner_automation.read_json(AUTOMATION_STATE_FILE)
+        except ValueError as e:
+            logger.error(f"Automation: cannot read saved state: {e}")
+        _automation_runner = miner_automation.AutomationRunner(miner_control, state=state)
+    return _automation_runner
+
+
+def automation_asleep(name):
+    """Whether a miner (by display name) is asleep because a schedule put it to sleep."""
+    if not _AUTOMATION_AVAILABLE:
+        return False
+    ip = _miner_ip_lookup.get(name)
+    return bool(ip) and _get_automation_runner().is_asleep(ip)
+
+
+def auto_restart_settings():
+    """(enabled, offline minutes, cooldown seconds, low-hashrate minutes): the
+    Automation page's values once it has saved them, otherwise Sentinel's config."""
+    ar = load_automation_settings().get("auto_restart")
+    if ar:
+        return ar["enabled"], ar["offline_minutes"], ar["cooldown_minutes"] * 60, ar["low_hashrate_minutes"]
+    return AUTO_RESTART, AUTO_RESTART_MIN, AUTO_RESTART_COOL, 0
+
+
+def auto_restart_allowed(name):
+    """False for a miner the operator excluded from auto-restart, or one asleep on schedule."""
+    ip = _miner_ip_lookup.get(name)
+    if ip and not load_automation_settings()["devices"].get(ip, {}).get("auto_restart", True):
+        return False
+    return not automation_asleep(name)
+
+
+def run_automation(miner_status, state):
+    """Apply the schedule rules for this monitor cycle, alerting on failures."""
+    if not _AUTOMATION_AVAILABLE:
+        return
+    settings = load_automation_settings()
+    runner = _get_automation_runner()
+    if not settings["rules"] and not runner.state["asleep"]:
+        return
+    fleet = {}
+    for miner_type, miners in MINERS.items():
+        for m in miners:
+            if m.get("ip") and m["ip"] not in fleet:
+                fleet[m["ip"]] = automation_device(m["ip"], miner_type, m.get("port"))
+    online = {_miner_ip_lookup[name]: status != "offline"
+              for name, status in miner_status.items() if name in _miner_ip_lookup}
+
+    before = json.dumps(runner.state, sort_keys=True)
+    for event in runner.tick(settings, fleet, local_now(), online=online):
+        ip = sanitize_log_input(event["ip"])
+        if event["ok"]:
+            logger.info(f"Automation: {event['action']} sent to {ip}")
+        else:
+            logger.warning(f"Automation: {event['action']} failed for {ip}: {sanitize_log_input(event['error'])}")
+            send_alert("automation_failed", create_automation_failed_embed(event), state, miner_name=event["ip"])
+    if json.dumps(runner.state, sort_keys=True) != before:
+        try:
+            miner_automation.write_json_atomic(AUTOMATION_STATE_FILE, runner.state, mode=0o644)
+        except OSError as e:
+            logger.error(f"Automation: cannot save state: {e}")
+
+
 def restart_miner(miner_type, ip, port=4028):
     """Universal miner restart function. Tries appropriate method based on miner type.
 
@@ -7522,6 +8415,16 @@ def restart_miner(miner_type, ip, port=4028):
         return False
 
     logger.info(f"restart_miner() called for {miner_type} at {ip}")
+
+    # Avalon, stock Antminer, Braiins OS, LuxOS, Vnish, Whatsminer and Elphapex
+    # restart through miner_control. If that fails, the methods below still get a try.
+    if _AUTOMATION_AVAILABLE and miner_automation.family_for(miner_type) in miner_control.RESTART_FAMILIES:
+        try:
+            miner_control.restart(automation_device(ip, miner_type, port))
+            logger.info(f"restart_miner() success for {miner_type} at {ip}")
+            return True
+        except miner_control.ControlError as e:
+            logger.warning(f"restart_miner() {miner_type} at {ip}: {sanitize_log_input(str(e))}")
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # AxeOS/ESP-Miner devices - use HTTP API /api/system/restart
@@ -8235,7 +9138,7 @@ def fetch_pool_miners():
             logger.error("pool_id must be configured in config file for fetch_pool_miners()")
             return {}, False
         url = f"{pool_url}/api/pools/{pool_id}/miners"
-        data = _http(url, timeout=10)
+        data = _http(url, timeout=10, headers=_pool_admin_headers())
         if data and isinstance(data, list):
             # Try "miner" field first (per-worker format), fall back to "address" (wallet-level)
             miners = {}
@@ -12358,7 +13261,8 @@ def _handle_telegram_command(cmd, state):
                     continue
                 try:
                     miners_data = _http(
-                        f"{pool_url}/api/pools/{url_quote(pool_id)}/miners", timeout=8
+                        f"{pool_url}/api/pools/{url_quote(pool_id)}/miners", timeout=8,
+                        headers=_pool_admin_headers(),
                     )
                     miners = miners_data if isinstance(miners_data, list) else []
                     symbol = _tg_escape(p.get("coin", {}).get("symbol", "?"))
@@ -12978,7 +13882,38 @@ def is_in_startup_suppression():
 # Path to the celebration script (Linux only)
 CELEBRATION_SCRIPT = str(INSTALL_DIR / "scripts" / "block-celebrate.sh")
 
-def trigger_block_celebration(miner_details=None):
+
+def stop_block_celebration(block_hash):
+    """Withdraw a block from the running LED celebration.
+
+    A celebration runs for hours and nothing used to end it early, so a block
+    found and then orphaned minutes later left the miners celebrating a reward
+    that was never collected, for the rest of its run.
+
+    The script decides whether this actually stops anything: a later block
+    extends the same celebration, so the lights can stand for several blocks at
+    once and only the last one withdrawn ends it. Passing the hash is what makes
+    that judgement possible -- an unconditional stop here would switch the
+    lights off on a block that is still perfectly good.
+    """
+    if not block_hash:
+        return
+    try:
+        if not os.path.exists(CELEBRATION_SCRIPT):
+            return
+        import subprocess
+        subprocess.Popen(
+            [CELEBRATION_SCRIPT, "--stop", "--block", str(block_hash)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        logger.info(f"Block {str(block_hash)[:16]}... orphaned - withdrawing it from the LED celebration")
+    except Exception as e:
+        # Never let LED housekeeping break orphan alerting.
+        logger.debug(f"Could not stop block celebration: {e}")
+
+def trigger_block_celebration(miner_details=None, block_hash=None):
     """
     Trigger LED celebration on Avalon miners when a block is found.
 
@@ -12993,6 +13928,9 @@ def trigger_block_celebration(miner_details=None):
 
     Args:
         miner_details: Dict of miner info (optional, used for logging)
+        block_hash: The block being celebrated. Recorded by the script so that
+            the block orphaning later can withdraw it -- and so a celebration
+            standing for several blocks is only ended by the last of them.
     """
     import subprocess
     import platform
@@ -13033,8 +13971,11 @@ def trigger_block_celebration(miner_details=None):
         logger.info(f"🎉 BLOCK CELEBRATION: Triggering Avalon LED celebration! ({duration_seconds // 3600}h)")
 
         # Start the celebration script in background
+        _cmd = [CELEBRATION_SCRIPT, "--duration", str(duration_seconds)]
+        if block_hash:
+            _cmd += ["--block", str(block_hash)]
         subprocess.Popen(
-            [CELEBRATION_SCRIPT, "--duration", str(duration_seconds)],
+            _cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True  # Fully detach from Sentinel process
@@ -14163,12 +15104,10 @@ The block reward has been **LOST**.
     block_info.append(f"**Coin:** `{coin}`")
 
     if found_at:
-        found_str = found_at if isinstance(found_at, str) else found_at.strftime('%Y-%m-%d %H:%M:%S')
-        block_info.append(f"**Found At:** `{found_str}`")
+        block_info.append(f"**Found At:** `{fmt_display_time(found_at)}`")
 
     if orphaned_at:
-        orphaned_str = orphaned_at if isinstance(orphaned_at, str) else orphaned_at.strftime('%Y-%m-%d %H:%M:%S')
-        block_info.append(f"**Orphaned At:** `{orphaned_str}`")
+        block_info.append(f"**Orphaned At:** `{fmt_display_time(orphaned_at)}`")
 
     # Revenue lost estimate
     if block_reward and block_reward > 0:
@@ -14499,7 +15438,7 @@ Correlated degradation across a group may indicate a shared power issue, overhea
     )
 
 
-def create_restart_embed(n, m, ok):
+def create_restart_embed(n, m, ok, reason="Offline"):
     """Sentinel alert: Auto-restart triggered - Enhanced feedback"""
     display_name = get_miner_display_name(n)
 
@@ -14531,7 +15470,7 @@ def create_restart_embed(n, m, ok):
     fields = [
         {
             "name": "🔄 Restart Details",
-            "value": f"**Target:** `{display_name}`\n**Offline:** `{m} min`\n**Result:** {status_icon} {status_text}",
+            "value": f"**Target:** `{display_name}`\n**{reason}:** `{m} min`\n**Result:** {status_icon} {status_text}",
             "inline": False
         },
     ]
@@ -14543,6 +15482,16 @@ def create_restart_embed(n, m, ok):
         fields,
         footer=theme("restart.footer")
     )
+
+
+def create_automation_failed_embed(event):
+    """Sentinel alert: a scheduled sleep, wake or power change did not take effect."""
+    display_name = get_miner_display_name(event["ip"])
+    error = str(event.get("error", "")).replace("`", "'")[:300]
+    desc = (f"A scheduled **{event['action']}** could not be sent to **{display_name}**. "
+            f"Sentinel retries every {miner_automation.RETRY_SECONDS // 60} minutes.")
+    fields = [{"name": "Details", "value": f"**Miner:** `{event['ip']}`\n**Error:** `{error}`", "inline": False}]
+    return _embed("⏰ Automation Action Failed", desc, COLORS["orange"], fields)
 
 
 def create_temp_embed(n, t, lvl, miner_ip=None):
@@ -17099,7 +18048,7 @@ class AchievementTracker:
 
 # === MONITOR STATE ===
 class MonitorState:
-    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","miner_restart_attempts","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","baseline_poison_migrated","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros","coin_blocks_at_last_balance"]
+    _PERSIST_KEYS = ["last_report_hour","last_weekly_report","last_monthly_report","last_quarterly_report","last_special_date","last_maintenance_reminder","last_alerts","miner_offline_since","miner_restart_times","miner_restart_attempts","zombie_kick_times","temp_alert_sent","miner_offline_alert_sent","miner_last_uptime","network_history","block_history","miner_health_history","miner_temp_history","miner_hashrate_history","earnings","weekly_stats","quarterly_stats","lifetime_stats","miner_uptimes","miner_block_counts","miner_stale_history","miner_hashrate_baseline","baseline_poison_migrated","recent_blips","pool_share_history","network_crash_first_detected","network_crash_alert_sent","network_baseline_phs","pool_drop_first_detected","pool_drop_alert_sent","expected_fleet_ths","pool_blocks_found","personal_bests","last_daily_report","hashrate_history_24h","coin_changes","mode_changes","pending_alerts","chronic_issues","miner_pool_hashrate","global_alert_batch","last_batch_flush","miner_stable_online_since","known_block_statuses","orphan_alerts_sent","seen_pool_block_hashes","sats_history","sats_surge_last_alert","high_odds_last_alert","high_odds_first_detected","thermal_critical_since","thermal_shutdown_sent","fan_alert_sent","last_known_orphan_count","zmq_stale_alerted","worker_count_baseline","share_loss_alerted","last_block_notify_mode","last_replica_count","circuit_breaker_alerted","backpressure_alerted","last_wal_write_errors","last_wal_commit_errors","zmq_disconnected_alerted","known_miner_pool_urls","url_mismatch_alerted","hashboard_alert_sent","miner_hw_errors","hw_error_alert_sent","best_share_difficulty","price_history","price_crash_last_alert","last_wallet_balance","wallet_balance_last_check","missing_payout_alerted","payout_deferred_from_quiet","previous_month_earnings","revenue_decline_alerted","coin_wallet_balances","coin_wallet_last_check","coin_missing_payout_alerted","coin_payout_deferred","coin_wallet_drop_zeros","coin_blocks_at_last_balance","upstream_check_failures"]
 
     def __init__(self):
         self.data_dir = DATA_DIR
@@ -17262,6 +18211,7 @@ class MonitorState:
         self.last_known_orphan_count = 0   # Total orphaned blocks from Prometheus
         self.orphan_count_initialized = False  # First reading is baseline, don't alert
         self.zmq_stale_alerted = False     # Cleared when ZMQ age drops below threshold
+        self.upstream_check_failures = {}   # coin -> consecutive failed upstream checks
         self.worker_count_baseline = []    # Rolling list of last 10 worker count samples
         self.worker_drop_confirm = 0       # Consecutive sub-threshold worker reads (debounce restarts)
         self.share_loss_alerted = False    # Cleared when share loss rate drops below threshold
@@ -17770,6 +18720,9 @@ class MonitorState:
             "coin_sync_behind": ("🔄", "Coin Sync Behind", "Coin daemon is behind on blocks"),
             "coin_change": ("🔀", "Coin Change", "Active mining coin changed"),
             "coin_config_change": ("⚙️", "Config Change", "Coin configuration changed"),
+            "coin_upgrade_available": ("⛓️", "Coin Daemon Upgrade", "A coin daemon is behind its target version"),
+            "coin_version_check_failing": ("📡", "Version Check Failing", "The upstream release check cannot reach a feed"),
+            "block_payout_mismatch": ("🚨", "Block Paid Elsewhere", "A found block's coinbase paid an unexpected address"),
             "mempool_congestion": ("🚦", "Mempool Congestion", "Transaction mempool is congested"),
             # Operational alerts
             "power_event": ("⚡", "Power Event", "Power supply event detected"),
@@ -18405,6 +19358,14 @@ class MonitorState:
             if not pool_blocks:
                 return []
 
+            # Resolved at most once per call, and only if some block is missing
+            # its coin. As a .get() default it was evaluated EAGERLY, so it ran
+            # once per block even though multi-coin pools always send "coin" --
+            # and get_primary_coin() can reach an HTTP GET with a 10s timeout, so
+            # 50 blocks x N pools could stall the monitor loop for minutes inside
+            # this one call, precisely when the pool API is unwell.
+            fallback_coin = None
+
             for block in pool_blocks:
                 block_hash = block.get("hash", "")
                 if not block_hash:
@@ -18412,7 +19373,11 @@ class MonitorState:
 
                 current_status = block.get("status", "").lower()
                 block_height = block.get("blockHeight", 0)
-                block_coin = block.get("coin", get_primary_coin() or "UNKNOWN")
+                block_coin = block.get("coin")
+                if not block_coin:
+                    if fallback_coin is None:
+                        fallback_coin = get_primary_coin() or "UNKNOWN"
+                    block_coin = fallback_coin
                 found_at = block.get("created", "")
                 block_reward = block.get("reward", 0)
 
@@ -18424,7 +19389,8 @@ class MonitorState:
                         "coin": block_coin,
                         "found_at": found_at,
                         "reward": block_reward,
-                        "first_seen": time.time()
+                        "first_seen": time.time(),
+                        "pool": pool_id,
                     }
                     continue
 
@@ -18448,15 +19414,30 @@ class MonitorState:
                 # Update tracked status
                 self.known_block_statuses[block_hash]["status"] = current_status
 
-            # Prune old entries (keep last 100 blocks)
-            if len(self.known_block_statuses) > 100:
-                # Sort by first_seen time and keep newest 100
-                sorted_hashes = sorted(
-                    self.known_block_statuses.keys(),
-                    key=lambda h: self.known_block_statuses[h].get("first_seen", 0),
-                    reverse=True
-                )[:100]
-                self.known_block_statuses = {h: self.known_block_statuses[h] for h in sorted_hashes}
+            # Prune per pool (keep the newest 100 blocks of each).
+            #
+            # One shared cap made a multi-coin pool evict itself. fetch_pool_blocks
+            # returns up to 50 per pool and this runs once per pool, so three coins
+            # overflow 100 within a SINGLE cycle: each pool dropped the entries of
+            # the pool checked before it. Next cycle those blocks were not in the
+            # dict, so they took the "haven't seen it before" branch and their
+            # pending -> orphaned transition was never compared -- and the prune
+            # discards the oldest first_seen first, which is exactly the long-
+            # pending blocks most likely to orphan. It failed silently: no error,
+            # no log line, just an orphan alert that never came.
+            #
+            # Every bucket is pruned, not only this call's, so entries restored
+            # from a persisted state file without a "pool" tag are still bounded.
+            by_pool = {}
+            for _h, _e in self.known_block_statuses.items():
+                by_pool.setdefault(_e.get("pool"), []).append(_h)
+            for _hashes in by_pool.values():
+                if len(_hashes) <= 100:
+                    continue
+                _hashes.sort(key=lambda h: self.known_block_statuses[h].get("first_seen", 0),
+                             reverse=True)
+                for _h in _hashes[100:]:
+                    del self.known_block_statuses[_h]
 
             # Keep orphan_alerts_sent in sync with known_block_statuses — always prune
             # so stale hashes evicted from known_block_statuses can't block future detection
@@ -19229,7 +20210,8 @@ def create_sats_surge_embed(surge_info, all_prices=None):
         recommendation = f"**Recommend to swap.** {coin} sat value is elevated +{change_pct:.0f}% vs {lookback_days}d ago — consider converting to BTC."
     fields.append({"name": "💡 Recommendation", "value": recommendation, "inline": False})
 
-    fields.append(_build_simpleswap_surge_field(coin))
+    if CONFIG.get("simpleswap_enabled", True):
+        fields.append(_build_simpleswap_surge_field(coin))
 
     return _embed(
         theme("sats_surge.title", coin_emoji=coin_emoji, coin_name=coin_name),
@@ -19986,7 +20968,7 @@ def monitor_loop(state):
                     network_hashrate=net_phs_startup,
                     difficulty=net.get("difficulty") if net else None,
                 ), state)
-                trigger_block_celebration(miner_details)
+                trigger_block_celebration(miner_details, block_hash=block.get("hash"))
                 logger.info(f"BLOCK RECOVERED #{state.pool_blocks_found} by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
             state.save()  # Persist seen hashes immediately
         else:
@@ -20030,7 +21012,7 @@ def monitor_loop(state):
                     network_hashrate=_sp_net.get("network_phs") if _sp_net else None,
                     difficulty=_sp_net.get("difficulty") if _sp_net else None,
                 ), state)
-                trigger_block_celebration(miner_details)
+                trigger_block_celebration(miner_details, block_hash=block.get("hash"))
                 logger.info(f"SMART PORT BLOCK RECOVERED #{state.pool_blocks_found} ({sp_coin}) by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
             if sp_startup_blocks:
                 state.save()
@@ -20075,7 +21057,7 @@ def monitor_loop(state):
                         network_hashrate=_aux_net.get("network_phs") if _aux_net else None,
                         difficulty=_aux_net.get("difficulty") if _aux_net else None,
                     ), state)
-                    trigger_block_celebration(miner_details)
+                    trigger_block_celebration(miner_details, block_hash=block.get("hash"))
                     logger.info(f"AUX BLOCK RECOVERED #{state.pool_blocks_found} ({aux_coin}) by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
                 if aux_blocks:
                     state.save()
@@ -20195,6 +21177,8 @@ def monitor_loop(state):
                     handle_coin_health_alerts(coin_health, state)
                 check_stuck_syncs(state)
                 check_chain_identity(state)
+                check_coin_versions(state)
+                check_block_payouts(state)
                 check_dry_streak(state)
                 check_difficulty_changes(state)
                 check_disk_space(state)
@@ -20581,6 +21565,11 @@ def monitor_loop(state):
 
             net = fetch_network_stats(primary_coin)
             fleet_ths, md, temps, miner_status, power, uptimes, mblocks, mpools, mstats, worker_names, fans, chain_data, hw_errors_data = get_total_hashrate()
+            # Schedule rules run every cycle, even when the pool API is unreachable below
+            try:
+                run_automation(miner_status, state)
+            except Exception as _automation_err:
+                logger.error(f"Automation cycle failed: {_automation_err}")
             # Use coin-specific price and block reward fetching
             prices = fetch_coin_price(primary_coin)
             bri = fetch_block_reward_for_coin(primary_coin)
@@ -20987,10 +21976,7 @@ def monitor_loop(state):
                                         logger.warning(f"REJECTION SPIKE: {sanitize_log_input(name)} {reject_pct:.1f}% reject + {stale_pct:.1f}% stale ({true_rej}+{total_stale}/{total_shares}) [pool-side: {_pool_rej_pct:.1f}%]")
                                         # Kick the stratum session — forces a clean reconnect and difficulty
                                         # re-negotiation, which resolves most rejection spikes without a reboot
-                                        rej_miner_ip = next(
-                                            (m.get("ip") for mt in ALL_MINER_TYPES for m in MINERS.get(mt, []) if m["name"] == name),
-                                            None
-                                        )
+                                        rej_miner_ip = find_miner(name)[0]
                                         if rej_miner_ip:
                                             kicked = kick_stratum_session(rej_miner_ip)
                                             if kicked:
@@ -21023,7 +22009,7 @@ def monitor_loop(state):
                     # Remediation strategy: kick stratum session first (fast, ~5s recovery);
                     # only escalate to a full miner reboot if the zombie condition persists
                     # 15+ minutes after the kick was attempted.
-                    if HEALTH_MONITORING_ENABLED and not is_esp32:
+                    if HEALTH_MONITORING_ENABLED and not is_esp32 and not automation_asleep(name):
                         zombie = state.check_zombie_miner(name)
                         # Gate miner-reported reject-rate zombies behind pool-side confirmation.
                         # Internal HW rejects (BitAxe/Avalon cgminer counters) inflate the
@@ -21054,14 +22040,7 @@ def monitor_loop(state):
                             ZOMBIE_KICK_WINDOW = 900  # 15 minutes — enough time for miner to reconnect and reestablish shares
 
                             # Find miner IP for stratum kick
-                            miner_ip = None
-                            for miner_type in ALL_MINER_TYPES:
-                                for m in MINERS.get(miner_type, []):
-                                    if m["name"] == name:
-                                        miner_ip = m.get("ip")
-                                        break
-                                if miner_ip:
-                                    break
+                            miner_ip = find_miner(name)[0]
 
                             if last_kick == 0:
                                 # First detection — kick stratum session first; reboot only if it
@@ -21081,11 +22060,9 @@ def monitor_loop(state):
                                 state.zombie_kick_times.pop(name, None)  # Reset so next detection starts with a kick again
                                 # Note: Don't record_miner_restart here - blip detection will record it
                                 # when the miner's uptime actually resets, avoiding false restart counts
-                                for miner_type in ALL_MINER_TYPES:
-                                    for m in MINERS.get(miner_type, []):
-                                        if m["name"] == name:
-                                            restart_miner(miner_type, m["ip"], m.get("port", 4028))
-                                            break
+                                _rip, _rtype, _rport = find_miner(name)
+                                if _rip and auto_restart_allowed(name):
+                                    restart_miner(_rtype, _rip, _rport)
 
                     # Get expected hashrate from any miner type
                     all_miners = []
@@ -21144,7 +22121,7 @@ def monitor_loop(state):
                         difficulty=diff,
                         observed_hashrate_hs=fleet_ths * 1e12,
                     ), state)
-                    trigger_block_celebration(miner_details)
+                    trigger_block_celebration(miner_details, block_hash=_miner_block_hash)
                     logger.info(f"BLOCK #{state.pool_blocks_found} by {sanitize_log_input(f['miner'])}!")
                     alerted_workers_this_cycle.add(f["miner"])
                     if f.get("hash"):
@@ -21196,7 +22173,7 @@ def monitor_loop(state):
                     difficulty=diff,
                     observed_hashrate_hs=fleet_ths * 1e12,
                 ), state)
-                trigger_block_celebration(miner_details)
+                trigger_block_celebration(miner_details, block_hash=_pool_block_hash)
                 logger.info(f"POOL BLOCK #{state.pool_blocks_found} by {sanitize_log_input(worker)} (height {_pool_block_height})!")
 
             # ═══════════════════════════════════════════════════════════════════════════════
@@ -21251,7 +22228,7 @@ def monitor_loop(state):
                         difficulty=_sp_diff,
                         observed_hashrate_hs=fleet_ths * 1e12,
                     ), state)
-                    trigger_block_celebration(miner_details)
+                    trigger_block_celebration(miner_details, block_hash=_sp_block_hash)
                     logger.info(f"SMART PORT BLOCK #{state.pool_blocks_found} by {sanitize_log_input(worker)} ({_sp_symbol} height {_sp_block_height})!")
                     if block_hash_sp:
                         alerted_hashes_this_cycle.add(block_hash_sp)
@@ -21273,6 +22250,8 @@ def monitor_loop(state):
                     prices=prices
                 ), state)
                 logger.warning(f"ORPHAN ALERT SENT: Block {orphan['height']} ({orphan['hash'][:16]}...)")
+                # The lights were switched on for this block. Take it back.
+                stop_block_celebration(orphan.get("hash"))
 
             # Orphan detection for Smart Port secondary coins
             for _sp_coin in enabled_coins:
@@ -21292,6 +22271,8 @@ def monitor_loop(state):
                         prices=prices
                     ), state)
                     logger.warning(f"ORPHAN ALERT SENT: {_sp_symbol} Block {orphan['height']} ({orphan['hash'][:16]}...)")
+                    # The lights were switched on for this block. Take it back.
+                    stop_block_celebration(orphan.get("hash"))
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # MERGE-MINING AUX CHAIN BLOCK DETECTION
@@ -21340,7 +22321,7 @@ def monitor_loop(state):
                             network_hashrate=_aux_net.get("network_phs") if _aux_net else None,
                             difficulty=_aux_net.get("difficulty") if _aux_net else None,
                         ), state)
-                        trigger_block_celebration(miner_details)
+                        trigger_block_celebration(miner_details, block_hash=block.get("hash"))
                         logger.info(
                             f"AUX BLOCK #{state.pool_blocks_found} ({aux_coin}) "
                             f"by {sanitize_log_input(worker)} (height {block['height']})!"
@@ -21364,6 +22345,8 @@ def monitor_loop(state):
                             f"AUX ORPHAN ALERT: {aux['symbol']} block {orphan['height']} "
                             f"({orphan['hash'][:16]}...)"
                         )
+                        # The lights were switched on for this block. Take it back.
+                        stop_block_celebration(orphan.get("hash"))
 
             # HIGH ODDS alert - check ALL enabled coins (primary + merge-minable aux chains)
             # One alert per "high odds episode": fires once when sustained, then stays silent
@@ -21582,7 +22565,10 @@ def monitor_loop(state):
 
             # Miner offline/online & auto-restart
             # M-4: Uses hysteresis to prevent flapping alerts
+            _ar_enabled, _ar_min, _ar_cool, _ar_low_min = auto_restart_settings()
             for name, st in miner_status.items():
+                if st == "offline" and automation_asleep(name):
+                    continue  # asleep on a schedule, not down
                 if st == "offline":
                     # Miner is offline - reset stable online timer
                     state.miner_stable_online_since.pop(name, None)
@@ -21608,27 +22594,19 @@ def monitor_loop(state):
                             state.track_chronic_issue(name, "miner_offline")
                             state.weekly_stats["offline_events"] += 1
                     # Auto-restart (only if health monitoring enabled)
-                    if HEALTH_MONITORING_ENABLED and AUTO_RESTART and mins >= AUTO_RESTART_MIN and (time.time() - state.get_last_restart_attempt_time(name)) > AUTO_RESTART_COOL and not in_startup_grace:
+                    if HEALTH_MONITORING_ENABLED and _ar_enabled and mins >= _ar_min and (time.time() - state.get_last_restart_attempt_time(name)) > _ar_cool and not in_startup_grace and auto_restart_allowed(name):
                         logger.warning(f"OFFLINE RESTART: {sanitize_log_input(name)}")
                         # Record the attempt before making it, so the cooldown holds
                         # even when the restart fails or raises — otherwise a miner
                         # that cannot be restarted remotely is retried every cycle.
                         state.record_restart_attempt(name)
-                        ok = False
-                        # Try all miner types with universal restart function
-                        ALL_MINER_TYPES = ["nerdqaxe", "nmaxe", "axeos", "avalon", "antminer", "antminer_scrypt", "whatsminer", "innosilicon", "futurebit", "hammer", "goldshell", "luckyminer", "jingleminer", "zyber", "esp32miner"]
-                        for miner_type in ALL_MINER_TYPES:
-                            for m in MINERS.get(miner_type, []):
-                                if m["name"] == name:
-                                    ok = restart_miner(miner_type, m["ip"], m.get("port", 4028))
-                                    break
-                            if ok:
-                                break
+                        _rip, _rtype, _rport = find_miner(name)
+                        ok = bool(_rip) and restart_miner(_rtype, _rip, _rport)
                         if ok:
                             send_alert("auto_restart", create_restart_embed(name, mins, ok), state, miner_name=name)
                             state.record_miner_restart(name)  # Restart stats + post-restart suppression windows
                         else:
-                            logger.warning(f"Auto-restart failed for {sanitize_log_input(name)} - miner may not support remote restart; next attempt in {AUTO_RESTART_COOL // 60}m")
+                            logger.warning(f"Auto-restart failed for {sanitize_log_input(name)} - miner may not support remote restart; next attempt in {_ar_cool // 60}m")
                 else:
                     # Miner is online - apply hysteresis before clearing offline state
                     if name in state.miner_offline_since:
@@ -21666,6 +22644,23 @@ def monitor_loop(state):
                     else:
                         # Miner was never offline - clear any stale hysteresis timer
                         state.miner_stable_online_since.pop(name, None)
+
+            # Low-hashrate auto-restart (set on the Automation page; 0 minutes = off)
+            if HEALTH_MONITORING_ENABLED and _ar_enabled and _ar_low_min > 0 and not in_startup_grace:
+                for name, st in miner_status.items():
+                    if st != "low_hashrate":
+                        _low_hashrate_since.pop(name, None)
+                        continue
+                    mins = int((time.time() - _low_hashrate_since.setdefault(name, time.time())) / 60)
+                    if mins < _ar_low_min or (time.time() - state.get_last_restart_attempt_time(name)) <= _ar_cool or not auto_restart_allowed(name):
+                        continue
+                    logger.warning(f"LOW HASHRATE RESTART: {sanitize_log_input(name)} below expected for {mins} min")
+                    state.record_restart_attempt(name)
+                    _rip, _rtype, _rport = find_miner(name)
+                    if _rip and restart_miner(_rtype, _rip, _rport):
+                        send_alert("auto_restart", create_restart_embed(name, mins, True, reason="Low hashrate"), state, miner_name=name)
+                        state.record_miner_restart(name)
+                        _low_hashrate_since.pop(name, None)
 
             # Fleet group offline/online alerting
             # Detects when ALL miners in a user-defined group go offline (location outage)
@@ -21994,7 +22989,7 @@ def monitor_loop(state):
             # Group-aware: if 2+ miners in a group degrade simultaneously, send ONE group alert
             _degradation_events = {}  # name → deg info dict
             for name, hr_ghs in miner_hashrates.items():
-                if _miner_type_lookup.get(name) == "esp32miner":
+                if _miner_type_lookup.get(name) == "esp32miner" or automation_asleep(name):
                     continue
                 if hr_ghs > 0 and (time.time() - state.get_last_restart_time(name)) > 900:  # 15 min cooldown
                     deg = state.update_hashrate_baseline(name, hr_ghs)
@@ -22738,6 +23733,7 @@ if __name__ == "__main__":
     elif "--reload" in args or "-r" in args: trigger_reload()
     elif "--reset" in args: fleet_reset()
     else:
+        publish_config_path()
         state = MonitorState()
 
         # ═══════════════════════════════════════════════════════════════════════════════

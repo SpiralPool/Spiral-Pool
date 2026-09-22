@@ -364,7 +364,7 @@ func TestBuildNotifyStress(t *testing.T) {
 					CleanJobs:      i%10 == 0,
 				}
 
-				msg, err := handler.BuildNotify(job)
+				msg, err := handler.BuildNotify(job, "")
 				if err != nil {
 					errors.Add(1)
 					continue

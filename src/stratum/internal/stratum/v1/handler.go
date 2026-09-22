@@ -464,8 +464,9 @@ func (h *Handler) handleSubmit(session *protocol.Session, req *Request) ([]byte,
 	return h.errorResponse(req.ID, 23, result.RejectReason, nil)
 }
 
-// BuildNotify creates a mining.notify message.
-func (h *Handler) BuildNotify(job *protocol.Job) ([]byte, error) {
+// BuildNotify creates a mining.notify message whose coinbase pays payoutAddress.
+// Shares for this job must be validated with the same address.
+func (h *Handler) BuildNotify(job *protocol.Job, payoutAddress string) ([]byte, error) {
 	notification := Notification{
 		ID:     nil,
 		Method: protocol.Methods.Notify,
@@ -473,7 +474,7 @@ func (h *Handler) BuildNotify(job *protocol.Job) ([]byte, error) {
 			job.ID,
 			job.PrevBlockHash,
 			job.CoinBase1,
-			job.CoinBase2,
+			job.CoinBase2For(payoutAddress),
 			job.MerkleBranches,
 			job.Version,
 			job.NBits,

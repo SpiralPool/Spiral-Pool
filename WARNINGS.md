@@ -246,21 +246,22 @@ The authors and contributors:
 
 ### Single-Operator Architecture — Wallet Control
 
-**WARNING: ALL BLOCK REWARDS GO TO THE OPERATOR'S CONFIGURED WALLET. MINERS CONNECTING TO YOUR POOL RECEIVE NO DIRECT PAYMENT.**
+**WARNING: EVERY BLOCK REWARD GOES TO THE OPERATOR'S CONFIGURED WALLET. CONNECTING MINERS RECEIVE NO DIRECT PAYMENT UNLESS THE OPERATOR HAS TURNED ON WORKER-NAME PAYOUT, AND NEVER ON THE MULTI-COIN SMART PORT.**
 
-Spiral Pool is designed for **one operator** running **their own mining hardware**. One wallet address per coin is configured at install time by the operator. This is a fundamental architectural constraint, not a configurable option.
+Spiral Pool is designed for **one operator** running **their own mining hardware**. One wallet address per coin is configured at install time by the operator, and it is the payout address for every block the pool finds.
 
 | Fact | Detail |
 |------|--------|
-| **One wallet per coin** | A single payout address is set per coin during installation |
-| **Operator controls the wallet** | Only the operator who configured the address receives block rewards |
-| **No per-miner payouts** | There is no mechanism to split rewards or pay external miners |
-| **All hashrate benefits the operator** | Block rewards go to the configured address regardless of which connected miner found the block |
+| **Configured wallet is paid** | Every block pays the wallet configured for that coin, whatever a miner calls itself |
+| **Worker-name payout is off by default** | `spiralctl mining payout worker` lets the operator route their own rigs to their own addresses: a miner on a coin's own port is paid at the address in its worker name (`ADDRESS.worker`). `spiralctl mining payout wallet` turns it back off. Merge-mined auxiliary chain rewards are unaffected: they always pay the address configured for that chain |
+| **Only ever your own wallets** | This Software assumes one operator who owns every wallet the miners point at. With worker-name payout on, any miner that can reach the port is paid at whatever address it names — so enable it only on a pool none but your own hardware can reach |
+| **Smart port pays the operator** | Miners on the multi-coin smart port mine to the per-coin wallet map or the configured wallet, never their worker name |
+| **No reward splitting** | Each block pays one address in full; there is no mechanism to split rewards or pay miners for shares |
 
 **If you allow other people to point their miners at your pool:**
 
-- Those miners contribute hashrate to **your** wallet, not their own
-- They receive **no cryptocurrency** from your pool, directly or indirectly
+- By default every miner contributes hashrate to **your** wallet and receives **no cryptocurrency** from your pool, directly or indirectly
+- Only if you turn worker-name payout on are miners using their own wallet address as the worker name on a coin's own port paid their own blocks directly
 - You are solely responsible for informing them of this arrangement
 - Any off-chain compensation you agree to provide them is your own responsibility
 - You may have legal, regulatory, or contractual obligations toward participants — see Money Transmission section below
@@ -270,7 +271,7 @@ Spiral Pool is designed for **one operator** running **their own mining hardware
 - Pay participating miners based on contributed hashrate (PPLNS, PPS, etc.)
 - Track or record what any external miner is owed
 
-**If participants are unaware that rewards go entirely to the operator, this may constitute fraud under applicable law. You are solely responsible for transparency with any miners you invite to connect.** See [TERMS.md Section 5E](TERMS.md) for the binding legal acknowledgment.
+**If participants are unaware which wallet their blocks pay, this may constitute fraud under applicable law. You are solely responsible for transparency with any miners you invite to connect.** See [TERMS.md Section 5D](TERMS.md) for the binding legal acknowledgment.
 
 ### Money Transmission / Money Services Business
 
@@ -381,9 +382,9 @@ Plan for outages. Implement high availability if continuous operation is require
 
 ### Third-Party Exchange Services (SimpleSwap.io)
 
-**WARNING: OPTIONAL SIMPLESWAP.IO INTEGRATION IS ENTIRELY OPERATOR-CONTROLLED AND CARRIES FINANCIAL AND LEGAL RISK**
+**WARNING: ACTING ON A SIMPLESWAP.IO ALERT LINK IS ENTIRELY OPERATOR-CONTROLLED AND CARRIES FINANCIAL AND LEGAL RISK**
 
-The optional SimpleSwap swap alert feature connects to [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service. Enabling this feature and acting on swap alerts carries the following risks and responsibilities:
+Spiral Sentinel can include a link to [SimpleSwap.io](https://simpleswap.io), a third-party cryptocurrency exchange service, in its sat-surge alert. It is on by default and is turned off with `spiralctl config set simpleswap off`. Leaving it enabled and acting on swap alerts carries the following risks and responsibilities:
 
 - **No automatic swaps — ever.** Spiral Pool sends a notification only. The alert includes a SimpleSwap.io link that opens in your browser. All swap activity happens on the SimpleSwap website — the pool software makes no API calls to SimpleSwap.io, stores no wallet addresses, and has no involvement in any transaction.
 - **Operator AML/KYC responsibility.** You are solely responsible for complying with all applicable Anti-Money Laundering (AML) and Know Your Customer (KYC) requirements imposed by SimpleSwap.io, your financial institution, and your jurisdiction. Failure to comply may result in account suspension, frozen funds, or legal consequences.
@@ -391,7 +392,7 @@ The optional SimpleSwap swap alert feature connects to [SimpleSwap.io](https://s
 - **SimpleSwap.io Terms of Service.** You are solely responsible for compliance with SimpleSwap.io's Terms of Service, acceptable use policy, and any jurisdictional restrictions they impose. Some countries may be restricted from using SimpleSwap.io.
 - **Exchange fees and rates.** SimpleSwap.io charges fees and applies exchange rates that are determined solely by SimpleSwap.io and may change at any time without notice.
 - **Transaction irreversibility.** All cryptocurrency transactions are irreversible. Spiral Pool accepts no responsibility for incorrect amounts, wrong destination addresses, failed swaps, or any other transaction outcome.
-- **No Spiral Pool liability.** Spiral Pool, its developers, and contributors have no visibility into, control over, or liability for any transaction you initiate through SimpleSwap.io. See TERMS.md section 5D.
+- **No Spiral Pool liability.** Spiral Pool, its developers, and contributors have no visibility into, control over, or liability for any transaction you initiate through SimpleSwap.io. See TERMS.md section 5C.
 
 ---
 
@@ -554,7 +555,7 @@ Cryptocurrency mining is speculative. You may lose money.
 
 8. **NO WARRANTY OF ANY KIND** - you accept all risks by using this software
 
-9. **SINGLE-OPERATOR ONLY — ALL REWARDS GO TO THE OPERATOR'S WALLET** - miners connecting to your pool receive no direct payment; you must disclose this to any external participants or face potential legal liability
+9. **SINGLE-OPERATOR DESIGN — EVERY REWARD PAYS A WALLET THE OPERATOR OWNS** - the configured wallet for the coin by default, or, where the operator has enabled worker-name payout for their own rigs, the address in that rig's worker name; any miner you do not control that connects and receives a reward is a misconfiguration, and you must disclose which wallet their blocks pay to any external participants or face potential legal liability
 
 ---
 
@@ -572,5 +573,5 @@ By deploying Spiral Pool, you acknowledge that:
 
 ---
 
-*Spiral Pool v2.7.0 - Specific Hazard Warnings*
+*Spiral Pool v3.0.0 - Specific Hazard Warnings*
 *Made with 💙 from Canada 🍁 — ☮️✌️Peace and Love to the World 🌎 ❤️*

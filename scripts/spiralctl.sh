@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-2.7.1}"
+VERSION="${VERSION:-3.0.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -317,6 +317,25 @@ get_coin_daemon() {
     esac
 }
 
+_manifest_storage_gb() {
+    # Published full-node size for a coin, from the canonical manifest.
+    # Empty when the manifest is unreadable or the symbol is unknown; every
+    # caller renders that as "?" rather than inventing a number.
+    local _sym="${1^^}"
+    python3 - "$INSTALL_DIR/config/coins.manifest.yaml" "$_sym" 2>/dev/null << 'PYEOF'
+import sys
+try:
+    import yaml
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        for coin in yaml.safe_load(fh)["coins"]:
+            if coin["symbol"].upper() == sys.argv[2]:
+                print(coin["storage"]["chain_gb"])
+                break
+except Exception:
+    pass
+PYEOF
+}
+
 get_coin_cli() {
     case "${1^^}" in
         DGB|DGB-SCRYPT) echo "digibyte-cli -conf=$(_chain_dir dgb)/digibyte.conf" ;;
@@ -411,9 +430,16 @@ cmd_status() {
     local _ut _sv
     [[ -n "$VERSION" ]] && printf "  %-24s %s\n" "Version" "v${VERSION}"
     echo ""
-    if systemctl is-active --quiet spiralstratum 2>/dev/null; then
+    # "activating" is not "active": the pool waits for its coin node in
+    # ExecStartPre, which takes minutes on a node that is catching up and can run
+    # to the full 30-minute timeout. Reporting that as "Stopped" reads as a failure.
+    local _pool_state
+    _pool_state=$(systemctl is-active spiralstratum 2>/dev/null) || true
+    if [[ "$_pool_state" == "active" ]]; then
         _ut=$(_service_uptime spiralstratum)
         printf "  %-24s ${GREEN}%-12s${NC} %s\n" "Pool (spiralstratum)" "Running" "${_ut:+up $_ut}"
+    elif [[ "$_pool_state" == "activating" ]]; then
+        printf "  %-24s ${YELLOW}%-12s${NC} %s\n" "Pool (spiralstratum)" "Starting" "waiting for a coin node to be ready"
     else
         printf "  %-24s ${RED}%-12s${NC}\n" "Pool (spiralstratum)" "Stopped"
     fi
@@ -4634,13 +4660,75 @@ cmd_coin() {
             echo -e "  ${DIM}Monitor sync progress: spiralctl sync${NC}"
             echo ""
             ;;
+        storage)
+            # The published per-coin disk figures are a snapshot. They were
+            # badly stale before v3.0.0 -- eCash listed at 20 GB against a real
+            # ~155 GB, Fractal Bitcoin at 10 GB against a documented 2 TB --
+            # and no amount of cross-checking between documents could reveal
+            # it, because every copy agreed with every other copy and all of
+            # them were wrong. The node knows its own size. Ask it.
+            echo ""
+            echo -e "${WHITE}COIN STORAGE - measured against the published figure${NC}"
+            echo -e "-------------------------------------------------------------------------"
+            printf "  %-12s %12s %12s   %s
+" "COIN" "ON DISK" "PUBLISHED" "STATE"
+            local _any=false
+            for c in BC2 BCH BCH2 BTC BTCS CAT DGB DOGE FBTC LTC NMC PEP SYS XEC XMY; do
+                local _daemon _cli _info _size _pruned _declared _disk_gb
+                _daemon=$(get_coin_daemon "$c")
+                systemctl is-enabled --quiet "$_daemon" 2>/dev/null || continue
+                _any=true
+                _declared=$(_manifest_storage_gb "$c")
+                if ! systemctl is-active --quiet "$_daemon" 2>/dev/null; then
+                    printf "  %-12s %12s %9s GB   ${DIM}%s${NC}
+" "$c" "-" "${_declared:-?}" "daemon stopped"
+                    continue
+                fi
+                _cli=$(get_coin_cli "$c")
+                if ! _info=$($_cli getblockchaininfo 2>/dev/null); then
+                    printf "  %-12s %12s %9s GB   ${YELLOW}%s${NC}
+" "$c" "-" "${_declared:-?}" "no RPC answer"
+                    continue
+                fi
+                _size=$(echo "$_info" | grep -o '"size_on_disk":[^,}]*' | cut -d: -f2 | tr -d ' ')
+                _pruned=$(echo "$_info" | grep -o '"pruned":[^,}]*' | cut -d: -f2 | tr -d ' ')
+                if [[ -z "$_size" ]]; then
+                    printf "  %-12s %12s %9s GB   ${YELLOW}%s${NC}
+" "$c" "-" "${_declared:-?}" "daemon reports no size_on_disk"
+                    continue
+                fi
+                _disk_gb=$(( _size / 1000000000 ))
+                if [[ "$_pruned" == "true" ]]; then
+                    printf "  %-12s %9s GB %9s GB   ${DIM}%s${NC}
+" "$c" "$_disk_gb" "${_declared:-?}" "pruned - figure does not apply"
+                elif [[ -z "$_declared" ]]; then
+                    printf "  %-12s %9s GB %12s   ${YELLOW}%s${NC}
+" "$c" "$_disk_gb" "?" "no published figure"
+                elif [[ "$_disk_gb" -gt "$_declared" ]]; then
+                    printf "  %-12s %9s GB %9s GB   ${RED}%s${NC}
+" "$c" "$_disk_gb" "$_declared"                         "OVER by $(( _disk_gb - _declared )) GB - the published figure is too low"
+                else
+                    printf "  %-12s %9s GB %9s GB   ${GREEN}%s${NC}
+" "$c" "$_disk_gb" "$_declared" "within the published figure"
+                fi
+            done
+            if [[ "$_any" == "false" ]]; then
+                echo -e "  ${DIM}No coin daemons are enabled on this host.${NC}"
+            fi
+            echo ""
+            echo -e "  ${DIM}Published figures come from config/coins.manifest.yaml. A chain that has${NC}"
+            echo -e "  ${DIM}grown past its figure is expected over time - correct it there and every${NC}"
+            echo -e "  ${DIM}document follows (tests/test_coin_storage_consistency.py enforces that).${NC}"
+            echo ""
+            ;;
         *)
-            echo "Usage: spiralctl coin [status|list|enable|disable|prune] <coin>"
+            echo "Usage: spiralctl coin [status|list|enable|disable|prune|storage] <coin>"
             echo ""
             echo "  spiralctl coin status               Show all coins and their state"
             echo "  spiralctl coin enable <SYMBOL>      Add a supported coin to the pool"
             echo "  spiralctl coin disable <SYMBOL>     Stop and disable a coin daemon"
             echo "  spiralctl coin prune <SYMBOL>       Enable blockchain pruning (~95% disk savings)"
+            echo "  spiralctl coin storage              Measure each chain on disk vs its published figure"
             echo ""
             echo "For mining mode changes, use 'spiralctl mining':"
             echo "  spiralctl mining solo <coin>        Switch to solo mining"
@@ -4719,6 +4807,21 @@ cmd_wallet()      { as_pool_user /usr/local/bin/spiralpool-wallet "$@"; }
 cmd_backup()      { check_root; exec /usr/local/bin/spiralpool-backup "$@"; }
 cmd_restore_pool(){ check_root; exec /usr/local/bin/spiralpool-restore "$@"; }
 cmd_pause()       { as_pool_user /usr/local/bin/spiralpool-pause "$@"; }
+
+# Stratum V2 authority keys live in the Go spiralctl, not in this wrapper, so
+# "spiralctl v2 ..." has to hand off to that binary. Without this the command
+# the pool's own docs and install summary tell operators to run reports
+# "Unknown command: v2".
+cmd_v2() {
+    local go_bin="$INSTALL_DIR/bin/spiralctl"
+    if [[ ! -x "$go_bin" ]]; then
+        echo "Stratum V2 commands need $go_bin, which is missing or not executable."
+        echo "Re-run the installer or 'sudo upgrade.sh' to deploy it."
+        exit 1
+    fi
+    check_root
+    exec "$go_bin" v2 "$@"
+}
 cmd_stats() {
     if [[ "${1:-}" == "blocks" ]]; then
         shift
@@ -4926,7 +5029,7 @@ cmd_node() {
 
     get_daemons() {
         if [[ "$1" == "all" ]]; then
-            echo "digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind fractald namecoind syscoind myriadcoind"
+            echo "digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd ecashd litecoind dogecoind pepecoind catcoind fractald namecoind syscoind myriadcoind"
         else
             get_coin_daemon "${1^^}"
         fi
@@ -4977,7 +5080,7 @@ cmd_node() {
             done
             ;;
         *)
-            echo "Usage: spiralctl node [status|start|stop|restart] [bc2|bch|btc|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|sys|xmy|all]"
+            echo "Usage: spiralctl node [status|start|stop|restart] [bc2|bch|bch2|btc|btcs|cat|dgb|dgb-scrypt|doge|fbtc|ltc|nmc|pep|sys|xec|xmy|all]"
             exit 1
             ;;
     esac
@@ -4992,10 +5095,11 @@ cmd_config() {
     local key="${2:-}"
     local value="${3:-}"
 
-    local pool_home
-    pool_home=$(getent passwd "$POOL_USER" 2>/dev/null | cut -d: -f6)
-    pool_home="${pool_home:-/home/$POOL_USER}"
-    local SENTINEL_CONFIG="${pool_home}/.spiralsentinel/config.json"
+    # This command reads and writes the config, so it must land on the file the
+    # service actually reads — otherwise a `config set` reports success and the
+    # running Sentinel never sees the change.
+    local SENTINEL_CONFIG
+    SENTINEL_CONFIG=$(_sentinel_config_path)
 
     case "$action" in
         validate)
@@ -5010,20 +5114,12 @@ cmd_config() {
             # Query the Sentinel health endpoint for active alert cooldowns.
             # Read the configured port from sentinel config.json (falls back to 9191).
             local health_port
-            health_port=$(python3 - << 'PYEOF' 2>/dev/null
+            health_port=$(python3 - "$SENTINEL_CONFIG" << 'PYEOF' 2>/dev/null
 import json, sys
-paths = [
-    f"/home/spiraluser/.spiralsentinel/config.json",
-    "/spiralpool/config/sentinel/config.json",
-]
-for p in paths:
-    try:
-        cfg = json.load(open(p))
-        print(cfg.get("sentinel_health_port", 9191))
-        sys.exit(0)
-    except Exception:
-        pass
-print(9191)
+try:
+    print(json.load(open(sys.argv[1])).get("sentinel_health_port", 9191))
+except Exception:
+    print(9191)
 PYEOF
 )
             health_port="${health_port:-9191}"
@@ -5075,6 +5171,7 @@ PYEOF
                 echo "  telegram_chat_id     Telegram chat ID"
                 echo "  missing_payout_days  Grace days before an unpaid found block alerts"
                 echo "  missing_payout_max_days  Backstop: alert after N days regardless (0=off)"
+                echo "  simpleswap           SimpleSwap link inside sats surge alerts (on/off)"
                 exit 1
             fi
 
@@ -5128,6 +5225,14 @@ PYEOF
                         echo "${val} days"
                     fi
                     ;;
+                simpleswap|simpleswap_enabled)
+                    # Absent from older config files, where the link was always on.
+                    if grep -q '"simpleswap_enabled"[[:space:]]*:[[:space:]]*false' "$SENTINEL_CONFIG" 2>/dev/null; then
+                        echo "off"
+                    else
+                        echo "on"
+                    fi
+                    ;;
                 *)
                     log_error "Unknown key: $key"
                     exit 1
@@ -5145,6 +5250,7 @@ PYEOF
                 echo "  telegram_chat_id <id>       Telegram chat ID"
                 echo "  missing_payout_days <days>      Grace before an unpaid found block alerts (default: 7)"
                 echo "  missing_payout_max_days <days>  Backstop: alert after N days regardless (0=off, default: 0)"
+                echo "  simpleswap <on|off>         SimpleSwap link inside sats surge alerts (default: on)"
                 exit 1
             fi
 
@@ -5283,6 +5389,40 @@ with open(sys.argv[1], 'w') as f:
                     echo ""
                     echo "Restart Sentinel to apply: sudo systemctl restart spiralsentinel"
                     ;;
+                simpleswap|simpleswap_enabled)
+                    # Off switch for the SimpleSwap link carried inside sats_surge
+                    # alerts. Separate from the alert itself so the surge
+                    # notification can be kept without the third-party link.
+                    local _ss_bool
+                    case "$value" in
+                        on|true|yes|enable|enabled|1)   _ss_bool="true" ;;
+                        off|false|no|disable|disabled|0) _ss_bool="false" ;;
+                        *)
+                            log_error "Invalid value: $value (use on or off)"
+                            rm -f "${SENTINEL_CONFIG}.bak"
+                            exit 1
+                            ;;
+                    esac
+                    if ! python3 -c "
+import json, sys
+with open(sys.argv[1], 'r') as f:
+    cfg = json.load(f)
+cfg['simpleswap_enabled'] = sys.argv[2] == 'true'
+with open(sys.argv[1], 'w') as f:
+    json.dump(cfg, f, indent=2)
+" "$SENTINEL_CONFIG" "$_ss_bool"; then
+                        log_error "Failed to update config"
+                        mv "${SENTINEL_CONFIG}.bak" "$SENTINEL_CONFIG"
+                        exit 1
+                    fi
+                    if [[ "$_ss_bool" == "true" ]]; then
+                        log_success "SimpleSwap link enabled in sats surge alerts"
+                    else
+                        log_success "SimpleSwap link disabled — sats surge alerts still fire"
+                    fi
+                    echo ""
+                    echo "Restart Sentinel to apply: sudo systemctl restart spiralsentinel"
+                    ;;
                 *)
                     log_error "Unknown key: $key"
                     rm -f "${SENTINEL_CONFIG}.bak"
@@ -5323,6 +5463,13 @@ with open(sys.argv[1], 'w') as f:
                 else
                     echo -e "  Telegram:          ${DIM}Not set${NC}"
                 fi
+                # Absent from a config file written before the key existed,
+                # where the link was unconditionally on.
+                if grep -q '"simpleswap_enabled"[[:space:]]*:[[:space:]]*false' "$SENTINEL_CONFIG" 2>/dev/null; then
+                    echo -e "  SimpleSwap link:   ${DIM}Off${NC}"
+                else
+                    echo -e "  SimpleSwap link:   ${GREEN}On${NC} ${DIM}(in sats surge alerts)${NC}"
+                fi
                 echo ""
                 echo -e "  ${DIM}For detailed webhook config: spiralctl webhook status${NC}"
             else
@@ -5344,6 +5491,9 @@ with open(sys.argv[1], 'w') as f:
             echo "  discord_webhook           Discord webhook URL"
             echo "  telegram_token            Telegram bot token"
             echo "  telegram_chat_id          Telegram chat ID"
+            echo "  missing_payout_days       Grace days before an unpaid found block alerts"
+            echo "  missing_payout_max_days   Backstop: alert after N days regardless (0=off)"
+            echo "  simpleswap <on|off>       SimpleSwap link inside sats surge alerts"
             echo ""
             echo "Examples:"
             echo "  spiralctl config show"
@@ -5366,11 +5516,11 @@ with open(sys.argv[1], 'w') as f:
 # never be muted.
 _alerts_groups() {
     cat <<'EOF'
-Miner & fleet|miner_offline miner_online miner_reboot temp_warning temp_critical thermal_shutdown zombie_miner degradation auto_restart excessive_restarts chronic_issue power_event fan_failure hashboard_dead hw_error_rate group_offline group_online worker_count_drop
+Miner & fleet|miner_offline miner_online miner_reboot temp_warning temp_critical thermal_shutdown zombie_miner degradation auto_restart automation_failed excessive_restarts chronic_issue power_event fan_failure hashboard_dead hw_error_rate group_offline group_online worker_count_drop
 Performance|hashrate_divergence share_rejection_spike share_loss_rate best_share
 Network & odds|hashrate_crash pool_hashrate_drop high_odds dry_streak difficulty_change mempool_congestion
-Coin node|coin_node_down coin_sync_behind coin_change coin_config_change block_notify_mode_change chain_identity
-Block events|block_orphaned
+Coin node|coin_node_down coin_sync_behind coin_change coin_config_change block_notify_mode_change chain_identity coin_upgrade_available coin_version_check_failing
+Block events|block_orphaned block_payout_mismatch
 Disk & backup|disk_warning disk_critical backup_stale
 Wallet & market|sats_surge price_crash payout_received missing_payout wallet_drop revenue_decline
 Security|stratum_url_mismatch
@@ -5393,8 +5543,29 @@ _alerts_is_known() {
     return 1
 }
 
-# Resolve the live Sentinel config path (primary home dir, ProtectHome fallback).
-_alerts_config_path() {
+# Resolve the Sentinel config file the running service is actually reading.
+#
+# This script and the service do not resolve it the same way, and neither is
+# wrong: systemd's ProtectHome=yes hides /home from the daemon, which therefore
+# falls back to the install directory, while this script runs as an ordinary
+# user and finds the home copy first. Both files then exist and drift apart —
+# on the production pool they differed by a day and 57 bytes — so a check that
+# picks the wrong one passes on a file the service has never read. Resolving it
+# again here cannot fix that, because the resolution is correct for whoever
+# performs it. The daemon records the path it resolved; prefer that, and fall
+# back to the old order when it is absent (Sentinel not restarted since the
+# upgrade, or never started).
+_sentinel_config_path() {
+    local marker="${INSTALL_DIR}/data/sentinel-config-path"
+    if [[ -r "$marker" ]]; then
+        local published
+        published=$(head -n1 "$marker" 2>/dev/null | tr -d '[:space:]')
+        if [[ -n "$published" && -f "$published" ]]; then
+            echo "$published"
+            return 0
+        fi
+    fi
+
     local pool_home
     pool_home=$(getent passwd "$POOL_USER" 2>/dev/null | cut -d: -f6)
     pool_home="${pool_home:-/home/$POOL_USER}"
@@ -5424,7 +5595,7 @@ cmd_alerts() {
     local action="${1:-}"
     local target="${2:-}"
     local SENTINEL_CONFIG
-    SENTINEL_CONFIG=$(_alerts_config_path)
+    SENTINEL_CONFIG=$(_sentinel_config_path)
 
     # No subcommand: open the interactive menu on a real terminal, else just list.
     if [[ -z "$action" ]]; then
@@ -6040,29 +6211,12 @@ cmd_webhook() {
     local action="${1:-}"
     shift || true
 
-    # Detect sentinel config location (same logic as cmd_config)
-    local SENTINEL_HOME=""
-    local SENTINEL_CONFIG=""
-
-    # Try pool user home first (from systemd service)
-    for service in spiralsentinel spiralstratum bitcoiniid bitcoind-bch bitcoincashIId bitcoinsilverd bitcoind catcoind digibyted dogecoind fractald litecoind myriadcoind namecoind pepecoind syscoind; do
-        if [[ -f "/etc/systemd/system/${service}.service" ]]; then
-            local svc_user=$(grep -oP '^User=\K.*' "/etc/systemd/system/${service}.service" 2>/dev/null | head -1)
-            if [[ -n "$svc_user" ]] && [[ "$svc_user" != "root" ]]; then
-                local svc_home=$(getent passwd "$svc_user" 2>/dev/null | cut -d: -f6)
-                if [[ -d "$svc_home/.spiralsentinel" ]]; then
-                    SENTINEL_HOME="$svc_home"
-                    break
-                fi
-            fi
-        fi
-    done
-
-    # Fallback to current user
-    if [[ -z "$SENTINEL_HOME" ]]; then
-        SENTINEL_HOME="$HOME"
-    fi
-    SENTINEL_CONFIG="$SENTINEL_HOME/.spiralsentinel/config.json"
+    # This used to walk the systemd units looking for the pool user's home and
+    # then read the copy there. That is a careful way of finding the wrong file:
+    # a daemon running under ProtectHome=yes cannot open its own home directory
+    # and is reading the install-directory copy instead. Ask the service.
+    local SENTINEL_CONFIG
+    SENTINEL_CONFIG=$(_sentinel_config_path)
 
     case "$action" in
         status)
@@ -6855,6 +7009,8 @@ show_help() {
     echo "    workers             Per-worker breakdown (miner → rig → hashrate + acceptance)"
     echo "    miner nick [list | <IP> <name> | clear <IP>]"
     echo "                        View or set miner nicknames in Sentinel"
+    echo "    miner control <IP> info|sleep|wake|restart|power <level|watts>"
+    echo "                        Send one command to a miner, as automation would"
     echo "    scan                Scan network for miners"
     echo "    wallet              Show or generate wallet addresses"
     echo "    external [setup|enable|disable|status|test]"
@@ -7235,6 +7391,8 @@ cmd_sync_addresses() {
 
 cmd_workers() {
     local pool_api="http://localhost:4000"
+    local admin_key
+    admin_key=$(_get_admin_api_key)
 
     local pools_json
     pools_json=$(curl -sf --max-time 8 "$pool_api/api/pools" 2>/dev/null || echo "")
@@ -7252,7 +7410,7 @@ cmd_workers() {
         [[ -z "$symbol" ]] && symbol="$pool_id"
 
         local miners_json
-        miners_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
+        miners_json=$(curl -sf --max-time 8 -H "X-API-Key: ${admin_key}" "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
         [[ -z "$miners_json" ]] && continue
 
         while IFS= read -r addr; do
@@ -7442,7 +7600,7 @@ cmd_miners() {
             while IFS= read -r pool_id; do
                 [[ -z "$pool_id" ]] && continue
                 local miners_json
-                miners_json=$(curl -sf --max-time 8 "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
+                miners_json=$(curl -sf --max-time 8 -H "X-API-Key: ${admin_key}" "$pool_api/api/pools/${pool_id}/miners" 2>/dev/null || echo "")
                 [[ -z "$miners_json" ]] && continue
 
                 local symbol
@@ -7535,6 +7693,22 @@ cmd_miners() {
 # MINER NICK COMMAND — set/clear miner nicknames in sentinel config
 #===============================================================================
 
+# Fleet groups and tags are owned by the dashboard, which keeps them in its own
+# data directory. Sentinel reads the same files for its group_offline/group_online
+# alerts, so this is the only location that reaches both.
+_fleet_data_file() {
+    echo "$INSTALL_DIR/dashboard/data/$1"
+}
+
+# Run a command as the dashboard's user so files it later rewrites keep their owner.
+_fleet_as_owner() {
+    if [[ "$(id -un)" == "$POOL_USER" ]]; then
+        "$@"
+    else
+        sudo -u "$POOL_USER" "$@"
+    fi
+}
+
 cmd_miner() {
     local subcommand="${1:-}"
     shift || true
@@ -7545,14 +7719,9 @@ cmd_miner() {
             shift || true
 
             # Resolve sentinel config path (same logic as cmd_config)
-            local sentinel_cfg=""
-            local candidate_paths=(
-                "/home/${POOL_USER}/.spiralsentinel/config.json"
-                "${INSTALL_DIR}/config/sentinel/config.json"
-            )
-            for p in "${candidate_paths[@]}"; do
-                [[ -f "$p" ]] && sentinel_cfg="$p" && break
-            done
+            local sentinel_cfg
+            sentinel_cfg=$(_sentinel_config_path)
+            [[ -f "$sentinel_cfg" ]] || sentinel_cfg=""
             if [[ -z "$sentinel_cfg" ]]; then
                 log_error "Sentinel config not found"
                 exit 1
@@ -7632,40 +7801,33 @@ PYEOF
             local action_or_ip="${1:-}"
             shift || true
 
-            # Resolve sentinel config path
-            local sentinel_cfg=""
-            local candidate_paths=(
-                "/home/${POOL_USER}/.spiralsentinel/config.json"
-                "${INSTALL_DIR}/config/sentinel/config.json"
-            )
-            for p in "${candidate_paths[@]}"; do
-                [[ -f "$p" ]] && sentinel_cfg="$p" && break
-            done
-            if [[ -z "$sentinel_cfg" ]]; then
-                log_error "Sentinel config not found"
-                exit 1
-            fi
+            # Fleet groups live in the dashboard's data directory, not in the
+            # Sentinel config. Sentinel's group_offline/group_online alerts and the
+            # dashboard's Fleet page both read this file; a copy kept anywhere else
+            # is invisible to them.
+            local groups_file
+            groups_file=$(_fleet_data_file miner_groups.json)
 
             case "$action_or_ip" in
                 list|"")
-                    python3 - "$sentinel_cfg" << 'PYEOF'
-import sys, json
-cfg_path = sys.argv[1]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-groups = cfg.get("miner_groups", {})
+                    python3 - "$groups_file" << 'PYEOF'
+import sys, json, os
+path = sys.argv[1]
+groups = {}
+if os.path.exists(path):
+    with open(path) as f:
+        groups = json.load(f)
 if not groups:
     print("  No miner groups configured.")
 else:
-    # Invert: group → list of IPs
-    by_group = {}
-    for ip, grp in sorted(groups.items()):
-        by_group.setdefault(grp, []).append(ip)
     print()
-    for grp, ips in sorted(by_group.items()):
-        print(f"  [{grp}]")
-        for ip in ips:
-            print(f"    {ip}")
+    for name in sorted(groups):
+        members = groups[name].get("miners", []) if isinstance(groups[name], dict) else []
+        print(f"  [{name}]  ({groups[name].get('type', 'custom')})" if isinstance(groups[name], dict) else f"  [{name}]")
+        for m in sorted(members):
+            print(f"    {m}")
+        if not members:
+            print("    (empty)")
     print()
 PYEOF
                     ;;
@@ -7677,20 +7839,30 @@ PYEOF
                         exit 1
                     fi
                     check_root
-                    sudo python3 - "$sentinel_cfg" "$ip" << 'PYEOF'
-import sys, json
-cfg_path, ip = sys.argv[1], sys.argv[2]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-groups = cfg.get("miner_groups", {})
-if ip in groups:
-    del groups[ip]
-    cfg["miner_groups"] = groups
-    with open(cfg_path, "w") as f:
-        json.dump(cfg, f, indent=2)
-    print(f"Removed {ip} from its group")
-else:
+                    _fleet_as_owner python3 - "$groups_file" "$ip" << 'PYEOF'
+import sys, json, os
+path, ip = sys.argv[1], sys.argv[2]
+groups = {}
+if os.path.exists(path):
+    with open(path) as f:
+        groups = json.load(f)
+removed = []
+for name, g in groups.items():
+    if not isinstance(g, dict):
+        continue
+    members = g.get("miners", [])
+    if ip in members:
+        g["miners"] = [m for m in members if m != ip]
+        removed.append(name)
+if not removed:
     print(f"No group set for {ip}")
+    raise SystemExit(0)
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(groups, f, indent=2)
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+print(f"Removed {ip} from: {', '.join(sorted(removed))}")
 PYEOF
                     ;;
 
@@ -7703,18 +7875,40 @@ PYEOF
                         exit 1
                     fi
                     check_root
-                    sudo python3 - "$sentinel_cfg" "$ip" "$group_name" << 'PYEOF'
-import sys, json
-cfg_path, ip, group_name = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-if "miner_groups" not in cfg:
-    cfg["miner_groups"] = {}
-cfg["miner_groups"][ip] = group_name
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"Set group: {ip} → {group_name}")
-print("Restart spiralsentinel to apply: sudo systemctl restart spiralsentinel")
+                    _fleet_as_owner python3 - "$groups_file" "$ip" "$group_name" << 'PYEOF'
+import sys, json, os, re, datetime
+path, ip, group_name = sys.argv[1], sys.argv[2], sys.argv[3].strip()
+# Mirror the dashboard's own validation so spiralctl cannot create a group the
+# dashboard will later refuse to edit.
+if len(group_name) > 64:
+    print("Group name too long (max 64 characters)"); raise SystemExit(1)
+if not re.match(r'^[\w\s\-\.()]+$', group_name):
+    print("Group name may only contain letters, digits, spaces, _ - . ( )"); raise SystemExit(1)
+groups = {}
+if os.path.exists(path):
+    with open(path) as f:
+        groups = json.load(f)
+# A miner belongs to one group: drop it from any other before adding.
+for name, g in groups.items():
+    if isinstance(g, dict) and ip in g.get("miners", []):
+        g["miners"] = [m for m in g["miners"] if m != ip]
+g = groups.get(group_name)
+if not isinstance(g, dict):
+    g = {"name": group_name, "type": "custom", "miners": [],
+         "created_at": datetime.datetime.utcnow().isoformat()}
+    groups[group_name] = g
+g.setdefault("miners", [])
+if len(g["miners"]) >= 500:
+    print(f"Group '{group_name}' already holds 500 miners (dashboard limit)"); raise SystemExit(1)
+if ip not in g["miners"]:
+    g["miners"].append(ip)
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(groups, f, indent=2)
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+print(f"Set group: {ip} -> {group_name}")
+print("Sentinel picks this up within 60s; the dashboard Fleet page shows it immediately.")
 PYEOF
                     ;;
             esac
@@ -7724,28 +7918,19 @@ PYEOF
             local action_or_ip="${1:-list}"
             shift 2>/dev/null || true
 
-            # Resolve sentinel config path (same logic as nick/group)
-            local sentinel_cfg=""
-            local tag_candidate_paths=(
-                "/home/${POOL_USER}/.spiralsentinel/config.json"
-                "${INSTALL_DIR}/config/sentinel/config.json"
-            )
-            for p in "${tag_candidate_paths[@]}"; do
-                [[ -f "$p" ]] && sentinel_cfg="$p" && break
-            done
-            if [[ -z "$sentinel_cfg" ]]; then
-                log_error "Sentinel config not found"
-                exit 1
-            fi
+            # Same store the dashboard's Fleet tags use (see group above).
+            local tags_file
+            tags_file=$(_fleet_data_file miner_tags.json)
 
             case "$action_or_ip" in
                 list|"")
-                    python3 - "$sentinel_cfg" << 'PYEOF'
-import sys, json
-cfg_path = sys.argv[1]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-tags = cfg.get("miner_tags", {})
+                    python3 - "$tags_file" << 'PYEOF'
+import sys, json, os
+path = sys.argv[1]
+tags = {}
+if os.path.exists(path):
+    with open(path) as f:
+        tags = json.load(f)
 if not tags:
     print("  No miner tags configured.")
 else:
@@ -7763,20 +7948,23 @@ PYEOF
                         exit 1
                     fi
                     check_root
-                    sudo python3 - "$sentinel_cfg" "$ip" << 'PYEOF'
-import sys, json
-cfg_path, ip = sys.argv[1], sys.argv[2]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-tags = cfg.get("miner_tags", {})
-if ip in tags:
-    del tags[ip]
-    cfg["miner_tags"] = tags
-    with open(cfg_path, "w") as f:
-        json.dump(cfg, f, indent=2)
-    print(f"Removed tags from {ip}")
-else:
+                    _fleet_as_owner python3 - "$tags_file" "$ip" << 'PYEOF'
+import sys, json, os
+path, ip = sys.argv[1], sys.argv[2]
+tags = {}
+if os.path.exists(path):
+    with open(path) as f:
+        tags = json.load(f)
+if ip not in tags:
     print(f"No tags set for {ip}")
+    raise SystemExit(0)
+del tags[ip]
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(tags, f, indent=2)
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+print(f"Removed tags from {ip}")
 PYEOF
                     ;;
 
@@ -7789,29 +7977,48 @@ PYEOF
                         exit 1
                     fi
                     check_root
-                    sudo python3 - "$sentinel_cfg" "$ip" "$tag_csv" << 'PYEOF'
-import sys, json
-cfg_path, ip, tag_csv = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-if "miner_tags" not in cfg:
-    cfg["miner_tags"] = {}
-tags = [t.strip() for t in tag_csv.split(",") if t.strip()]
-cfg["miner_tags"][ip] = tags
-with open(cfg_path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print(f"Set tags: {ip} → {', '.join(tags)}")
+                    _fleet_as_owner python3 - "$tags_file" "$ip" "$tag_csv" << 'PYEOF'
+import sys, json, os
+path, ip, tag_csv = sys.argv[1], sys.argv[2], sys.argv[3]
+tags = {}
+if os.path.exists(path):
+    with open(path) as f:
+        tags = json.load(f)
+new = [t.strip()[:32] for t in tag_csv.split(",") if t.strip()]
+if len(new) > 20:
+    print("At most 20 tags per miner (dashboard limit)"); raise SystemExit(1)
+tags[ip] = new
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(tags, f, indent=2)
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+print(f"Set tags: {ip} -> {', '.join(new)}")
 PYEOF
                     ;;
             esac
             ;;
 
+        control)
+            # One command to one miner through the same drivers and stored logins
+            # Sentinel's automation uses, run as the pool user as Sentinel is.
+            local control_py="${INSTALL_DIR}/bin/miner_control.py"
+            if [[ ! -f "$control_py" ]]; then
+                log_error "$control_py is missing. Re-run the installer or 'sudo upgrade.sh' to deploy it."
+                exit 1
+            fi
+            check_root
+            sudo -u "$POOL_USER" python3 "$control_py" --data-dir "${INSTALL_DIR}/data" "$@"
+            exit $?
+            ;;
         *)
             echo "Usage: spiralctl miner <command>"
             echo ""
             echo "  nick  [list | <IP> <name> | clear <IP>]       Manage miner nicknames"
             echo "  group [list | <IP> <name> | clear <IP>]       Manage miner groups"
             echo "  tag   [list | <IP> <t1,t2> | clear <IP>]      Manage miner tags"
+            echo "  control <IP> info|sleep|wake|restart|power <low|normal|high|watts>"
+            echo "                                                Send one command to a miner, as automation would"
             echo ""
             echo "Examples:"
             echo "  spiralctl miner nick 192.168.1.50 \"Living Room Miner\""
@@ -7830,18 +8037,9 @@ PYEOF
 #===============================================================================
 
 cmd_config_notify_test() {
-    local pool_home
-    pool_home=$(getent passwd "$POOL_USER" 2>/dev/null | cut -d: -f6)
-    pool_home="${pool_home:-/home/$POOL_USER}"
-
-    local sentinel_cfg=""
-    local candidate_paths=(
-        "${pool_home}/.spiralsentinel/config.json"
-        "${INSTALL_DIR}/config/sentinel/config.json"
-    )
-    for p in "${candidate_paths[@]}"; do
-        [[ -f "$p" ]] && sentinel_cfg="$p" && break
-    done
+    local sentinel_cfg
+    sentinel_cfg=$(_sentinel_config_path)
+    [[ -f "$sentinel_cfg" ]] || sentinel_cfg=""
 
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -8064,14 +8262,9 @@ PYEOF
 #===============================================================================
 
 cmd_config_validate() {
-    local sentinel_cfg=""
-    local candidate_paths=(
-        "/home/${POOL_USER}/.spiralsentinel/config.json"
-        "${INSTALL_DIR}/config/sentinel/config.json"
-    )
-    for p in "${candidate_paths[@]}"; do
-        [[ -f "$p" ]] && sentinel_cfg="$p" && break
-    done
+    local sentinel_cfg
+    sentinel_cfg=$(_sentinel_config_path)
+    [[ -f "$sentinel_cfg" ]] || sentinel_cfg=""
 
     local config_yaml="${INSTALL_DIR}/config/config.yaml"
     local issues=0
@@ -8323,6 +8516,7 @@ main() {
         restart)    cmd_restart_all "$@" ;;
         wallet)     cmd_wallet "$@" ;;
         pause)      cmd_pause "$@" ;;
+        v2)         cmd_v2 "$@" ;;
         stats)      cmd_stats "$@" ;;      # also: stats blocks [N]
         test)       cmd_test "$@" ;;
         scan)       cmd_scan "$@" ;;

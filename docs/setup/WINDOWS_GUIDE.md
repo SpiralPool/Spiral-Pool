@@ -11,7 +11,7 @@ Two installation paths exist for running Spiral Pool on Windows 11. Both are **e
 | **What it does** | Runs everything in Docker containers on Windows | Installs the full Linux stack inside a WSL2 Ubuntu VM |
 | **Installer** | `install-windows.ps1` (PowerShell) | `install.sh` (runs inside WSL2 Ubuntu) |
 | **Windows editions** | Home, Pro, Enterprise, Education | Home, Pro, Enterprise, Education |
-| **Coins** | Single coin only (17 choices, see note) | All 17 coins, multi-coin, merge mining |
+| **Coins** | Single coin only (16 choices, see note) | All 16 coins, multi-coin, merge mining |
 | **Stratum** | V1 + TLS | V1 + V2 + TLS |
 | **Merge mining** | Not supported | Supported (BTC+NMC+SYS+XMY+FBTC, LTC+DOGE+PEP) |
 | **High availability** | Not supported | Not supported (requires bare metal Linux) |
@@ -58,7 +58,7 @@ The installer will:
 2. Detect and install WSL2 or enable Hyper-V (reboot may be required)
 3. Check RAM requirements
 4. Download and install Docker Desktop (if not installed)
-5. Present a coin selection menu (17 coins)
+5. Present a coin selection menu (16 coins)
 6. Prompt for wallet address, storage path, and coinbase text
 7. Configure Windows Firewall rules
 8. Generate `.env` and start Docker containers
@@ -77,22 +77,22 @@ The installer will:
 
 | # | Symbol | Coin | Algorithm | Storage | Stratum Port |
 |---|--------|------|-----------|---------|-------------|
-| 1 | DGB | DigiByte | SHA256d | ~80 GB | 3333 |
-| 2 | BTC | Bitcoin | SHA256d | ~600 GB | 4333 |
-| 3 | BCH | Bitcoin Cash | SHA256d | ~250 GB | 5333 |
+| 1 | DGB | DigiByte | SHA256d | ~40 GB | 3333 |
+| 2 | BTC | Bitcoin | SHA256d | ~780 GB | 4333 |
+| 3 | BCH | Bitcoin Cash | SHA256d | ~220 GB | 5333 |
 | 4 | BCH2 | Bitcoin Cash II | SHA256d | ~15 GB | 5336 |
 | 5 | BC2 | Bitcoin II | SHA256d | ~10 GB | 6333 |
 | 6 | BTCS | Bitcoin Silver | SHA256d | ~8 GB | 11335 |
 | 7 | NMC | Namecoin | SHA256d | ~15 GB | 14335 |
-| 8 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
-| 9 | FBTC | Fractal Bitcoin | SHA256d | ~10 GB | 18335 |
-| 10 | XEC | eCash | SHA256d | ~20 GB | 18338 |
-| 11 | LTC | Litecoin | Scrypt | ~150 GB | 7333 |
-| 12 | DOGE | Dogecoin | Scrypt | ~80 GB | 8335 |
-| 13 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~80 GB | 3336 |
-| 14 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
-| 15 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
-| 17 | SYS | Syscoin | SHA256d | ~80 GB | 15335 |
+| 8 | SYS | Syscoin | SHA256d | ~25 GB + NEVM state | 15335 |
+| 9 | XMY | Myriadcoin | SHA256d | ~8 GB | 17335 |
+| 10 | FBTC | Fractal Bitcoin | SHA256d | ~3100 GB | 18335 |
+| 11 | XEC | eCash | SHA256d | ~160 GB | 18338 |
+| 12 | LTC | Litecoin | Scrypt | ~240 GB | 7333 |
+| 13 | DOGE | Dogecoin | Scrypt | ~190 GB | 8335 |
+| 14 | DGB-SCRYPT | DigiByte (Scrypt) | Scrypt | ~40 GB | 3336 |
+| 15 | PEP | PepeCoin | Scrypt | ~5 GB | 10335 |
+| 16 | CAT | Catcoin | Scrypt | ~5 GB | 12335 |
 
 > Syscoin (SYS) appears in the menu but cannot be mined standalone. It requires merge mining with BTC, which is only available via native Linux installation.
 
@@ -177,7 +177,7 @@ git clone --depth 1 https://github.com/SpiralPool/Spiral-Pool.git
 cd Spiral-Pool && sudo ./install.sh
 ```
 
-The installer is the same one used on native Linux. It supports the full interactive menu with back navigation (`b`), checkpoint resume, multi-coin selection, merge mining configuration, and all 17 coins.
+The installer is the same one used on native Linux. It supports the full interactive menu with back navigation (`b`), checkpoint resume, multi-coin selection, merge mining configuration, and all 16 coins.
 
 ### Step 3: Install the Shutdown Hook
 

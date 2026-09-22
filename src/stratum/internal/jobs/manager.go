@@ -9,6 +9,7 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -86,13 +87,12 @@ type Manager struct {
 	poolAddress  string
 	outputScript []byte // SECURITY: Cached and validated at startup to avoid runtime panics
 
-	// SOLO mining: Direct coinbase to miner's wallet (Option A)
-	// When set, coinbase rewards go directly to the miner's address from their
-	// stratum username, not to the pool's configured address. This is trustless
-	// SOLO mining - the miner receives rewards without pool intermediary.
-	soloMinerMu           sync.RWMutex
-	soloMinerAddress      string // The validated miner address
-	soloMinerOutputScript []byte // Pre-built output script for the miner's address
+	// SOLO mining: per-miner coinbase. Each job's reward output pays the address
+	// in the submitting miner's own stratum username (see protocol.Job.CoinBase2For).
+	// Scripts are validated once per address and cached; invalid addresses are
+	// cached as nil and fall back to the pool address.
+	payoutScripts     sync.Map // address -> []byte (nil = not a valid address for this coin)
+	payoutScriptCount atomic.Int64
 
 	// State (protected by stateMu for thread-safe access)
 	stateMu       sync.RWMutex
@@ -116,7 +116,7 @@ type Manager struct {
 
 	// Merge mining (AuxPoW) support
 	// When auxManager is non-nil, jobs will include aux block commitments
-	auxManager    *auxpow.Manager
+	auxManager     *auxpow.Manager
 	auxMerkleNonce uint32 // Nonce for aux merkle tree slot calculation
 
 	// Height epoch for submission context cancellation.
@@ -315,10 +315,10 @@ func extractCoinSymbol(coinConfig string) string {
 		"dogecoin":        "DOGE",
 		"doge":            "DOGE",
 		// Additional Scrypt meme coins
-		"pepecoin":  "PEP",
-		"pep":       "PEP",
-		"catcoin":   "CAT",
-		"cat":       "CAT",
+		"pepecoin": "PEP",
+		"pep":      "PEP",
+		"catcoin":  "CAT",
+		"cat":      "CAT",
 	}
 
 	// Normalize to lowercase for matching
@@ -354,52 +354,41 @@ func (m *Manager) GetAuxManager() *auxpow.Manager {
 	return m.auxManager
 }
 
-// SetSoloMinerAddress sets the miner's wallet address for direct coinbase routing.
-// This enables trustless SOLO mining where block rewards go directly to the miner's
-// wallet, not to the pool's configured address. The address is validated against
-// the coin's address format before being accepted.
-//
-// Returns an error if the address is invalid for this coin.
-// Returns nil if the address was successfully set (or cleared if empty).
-func (m *Manager) SetSoloMinerAddress(address string) error {
-	// Empty address clears the SOLO miner (reverts to pool address)
-	if address == "" {
-		m.soloMinerMu.Lock()
-		m.soloMinerAddress = ""
-		m.soloMinerOutputScript = nil
-		m.soloMinerMu.Unlock()
-		m.logger.Infow("SOLO miner address cleared - using pool address for coinbase")
+// maxPayoutScriptCache bounds the per-address script cache. Stratum usernames are
+// miner-controlled, so an unbounded cache would let a client grow pool memory by
+// connecting with an endless stream of distinct addresses.
+const maxPayoutScriptCache = 10000
+
+// payoutScript returns the coinbase output script paying address, or nil when the
+// address is empty or not valid for this coin (the miner's jobs then pay the pool
+// address). Called on every notify and share, so results are cached.
+// THREAD SAFETY: Safe for concurrent use.
+func (m *Manager) payoutScript(address string) []byte {
+	if address == "" || m.coinImpl == nil {
 		return nil
 	}
+	if cached, ok := m.payoutScripts.Load(address); ok {
+		return cached.([]byte)
+	}
 
-	// Validate and build output script for the miner's address
-	outputScript, err := m.coinImpl.BuildCoinbaseScript(coin.CoinbaseParams{
+	script, err := m.coinImpl.BuildCoinbaseScript(coin.CoinbaseParams{
 		PoolAddress: address,
 	})
 	if err != nil {
-		return fmt.Errorf("invalid miner address '%s' for %s: %w", address, m.coinImpl.Symbol(), err)
+		m.logger.Warnw("SOLO mining: miner username is not a valid payout address - its blocks pay the pool address",
+			"minerAddress", address,
+			"coin", m.coinImpl.Symbol(),
+			"error", err,
+		)
+		script = nil
 	}
 
-	// Store the validated address and script
-	m.soloMinerMu.Lock()
-	m.soloMinerAddress = address
-	m.soloMinerOutputScript = outputScript
-	m.soloMinerMu.Unlock()
-
-	m.logger.Infow("SOLO miner address set - coinbase rewards go directly to miner",
-		"minerAddress", address,
-		"coin", m.coinImpl.Symbol(),
-		"outputScriptLen", len(outputScript),
-	)
-
-	return nil
-}
-
-// GetSoloMinerAddress returns the current SOLO miner's address, or empty if not set.
-func (m *Manager) GetSoloMinerAddress() string {
-	m.soloMinerMu.RLock()
-	defer m.soloMinerMu.RUnlock()
-	return m.soloMinerAddress
+	if m.payoutScriptCount.Add(1) > maxPayoutScriptCache {
+		m.payoutScripts.Clear()
+		m.payoutScriptCount.Store(1)
+	}
+	m.payoutScripts.Store(address, script)
+	return script
 }
 
 // Start begins the job manager's update loop.
@@ -865,6 +854,27 @@ func (m *Manager) generateJob(ctx context.Context, template *daemon.BlockTemplat
 		NetworkTarget:    template.Target,
 	}
 
+	// SOLO mining: split coinbase2 around the pool's reward script so each miner is
+	// sent — and validated against — a coinbase paying its own address.
+	if prefix, suffix, ok := splitCoinbase2(coinbase2, m.outputScript); ok {
+		job.CoinBase2Prefix = hex.EncodeToString(prefix)
+		job.CoinBase2Suffix = hex.EncodeToString(suffix)
+		// Only when the operator has opted in. Left on unconditionally, any miner
+		// that can reach the stratum port could take the block reward by naming its
+		// worker after its own address; the default is that every block pays the
+		// configured wallet. Job.CoinBase2For falls back to the shared coinbase2
+		// when PayoutScript is nil, so nothing else needs to know about the switch.
+		if m.stratumCfg != nil && m.stratumCfg.PayoutFromWorkerName {
+			job.PayoutScript = m.payoutScript
+		}
+	} else {
+		m.logger.Errorw("CRITICAL: reward output not found in coinbase2 - every miner on this job pays the pool address",
+			"jobId", jobID,
+			"height", template.Height,
+			"coinbase2", hex.EncodeToString(coinbase2),
+		)
+	}
+
 	// For XEC: deduct mandatory MinerFund and StakingRewards so job.CoinbaseValue
 	// reflects what the pool actually receives, not the gross coinbase output.
 	if template.CoinbaseTxn != nil {
@@ -968,7 +978,8 @@ func (m *Manager) generateJobID() string {
 // If auxMerkleRoot is nil or empty, this behaves identically to buildCoinbase.
 //
 // For merge mining, the aux commitment is embedded in the scriptsig after the coinbase text:
-//   [height][coinbase_text][aux_commitment][extranonce1][extranonce2]
+//
+//	[height][coinbase_text][aux_commitment][extranonce1][extranonce2]
 //
 // The aux commitment format (44 bytes):
 //   - Magic marker: 4 bytes (0xfabe6d6d)
@@ -1899,9 +1910,8 @@ func encodeHeight(height uint64) []byte {
 	return append([]byte{byte(len(buf))}, buf...)
 }
 
-// buildOutputScript returns the output script for the coinbase transaction.
-// For SOLO mining, this returns the miner's output script (direct coinbase).
-// Falls back to the pool's configured address if no SOLO miner is set.
+// buildOutputScript returns the pool address output script for the job's shared
+// coinbase. Per-miner coinbases are derived from it with protocol.Job.CoinBase2For.
 //
 // SECURITY: All scripts are validated before being cached to prevent runtime panics.
 // This supports all address formats including:
@@ -1910,17 +1920,24 @@ func encodeHeight(height uint64) []byte {
 // - Native SegWit bech32 (bc1q..., dgb1q..., etc.)
 // - Bitcoin Cash CashAddr (bitcoincash:q..., q..., etc.)
 func (m *Manager) buildOutputScript() []byte {
-	// SOLO mining: prefer miner's address for direct coinbase
-	m.soloMinerMu.RLock()
-	soloScript := m.soloMinerOutputScript
-	m.soloMinerMu.RUnlock()
-
-	if soloScript != nil {
-		return soloScript
-	}
-
-	// Fallback to pool's configured address
 	return m.outputScript
+}
+
+// splitCoinbase2 splits coinbase2 around the reward output's script. Every coinbase
+// builder writes the reward as the first output:
+//
+//	sequence(4) | output count(1) | value(8) | varint(len(script)) | script | rest
+//
+// prefix ends after the value; suffix starts after the script. ok is false if the
+// bytes at that position are not the given script.
+func splitCoinbase2(cb2, script []byte) (prefix, suffix []byte, ok bool) {
+	const scriptLenOffset = 4 + 1 + 8
+	encoded := append(crypto.EncodeVarInt(uint64(len(script))), script...)
+	end := scriptLenOffset + len(encoded)
+	if len(script) == 0 || len(cb2) < end || !bytes.Equal(cb2[scriptLenOffset:end], encoded) {
+		return nil, nil, false
+	}
+	return cb2[:scriptLenOffset], cb2[end:], true
 }
 
 // Base58 alphabet used by Bitcoin/DigiByte

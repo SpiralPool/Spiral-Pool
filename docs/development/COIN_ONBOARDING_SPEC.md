@@ -205,6 +205,7 @@ Stratum ports follow this pattern:
 | 8335-8342 | Scrypt | DOGE |
 | 10335-12337 | Scrypt | PEP, CAT |
 | 14335-18337 | SHA-256d | NMC, SYS, XMY, FBTC |
+| 18338-18340 | SHA-256d | XEC |
 
 When adding a new coin, select the next available port in the appropriate range.
 
@@ -299,6 +300,13 @@ BCH (Bitcoin Cash)
 BCH2 (Bitcoin Cash II)
 BTCS (Bitcoin Silver)
 DGB (DigiByte)
+XEC (eCash)
+```
+
+### Standalone Scrypt (Not Merge-Mineable)
+```
+CAT (Catcoin)
+DGB-SCRYPT (DigiByte, Scrypt)
 ```
 
 ---
@@ -320,4 +328,4 @@ DGB (DigiByte)
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.0 — Built on what came before. Growing toward phi.*

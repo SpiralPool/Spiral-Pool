@@ -74,11 +74,6 @@ func (m *mockJobMgr) GetCurrentJob() *protocol.Job {
 	panic("GetCurrentJob not called in handleBlock tests")
 }
 
-func (m *mockJobMgr) SetSoloMinerAddress(address string) error {
-	// No-op for tests - SOLO miner address not relevant to handleBlock tests
-	return nil
-}
-
 func (m *mockJobMgr) RefreshJob(_ context.Context, _ bool) error {
 	return nil
 }
@@ -263,6 +258,17 @@ func (m *mockDB) lastStatus() (uint64, string, string) {
 	return last.height, last.hash, last.status
 }
 
+// lastInserted returns the status, height and hash of the most recent inserted row.
+func (m *mockDB) lastInserted() (string, uint64, string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.insertedBlocks) == 0 {
+		return "", 0, ""
+	}
+	last := m.insertedBlocks[len(m.insertedBlocks)-1]
+	return last.Status, last.Height, last.Hash
+}
+
 func (m *mockDB) insertCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -425,9 +431,14 @@ func TestHandleBlock_StaleRace_JobInvalidated(t *testing.T) {
 
 	cp.handleBlock(makeShare(testJobID, testHeight, testBlockHash), makeResult(testBlockHash, testBlockHex))
 
-	_, _, status := db.lastStatus()
+	// Never submitted, so there is no "submitting" row to update: the block is
+	// recorded with its final status instead.
+	status, _, _ := db.lastInserted()
 	if status != "orphaned" {
-		t.Errorf("expected status 'orphaned', got %q", status)
+		t.Errorf("expected inserted status 'orphaned', got %q", status)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update for a block that was never inserted, got %d", db.statusUpdateCount())
 	}
 	if nm.SubmitCallCount() != 0 {
 		t.Errorf("expected 0 submit calls for invalidated job, got %d", nm.SubmitCallCount())
@@ -450,9 +461,14 @@ func TestHandleBlock_DuplicateCandidate_JobSolved(t *testing.T) {
 
 	cp.handleBlock(makeShare(testJobID, testHeight, testBlockHash), makeResult(testBlockHash, testBlockHex))
 
-	_, _, status := db.lastStatus()
+	// Never submitted, so there is no "submitting" row to update: the block is
+	// recorded with its final status instead.
+	status, _, _ := db.lastInserted()
 	if status != "orphaned" {
-		t.Errorf("expected status 'orphaned', got %q", status)
+		t.Errorf("expected inserted status 'orphaned', got %q", status)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update for a block that was never inserted, got %d", db.statusUpdateCount())
 	}
 	if nm.SubmitCallCount() != 0 {
 		t.Errorf("expected 0 submit calls for solved job, got %d", nm.SubmitCallCount())
@@ -473,9 +489,14 @@ func TestHandleBlock_ChainTipMoved_PrevHashMismatch(t *testing.T) {
 
 	cp.handleBlock(makeShare(testJobID, testHeight, testBlockHash), makeResult(testBlockHash, testBlockHex))
 
-	_, _, status := db.lastStatus()
+	// Never submitted, so there is no "submitting" row to update: the block is
+	// recorded with its final status instead.
+	status, _, _ := db.lastInserted()
 	if status != "orphaned" {
-		t.Errorf("expected status 'orphaned', got %q", status)
+		t.Errorf("expected inserted status 'orphaned', got %q", status)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update for a block that was never inserted, got %d", db.statusUpdateCount())
 	}
 	if nm.SubmitCallCount() != 0 {
 		t.Errorf("expected 0 submit calls for stale block, got %d", nm.SubmitCallCount())
@@ -500,9 +521,14 @@ func TestHandleBlock_EmptyBlockHex_NoRebuild(t *testing.T) {
 
 	cp.handleBlock(makeShare(testJobID, testHeight, testBlockHash), result)
 
-	_, _, status := db.lastStatus()
+	// Never submitted, so there is no "submitting" row to update: the block is
+	// recorded with its final status instead.
+	status, _, _ := db.lastInserted()
 	if status != "orphaned" {
-		t.Errorf("expected status 'orphaned', got %q", status)
+		t.Errorf("expected inserted status 'orphaned', got %q", status)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update for a block that was never inserted, got %d", db.statusUpdateCount())
 	}
 	if nm.SubmitCallCount() != 0 {
 		t.Errorf("expected 0 submit calls for empty BlockHex, got %d", nm.SubmitCallCount())
@@ -750,10 +776,17 @@ func TestHandleBlock_DBInsertFailure_SubmissionContinues(t *testing.T) {
 		t.Errorf("expected 1 submit call despite DB insert failure, got %d", nm.SubmitCallCount())
 	}
 
-	// Final status update should still be recorded
-	_, _, status := db.lastStatus()
+	// The pre-submit row never landed, so the block is recorded again with its
+	// final status rather than updating a row that does not exist.
+	if db.insertCount() != 2 {
+		t.Errorf("expected a second insert carrying the final status, got %d insert(s)", db.insertCount())
+	}
+	status, _, _ := db.lastInserted()
 	if status != "pending" {
 		t.Errorf("expected final status 'pending', got %q", status)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update after a failed insert, got %d", db.statusUpdateCount())
 	}
 }
 
@@ -780,6 +813,36 @@ func TestHandleBlock_DBUpdateFailure_Logged(t *testing.T) {
 	// Verify the update was attempted (even though it failed)
 	if db.statusUpdateCount() < 1 {
 		t.Error("expected at least 1 status update attempt")
+	}
+}
+
+// A candidate dropped before submission is recorded in full, so an operator can
+// see it. The pre-fix code called UpdateBlockStatusForPool on a row that was never
+// written, which failed the update and logged an error for every such block.
+func TestHandleBlock_UnsubmittedCandidate_IsRecorded(t *testing.T) {
+	t.Parallel()
+
+	jm := newMockJobMgr()
+	jm.lastBlockHash = testPrevHash
+	job := makeActiveJobWithPrev(testJobID, testPrevHash)
+	job.SetState(protocol.JobStateSolved, "already submitted")
+	jm.jobs[testJobID] = job
+
+	nm := newMockNodeMgr()
+	db := newMockDB()
+	cp := newTestCoinPool(jm, nm, db)
+
+	cp.handleBlock(makeShare(testJobID, testHeight, testBlockHash), makeResult(testBlockHash, testBlockHex))
+
+	if db.insertCount() != 1 {
+		t.Fatalf("expected exactly 1 inserted block, got %d", db.insertCount())
+	}
+	status, height, hash := db.lastInserted()
+	if status != "orphaned" || height != testHeight || hash != testBlockHash {
+		t.Errorf("expected orphaned block %d/%s, got %q %d/%s", testHeight, testBlockHash, status, height, hash)
+	}
+	if db.statusUpdateCount() != 0 {
+		t.Errorf("expected no status update, got %d", db.statusUpdateCount())
 	}
 }
 

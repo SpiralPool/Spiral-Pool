@@ -16,7 +16,7 @@ import (
 
 // Version information (set by main.go)
 var (
-	Version   = "2.7.1"
+	Version   = "3.0.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -95,6 +95,8 @@ func Execute() error {
 		return runExternal(os.Args[2:])
 	case "gdpr-delete":
 		return runGDPRDelete(os.Args[2:])
+	case "v2":
+		return runStratumV2(os.Args[2:])
 	case "version", "-v", "--version":
 		printVersion()
 		return nil
@@ -160,6 +162,7 @@ func printUsage() {
 	fmt.Printf("  %spool%s        Pool statistics and management\n", ColorCyan, ColorReset)
 	fmt.Printf("  %sexternal%s    External access for hashrate rental services\n", ColorCyan, ColorReset)
 	fmt.Printf("  %sgdpr-delete%s Delete miner data for GDPR/CCPA compliance\n", ColorCyan, ColorReset)
+	fmt.Printf("  %sv2%s          Stratum V2 authority key (pubkey, keygen)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %sversion%s     Show version information\n", ColorCyan, ColorReset)
 	fmt.Printf("  %shelp%s        Show this help message\n", ColorCyan, ColorReset)
 	fmt.Println()

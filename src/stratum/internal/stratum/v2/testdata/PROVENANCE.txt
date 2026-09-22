@@ -1,0 +1,12 @@
+Test vectors in this directory come from the Bitcoin Improvement Proposals
+repository, https://github.com/bitcoin/bips, fetched 2026-09-15.
+
+  ellswift_decode_test_vectors.csv   bip-0324/ellswift_decode_test_vectors.csv, unmodified
+  xswiftec_inv_test_vectors.csv      bip-0324/xswiftec_inv_test_vectors.csv, unmodified
+  bip324_ecdh_test_vectors.csv       columns in_priv_ours, in_ellswift_ours,
+                                     in_ellswift_theirs, in_initiating, mid_x_shared and
+                                     mid_shared_secret of bip-0324/packet_encoding_test_vectors.csv
+  bip340_test_vectors.csv            bip-0340/test-vectors.csv, unmodified
+
+BIP324 is licensed under the 3-clause BSD license. BIP340 is licensed
+BSD-2-Clause, and its accompanying code and data BSD-2-Clause OR MIT OR CC0-1.0.

@@ -98,6 +98,12 @@ type StratumConfig struct {
 	VersionRolling VersionRolling         `yaml:"versionRolling"`
 	JobRebroadcast time.Duration          `yaml:"jobRebroadcast"`
 	MOTD           string                 `yaml:"motd,omitempty"` // Message of the day sent to miners after subscribe
+
+	// PayoutFromWorkerName lets a miner name its own payout address: authorize
+	// with a valid address for the coin as the stratum username and that miner's
+	// blocks pay it. Off by default, so every block pays the configured wallet
+	// and a miner that can reach the port cannot redirect the reward.
+	PayoutFromWorkerName bool `yaml:"payoutFromWorkerName,omitempty"`
 }
 
 // TLSConfig defines TLS/SSL settings for encrypted stratum connections
@@ -470,7 +476,7 @@ type HAConfig struct {
 //
 // IMPORTANT: Merge mining requires BOTH blockchain daemons to be running and fully synced:
 //   - Parent chain daemon (e.g., litecoind) for getblocktemplate
-//   - Aux chain daemon (e.g., dogecoind) for getauxblock/submitauxblock
+//   - Aux chain daemon (e.g., dogecoind) for createauxblock/submitauxblock
 //
 // When enabled, the pool automatically operates in multi-coin mode, mining the parent
 // chain while simultaneously solving blocks for auxiliary chains.
@@ -520,7 +526,7 @@ type AuxChainConfig struct {
 	Address string `yaml:"address"`
 
 	// Daemon configures the connection to the aux chain's node.
-	// The daemon must support getauxblock and submitauxblock RPCs.
+	// The daemon must support createauxblock and submitauxblock RPCs; aux blocks pay Address.
 	Daemon DaemonConfig `yaml:"daemon"`
 }
 

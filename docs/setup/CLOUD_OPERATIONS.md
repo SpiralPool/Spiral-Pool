@@ -75,15 +75,22 @@ Cloud providers charge for outbound (egress) network traffic. Blockchain sync pu
 
 | Coin | Blockchain Size | Estimated Egress | Cost at $0.09/GB |
 |------|----------------|------------------|-----------------|
-| Bitcoin (BTC) | ~600 GB | ~600 GB | ~$54 |
-| Bitcoin Cash (BCH) | ~250 GB | ~250 GB | ~$23 |
+| Bitcoin (BTC) | ~780 GB | ~780 GB | ~$70 |
+| Bitcoin Cash (BCH) | ~220 GB | ~220 GB | ~$20 |
 | Bitcoin Cash II (BCH2) | ~15 GB | ~15 GB | ~$1 |
 | Bitcoin II (BC2) | ~10 GB | ~10 GB | <$1 |
 | Bitcoin Silver (BTCS) | ~8 GB | ~8 GB | <$1 |
-| Litecoin (LTC) | ~150 GB | ~150 GB | ~$14 |
-| Dogecoin (DOGE) | ~80 GB | ~80 GB | ~$7 |
-| DigiByte (DGB) | ~80 GB | ~80 GB | ~$5 |
-| () | ~5 GB | ~5 GB | <$1 |
+| Litecoin (LTC) | ~240 GB | ~240 GB | ~$22 |
+| Dogecoin (DOGE) | ~190 GB | ~190 GB | ~$17 |
+| DigiByte (DGB) | ~40 GB | ~40 GB | ~$4 |
+| eCash (XEC) | ~160 GB | ~160 GB | ~$14 |
+| Syscoin (SYS) | ~25 GB + NEVM state | ~25 GB+ | ~$2+ |
+| Namecoin (NMC) | ~15 GB | ~15 GB | ~$1 |
+| Fractal Bitcoin (FBTC) | ~3100 GB | ~3100 GB | ~$279 |
+| Myriad (XMY) | ~8 GB | ~8 GB | <$1 |
+| PepeCoin (PEP) | ~5 GB | ~5 GB | <$1 |
+| Catcoin (CAT) | ~5 GB | ~5 GB | <$1 |
+| DigiByte-Scrypt (DGB-SCRYPT) | shares the DGB node | — | — |
 
 > Blockchain sizes grow over time. The figures above are approximate as of Q1 2026.
 
@@ -753,4 +760,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0*
+*Spiral Pool — Spiral Covenant 3.0.0*

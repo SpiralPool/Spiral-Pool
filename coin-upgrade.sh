@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V2.7.1-SPIRAL_CITADEL
+#                   V3.0.0-SPIRAL_COVENANT
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
@@ -92,14 +92,10 @@ declare -A COIN_TARGET=(
     [BTC]="31.1"            # Bitcoin Core — see download_BTC() for why not Knots
     [BCH]="29.1.0"
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
-    [BC2]="29.1.0"
-    # Full 40-hex commit id. `git fetch --depth=1 origin <short>` fails —
-    # the wire protocol will not resolve an abbreviated object id
-    # ("fatal: couldn't find remote ref ff5c3c3"), so the source build
-    # could never run.
-    [BTCS]="source-ff5c3c3d381fa3c783862768d5a2e4fbb50f0931"
+    [BC2]="31.1.0"
+    [BTCS]="31.1.3"         # Bitcoin Silver — binary release (tag version31.1.3)
     [DGB]="9.26.5"
-    [LTC]="0.21.5.6"
+    [LTC]="0.21.5.8"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
     [CAT]="2.1.1"
@@ -107,11 +103,63 @@ declare -A COIN_TARGET=(
                         # binaries (nc28.0/nc31.0/nc31.1 all have empty asset lists);
                         # namecoin.org publishes binaries only up to 28.0. Latest
                         # source release is nc31.1 (2026-07-13).
-    [SYS]="5.1.0"
+    [SYS]="5.1.2"
     [XMY]="0.18.1.0"
-    [FBTC]="0.3.0"
-    [XEC]="0.33.10"   # ecash-node (Bitcoin ABC)
+    [FBTC]="0.4.0"
+    [XEC]="0.33.12"   # ecash-node (Bitcoin ABC)
 )
+
+# Where each coin publishes its releases, for the "is anything newer out?" check.
+#
+# COIN_TARGET above is a PINNED, TESTED, INSTALLABLE version: it carries a
+# download URL shape, sometimes a pinned SHA256, and a COIN_RISK entry saying
+# what the upgrade costs. This table is only used to ANSWER A QUESTION, never to
+# pick what gets installed. Nothing here changes what --coin downloads.
+#
+# Namecoin is the reason that separation is not academic: its newest release is
+# nc31.1, but namecoin-core ships no binaries for it (the release assets are
+# empty), which is why COIN_TARGET is 28.0. Pointing the installer at "latest"
+# would send it after a release that cannot be installed.
+# Two source types, because not every project publishes on GitHub:
+#   gh:<owner>/<repo>        GitHub releases API; tag_name is the version
+#   idx:<url>|<prefix>       an HTTP directory index; every "<prefix><version>/"
+#                            entry on the page is a candidate, newest wins
+#
+# BTC deliberately uses the index: bitcoincore.org is where its binaries actually
+# come from, so that page is the installable truth. Its GitHub tags agree today,
+# but a tag exists the moment it is cut, while a release is only installable once
+# the binaries are uploaded -- and this whole feature exists to avoid pointing an
+# operator at something they cannot install.
+#
+# Namecoin is the case that proves the distinction matters and cannot be solved
+# by scraping: namecoin.org serves 403 on its index (no listing) and 404 for
+# namecoin-core-30.2/ and -31.1/, while 28.0 answers 403 -- i.e. it exists. So
+# GitHub says 31.1, and the newest INSTALLABLE build really is 28.0, which is
+# what COIN_TARGET says. NMC stays on gh: so the alert still reports that a newer
+# source release exists; it is advisory and carries no install command anyway.
+declare -A COIN_UPSTREAM=(
+    [BTC]="idx:https://bitcoincore.org/bin/|bitcoin-core-"   # binaries live here, not GitHub
+    [BCH]="gh:bitcoin-cash-node/bitcoin-cash-node"
+    [BCH2]="gh:BitcoincashII/bitcoincashII-core"
+    [BC2]="gh:Bitcoin-II/BitcoinII-Core"
+    [BTCS]="gh:bitcoin-silver/core"                     # tags read "version31.1.3"
+    [DGB]="gh:DigiByte-Core/digibyte"
+    [LTC]="gh:litecoin-project/litecoin"
+    [DOGE]="gh:dogecoin/dogecoin"
+    [PEP]="gh:pepecoinppc/pepecoin"
+    [CAT]="gh:CatcoinCore/catcoincore"
+    [NMC]="gh:namecoin/namecoin-core"                   # tags read "nc31.1"; see above
+    [SYS]="gh:syscoin/syscoin"
+    [XMY]="gh:myriadteam/myriadcoin"
+    [FBTC]="gh:fractal-bitcoin/fractald-release"
+    [XEC]="gh:Bitcoin-ABC/bitcoin-abc"
+)
+
+# How long an upstream answer is trusted before asking again. Sentinel checks
+# every 6h; without this that would be 15 GitHub calls four times a day for
+# releases that appear a few times a year, against an unauthenticated rate limit
+# of 60 requests an hour shared by everything on the host's IP.
+UPSTREAM_CACHE_TTL="${UPSTREAM_CACHE_TTL:-86400}"
 
 # Risk classification for this upgrade cycle.
 # Update alongside COIN_TARGET when new versions become available.
@@ -133,18 +181,31 @@ declare -A COIN_RISK=(
                     # at block 58595 on a CashToken deserialization bug and produced a
                     # shadow chain. A node still on 27.0.0/27.0.1 needs -reindex or a
                     # resync, not just this binary swap.
-    [BC2]="NONE"    # 29.1.0 — current
-    [BTCS]="NONE"   # source build — pinned commit ff5c3c3
+    [BC2]="MAJOR"   # CONSENSUS, ALREADY ACTIVE. 31.1.0 hard-forks at height 57,750:
+                    # ShockWave per-block difficulty, replay-protected sighash, and data
+                    # rules (one OP_RETURN per tx, bare multisig and inscriptions banned).
+                    # The chain has PASSED that height (tip 59,271 on 2026-09-15), so a
+                    # 29.1.0 node is not following BC2 mainnet. The release renamed the
+                    # daemon to bitcoinII-d; it is installed as bitcoinIId. If the node
+                    # followed a pre-fork-rules branch past 57,749, it needs -reindex-chainstate.
+    [BTCS]="MINOR"  # 31.1.3 — rebased on Bitcoin Core 31.1 (from a 1.0.x build on
+                    # Core 26), replacing the old source build with release binaries.
+                    # Upstream reports no reindex needed from the previous build. Core
+                    # 31 cannot load legacy (BDB) wallets, so the upgrade stops first
+                    # if one is on disk. 31.1.0 broke fresh syncs (fixed in 31.1.1); a
+                    # node stuck on 31.1.0 needs blocks/, chainstate/ and indexes/ wiped.
     [DGB]="MINOR"   # 9.26.5 — fixes the DigiDollar oracle startup scan (9.26.4 re-ran the BIP9
                     # state machine per block, hanging init for 15+ min). Nodes still on 9.26.3
                     # also cross 9.26.4's narrowly-scoped consensus rule, so this stays MINOR.
                     # In-place binary swap, no reindex. Optional pruning (one-time offer).
-    [LTC]="MAJOR"   # CONSENSUS. 0.21.5.6 adds a soft-forking rule active at mainnet
-                    # height 3,154,440: an MWEB block whose kernel signals a pegout
-                    # with an empty pegout list is rejected. That height has PASSED.
-                    # 0.21.5.5 (also skipped by the old 0.21.5.4 pin) added consensus
-                    # parameters for frozen/approved MWEB outputs. A pool still on
-                    # 0.21.5.4 can produce blocks upgraded nodes reject. No reindex.
+    [LTC]="MAJOR"   # CONSENSUS. 0.21.5.8 carries 0.21.5.7's soft-forking rule, active at
+                    # mainnet height 3,172,640: an MWEB block whose kernel signals extra
+                    # data with an empty extra-data payload is rejected. That height has
+                    # PASSED (tip 3,178,438 on 2026-09-15). 0.21.5.7 went only to pools and
+                    # was never published. Earlier rules still apply: 0.21.5.6 rejects an
+                    # empty pegout list from height 3,154,440, and 0.21.5.5 added frozen/
+                    # approved MWEB output parameters. A pool on 0.21.5.6 or older can
+                    # produce blocks upgraded nodes reject. No reindex.
     [DOGE]="NONE"   # 1.14.9 — current
     [PEP]="NONE"    # 1.1.0  — current
     [CAT]="NONE"    # 2.1.1 — current. Note the release zip is FLAT (no bin/); see
@@ -156,13 +217,15 @@ declare -A COIN_RISK=(
                     # that height forks off the network — the same class of failure
                     # as the BTC/BIP-110 split. sysgeth ships inside bin/ in the
                     # release tarball, so Core and geth upgrade as a matched pair.
+                    # 5.1.2 is a non-mandatory patch on 5.1.0/5.1.1 (network-message
+                    # validation, managed sysgeth startup); no consensus change.
     [XMY]="NONE"    # 0.18.1.0 — current (project dormant since 2020)
-    [FBTC]="MINOR"  # DEADLINE APPROACHING, pin deliberately NOT bumped. 0.4.0 is a
-                    # consensus-tightening hard fork at height 2,100,000 (ETA early
-                    # Sep 2026) with an extra one-time halving — but upstream still
-                    # labels it a Release Candidate dated "September 2026". Pinning an
-                    # RC is worse than being briefly behind. WATCH THIS: once 0.4.0 is
-                    # final, bump to it and set MAJOR before the activation height.
+    [FBTC]="MAJOR"  # CONSENSUS, ALREADY ACTIVE. 0.4.0 (final release) is a consensus-
+                    # tightening hard fork at height 2,100,000 that applies an extra
+                    # one-time subsidy halving at the first scheduled halving. The chain
+                    # has PASSED that height (tip 2,121,738 on 2026-09-15). A 0.3.0 node
+                    # builds templates claiming the pre-fork subsidy, so blocks it mines
+                    # are rejected by upgraded nodes. Binary swap, no reindex expected.
     [XEC]="MAJOR"   # CONSENSUS, TWICE. The old 0.31.12 pin predates the 15 Nov 2025
                     # upgrade (64-bit script integers, Heartbeat difficulty adjustment,
                     # Avalanche Pre-Consensus; ABC states nodes MUST be on 0.32.x before
@@ -272,7 +335,6 @@ die() { log_error "$*"; cleanup; exit 1; }
 # ═══════════════════════════════════════════════════════════════════════════════
 cleanup() {
     rm -rf "$WORK_DIR" 2>/dev/null || true
-    rm -rf /tmp/btcs-build 2>/dev/null || true
     if [[ "$MAINTENANCE_ENABLED" == "true" ]]; then
         disable_maintenance 2>/dev/null || true
     fi
@@ -343,24 +405,7 @@ get_installed_version() {
     bin_path=$(get_binary_path "$coin")
     [[ -z "$bin_path" || ! -x "$bin_path" ]] && echo "not_installed" && return
 
-    # A source-commit pin is the one case where the cache must stay
-    # authoritative: COIN_TARGET[BTCS] is "source-<40-hex commit>", and a
-    # compiled binary cannot report a commit hash from --version, so the cache
-    # written after a successful upgrade is the only record of what is
-    # installed. Asking the binary first here would report "update available"
-    # permanently, immediately after upgrading.
     local cache_file="${VERSION_CACHE_DIR}/${coin}.ver"
-    case "${COIN_TARGET[$coin]:-}" in
-        source-*)
-            # -s, not -f: a truncated write (disk full, crash mid-`echo >`)
-            # leaves a zero-byte file, and `cat` on it returned an empty string
-            # rather than any of this function sentinels.
-            if [[ -s "$cache_file" ]]; then
-                cat "$cache_file"
-                return
-            fi
-            ;;
-    esac
 
     # ASK THE BINARY FIRST for everything else. The cache exists only for
     # daemons whose --version omits the number; consulting it first let it
@@ -488,6 +533,34 @@ _wget() {
 # latest-resolver is exactly how an operator drifts onto an enforcing build.
 BITCOIN_CORE_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
 
+# Release asset checksums for coins that publish no signed checksum file. Each is
+# the SHA256 GitHub records for the release asset, matched against an independent
+# download of it. They belong to the versions in COIN_TARGET: bump both together,
+# or the download is refused. install.sh and docker/Dockerfile.<coin> pin the same
+# values (tests/test_script_integrity.sh checks they agree).
+declare -A COIN_SHA256=(
+    [BC2]="78a88df783c2e15d09ea73c05065f7477cad34086b6e995991f7adeae781603f"   # BitcoinII-v31.1-Linux-CLI.tar.gz (31.1.0)
+    [BTCS]="6743ecef53501687574a5f761ddb41dcce960953e0e0b6ef362ab69268767c4c"  # bitcoinsilver-31.1.3-x86_64-linux-gnu.tar.gz
+    [FBTC]="26f44e52e8d720c44cfb6954a900f2e5042d0c9d8285d4252916fce958a1d90f"  # fractald-0.4.0-x86_64-linux-gnu.tar.gz
+)
+
+# _verify_sha256 <coin> <file> — refuses a download whose SHA256 is not the pin.
+_verify_sha256() {
+    local coin="$1" fn="$2" actual
+    actual=$(sha256sum "$fn" 2>/dev/null | awk '{print $1}') || {
+        log_error "Could not compute a checksum for ${fn} — refusing to install"
+        return 1
+    }
+    if [[ -z "$actual" || "$actual" != "${COIN_SHA256[$coin]:-}" ]]; then
+        log_error "SHA256 mismatch for ${fn} — refusing to install"
+        log_error "  expected: ${COIN_SHA256[$coin]:-none pinned}"
+        log_error "  actual:   ${actual:-unreadable}"
+        return 1
+    fi
+    # stderr: download_* functions return the extracted directory on stdout
+    log_success "SHA256 verified for ${fn}" >&2
+}
+
 download_BTC() {
     local arch="$1" ver="${COIN_TARGET[BTC]}"
     local sfx="x86_64-linux-gnu"
@@ -547,26 +620,26 @@ download_BCH2() {
 
 download_BC2() {
     local arch="$1" ver="${COIN_TARGET[BC2]}"
-    local sfx="x86_64-linux-CLI"
-    local fn="BitcoinII-${ver}-${sfx}.tar.gz"
+    # From v31.1.0 the asset is BitcoinII-v<major.minor>-Linux-CLI.tar.gz: "v"
+    # prefix, no patch digit, no arch token (x86_64 only)
+    local fn="BitcoinII-v${ver%.*}-Linux-CLI.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${ver}/${fn}" || return 1
+    _verify_sha256 BC2 "$fn" || return 1
     tar -xzf "$fn" || return 1
     ls -d BitcoinII-* 2>/dev/null | head -1 || echo "."
 }
 
 download_BTCS() {
-    # Bitcoin Silver must be built from source — pinned to verified commit
-    local commit="${COIN_TARGET[BTCS]##*-}"  # extract hash after "source-"
-    local build_dir="$WORK_DIR/bitcoinsilver"
-    mkdir -p "$build_dir"
-    cd "$build_dir"
-    git init && git remote add origin https://github.com/bitcoin-silver/core.git
-    git fetch --depth=1 origin "$commit" || return 1
-    git checkout FETCH_HEAD
-    ./autogen.sh && ./configure --disable-tests --disable-bench --without-gui --without-miniupnpc --prefix=/tmp/btcs-build
-    make -j"$(nproc)" && make install
-    echo "/tmp/btcs-build"
+    local arch="$1" ver="${COIN_TARGET[BTCS]}"
+    # From 31.1.0 Bitcoin Silver publishes release binaries, tagged version<ver>,
+    # with a standard bin/ layout (x86_64 only)
+    local fn="bitcoinsilver-${ver}-x86_64-linux-gnu.tar.gz"
+    cd "$WORK_DIR"
+    _wget -O "$fn" "https://github.com/bitcoin-silver/core/releases/download/version${ver}/${fn}" || return 1
+    _verify_sha256 BTCS "$fn" || return 1
+    tar -xzf "$fn" || return 1
+    echo "bitcoinsilver-${ver}-x86_64-linux-gnu"
 }
 
 download_DGB() {
@@ -665,6 +738,7 @@ download_FBTC() {
     local fn="fractald-${ver}-x86_64-linux-gnu.tar.gz"
     cd "$WORK_DIR"
     _wget -O "$fn" "https://github.com/fractal-bitcoin/fractald-release/releases/download/v${ver}/${fn}" || return 1
+    _verify_sha256 FBTC "$fn" || return 1
     tar -xzf "$fn" || return 1
     echo "fractald-${ver}-x86_64-linux-gnu"
 }
@@ -708,11 +782,10 @@ install_binaries() {
             # Bitcoin II: capital "II" in binary names
             find "$extracted" -type f \( -name "bitcoinIId" -o -name "bitcoinII-cli" \) \
                 -exec sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" {} "$bin_dir/" \;
-            ;;
-        BTCS)
-            # Bitcoin Silver: built from source — binaries installed to /tmp/btcs-build/bin
-            sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" /tmp/btcs-build/bin/bitcoinsilverd "$bin_dir/"
-            sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" /tmp/btcs-build/bin/bitcoinsilver-cli "$bin_dir/"
+            # v31.1.0 renamed the daemon to bitcoinII-d; install it as bitcoinIId so the
+            # service unit and COIN_DAEMON_CMD path stay valid
+            find "$extracted" -type f -name "bitcoinII-d" \
+                -exec sudo install -m 755 -o "$POOL_USER" -g "$POOL_USER" {} "$bin_dir/bitcoinIId" \;
             ;;
         BCH|FBTC|XEC)
             # These have bin/ subdir but daemon binary is named bitcoind (not coin-specific)
@@ -971,6 +1044,14 @@ backup_coin() {
 # string compare therefore reads a CORRECT install as a failed one and triggers a
 # rollback to the old binary. Both sides are normalised identically, so equality
 # is unchanged for every other coin (XMY's 0.18.1.0 still compares to itself).
+# Pad a version to four components and strip a leading "v", so 31.1 and 31.1.0.0
+# compare equal. Used by both _ver_matches and _ver_gt.
+_norm4() {
+    local _v="${1#v}" a b c d
+    IFS=. read -r a b c d <<< "$_v"
+    printf '%s.%s.%s.%s' "${a:-0}" "${b:-0}" "${c:-0}" "${d:-0}"
+}
+
 _ver_matches() {
     # Bitcoin Core publishes release "31.1" but its binary reports "v31.1.0", so
     # a plain string equality never matches and the already-current branch is
@@ -988,15 +1069,40 @@ _ver_matches() {
     # reports a component its target omits, _ver_matches reads a SUCCESSFUL
     # install as a failure and calls rollback_coin -- which for BTC refuses to
     # restore Knots and leaves the node stopped.
-    _norm4() {
-        local _v="${1#v}" a b c d
-        IFS=. read -r a b c d <<< "$_v"
-        printf '%s.%s.%s.%s' "${a:-0}" "${b:-0}" "${c:-0}" "${d:-0}"
-    }
     # Empty input is not a version. Comparing "" to "" as equal would make an
     # unreadable version look like a match.
     [[ -n "$1" && -n "$2" ]] || return 1
-    [[ "$(_norm4 "$1")" == "$(_norm4 "$2")" ]]
+    local _a _b
+    _a=$(_norm4 "$1"); _b=$(_norm4 "$2")
+    # And neither is an empty NORMALISATION. If _norm4 is ever unreachable, both
+    # sides come back empty and "" == "" reads as "already at target" for every
+    # coin at once -- which does not fail loudly, it silently stops every upgrade
+    # ever being offered, including a consensus one. That is the exact silent
+    # failure this tool exists to remove, so it is checked rather than assumed.
+    [[ -n "$_a" && -n "$_b" ]] || return 1
+    [[ "$_a" == "$_b" ]]
+}
+
+# Is $1 a strictly newer version than $2? Same four-component normalisation as
+# _ver_matches, compared component by component as integers — "9" must not sort
+# above "10", which is what a string compare would do to DigiByte's 9.26.5.
+# A component that is not a plain number (a build suffix like knots20260210)
+# makes the answer "no": this decides whether to tell an operator a newer
+# release exists, and a guess is worse than silence.
+_ver_gt() {
+    [[ -n "$1" && -n "$2" ]] || return 1
+    local a b
+    a=$(_norm4 "$1"); b=$(_norm4 "$2")
+    local -a A B
+    IFS=. read -r -a A <<< "$a"
+    IFS=. read -r -a B <<< "$b"
+    local i
+    for i in 0 1 2 3; do
+        [[ "${A[$i]}" =~ ^[0-9]+$ && "${B[$i]}" =~ ^[0-9]+$ ]] || return 1
+        (( 10#${A[$i]} > 10#${B[$i]} )) && return 0
+        (( 10#${A[$i]} < 10#${B[$i]} )) && return 1
+    done
+    return 1   # equal is not newer
 }
 
 rollback_coin() {
@@ -1268,7 +1374,10 @@ upgrade_coin() {
             verify_btc_majority_chain || _rc=1
             return $_rc
         fi
-        if [[ "$coin" != "BTC" ]]; then
+        # --reindex takes the full path for every coin, not only BTC: the MAJOR
+        # warning below tells operators to rerun with --reindex after a failed
+        # start, and that is exactly when the binary is already at target.
+        if [[ "$coin" != "BTC" && "$do_reindex" != "true" ]]; then
             log_info "${coin} is already at ${target_ver} — nothing to do"
             return 0
         fi
@@ -1346,6 +1455,16 @@ upgrade_coin() {
     if [[ "$coin" == "BTC" ]]; then
         if ! check_btc_legacy_wallets; then
             log_error "Aborting BTC upgrade — resolve the issue reported above first."
+            log_error "Nothing has been changed."
+            return 1
+        fi
+    fi
+    # BC2 31.1 and BTCS 31.1 are built on Bitcoin Core 31.1, which skips legacy
+    # (BDB) wallets at load. Spiral Pool creates descriptor wallets; this catches
+    # imported ones, and any legacy wallet an older BTCS build made.
+    if [[ "$coin" == "BC2" || "$coin" == "BTCS" ]]; then
+        if ! _btc_disk_wallet_scan "$coin"; then
+            log_error "Aborting ${coin} upgrade — migrate the wallet(s) reported above first."
             log_error "Nothing has been changed."
             return 1
         fi
@@ -1562,6 +1681,10 @@ DROPIN
         log_step "Verify BTC chain identity"
         verify_btc_majority_chain || _btc_chain_rc=1
     fi
+    if [[ "$coin" == "BC2" && "$do_reindex" != "true" ]]; then
+        log_step "Verify BC2 is past the 57,750 fork"
+        verify_bc2_fork_chain || _btc_chain_rc=1
+    fi
 
     disable_maintenance
 
@@ -1612,10 +1735,14 @@ BITCOIN_RDTS_BLOCK_961632="0000000000000000000169eb6f811ddbd0daf343af7b62180cdb1
 # wallet as Berkeley DB and a descriptor wallet as SQLite, so this needs no
 # daemon — which is why it is the check that runs on every path, not only when
 # RPC is unavailable. Returns 1 if any legacy wallet was found.
+#
+# Also run for BC2 and BTCS: their 31.1 releases are built on Bitcoin Core 31.1 and
+# skip legacy wallets at load the same way. Pass the coin; BTC is the default.
 _btc_disk_wallet_scan() {
+    local _coin="${1:-BTC}"
     local _wdir _legacy_found=0 _checked=0 _unclassified=0 _w
-    _wdir="$(get_data_dir BTC 2>/dev/null || true)"
-    [[ -n "$_wdir" ]] || _wdir="$(dirname "${COIN_CONF[BTC]}")"
+    _wdir="$(get_data_dir "$_coin" 2>/dev/null || true)"
+    [[ -n "$_wdir" ]] || _wdir="$(dirname "${COIN_CONF[$_coin]}")"
 
     # Look everywhere Core can keep a wallet, not just wallets/*/wallet.dat:
     #   <datadir>/wallets/<name>/wallet.dat   modern default
@@ -1660,10 +1787,14 @@ _btc_disk_wallet_scan() {
     done
 
     if [[ "$_legacy_found" -eq 1 ]]; then
-        log_error "Bitcoin Core ${COIN_TARGET[BTC]} cannot load a legacy (BDB) wallet."
+        local _name="Bitcoin Core" _cli="bitcoin-cli"
+        if [[ "$_coin" != "BTC" ]]; then
+            _name="${_coin}"; _cli=$(get_coin_cli "$_coin")
+        fi
+        log_error "${_name} ${COIN_TARGET[$_coin]} cannot load a legacy (BDB) wallet."
         log_error "Start the daemon on the CURRENT binary and migrate first:"
-        echo -e "  ${CYAN}bitcoin-cli -rpcwallet=<name> backupwallet /path/outside/datadir/<name>.bak${NC}"
-        echo -e "  ${CYAN}bitcoin-cli -rpcwallet=<name> migratewallet${NC}"
+        echo -e "  ${CYAN}${_cli} -rpcwallet=<name> backupwallet /path/outside/datadir/<name>.bak${NC}"
+        echo -e "  ${CYAN}${_cli} -rpcwallet=<name> migratewallet${NC}"
         return 1
     fi
 
@@ -2102,6 +2233,69 @@ verify_btc_majority_chain() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# BC2 FORK VERIFICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Hash of Bitcoin II block 57,750, the first block under the v31.1.0 fork rules
+# (ShockWave difficulty, replay-protected signatures, data restrictions).
+#
+# Provenance: fetched 2026-09-15 from explorer.bitcoin-ii.org (/api/block-height)
+# and cross-checked on bitcoinii.ddns.net, whose pages for blocks 57,749 and
+# 57,751 link to this hash as the next and previous block.
+BC2_FORK_HEIGHT=57750
+BC2_FORK_BLOCK_57750="0000000000000000283f16daab1be22eb25a53bac57cf92af1a484163325e9e1"
+
+# A 29.1.0 node that received post-fork blocks rejected them under the old rules
+# and may have persisted that verdict in its block index. Swapping in 31.1.0 does
+# not clear it, so the node can sit below the fork looking merely slow. Check the
+# fork block, and clear rejected-block flags when the node is not on it.
+verify_bc2_fork_chain() {
+    local cli; cli=$(get_coin_cli BC2)
+    local actual tip cleared=0 waited=0
+
+    if ! $cli getblockcount >/dev/null 2>&1; then
+        log_warn "BC2: could not reach the daemon to check the fork block."
+        log_warn "Re-check once it is up:  $cli getblockhash ${BC2_FORK_HEIGHT}"
+        return 0
+    fi
+
+    actual=$($cli getblockhash "$BC2_FORK_HEIGHT" 2>/dev/null || echo "")
+    if [[ "$actual" == "$BC2_FORK_BLOCK_57750" ]]; then
+        log_success "BC2: on the forked chain (block ${BC2_FORK_HEIGHT} verified)"
+        return 0
+    fi
+
+    log_warn "BC2: not on block ${BC2_FORK_HEIGHT} yet — clearing rejected-block flags"
+    while read -r tip; do
+        [[ -z "$tip" ]] && continue
+        $cli reconsiderblock "$tip" >/dev/null 2>&1 && cleared=$((cleared + 1))
+    done < <($cli getchaintips 2>/dev/null | tr -d ' ",' | awk -F: '/^hash:/{h=$2} /^status:invalid$/{print h}')
+    $cli reconsiderblock "$BC2_FORK_BLOCK_57750" >/dev/null 2>&1 && cleared=$((cleared + 1))
+    log_info "BC2: reconsidered ${cleared} block(s)"
+
+    while [[ $waited -lt 120 ]]; do
+        sleep 10; waited=$((waited + 10))
+        actual=$($cli getblockhash "$BC2_FORK_HEIGHT" 2>/dev/null || echo "")
+        if [[ "$actual" == "$BC2_FORK_BLOCK_57750" ]]; then
+            log_success "BC2: on the forked chain (verified after ${waited}s)"
+            return 0
+        fi
+    done
+
+    if [[ -z "$actual" ]]; then
+        log_warn "BC2: the node has not reached block ${BC2_FORK_HEIGHT} — it may still be downloading."
+        log_warn "Check again later:  $cli getblockhash ${BC2_FORK_HEIGHT}"
+        log_warn "It must print ${BC2_FORK_BLOCK_57750}"
+        return 0
+    fi
+    log_error "BC2 IS ON A PRE-FORK CHAIN: block ${BC2_FORK_HEIGHT} is ${actual}"
+    log_error "  expected: ${BC2_FORK_BLOCK_57750}"
+    log_error "Blocks mined on this chain are rejected by the BC2 network. Rebuild the index with:"
+    echo -e "  ${CYAN}sudo /spiralpool/scripts/coin-upgrade.sh --coin BC2 --reindex${NC}"
+    return 1
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # STATUS TABLE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2228,6 +2422,308 @@ list_upgrades() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# UPSTREAM RELEASE DISCOVERY
+# ═══════════════════════════════════════════════════════════════════════════════
+# Answers "has anything newer been released?" — a different question from "is
+# this daemon at its target?", and it is answered ADVISORY ONLY. COIN_TARGET
+# still decides what --coin installs, because a target carries a download URL
+# shape, sometimes a pinned SHA256, and a COIN_RISK entry stating what the
+# upgrade costs. None of that is known for a release nobody has tested yet, and
+# Namecoin's newest release ships no binaries at all.
+
+# Fetch a URL to stdout. curl where present, wget otherwise -- install.sh
+# requires one of them and does not guarantee which.
+#
+# The per-request budget is deliberately small and the retry count is one.
+# Sentinel calls --list-upstream from its monitor loop and that loop is blocked
+# until this returns, so the worst case has to stay bounded: this runs once per
+# INSTALLED coin on a cold cache, and wget's default of two tries would double
+# the whole thing. Eight seconds x fifteen coins is the ceiling, and a pool runs
+# a handful. A request that does not answer in eight seconds is one this feature
+# is content to skip -- it reports nothing rather than blocking on a dead feed.
+_http_get() {
+    local url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --max-time 8 -H "Accept: application/vnd.github+json" "$url" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- --timeout=8 --tries=1 --header="Accept: application/vnd.github+json" "$url" 2>/dev/null
+    else
+        return 1
+    fi
+}
+
+# Newest STABLE release version for a coin, or nothing.
+#
+# Stability is enforced twice. GitHub's /releases/latest already skips drafts and
+# anything flagged prerelease; on top of that the tag must normalise to a plain
+# dotted number. Release candidates are tagged v29.2.0rc1, v0.21.5-rc1, 31.0rc2
+# — none of which survive that, and neither would a tag this code has not seen
+# before. Silence is the safe answer here: a wrong "new release" claim sends an
+# operator to upgrade a consensus-critical daemon for no reason.
+# Is this a stable release version? Shared by both source types.
+#
+# Stable means a plain dotted number and nothing else, of two to four components
+# -- the range _norm4 actually compares.
+#
+# The upper bound is not cosmetic: _norm4 reads four components, so a five-part
+# 1.2.3.4.5 would be truncated and compare EQUAL to 1.2.3.4.6, reporting "not
+# newer" about a release that is. Rejecting the shape makes that silence instead
+# of a wrong answer.
+#
+# The lower bound rejects a bare "v31". That costs us a project tagging
+# single-component releases, but it also rejects date-style tags like "20260101",
+# which would otherwise parse as a version number larger than anything and
+# announce a permanent phantom upgrade.
+_is_stable_version() {
+    [[ "$1" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]
+}
+
+# Strip a tag's leading word: "v31.1", "version31.1.3", "nc31.1".
+_tag_to_version() {
+    printf '%s' "$1" | sed -E 's/^[A-Za-z]+//'
+}
+
+# GitHub releases API. /releases/latest already skips drafts and prereleases;
+# _is_stable_version is the second, independent filter, because that one depends
+# on a maintainer having ticked a box.
+_upstream_gh() {
+    local repo="$1" body tag ver
+    body=$(_http_get "https://api.github.com/repos/${repo}/releases/latest") || return 1
+    [[ -z "$body" ]] && return 1
+    tag=$(printf '%s' "$body" | grep -oP '"tag_name"[[:space:]]*:[[:space:]]*"\K[^"]+' | head -1)
+    [[ -z "$tag" ]] && return 1
+    ver=$(_tag_to_version "$tag")
+    _is_stable_version "$ver" || return 1
+    printf '%s' "$ver"
+}
+
+# An HTTP directory index, for projects that do not publish on GitHub. Every
+# "<prefix><version>/" entry on the page is a candidate and the newest wins --
+# these pages list every historical release, and they are not in order.
+_upstream_idx() {
+    local url="${1%%|*}" prefix="${1##*|}"
+    # A source with no "|" leaves prefix == url; there is nothing to match
+    # and the answer is silence, not a guess.
+    [[ "$prefix" == "$url" ]] && return 1
+    local page best="" ver entry
+    page=$(_http_get "$url") || return 1
+    [[ -z "$page" ]] && return 1
+    while read -r entry; do
+        [[ -z "$entry" ]] && continue
+        # Trim with parameter expansion, not sed: a prefix containing "/"
+        # would be read as a sed delimiter and blow the expression up.
+        ver="${entry#"$prefix"}"
+        ver="${ver%/}"
+        _is_stable_version "$ver" || continue
+        if [[ -z "$best" ]] || _ver_gt "$ver" "$best"; then
+            best="$ver"
+        fi
+    # The trailing "/" is load-bearing. Without it the match is greedy up to the
+    # first non-digit, so a directory named bitcoin-core-32.0rc1/ yields "32.0"
+    # -- a release candidate laundered into a stable-looking version number, and
+    # announced as a new release. Requiring the slash means an RC directory does
+    # not match at all. A project that lists releases without a trailing slash is
+    # missed instead, which is the failure worth having.
+    done < <(printf '%s' "$page" | grep -oE "${prefix}[0-9]+(\.[0-9]+)+/" | sort -u)
+    [[ -z "$best" ]] && return 1
+    printf '%s' "$best"
+}
+
+# Newest stable release for a coin, or nothing.
+#
+# Nothing is the answer whenever the question could not be answered: no source,
+# no network, an unreadable page, or a version string this script does not
+# recognise. A wrong "new release" claim sends an operator to upgrade a
+# consensus-critical daemon for no reason, so silence is the cheaper failure.
+_upstream_latest() {
+    local coin="$1"
+    local src="${COIN_UPSTREAM[$coin]:-}"
+    [[ -z "$src" ]] && return 1
+
+    local cache_dir="${VERSION_CACHE_DIR}/upstream"
+    local cache="${cache_dir}/${coin}.latest"
+    if [[ -s "$cache" ]]; then
+        local mtime now cached
+        mtime=$(stat -c %Y "$cache" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        if (( now - mtime < UPSTREAM_CACHE_TTL )); then
+            cached=$(cat "$cache" 2>/dev/null || true)
+            # Re-validate on the way out, not just on the way in. The writer
+            # checks, but the file outlives the process that wrote it: it is
+            # world-readable state on disk, owned by the pool user, and a value
+            # like "99.99" landing here by any means at all would be announced
+            # as a newer release than anything that exists. A bad entry is
+            # ignored and refetched rather than trusted.
+            if _is_stable_version "$cached"; then
+                printf '%s' "$cached"
+                return 0
+            fi
+        fi
+    fi
+
+    local ver=""
+    case "$src" in
+        gh:*)  ver=$(_upstream_gh  "${src#gh:}")  || return 1 ;;
+        idx:*) ver=$(_upstream_idx "${src#idx:}") || return 1 ;;
+        *)     ver=$(_upstream_gh  "$src")        || return 1 ;;   # bare = GitHub
+    esac
+    [[ -z "$ver" ]] && return 1
+
+    # Best effort: an unwritable cache must not break the answer.
+    #
+    # Two processes write this cache with different privileges: this script,
+    # which hard-requires root, and Sentinel, which runs as the pool user. A root
+    # run therefore leaves a root-owned directory the unprivileged writer can
+    # never use -- and since the failure is deliberately swallowed here, its 24h
+    # cache would silently never work and it would re-query every release feed
+    # every six hours, forever. So hand the directory to the pool user when root
+    # created it, matching what install.sh does with the rest of INSTALL_DIR.
+    if mkdir -p "$cache_dir" 2>/dev/null; then
+        printf '%s' "$ver" > "${cache}.tmp" 2>/dev/null && mv -f "${cache}.tmp" "$cache" 2>/dev/null || true
+        if [[ "$EUID" -eq 0 ]]; then
+            chown -R "${POOL_USER}:${POOL_USER}" "$cache_dir" 2>/dev/null || true
+        fi
+    fi
+    printf '%s' "$ver"
+}
+
+# Machine-readable: one line per INSTALLED coin whose upstream release is newer
+# than the version this Spiral Pool release targets. "COIN TARGET UPSTREAM".
+#
+# Only installed coins are queried, which keeps a typical pool to one or two
+# GitHub calls rather than fifteen, and means an operator is never told about a
+# coin they do not run.
+# Results of the last collection. Globals rather than return values because
+# command substitution runs the callee in a SUBSHELL -- an earlier version of
+# this collected the unreachable list inside $(list_upstream) and the array
+# arrived back empty, so a total network outage printed "no coin daemon has a
+# newer stable release": the exact false reassurance this is meant to remove.
+UPSTREAM_ROWS=()
+UPSTREAM_UNREACHABLE=()
+
+# Populate both arrays. "Could not ask" is kept distinct from "nothing new":
+# a renamed repo, a project that stopped publishing releases, or a tag shape
+# this script does not accept must never read as a clean bill of health.
+# Whether the upstream check should treat this coin as one we run.
+#
+# Every other caller asks the binary, which is right: an upgrade has to act on
+# what is actually on disk, and get_installed_version exists precisely so a
+# rollback cannot be shadowed by a stale cache. The upstream check is a
+# different question. It compares a release feed against COIN_TARGET and never
+# touches a daemon -- and it runs in one place where no daemon binary exists at
+# all: the Sentinel container, which ships this script but not the fifteen coin
+# daemons, each of which lives in its own container. There every coin reads
+# "not_installed", every coin is skipped, and the mode prints nothing, which a
+# caller cannot tell apart from "checked everything, nothing newer". A Docker
+# pool therefore learned about no coin release, ever, and was told so in the
+# same silence a healthy check produces.
+#
+# SPIRALPOOL_INSTALLED_COINS lets the caller state the set instead, as tickers
+# separated by commas or whitespace, in any case. It is read ONLY here: an
+# upgrade still refuses to act on a coin whose binary it cannot find, so a
+# wrong value can at worst produce a release notice for a coin you do not run.
+# It can never cause an upgrade of one.
+_coin_present_for_upstream() {
+    local coin="$1" want
+    if [[ -n "${SPIRALPOOL_INSTALLED_COINS:-}" ]]; then
+        for want in ${SPIRALPOOL_INSTALLED_COINS//,/ }; do
+            [[ "${want^^}" == "$coin" ]] && return 0
+        done
+        return 1
+    fi
+    [[ "$(get_installed_version "$coin")" != "not_installed" ]]
+}
+
+_collect_upstream() {
+    UPSTREAM_ROWS=()
+    UPSTREAM_UNREACHABLE=()
+    local coin target latest
+    for coin in "${ALL_COINS[@]}"; do
+        target="${COIN_TARGET[$coin]:-}"
+        [[ -z "$target" ]] && continue
+        [[ -z "${COIN_UPSTREAM[$coin]:-}" ]] && continue
+        _coin_present_for_upstream "$coin" || continue
+        if ! latest=$(_upstream_latest "$coin") || [[ -z "$latest" ]]; then
+            UPSTREAM_UNREACHABLE+=("$coin")
+            continue
+        fi
+        _ver_gt "$latest" "$target" || continue
+        UPSTREAM_ROWS+=("$coin $target $latest")
+    done
+}
+
+# Machine-readable: one line per installed coin whose upstream release is newer
+# than the version this Spiral Pool release targets. "COIN TARGET UPSTREAM".
+#
+# Only installed coins are queried, which keeps a typical pool to one or two
+# release-feed calls rather than fifteen, and means an operator is never told
+# about a coin they do not run.
+list_upstream() {
+    _collect_upstream
+    local row coin
+    for row in ${UPSTREAM_ROWS[@]+"${UPSTREAM_ROWS[@]}"}; do
+        echo "$row"
+    done
+    # A coin whose release feed did not answer is not a coin with nothing newer,
+    # and until now both left this mode completely silent -- so the caller could
+    # not tell a working check that found no news from one that had been failing
+    # for weeks. Two fields, so the three-field rows above stay unambiguous and
+    # any parser that only accepts three fields simply ignores these.
+    for coin in ${UPSTREAM_UNREACHABLE[@]+"${UPSTREAM_UNREACHABLE[@]}"}; do
+        echo "unreachable $coin"
+    done
+}
+
+# Human-readable version of the same thing.
+check_upstream() {
+    _collect_upstream
+    local unreachable="${UPSTREAM_UNREACHABLE[*]:-}"
+    local count="${#UPSTREAM_ROWS[@]}"
+    local row
+
+    echo ""
+    if [[ "$count" -eq 0 ]]; then
+        if [[ -n "$unreachable" ]]; then
+            echo "  Nothing newer found for the daemons that answered."
+        else
+            echo "  No coin daemon has a newer stable release than this version of"
+            echo "  Spiral Pool targets."
+        fi
+        echo ""
+        [[ -n "$unreachable" ]] && _print_unreachable "$unreachable"
+        return 0
+    fi
+
+    printf "  %-6s %-14s %-14s
+" "COIN" "TARGETED" "UPSTREAM"
+    printf "  %-6s %-14s %-14s
+" "----" "--------" "--------"
+    for row in ${UPSTREAM_ROWS[@]+"${UPSTREAM_ROWS[@]}"}; do
+        # shellcheck disable=SC2086
+        set -- $row
+        printf "  %-6s %-14s %-14s
+" "$1" "$2" "$3"
+    done
+    echo ""
+    echo "  These are newer than the versions this Spiral Pool release installs."
+    echo "  They are NOT installed by --coin, which stays on the tested target."
+    echo "  Upgrading Spiral Pool is what moves the target forward."
+    echo ""
+    [[ -n "$unreachable" ]] && _print_unreachable "$unreachable"
+    return 0
+}
+
+# Said plainly, because "could not check" and "nothing new" look identical to an
+# operator otherwise, and only one of them is reassuring.
+_print_unreachable() {
+    echo "  Could not check: $1"
+    echo "  No release feed answered for these, or it published a version string"
+    echo "  this script does not recognise as a stable release. That is NOT a"
+    echo "  statement that they are up to date."
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # INTERACTIVE SELECTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2306,7 +2802,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V2.7.1-SPIRAL_CITADEL                  ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V3.0.0-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"
@@ -2330,6 +2826,8 @@ main() {
         case "$1" in
             --check)    mode="check" ;;
             --list)     mode="list" ;;
+            --list-upstream)  mode="list_upstream" ;;
+            --check-upstream) mode="check_upstream" ;;
             --coin)     shift; target_coin="${1:-}"; mode="single" ;;
             --reindex)  do_reindex="true" ;;
             --help|-h)
@@ -2339,6 +2837,8 @@ main() {
                 echo "  Options:"
                 echo "    --check           Show version status table only, no changes"
                 echo "    --list            Machine-readable upgrade list (COIN VER TARGET RISK)"
+                echo "    --check-upstream  Show coins with a newer stable release than we target"
+                echo "    --list-upstream   Machine-readable form of the above (COIN TARGET UPSTREAM)"
                 echo "    --coin TICKER     Upgrade a specific coin (e.g. DGB, LTC)"
                 echo "    --reindex         Start daemon with -reindex after upgrade"
                 echo "    --help            Show this help"
@@ -2360,6 +2860,17 @@ main() {
     # --list: machine-readable output only — skip banner, root check, and ENV check
     if [[ "$mode" == "list" ]]; then
         list_upgrades
+        exit 0
+    fi
+
+    # Same deal for the upstream queries: they read release feeds and a cache,
+    # change nothing, and are called by Sentinel running unprivileged.
+    if [[ "$mode" == "list_upstream" ]]; then
+        list_upstream
+        exit 0
+    fi
+    if [[ "$mode" == "check_upstream" ]]; then
+        check_upstream
         exit 0
     fi
 

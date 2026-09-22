@@ -25,7 +25,7 @@ global:
   log_level: debug        # Verbose for integration testing
   log_format: text        # Human-readable during testing
   metrics_port: 19122
-  api_port: 14022
+  api_port: 14024
   api_enabled: true
 
   sentinel:
@@ -53,8 +53,8 @@ global:
 database:
   host: localhost
   port: 5432
-  user: spiralstratum
-  password: "spiralstratum"
+  user: spiralregtest
+  password: "spiralregtest"
   database: spiralstratum_xec_regtest
   maxConnections: 50
   batching:

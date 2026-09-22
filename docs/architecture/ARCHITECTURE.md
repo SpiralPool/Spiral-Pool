@@ -35,7 +35,7 @@ For lookup tables (ports, miner classes, CLI), see [REFERENCE.md](../reference/R
 
 ## 1. System Overview
 
-Spiral Pool is a mining pool server written in Go that supports 17 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
+Spiral Pool is a mining pool server written in Go that supports 16 coins across SHA-256d and Scrypt proof-of-work algorithms. It serves mining jobs to connected miners via the Stratum protocol (V1 JSON-RPC and V2 binary/Noise), validates submitted shares, detects blocks, tracks block maturation, and pays miners.
 
 ### Core Design Principles
 
@@ -161,7 +161,7 @@ Miner Connects
            | miss
            v
 +----------------------------------+
-|  Tier 2: User-Agent Matching     |  <-- 48 verified regex patterns for
+|  Tier 2: User-Agent Matching     |  <-- 52 verified regex patterns for
 |  (primary classification)        |      mining hardware & firmware
 |                                  |
 |  Match against pattern database  |
@@ -178,11 +178,11 @@ Miner Connects
 
 ### Miner Classification
 
-15 SHA-256d profiles and 8 Scrypt profiles (including Unknown fallback) with separate difficulty settings per algorithm. Full tables with exact values are in [REFERENCE.md](../reference/REFERENCE.md).
+17 SHA-256d profiles and 8 Scrypt profiles (including Unknown fallback) with separate difficulty settings per algorithm. Full tables with exact values are in [REFERENCE.md](../reference/REFERENCE.md).
 
 ### Block-Time-Aware Scaling
 
-Initial difficulty is scaled based on the coin's block time to maintain share cadence relative to block intervals. Implemented in `scaleProfilesForBlockTime()` at `spiralrouter.go:484`.
+Initial difficulty is scaled based on the coin's block time to maintain share cadence relative to block intervals. Implemented in `scaleProfilesForBlockTime()` in `internal/stratum/spiralrouter.go`.
 
 - **DigiByte** (15s blocks): Shorter target share times for faster feedback
 - **Bitcoin** (600s blocks): Longer target share times to avoid flooding
@@ -221,10 +221,14 @@ Port assignments per coin are in [REFERENCE.md](../reference/REFERENCE.md).
 
 ### Stratum V2
 
-- Noise Protocol Framework encryption (authenticated, encrypted channel)
-- Binary message encoding (lower bandwidth)
+- Encryption: the specification's `Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256`. Public keys travel as 64-byte ElligatorSwift encodings (BIP324). The server proves its static key with a certificate signed by the pool's authority key (BIP340 Schnorr). Miners and proxies pin the authority public key: `sudo spiralctl v2 pubkey` prints it in hex and in the Stratum Reference Implementation's base58 form (`EncodeAuthorityKey`). Keys live in `stratum-v2/` next to `config.yaml` (`internal/stratum/v2/noise.go`, `keys.go`, `ellswift.go`, `schnorr.go`).
+- Binary message encoding (lower bandwidth), with the `channel_msg` bit on messages addressed to a channel. Messages of unknown extensions are ignored.
 - Native version rolling support
-- Job template negotiation
+- Standard (header-only) channels. Each channel is sent the merkle root of its own coinbase, which pays the address in its user identity (`address.worker`).
+- Extended channels. Each channel gets a 4-byte extranonce prefix and rolls 8 extranonce bytes of its own. Jobs carry the channel's own coinbase prefix and suffix, so it still pays the channel's address, plus the merkle path.
+- Jobs come from the same job manager as V1, and shares go through the same validator, block submission and share pipeline.
+- Vardiff per channel. When difficulty changes, the server sends `SetTarget` and then the current job again. Shares count at the difficulty of the job they were mined on. `UpdateChannel` with a smaller `maximum_target` moves the channel to it. A channel opened with a `max_target` below the starting target starts at `max_target` instead of being refused, as the Stratum Reference Implementation's pool does.
+- Not implemented: group channels, `SetExtranoncePrefix`, and job declaration (miner-built templates; `REQUIRES_WORK_SELECTION` is refused).
 
 ### Connection State Machine (FSM)
 
@@ -364,7 +368,7 @@ Every retargetTime (default 60s):
     clamp(newDiff, minDiff, maxDiff)
 ```
 
-The `lastRetargetNano` field uses compare-and-swap (`vardiff.go:198`) to ensure exactly one goroutine performs retarget calculation when multiple shares arrive simultaneously.
+The `lastRetargetNano` field uses compare-and-swap (`internal/vardiff/vardiff.go`, `CompareAndSwap` on `lastRetargetNano`) to ensure exactly one goroutine performs retarget calculation when multiple shares arrive simultaneously.
 
 ### Why Asymmetric Limits (4x up, 0.75x down)
 
@@ -635,10 +639,10 @@ Note: Column names use no underscores in Go code (`poolid`, `blockheight`).
 Auxiliary pools created by merge mining get their own set of per-pool tables. The aux pool ID is constructed by appending the lowercase aux symbol to the parent pool ID:
 
 ```
-auxPoolID = {parentPoolID}_{auxSymbol}
+auxPoolID = {parentPoolID}_{auxSymbol lowercased}
 ```
 
-Source: `internal/pool/coordinator.go:229`
+Source: `internal/pool/coordinator.go` (`auxPoolID` construction)
 
 Each aux pool gets the same table set as a parent pool: `blocks_{auxPoolID}`, `shares_{auxPoolID}`, `worker_hashrate_history_{auxPoolID}`.
 
@@ -1090,4 +1094,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0*
+*Spiral Pool — Spiral Covenant 3.0.0*

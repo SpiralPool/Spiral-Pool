@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 2.7.1                                                         ║
+# ║   Version: 3.0.0                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="2.7.1"
+    VERSION="3.0.0"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -45,11 +45,11 @@ INSTALL_DIR="/spiralpool"
 INSTALL_DIR_PREEXISTED=false
 [[ -d "$INSTALL_DIR" ]] && INSTALL_DIR_PREEXISTED=true
 DIGIBYTE_VERSION="9.26.5"
-BITCOINII_VERSION="29.1.0"
+BITCOINII_VERSION="31.1.0"
 BITCOINCASHII_VERSION="27.0.2"
-BTCS_VERSION="1.0.2"
+BTCS_VERSION="31.1.3"
 NAMECOIN_VERSION="28.0"
-SYSCOIN_VERSION="5.1.0"
+SYSCOIN_VERSION="5.1.2"
 # BCHN_VERSION and LITECOIN_VERSION are GLOBAL, not local to their install
 # functions. The version cache written at the end of main() has to reference
 # them, and when they were local it hardcoded the numbers instead -- which is
@@ -57,11 +57,11 @@ SYSCOIN_VERSION="5.1.0"
 # and coin-upgrade.sh called 0.21.5.6 current. Three different versions for one
 # coin, in one file. Keeping them here makes that drift impossible.
 BCHN_VERSION="29.1.0"
-LITECOIN_VERSION="0.21.5.6"
+LITECOIN_VERSION="0.21.5.8"
 MYRIAD_VERSION="0.18.1.0"
-FBTC_VERSION="0.3.0"
-ECASH_VERSION="0.33.10"
-GO_VERSION="1.26.4"
+FBTC_VERSION="0.4.0"
+ECASH_VERSION="0.33.12"
+GO_VERSION="1.26.8"
 POSTGRES_VERSION="18"
 
 # Ports - No defaults for coin-specific ports (user must configure)
@@ -252,7 +252,7 @@ GENERATE_BTC_WALLET="false"  # BTC wallet
 GENERATE_BCH_WALLET="false"  # BCH wallet
 GENERATE_BCH2_WALLET="false" # BCH2 wallet
 GENERATE_BC2_WALLET="false"  # BC2 wallet
-GENERATE_BTCS_WALLET="false" # BTCS wallet (built from source — requires sync)
+GENERATE_BTCS_WALLET="false" # BTCS wallet (requires sync)
 GENERATE_LTC_WALLET="false"  # LTC wallet
 GENERATE_DOGE_WALLET="false" # DOGE wallet
 GENERATE_NMC_WALLET="false"  # NMC wallet (merge mining)
@@ -268,6 +268,7 @@ NATIVE_UPGRADE_MODE="fresh"
 
 # Network privacy
 TOR_ENABLED="false"  # true to route blockchain nodes through Tor
+ENABLE_V2_STRATUM="false"  # true to configure and open Stratum V2 ports (explicit opt-in)
 DISPLAY_TIMEZONE="America/New_York"  # Timezone for Discord/Telegram reports (internal always UTC)
 
 # High Availability Mode
@@ -1379,6 +1380,22 @@ generate_password() {
     echo "$pw"
 }
 
+ensure_rpc_password() {
+    # Guard against writing an empty rpcpassword into a daemon config. A blank
+    # rpcpassword makes the daemon ignore password auth and fall back to its
+    # cookie file, so every pool component that authenticates with the
+    # configured password is rejected with "incorrect password attempt" and the
+    # failure only surfaces at runtime, long after the install looked clean.
+    # The password should already have been set by collect_configuration();
+    # this is a backstop, and it warns so the gap is visible rather than silent.
+    local coin="$1"
+    local var="${coin}_RPC_PASSWORD"
+    if [[ -z "${!var}" ]]; then
+        printf -v "$var" '%s' "$(generate_password)"
+        log_warn "$coin RPC password was unset at config generation - generated one now"
+    fi
+}
+
 check_command() {
     command -v "$1" &> /dev/null
 }
@@ -2172,6 +2189,27 @@ download_with_retry() {
 
     log_error "Failed to download from all mirrors after multiple retries"
     return 1
+}
+
+# Refuse a download whose SHA256 is not the hash pinned in this script.
+# Usage: verify_sha256 <file> <expected-sha256> <label>
+# Returns: 0 when they match, 1 otherwise
+#
+# Bitcoin Silver, Fractal Bitcoin and Bitcoin II publish no signed checksum file.
+# Each pin is the digest GitHub records for the release asset, matched against an
+# independent download of it. coin-upgrade.sh and docker/Dockerfile.<coin> pin the
+# same values (tests/test_script_integrity.sh checks they agree).
+verify_sha256() {
+    local file="$1" expected="$2" label="$3" actual
+    actual=$(sha256sum "$file" 2>/dev/null | awk '{print $1}') || actual=""
+    if [[ -z "$actual" || "$actual" != "$expected" ]]; then
+        log_error "SHA256 mismatch for ${label} — refusing to install it"
+        log_error "  expected: ${expected}"
+        log_error "  actual:   ${actual:-unreadable}"
+        return 1
+    fi
+    log_success "SHA256 verified for ${label}"
+    return 0
 }
 
 # Retry a function with user prompt on failure
@@ -3443,11 +3481,11 @@ select_deploy_method() {
         echo -e "  Cloud providers charge for outbound (egress) network traffic."
         echo -e "  Blockchain synchronization generates large egress immediately:"
         echo ""
-        echo -e "    ${WHITE}Bitcoin (BTC)${NC}      ~600 GB sync   → ~\$54 at \$0.09/GB"
-        echo -e "    ${WHITE}Bitcoin Cash (BCH)${NC} ~250 GB sync   → ~\$23 at \$0.09/GB"
-        echo -e "    ${WHITE}Litecoin (LTC)${NC}     ~120 GB sync   → ~\$11 at \$0.09/GB"
-        echo -e "    ${WHITE}Dogecoin (DOGE)${NC}    ~90 GB sync    → ~\$8  at \$0.09/GB"
-        echo -e "    ${WHITE}DigiByte (DGB)${NC}     ~45 GB sync    → ~\$4  at \$0.09/GB"
+        echo -e "    ${WHITE}Bitcoin (BTC)${NC}      ~780 GB sync   → ~\$70 at \$0.09/GB"
+        echo -e "    ${WHITE}Bitcoin Cash (BCH)${NC} ~220 GB sync   → ~\$20 at \$0.09/GB"
+        echo -e "    ${WHITE}Litecoin (LTC)${NC}     ~240 GB sync   → ~\$22 at \$0.09/GB"
+        echo -e "    ${WHITE}Dogecoin (DOGE)${NC}    ~190 GB sync   → ~\$17 at \$0.09/GB"
+        echo -e "    ${WHITE}DigiByte (DGB)${NC}     ~40 GB sync    → ~\$4  at \$0.09/GB"
         echo ""
         echo -e "  Multi-coin deployments multiply these costs. Ongoing P2P traffic adds"
         echo -e "  1–10 GB/day after sync. ${RED}Set billing alerts before starting.${NC}"
@@ -3860,7 +3898,7 @@ select_wsl2_deployment_method() {
     echo ""
     echo -e "  ${YELLOW}4. I/O performance${NC}"
     echo -e "     Blockchain sync uses the WSL2 virtual disk (.vhdx) and is 2-4x slower"
-    echo -e "     than native. Large chains (BTC ~600 GB, DGB ~80 GB) take significantly"
+    echo -e "     than native. Large chains (BTC ~780 GB, LTC ~240 GB) take significantly"
     echo -e "     longer. PostgreSQL write performance under mining load is also reduced."
     echo ""
     echo -e "  ${YELLOW}5. Windows can kill WSL2 without warning${NC}"
@@ -4934,6 +4972,13 @@ detect_existing_native_install() {
 
                 # Preserve pruning setting (global — applies to newly added coins)
                 PRUNE_ENABLED=$(grep -oP '^PRUNE_ENABLED=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+
+                # Preserve the Stratum V2 opt-in, but only once it was recorded as an
+                # explicit choice (v3.0 installer or upgrade.sh). Older installers
+                # always wrote ENABLE_V2_STRATUM=true without asking.
+                if [[ -f "$INSTALL_DIR/config/.migrated-stratum-v2-opt-in" ]]; then
+                    ENABLE_V2_STRATUM=$(grep -oP '^ENABLE_V2_STRATUM=\K(true|false)$' "$COINS_ENV" 2>/dev/null || echo "false")
+                fi
                 if [[ "$PRUNE_ENABLED" == "true" ]]; then
                     PRUNE_CONF_TXINDEX=""
                     PRUNE_CONF_PRUNE="prune=5000"
@@ -6600,6 +6645,7 @@ EOF
 generate_docker_dgb_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password DGB
     cat > "$CONFIG_DIR/digibyte.conf" << EOF
 # DigiByte Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6657,6 +6703,7 @@ EOF
 generate_docker_btc_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password BTC
     cat > "$CONFIG_DIR/bitcoin.conf" << EOF
 # Bitcoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6726,6 +6773,7 @@ EOF
 generate_docker_bch_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password BCH
     cat > "$CONFIG_DIR/bitcoincash.conf" << EOF
 # Bitcoin Cash Node Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6780,21 +6828,21 @@ excessiveblocksize=32000000
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
-addnode=195.3.223.29:8433
-addnode=199.217.115.27:8433
-addnode=3.142.98.179:8433
-addnode=35.163.48.30:8433
-addnode=35.198.46.157:8433
-addnode=51.91.196.151:8433
-addnode=174.140.196.19:8433
-addnode=193.164.205.249:8433
-addnode=194.14.246.11:8433
-addnode=8.219.86.245:8433
-addnode=15.204.95.99:8433
-addnode=18.139.1.192:8433
-addnode=51.159.104.35:8433
-addnode=57.129.18.162:8433
-addnode=65.109.90.134:8433
+addnode=195.3.223.29:8333
+addnode=199.217.115.27:8333
+addnode=3.142.98.179:8333
+addnode=35.163.48.30:8333
+addnode=35.198.46.157:8333
+addnode=51.91.196.151:8333
+addnode=174.140.196.19:8333
+addnode=193.164.205.249:8333
+addnode=194.14.246.11:8333
+addnode=8.219.86.245:8333
+addnode=15.204.95.99:8333
+addnode=18.139.1.192:8333
+addnode=51.159.104.35:8333
+addnode=57.129.18.162:8333
+addnode=65.109.90.134:8333
 EOF
     chmod 640 "$CONFIG_DIR/bitcoincash.conf"
     log_success "Generated bitcoincash.conf"
@@ -6803,6 +6851,7 @@ EOF
 generate_docker_bc2_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password BC2
     cat > "$CONFIG_DIR/bitcoinii.conf" << EOF
 # Bitcoin II Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6863,6 +6912,7 @@ EOF
 generate_docker_bch2_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password BCH2
     cat > "$CONFIG_DIR/bitcoincashii.conf" << EOF
 # Bitcoin Cash II Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6919,6 +6969,7 @@ EOF
 generate_docker_btcs_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password BTCS
     cat > "$CONFIG_DIR/bitcoinsilver.conf" << EOF
 # Bitcoin Silver Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -6976,6 +7027,7 @@ EOF
 generate_docker_nmc_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password NMC
     cat > "$CONFIG_DIR/namecoin.conf" << EOF
 # Namecoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7037,6 +7089,7 @@ EOF
 generate_docker_sys_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password SYS
     cat > "$CONFIG_DIR/syscoin.conf" << EOF
 # Syscoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7099,6 +7152,7 @@ EOF
 generate_docker_xmy_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password XMY
     cat > "$CONFIG_DIR/myriadcoin.conf" << EOF
 # Myriad Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7155,6 +7209,7 @@ EOF
 generate_docker_fbtc_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password FBTC
     cat > "$CONFIG_DIR/fractal.conf" << EOF
 # Fractal Bitcoin Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7213,6 +7268,7 @@ EOF
 generate_docker_ltc_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password LTC
     cat > "$CONFIG_DIR/litecoin.conf" << EOF
 # Litecoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7269,6 +7325,7 @@ EOF
 generate_docker_doge_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password DOGE
     cat > "$CONFIG_DIR/dogecoin.conf" << EOF
 # Dogecoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7321,6 +7378,7 @@ EOF
 generate_docker_pep_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password PEP
     cat > "$CONFIG_DIR/pepecoin.conf" << EOF
 # PepeCoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7373,6 +7431,7 @@ EOF
 generate_docker_cat_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password CAT
     cat > "$CONFIG_DIR/catcoin.conf" << EOF
 # Catcoin Core Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7431,6 +7490,7 @@ EOF
 generate_docker_xec_config() {
     local CONFIG_DIR="$SCRIPT_DIR/docker/config"
 
+    ensure_rpc_password XEC
     cat > "$CONFIG_DIR/ecash.conf" << EOF
 # eCash (Bitcoin ABC) Configuration
 # Docker Multi-Coin - Generated $(date)
@@ -7493,7 +7553,7 @@ validate_docker_disk_requirements() {
     # Calculate required space based on enabled coins
     # SHA-256d coins
     [[ "$ENABLE_DGB" == "true" ]] && ((REQUIRED_GB+=90))   # DGB: ~80GB + buffer
-    [[ "$ENABLE_BTC" == "true" ]] && ((REQUIRED_GB+=700))  # BTC: ~600GB + buffer
+    [[ "$ENABLE_BTC" == "true" ]] && ((REQUIRED_GB+=850))  # BTC: ~780GB + buffer
     [[ "$ENABLE_BCH" == "true" ]]  && ((REQUIRED_GB+=300))  # BCH: ~250GB + buffer
     [[ "$ENABLE_BCH2" == "true" ]] && ((REQUIRED_GB+=15))  # BCH2: ~10GB + buffer (young chain, Dec 2024)
     [[ "$ENABLE_BC2" == "true" ]]  && ((REQUIRED_GB+=5))   # BC2: ~3GB + buffer
@@ -7501,13 +7561,28 @@ validate_docker_disk_requirements() {
     [[ "$ENABLE_NMC" == "true" ]] && ((REQUIRED_GB+=15))   # NMC: ~12GB + buffer
     [[ "$ENABLE_SYS" == "true" ]] && ((REQUIRED_GB+=50))   # SYS: ~40GB + buffer
     [[ "$ENABLE_XMY" == "true" ]] && ((REQUIRED_GB+=5))    # XMY: ~3GB + buffer
-    [[ "$ENABLE_FBTC" == "true" ]] && ((REQUIRED_GB+=10))  # FBTC: ~5GB + buffer
-    [[ "$ENABLE_XEC" == "true" ]] && ((REQUIRED_GB+=25))   # XEC: ~20GB + buffer
+    [[ "$ENABLE_FBTC" == "true" ]] && ((REQUIRED_GB+=3300)) # FBTC: ~3.1TB + buffer (derived from chain data; grows ~1.5-2TB/yr)
+    [[ "$ENABLE_XEC" == "true" ]] && ((REQUIRED_GB+=180))  # XEC: ~160GB + buffer
     # Scrypt coins
-    [[ "$ENABLE_LTC" == "true" ]] && ((REQUIRED_GB+=120))  # LTC: ~100GB + buffer
-    [[ "$ENABLE_DOGE" == "true" ]] && ((REQUIRED_GB+=80))  # DOGE: ~70GB + buffer
+    [[ "$ENABLE_LTC" == "true" ]] && ((REQUIRED_GB+=270))  # LTC: ~240GB + buffer
+    [[ "$ENABLE_DOGE" == "true" ]] && ((REQUIRED_GB+=210)) # DOGE: ~190GB + buffer
     [[ "$ENABLE_PEP" == "true" ]] && ((REQUIRED_GB+=5))    # PEP: ~2GB + buffer
     [[ "$ENABLE_CAT" == "true" ]] && ((REQUIRED_GB+=5))    # CAT: ~2GB + buffer
+
+    # Pruning changes the answer completely and the sum above ignored it:
+    # prune=5000 caps every chain at roughly 5 GB regardless of its real size,
+    # so a pruned install was told it needed the full-node total -- 2 TB for
+    # Fractal Bitcoin against an actual ~5 GB. Recompute per enabled coin.
+    if [[ "$PRUNE_ENABLED" == "true" ]]; then
+        local _pruned_coins=0
+        for _e in "$ENABLE_DGB" "$ENABLE_BTC" "$ENABLE_BCH" "$ENABLE_BCH2" "$ENABLE_BC2"                   "$ENABLE_BTCS" "$ENABLE_NMC" "$ENABLE_SYS" "$ENABLE_XMY" "$ENABLE_FBTC"                   "$ENABLE_XEC" "$ENABLE_LTC" "$ENABLE_DOGE" "$ENABLE_PEP" "$ENABLE_CAT"; do
+            [[ "$_e" == "true" ]] && ((_pruned_coins++))
+        done
+        # prune=5000 keeps ~5 GB of blocks; chainstate and indexes add a little.
+        REQUIRED_GB=$(( _pruned_coins * 6 ))
+        # Syscoin's NEVM sidecar state is not pruned with the UTXO chain.
+        [[ "$ENABLE_SYS" == "true" ]] && ((REQUIRED_GB+=25))
+    fi
 
     # Add base requirements
     ((REQUIRED_GB+=10))  # PostgreSQL, logs, etc.
@@ -7522,19 +7597,19 @@ validate_docker_disk_requirements() {
         echo -e "  Required:  ${GREEN}${REQUIRED_GB} GB${NC}"
         echo ""
         echo -e "  Breakdown:"
-        [[ "$ENABLE_DGB" == "true" ]] && echo -e "    • DigiByte:          ~80 GB"
-        [[ "$ENABLE_BTC" == "true" ]] && echo -e "    • Bitcoin:           ~600 GB"
-        [[ "$ENABLE_BCH" == "true" ]]  && echo -e "    • Bitcoin Cash:      ~250 GB"
+        [[ "$ENABLE_DGB" == "true" ]] && echo -e "    • DigiByte:          ~40 GB"
+        [[ "$ENABLE_BTC" == "true" ]] && echo -e "    • Bitcoin:           ~780 GB"
+        [[ "$ENABLE_BCH" == "true" ]]  && echo -e "    • Bitcoin Cash:      ~220 GB"
         [[ "$ENABLE_BCH2" == "true" ]] && echo -e "    • Bitcoin Cash II:   ~10 GB"
         [[ "$ENABLE_BC2" == "true" ]]  && echo -e "    • Bitcoin II:        ~3 GB"
         [[ "$ENABLE_BTCS" == "true" ]] && echo -e "    • Bitcoin Silver:    ~5 GB"
         [[ "$ENABLE_NMC" == "true" ]] && echo -e "    • Namecoin:          ~12 GB"
         [[ "$ENABLE_SYS" == "true" ]] && echo -e "    • Syscoin:           ~40 GB"
         [[ "$ENABLE_XMY" == "true" ]] && echo -e "    • Myriad:            ~3 GB"
-        [[ "$ENABLE_FBTC" == "true" ]] && echo -e "    • Fractal Bitcoin:   ~5 GB"
-        [[ "$ENABLE_XEC" == "true" ]] && echo -e "    • eCash:             ~20 GB"
-        [[ "$ENABLE_LTC" == "true" ]] && echo -e "    • Litecoin:          ~100 GB"
-        [[ "$ENABLE_DOGE" == "true" ]] && echo -e "    • Dogecoin:          ~70 GB"
+        [[ "$ENABLE_FBTC" == "true" ]] && echo -e "    • Fractal Bitcoin:   ~3100 GB  (3.1 TB, growing ~2 TB/year — prune it)"
+        [[ "$ENABLE_XEC" == "true" ]] && echo -e "    • eCash:             ~160 GB"
+        [[ "$ENABLE_LTC" == "true" ]] && echo -e "    • Litecoin:          ~240 GB"
+        [[ "$ENABLE_DOGE" == "true" ]] && echo -e "    • Dogecoin:          ~190 GB"
         [[ "$ENABLE_PEP" == "true" ]] && echo -e "    • PepeCoin:          ~2 GB"
         [[ "$ENABLE_CAT" == "true" ]] && echo -e "    • Catcoin:           ~2 GB"
         echo -e "    • Other:             ~10 GB"
@@ -7784,7 +7859,7 @@ print_docker_completion() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  ${WHITE}Stratum V1:${NC}    stratum+tcp://${HOST_IP}:${STRATUM_PORT}"
-    echo -e "  ${WHITE}Stratum V2:${NC}    stratum+tcp://${HOST_IP}:${STRATUM_V2_PORT}"
+    echo -e "  ${WHITE}Stratum V2:${NC}    stratum+tcp://${HOST_IP}:${STRATUM_V2_PORT} ${DIM}(only when STRATUM_V2_ENABLED=true in docker/.env)${NC}"
     echo -e "  ${WHITE}Username:${NC}      YOUR_DGB_ADDRESS.WORKER_NAME"
     echo -e "  ${WHITE}Password:${NC}      x (or any value)"
     echo ""
@@ -7859,7 +7934,7 @@ $METRICS_TOKEN
 STRATUM ENDPOINTS
 ─────────────────
 Stratum V1:    stratum+tcp://${HOST_IP}:${STRATUM_PORT}
-Stratum V2:    stratum+tcp://${HOST_IP}:${STRATUM_V2_PORT}
+Stratum V2:    stratum+tcp://${HOST_IP}:${STRATUM_V2_PORT} (only when STRATUM_V2_ENABLED=true in docker/.env)
 
 WEB INTERFACES
 ──────────────
@@ -12116,6 +12191,31 @@ collect_configuration() {
     fi  # end: cloud Tor skip / non-cloud Tor prompt
     echo ""
 
+    # Stratum V2 — off unless the operator opts in. V1 and TLS stratum ports are
+    # configured either way; V2 ports are only configured and opened on a yes.
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${WHITE}Stratum V2 (Optional)${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  Stratum V2 is a newer binary mining protocol. Current ASIC and Bitaxe"
+    echo "  firmware connects over Stratum V1 and TLS, which are always enabled."
+    echo ""
+    echo -e "  ${YELLOW}Enabling V2 opens one additional stratum port per coin to your network.${NC}"
+    echo -e "  ${YELLOW}Leave it off unless you run Stratum V2 miners and accept that exposure.${NC}"
+    echo ""
+    prompt_input "Enable Stratum V2 ports? [y/N]: "; read v2_response
+    case "$v2_response" in
+        [Yy]|[Yy][Ee][Ss])
+            ENABLE_V2_STRATUM="true"
+            log_success "Stratum V2 enabled - V2 ports will be configured and opened"
+            ;;
+        *)
+            ENABLE_V2_STRATUM="false"
+            log "Stratum V2 disabled (default) - V2 ports stay closed"
+            ;;
+    esac
+    echo ""
+
     # Timezone selection for reports
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -12526,6 +12626,63 @@ collect_configuration() {
                 log_success "Generated secure BCH RPC password"
                 ;;
 
+            BCH2)
+                echo -e "${WHITE}🟤 Bitcoin Cash II (BCH2) Wallet Address${NC}"
+                echo -e "${CYAN}   ─────────────────────────────${NC}"
+                echo ""
+                echo -e "${YELLOW}  ADDRESS WARNING: BCH2 legacy bytes (1..., 3...) identical to BCH/BTC.${NC}"
+                echo -e "${YELLOW}  Use CashAddr format (bitcoincashii:q...) to avoid confusion.${NC}"
+                echo ""
+                echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BCH2 address"
+                echo ""
+                echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet (requires blockchain sync)"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
+                echo ""
+
+                while true; do
+                    prompt_input "Choose [1] or [2]: "; read wallet_choice
+                    case "$wallet_choice" in
+                        1)
+                            echo ""
+                            echo "Supported formats:"
+                            echo -e "  • CashAddr (recommended): ${GREEN}bitcoincashii:q${NC}..."
+                            echo -e "  • Legacy (use carefully):  ${GREEN}1${NC}... or ${GREEN}3${NC}..."
+                            echo ""
+                            while true; do
+                                prompt_input "BCH2 Address: "; read BCH2_ADDRESS
+                                if [[ "$BCH2_ADDRESS" =~ ^(bitcoincashii:)?[qp][a-z0-9]{41}$ ]] || \
+                                   [[ "$BCH2_ADDRESS" =~ ^(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}$ ]]; then
+                                    log_success "Valid BCH2 address format"
+                                    BCH2_POOL_ADDRESS="$BCH2_ADDRESS"
+                                    break
+                                else
+                                    log_error "Invalid BCH2 address. Use bitcoincashii:q... CashAddr or 1.../3... legacy."
+                                fi
+                            done
+                            break
+                            ;;
+                        2)
+                            GENERATE_BCH2_WALLET="true"
+                            BCH2_ADDRESS="PENDING_GENERATION"
+                            BCH2_POOL_ADDRESS="PENDING_GENERATION"
+                            log_warn "BCH2 wallet generation deferred until blockchain sync completes"
+                            echo -e "    The installer will generate it automatically after sync."
+                            echo -e "    ${DIM}If auto-generation fails: spiralpool-wallet --coin bch2${NC}"
+                            break
+                            ;;
+                        *)
+                            echo "Please enter 1 or 2"
+                            ;;
+                    esac
+                done
+                BCH2_RPC_PASSWORD=$(generate_password)
+                log_success "Generated secure BCH2 RPC password"
+                ;;
+
             BTC)
                 echo -e "${WHITE}🟠 Bitcoin Wallet Address${NC}"
                 echo -e "${CYAN}   ─────────────────────────${NC}"
@@ -12587,6 +12744,64 @@ collect_configuration() {
                 # Generate BTC RPC password
                 BTC_RPC_PASSWORD=$(generate_password)
                 log_success "Generated secure BTC RPC password"
+                ;;
+
+            BTCS)
+                echo -e "${WHITE}⚪ Bitcoin Silver (BTCS) Wallet Address${NC}"
+                echo -e "${CYAN}   ─────────────────────────────${NC}"
+                echo ""
+                echo "Block rewards go to a Bitcoin Silver wallet address. You have two options:"
+                echo ""
+                echo -e "  ${WHITE}[1] I have a wallet${NC} - Use an existing BTCS address"
+                echo ""
+                echo -e "  ${WHITE}[2] Generate one for me${NC} - Create a wallet (requires blockchain sync)"
+                echo -e "      ${YELLOW}No seed phrase:${NC} this daemon does not create 12/24-word"
+                echo -e "      recovery phrases. The backup file is the ONLY copy of the keys."
+                echo -e "      ${DIM}Want a seed phrase? Choose [1] instead: create the wallet on${NC}"
+                echo -e "      ${DIM}another machine (hardware wallet, Electrum, ...) and paste its${NC}"
+                echo -e "      ${DIM}address here. The keys then never touch this server.${NC}"
+                echo ""
+
+                while true; do
+                    prompt_input "Choose [1] or [2]: "; read wallet_choice
+                    case "$wallet_choice" in
+                        1)
+                            echo ""
+                            echo "Supported formats:"
+                            echo -e "  • SegWit (recommended): ${GREEN}bs1q${NC}... (42 chars)"
+                            echo -e "  • Legacy:               ${GREEN}B${NC}... (34 chars)"
+                            echo ""
+                            while true; do
+                                prompt_input "BTCS Address: "; read BTCS_ADDRESS
+                                if [[ "$BTCS_ADDRESS" =~ ^B[a-km-zA-HJ-NP-Z1-9]{25,34}$ ]] || \
+                                   [[ "$BTCS_ADDRESS" =~ ^3[a-km-zA-HJ-NP-Z1-9]{25,34}$ ]] || \
+                                   [[ "$BTCS_ADDRESS" =~ ^bs1q[a-z0-9]{38,58}$ ]] || \
+                                   [[ "$BTCS_ADDRESS" =~ ^bs1p[a-z0-9]{58}$ ]]; then
+                                    log_success "Valid BTCS address format"
+                                    BTCS_POOL_ADDRESS="$BTCS_ADDRESS"
+                                    break
+                                else
+                                    log_error "Invalid BTCS address. Use B-prefix, bs1q SegWit, or bs1p Taproot."
+                                fi
+                            done
+                            break
+                            ;;
+                        2)
+                            GENERATE_BTCS_WALLET="true"
+                            BTCS_ADDRESS="PENDING_GENERATION"
+                            BTCS_POOL_ADDRESS="PENDING_GENERATION"
+                            log_warn "BTCS wallet generation deferred until blockchain sync completes"
+                            echo -e "    The installer will generate it automatically after sync."
+                            echo -e "    ${DIM}If auto-generation fails: spiralpool-wallet --coin btcs${NC}"
+                            break
+                            ;;
+                        *)
+                            echo "Please enter 1 or 2"
+                            ;;
+                    esac
+                done
+                BTCS_RPC_PASSWORD=$(generate_password)
+                log_success "Generated secure BTCS RPC password"
                 ;;
 
             CAT)
@@ -13120,6 +13335,16 @@ collect_configuration() {
                 done
                 XEC_RPC_PASSWORD=$(generate_password)
                 log_success "Generated secure XEC RPC password"
+                ;;
+            *)
+                # A coin can be offered in the solo menu but have no arm here.
+                # That silently leaves it with no wallet address and no RPC
+                # password, and the failure only surfaces much later, when the
+                # daemon refuses the RPC calls the pool makes. Fail at the
+                # prompt instead, while nothing has been installed yet.
+                log_error "No wallet setup is defined for solo coin: $SOLO_COIN"
+                log_error "This is an installer bug - please report it."
+                exit 1
                 ;;
         esac
     else
@@ -14419,6 +14644,7 @@ collect_configuration() {
     SENTINEL_MEMPOOL_ENABLED="true"
     SENTINEL_BACKUP_STALE_ENABLED="true"
     SENTINEL_SATS_SURGE_ENABLED="true"
+    SENTINEL_SIMPLESWAP_ENABLED="true"  # SimpleSwap link inside sats surge alerts
     SENTINEL_WALLET_DROP_ENABLED="true"
     SENTINEL_HIGH_ODDS_ENABLED="true"
     SENTINEL_HASHRATE_CRASH_ENABLED="true"
@@ -14517,6 +14743,7 @@ collect_configuration() {
         local _s_mempool="true"
         local _s_backup="true"
         local _s_sats_surge="true"
+        local _s_simpleswap="true"
         local _s_wallet_drop="true"
         local _s_high_odds="true"
         local _s_hashrate_crash="true"
@@ -14577,9 +14804,13 @@ collect_configuration() {
             esac
             echo -e "  13  ${_updates_label}  Update mode          ${DIM}cycle: notify → auto → disabled${NC}"
             echo ""
+            echo -e "  ${WHITE}── SWAP LINKS ──────────────────────────────────────────────────────────${NC}"
+            echo -e "  14  $(_badge "$_s_simpleswap")  SimpleSwap link      ${DIM}swap link inside sats surge alerts${NC}"
+            echo -e "      ${DIM}notification only — no API calls, no keys or addresses stored${NC}"
+            echo ""
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
-            prompt_input "  Toggle [1-13] or Enter to confirm: "; read _s_choice
+            prompt_input "  Toggle [1-14] or Enter to confirm: "; read _s_choice
 
             case "$_s_choice" in
                 1)  [[ "$_s_alerts"         == "true" ]] && _s_alerts="false"         || _s_alerts="true" ;;
@@ -14603,6 +14834,7 @@ collect_configuration() {
                         auto)     _s_updates="disabled" ;;
                         disabled) _s_updates="notify" ;;
                     esac ;;
+                14) [[ "$_s_simpleswap"     == "true" ]] && _s_simpleswap="false"     || _s_simpleswap="true" ;;
                 "") _sentinel_done=true ;;
             esac
         done
@@ -14615,6 +14847,7 @@ collect_configuration() {
         SENTINEL_MEMPOOL_ENABLED="$_s_mempool"
         SENTINEL_BACKUP_STALE_ENABLED="$_s_backup"
         SENTINEL_SATS_SURGE_ENABLED="$_s_sats_surge"
+        SENTINEL_SIMPLESWAP_ENABLED="$_s_simpleswap"
         SENTINEL_WALLET_DROP_ENABLED="$_s_wallet_drop"
         SENTINEL_HIGH_ODDS_ENABLED="$_s_high_odds"
         SENTINEL_HASHRATE_CRASH_ENABLED="$_s_hashrate_crash"
@@ -15793,7 +16026,7 @@ Match User ${POOL_USER}
         curl wget git build-essential ca-certificates gnupg openssl \
         lsb-release software-properties-common ufw htop jq unzip \
         python3 python3-pip python3-venv python3-dev python3-requests libffi-dev bc \
-        libpq-dev libzmq3-dev libminiupnpc-dev libnatpmp1 libevent-dev pkg-config \
+        libpq-dev libzmq3-dev libminiupnpc-dev libnatpmp1 libevent-dev libsqlite3-0 pkg-config \
         iproute2 iputils-arping iputils-ping \
         netcat-openbsd dnsutils \
         rsync openssh-client \
@@ -15803,7 +16036,7 @@ Match User ${POOL_USER}
         tmux \
         at || { log_error "Failed to install prerequisite packages"; return 1; }
 
-    # Ubuntu 24.04 ships libminiupnpc.so.21 — BCH2/BTCS binaries compiled on 22.04 need .so.17.
+    # Ubuntu 24.04 ships libminiupnpc.so.21 — BCH2 binaries compiled on 22.04 need .so.17.
     # Create a compatibility symlink if the older version isn't present.
     if ! ldconfig -p 2>/dev/null | grep -q 'libminiupnpc\.so\.17 '; then
         local _upnpc_so
@@ -16247,8 +16480,8 @@ MINERDBEOF
     if [[ -n "$STRATUM_PORT" ]]; then
         sudo ufw allow "$STRATUM_PORT/tcp" > /dev/null 2>&1    # Stratum V1 (miners)
     fi
-    if [[ -n "$STRATUM_V2_PORT" ]]; then
-        sudo ufw allow "$STRATUM_V2_PORT/tcp" > /dev/null 2>&1 # Stratum V2 (miners)
+    if [[ -n "$STRATUM_V2_PORT" ]] && [[ "$ENABLE_V2_STRATUM" == "true" ]]; then
+        sudo ufw allow "$STRATUM_V2_PORT/tcp" > /dev/null 2>&1 # Stratum V2 (miners, opt-in)
     fi
     # Single-coin TLS port (defaults to V2 port + 1 when TLS is enabled)
     if [[ -n "$STRATUM_TLS_PORT" ]]; then
@@ -16302,119 +16535,119 @@ MINERDBEOF
     # Multi-coin P2P and Stratum ports (opened based on enabled coins)
     if [[ "$ENABLE_DGB" == "true" ]]; then
         sudo ufw allow 3333/tcp > /dev/null 2>&1         # DGB Stratum V1
-        sudo ufw allow 3334/tcp > /dev/null 2>&1         # DGB Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 3334/tcp > /dev/null 2>&1         # DGB Stratum V2 (opt-in)
         sudo ufw allow 3335/tcp > /dev/null 2>&1         # DGB Stratum TLS
         sudo ufw allow 12024/tcp > /dev/null 2>&1        # DGB P2P
-        log "DigiByte ports opened: 3333-3335/tcp (stratum V1/V2/TLS), 12024/tcp (P2P)"
+        log "DigiByte ports opened: 3333-3335/tcp (stratum V1/V2/TLS; V2 only if enabled), 12024/tcp (P2P)"
     fi
     if [[ "$ENABLE_BTC" == "true" ]]; then
         sudo ufw allow 4333/tcp > /dev/null 2>&1         # BTC Stratum V1
-        sudo ufw allow 4334/tcp > /dev/null 2>&1         # BTC Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 4334/tcp > /dev/null 2>&1         # BTC Stratum V2 (opt-in)
         sudo ufw allow 4335/tcp > /dev/null 2>&1         # BTC Stratum TLS
         sudo ufw allow 8333/tcp > /dev/null 2>&1         # BTC P2P
-        log "Bitcoin ports opened: 4333-4335/tcp (stratum V1/V2/TLS), 8333/tcp (P2P)"
+        log "Bitcoin ports opened: 4333-4335/tcp (stratum V1/V2/TLS; V2 only if enabled), 8333/tcp (P2P)"
     fi
     if [[ "$ENABLE_BCH" == "true" ]]; then
         sudo ufw allow 5333/tcp > /dev/null 2>&1         # BCH Stratum V1
-        sudo ufw allow 5334/tcp > /dev/null 2>&1         # BCH Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 5334/tcp > /dev/null 2>&1         # BCH Stratum V2 (opt-in)
         sudo ufw allow 5335/tcp > /dev/null 2>&1         # BCH Stratum TLS
         sudo ufw allow 8433/tcp > /dev/null 2>&1         # BCH P2P
-        log "Bitcoin Cash ports opened: 5333-5335/tcp (stratum V1/V2/TLS), 8433/tcp (P2P)"
+        log "Bitcoin Cash ports opened: 5333-5335/tcp (stratum V1/V2/TLS; V2 only if enabled), 8433/tcp (P2P)"
     fi
     if [[ "$ENABLE_BCH2" == "true" ]]; then
         sudo ufw allow 5336/tcp > /dev/null 2>&1         # BCH2 Stratum V1
-        sudo ufw allow 5337/tcp > /dev/null 2>&1         # BCH2 Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 5337/tcp > /dev/null 2>&1         # BCH2 Stratum V2 (opt-in)
         sudo ufw allow 5338/tcp > /dev/null 2>&1         # BCH2 Stratum TLS
         sudo ufw allow 8534/tcp > /dev/null 2>&1         # BCH2 P2P
-        log "Bitcoin Cash II ports opened: 5336-5338/tcp (stratum V1/V2/TLS), 8534/tcp (P2P)"
+        log "Bitcoin Cash II ports opened: 5336-5338/tcp (stratum V1/V2/TLS; V2 only if enabled), 8534/tcp (P2P)"
     fi
     if [[ "$ENABLE_BC2" == "true" ]]; then
         sudo ufw allow 6333/tcp > /dev/null 2>&1         # BC2 Stratum V1
-        sudo ufw allow 6334/tcp > /dev/null 2>&1         # BC2 Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 6334/tcp > /dev/null 2>&1         # BC2 Stratum V2 (opt-in)
         sudo ufw allow 6335/tcp > /dev/null 2>&1         # BC2 Stratum TLS
         sudo ufw allow 8338/tcp > /dev/null 2>&1         # BC2 P2P
-        log "Bitcoin II ports opened: 6333-6335/tcp (stratum V1/V2/TLS), 8338/tcp (P2P)"
+        log "Bitcoin II ports opened: 6333-6335/tcp (stratum V1/V2/TLS; V2 only if enabled), 8338/tcp (P2P)"
     fi
     if [[ "$ENABLE_BTCS" == "true" ]]; then
         sudo ufw allow 11335/tcp > /dev/null 2>&1        # BTCS Stratum V1
-        sudo ufw allow 11336/tcp > /dev/null 2>&1        # BTCS Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 11336/tcp > /dev/null 2>&1        # BTCS Stratum V2 (opt-in)
         sudo ufw allow 11337/tcp > /dev/null 2>&1        # BTCS Stratum TLS
         sudo ufw allow 10566/tcp > /dev/null 2>&1        # BTCS P2P
-        log "Bitcoin Silver ports opened: 11335-11337/tcp (stratum V1/V2/TLS), 10566/tcp (P2P)"
+        log "Bitcoin Silver ports opened: 11335-11337/tcp (stratum V1/V2/TLS; V2 only if enabled), 10566/tcp (P2P)"
     fi
     # SHA-256d AuxPoW coins (merge-mineable with Bitcoin)
     if [[ "$ENABLE_NMC" == "true" ]]; then
         sudo ufw allow 14335/tcp > /dev/null 2>&1        # NMC Stratum V1
-        sudo ufw allow 14336/tcp > /dev/null 2>&1        # NMC Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 14336/tcp > /dev/null 2>&1        # NMC Stratum V2 (opt-in)
         sudo ufw allow 14337/tcp > /dev/null 2>&1        # NMC Stratum TLS
         sudo ufw allow 8334/tcp > /dev/null 2>&1         # NMC P2P
-        log "Namecoin ports opened: 14335-14337/tcp (stratum V1/V2/TLS), 8334/tcp (P2P)"
+        log "Namecoin ports opened: 14335-14337/tcp (stratum V1/V2/TLS; V2 only if enabled), 8334/tcp (P2P)"
     fi
     if [[ "$ENABLE_SYS" == "true" ]]; then
         sudo ufw allow 15335/tcp > /dev/null 2>&1        # SYS Stratum V1
-        sudo ufw allow 15336/tcp > /dev/null 2>&1        # SYS Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 15336/tcp > /dev/null 2>&1        # SYS Stratum V2 (opt-in)
         sudo ufw allow 15337/tcp > /dev/null 2>&1        # SYS Stratum TLS
         sudo ufw allow 8369/tcp > /dev/null 2>&1         # SYS P2P
-        log "Syscoin ports opened: 15335-15337/tcp (stratum V1/V2/TLS), 8369/tcp (P2P)"
+        log "Syscoin ports opened: 15335-15337/tcp (stratum V1/V2/TLS; V2 only if enabled), 8369/tcp (P2P)"
     fi
     if [[ "$ENABLE_XMY" == "true" ]]; then
         sudo ufw allow 17335/tcp > /dev/null 2>&1        # XMY Stratum V1
-        sudo ufw allow 17336/tcp > /dev/null 2>&1        # XMY Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 17336/tcp > /dev/null 2>&1        # XMY Stratum V2 (opt-in)
         sudo ufw allow 17337/tcp > /dev/null 2>&1        # XMY Stratum TLS
         sudo ufw allow 10888/tcp > /dev/null 2>&1        # XMY P2P
-        log "Myriad ports opened: 17335-17337/tcp (stratum V1/V2/TLS), 10888/tcp (P2P)"
+        log "Myriad ports opened: 17335-17337/tcp (stratum V1/V2/TLS; V2 only if enabled), 10888/tcp (P2P)"
     fi
     if [[ "$ENABLE_LTC" == "true" ]]; then
         sudo ufw allow 7333/tcp > /dev/null 2>&1         # LTC Stratum V1
-        sudo ufw allow 7334/tcp > /dev/null 2>&1         # LTC Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 7334/tcp > /dev/null 2>&1         # LTC Stratum V2 (opt-in)
         sudo ufw allow 7335/tcp > /dev/null 2>&1         # LTC Stratum TLS
         sudo ufw allow 9333/tcp > /dev/null 2>&1         # LTC P2P
-        log "Litecoin ports opened: 7333-7335/tcp (stratum V1/V2/TLS), 9333/tcp (P2P)"
+        log "Litecoin ports opened: 7333-7335/tcp (stratum V1/V2/TLS; V2 only if enabled), 9333/tcp (P2P)"
     fi
     if [[ "$ENABLE_DOGE" == "true" ]]; then
         sudo ufw allow 8335/tcp > /dev/null 2>&1         # DOGE Stratum V1
-        sudo ufw allow 8337/tcp > /dev/null 2>&1         # DOGE Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 8337/tcp > /dev/null 2>&1         # DOGE Stratum V2 (opt-in)
         sudo ufw allow 8342/tcp > /dev/null 2>&1         # DOGE Stratum TLS
         sudo ufw allow 22556/tcp > /dev/null 2>&1        # DOGE P2P
-        log "Dogecoin ports opened: 8335,8337,8342/tcp (stratum V1/V2/TLS), 22556/tcp (P2P)"
+        log "Dogecoin ports opened: 8335,8337,8342/tcp (stratum V1/V2/TLS; V2 only if enabled), 22556/tcp (P2P)"
     fi
     if [[ "$ENABLE_DGB_SCRYPT" == "true" ]]; then
         sudo ufw allow 3336/tcp > /dev/null 2>&1         # DGB-Scrypt Stratum V1
-        sudo ufw allow 3337/tcp > /dev/null 2>&1         # DGB-Scrypt Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 3337/tcp > /dev/null 2>&1         # DGB-Scrypt Stratum V2 (opt-in)
         sudo ufw allow 3338/tcp > /dev/null 2>&1         # DGB-Scrypt Stratum TLS
         # DGB-SCRYPT shares DGB daemon — ensure P2P port is open even without DGB SHA256d
         if [[ "$ENABLE_DGB" != "true" ]]; then
             sudo ufw allow 12024/tcp > /dev/null 2>&1    # DGB P2P (shared daemon)
         fi
-        log "DigiByte-Scrypt ports opened: 3336-3338/tcp (stratum V1/V2/TLS)"
+        log "DigiByte-Scrypt ports opened: 3336-3338/tcp (stratum V1/V2/TLS; V2 only if enabled)"
     fi
     if [[ "$ENABLE_PEP" == "true" ]]; then
         sudo ufw allow 10335/tcp > /dev/null 2>&1        # PEP Stratum V1
-        sudo ufw allow 10336/tcp > /dev/null 2>&1        # PEP Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 10336/tcp > /dev/null 2>&1        # PEP Stratum V2 (opt-in)
         sudo ufw allow 10337/tcp > /dev/null 2>&1        # PEP Stratum TLS
         sudo ufw allow 33874/tcp > /dev/null 2>&1        # PEP P2P
-        log "PepeCoin ports opened: 10335-10337/tcp (stratum V1/V2/TLS), 33874/tcp (P2P)"
+        log "PepeCoin ports opened: 10335-10337/tcp (stratum V1/V2/TLS; V2 only if enabled), 33874/tcp (P2P)"
     fi
     if [[ "$ENABLE_CAT" == "true" ]]; then
         sudo ufw allow 12335/tcp > /dev/null 2>&1        # CAT Stratum V1
-        sudo ufw allow 12336/tcp > /dev/null 2>&1        # CAT Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 12336/tcp > /dev/null 2>&1        # CAT Stratum V2 (opt-in)
         sudo ufw allow 12337/tcp > /dev/null 2>&1        # CAT Stratum TLS
         sudo ufw allow 9933/tcp > /dev/null 2>&1         # CAT P2P
-        log "Catcoin ports opened: 12335-12337/tcp (stratum V1/V2/TLS), 9933/tcp (P2P)"
+        log "Catcoin ports opened: 12335-12337/tcp (stratum V1/V2/TLS; V2 only if enabled), 9933/tcp (P2P)"
     fi
     if [[ "$ENABLE_FBTC" == "true" ]]; then
         sudo ufw allow 18335/tcp > /dev/null 2>&1        # FBTC Stratum V1
-        sudo ufw allow 18336/tcp > /dev/null 2>&1        # FBTC Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 18336/tcp > /dev/null 2>&1        # FBTC Stratum V2 (opt-in)
         sudo ufw allow 18337/tcp > /dev/null 2>&1        # FBTC Stratum TLS
         sudo ufw allow 8341/tcp > /dev/null 2>&1         # FBTC P2P
-        log "Fractal Bitcoin ports opened: 18335-18337/tcp (stratum V1/V2/TLS), 8341/tcp (P2P)"
+        log "Fractal Bitcoin ports opened: 18335-18337/tcp (stratum V1/V2/TLS; V2 only if enabled), 8341/tcp (P2P)"
     fi
     if [[ "$ENABLE_XEC" == "true" ]]; then
         sudo ufw allow 18338/tcp > /dev/null 2>&1        # XEC Stratum V1
-        sudo ufw allow 18339/tcp > /dev/null 2>&1        # XEC Stratum V2
+        [[ "$ENABLE_V2_STRATUM" == "true" ]] && sudo ufw allow 18339/tcp > /dev/null 2>&1        # XEC Stratum V2 (opt-in)
         sudo ufw allow 18340/tcp > /dev/null 2>&1        # XEC Stratum TLS
         sudo ufw allow 8343/tcp > /dev/null 2>&1         # XEC P2P (non-default, avoids BTC 8333 conflict)
-        log "eCash ports opened: 18338-18340/tcp (stratum V1/V2/TLS), 8343/tcp (P2P)"
+        log "eCash ports opened: 18338-18340/tcp (stratum V1/V2/TLS; V2 only if enabled), 8343/tcp (P2P)"
     fi
     # Multi coin smart port (port 16180)
     if [[ "$MULTIPORT_ENABLED" == "true" ]]; then
@@ -16517,6 +16750,22 @@ EOF
     # Disable default MOTD components that add clutter
     sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
 
+    # Record what only the installer knows, for the MOTD to read at login.
+    # The MOTD heredoc is quoted, so nothing is substituted when it is written and
+    # the script runs as whoever logs in — it cannot see CLOUD_DETECTED, ADMIN_USER
+    # or CLOUD_SERVER_IP, which are set during detection here. Without this file the
+    # cloud branch could never fire and a cloud install was never shown its SSH
+    # tunnel command. Re-detecting inside the MOTD was rejected: that is a
+    # hundred-provider DMI scan, and it would run on every login.
+    # No secrets — a provider name, a public IP, and the admin's own username.
+    sudo mkdir -p "$INSTALL_DIR/data"
+    sudo tee "$INSTALL_DIR/data/cloud-info" > /dev/null <<CLOUDINFOEOF
+CLOUD_DETECTED='${CLOUD_DETECTED}'
+CLOUD_SERVER_IP='${CLOUD_SERVER_IP}'
+ADMIN_USER='${ADMIN_USER}'
+CLOUDINFOEOF
+    sudo chmod 644 "$INSTALL_DIR/data/cloud-info"
+
     # Create custom Spiral Pool MOTD
     sudo tee /etc/update-motd.d/00-spiralpool > /dev/null << 'MOTDEOF'
 #!/bin/bash
@@ -16565,6 +16814,24 @@ POOL_C=$(sc "$POOL_STATUS"); POOL_I=$(si "$POOL_STATUS"); POOL_P=$(printf '%-8s'
 DASH_C=$(sc "$DASH_STATUS"); DASH_I=$(si "$DASH_STATUS"); DASH_P=$(printf '%-8s' "$DASH_STATUS")
 SENT_C=$(sc "$SENT_STATUS"); SENT_I=$(si "$SENT_STATUS"); SENT_P=$(printf '%-8s' "$SENT_STATUS")
 
+# Coin daemons. A pool whose chain daemon is down mines nothing, and the stratum
+# line alone does not say which coin is at fault — or that a coin is at fault at
+# all. A DigiByte pool once sat dead for two days with only this banner to warn.
+COIN_LINE=""
+for _d in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ecashd; do
+    systemctl is-enabled --quiet "$_d" 2>/dev/null || continue
+    _st=$(systemctl is-active "$_d" 2>/dev/null) || _st="inactive"
+    case "$_d" in
+        digibyted) _label="DGB" ;; bitcoind) _label="BTC" ;; bitcoind-bch) _label="BCH" ;;
+        bitcoincashIId) _label="BCH2" ;; bitcoiniid) _label="BC2" ;; bitcoinsilverd) _label="BTCS" ;;
+        litecoind) _label="LTC" ;; dogecoind) _label="DOGE" ;; pepecoind) _label="PEP" ;;
+        catcoind) _label="CAT" ;; namecoind) _label="NMC" ;; syscoind) _label="SYS" ;;
+        myriadcoind) _label="XMY" ;; fractald) _label="FBTC" ;; ecashd) _label="XEC" ;;
+        *) _label="$_d" ;;
+    esac
+    COIN_LINE="${COIN_LINE}   $(sc "$_st")$(si "$_st")${NC} ${_label} $(sc "$_st")${_st}${NC}"
+done
+
 # Column helpers — cmd padded to 26 chars, desc to 15 chars for grid alignment
 C() { printf '%-26s' "$1"; }
 D() { printf '%-15s' "$1"; }
@@ -16582,17 +16849,20 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.7.1 — SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V3.0.0 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
+[ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
 echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
 echo ""
 echo -e "${CYAN}━━━ STATUS & MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 'spiralctl watch')${NC}  Live monitor"
 echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
 echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl scan')${NC}  Find miners"
+echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miner control')${NC}  Control hardware"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  $(D 'Smart port')"
+echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl v2')${NC}  $(D 'Stratum V2')"
 echo -e "  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  $(D 'Add coin')  ${YELLOW}$(C 'spiralctl coin disable <SYM>')${NC}  Remove coin"
 echo -e "  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  $(D 'Upgrade nodes')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart services"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -16606,6 +16876,11 @@ echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━�
 echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BCH2  BC2  BTCS  DGB  XEC    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
 echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Cloud facts the installer recorded. This script runs as whoever logs in and is
+# written from a quoted heredoc, so these cannot be inherited or substituted —
+# without this read the cloud branch below is unreachable.
+CLOUD_DETECTED=""; CLOUD_SERVER_IP=""; ADMIN_USER=""
+[ -r /spiralpool/data/cloud-info ] && . /spiralpool/data/cloud-info 2>/dev/null
 # Detect HTTPS at runtime from the service file
 DASH_PROTO="http"
 if grep -q "^ExecStart.*\-\-certfile" /etc/systemd/system/spiraldash.service 2>/dev/null; then
@@ -16834,19 +17109,22 @@ blocksonly=0"
     fi
 
     # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
-    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # with systemd limits providing ~5GB overhead for the UTXO set, mempool, OS
+# and the in-memory block index, which on a 24M-block chain like DigiByte is
+# ~2.5GB on its own -- a DGB node measured 9.7GB in use against an 11G cap
+# with only 4GB of that being dbcache, and would have hit the ceiling mid-sync.
     # DGB's initial sync is heavily I/O-bound; larger dbcache dramatically reduces sync time.
     # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
     local DGB_DBCACHE=8192
-    local DGB_MEM_MAX="11G"
-    local DGB_MEM_HIGH="9G"
+    local DGB_MEM_MAX="13G"
+    local DGB_MEM_HIGH="12G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
         local db_cap=$((total_mb * 55 / 100))
         [[ "$db_cap" -lt 1024 ]] && db_cap=1024
         [[ "$db_cap" -gt 8192 ]] && db_cap=8192
         DGB_DBCACHE=$db_cap
-        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
+        local mem_max_gb=$(( (db_cap + 5120) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         DGB_MEM_MAX="${mem_max_gb}G"
         DGB_MEM_HIGH="$(( mem_max_gb - 1 ))G"
@@ -16884,6 +17162,7 @@ blocksonly=0"
         log "Preserving existing DigiByte pruning (${_dgb_prune}) on reconfigure — not reverting to a full node"
     fi
 
+    ensure_rpc_password DGB
     sudo tee "$DGB_DIR/digibyte.conf" > /dev/null << EOF
 # DigiByte Core Configuration
 # Spiral Pool v3 - Solo Mining Pool
@@ -17432,25 +17711,29 @@ peertimeout=60"
     fi
 
     # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
-    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # with systemd limits providing ~5GB overhead for the UTXO set, mempool, OS
+# and the in-memory block index, which on a 24M-block chain like DigiByte is
+# ~2.5GB on its own -- a DGB node measured 9.7GB in use against an 11G cap
+# with only 4GB of that being dbcache, and would have hit the ceiling mid-sync.
     # BTC has the largest UTXO set so needs generous dbcache during sync.
     # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
     local BTC_DBCACHE=8192
-    local BTC_MEM_MAX="11G"
-    local BTC_MEM_HIGH="9G"
+    local BTC_MEM_MAX="13G"
+    local BTC_MEM_HIGH="12G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
         local db_cap=$((total_mb * 55 / 100))
         [[ "$db_cap" -lt 1024 ]] && db_cap=1024
         [[ "$db_cap" -gt 8192 ]] && db_cap=8192
         BTC_DBCACHE=$db_cap
-        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
+        local mem_max_gb=$(( (db_cap + 5120) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         BTC_MEM_MAX="${mem_max_gb}G"
         BTC_MEM_HIGH="$(( mem_max_gb - 1 ))G"
         log "Auto-sized: BTC dbcache=${BTC_DBCACHE}MB, MemoryMax=${BTC_MEM_MAX} (${total_mb}MB total RAM)"
     fi
 
+    ensure_rpc_password BTC
     sudo tee "$BTC_DATA/bitcoin.conf" > /dev/null << EOF
 # Bitcoin Core Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
@@ -17733,18 +18016,21 @@ install_bitcoincash() {
     fi  # end bch_download_needed
 
     # Auto-sized resource sizing: use 55% of total RAM for dbcache (capped at 8192MB)
-    # with systemd limits providing ~3GB overhead for UTXO set, mempool, and OS.
+    # with systemd limits providing ~5GB overhead for the UTXO set, mempool, OS
+# and the in-memory block index, which on a 24M-block chain like DigiByte is
+# ~2.5GB on its own -- a DGB node measured 9.7GB in use against an 11G cap
+# with only 4GB of that being dbcache, and would have hit the ceiling mid-sync.
     # Coins sync one at a time, so only one daemon holds a large dbcache during IBD.
     local BCH_DBCACHE=8192
-    local BCH_MEM_MAX="11G"
-    local BCH_MEM_HIGH="9G"
+    local BCH_MEM_MAX="13G"
+    local BCH_MEM_HIGH="12G"
     local total_mb=$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
     if [[ "$total_mb" -gt 0 ]]; then
         local db_cap=$((total_mb * 55 / 100))
         [[ "$db_cap" -lt 1024 ]] && db_cap=1024
         [[ "$db_cap" -gt 8192 ]] && db_cap=8192
         BCH_DBCACHE=$db_cap
-        local mem_max_gb=$(( (db_cap + 3072) / 1024 ))
+        local mem_max_gb=$(( (db_cap + 5120) / 1024 ))
         [[ "$mem_max_gb" -lt 3 ]] && mem_max_gb=3
         BCH_MEM_MAX="${mem_max_gb}G"
         BCH_MEM_HIGH="$(( mem_max_gb - 1 ))G"
@@ -17809,6 +18095,7 @@ onlynet=ipv4
 dnsseed=1"
     fi
 
+    ensure_rpc_password BCH
     sudo tee "$BCH_DATA/bitcoin.conf" > /dev/null << EOF
 # Bitcoin Cash Node (BCHN) Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
@@ -17880,21 +18167,21 @@ seednode=bch.bitjson.com
 forcednsseed=1
 
 # Hardcoded fallback peers (resolved from live DNS seeds 2026-03-30)
-addnode=195.3.223.29:8433
-addnode=199.217.115.27:8433
-addnode=3.142.98.179:8433
-addnode=35.163.48.30:8433
-addnode=35.198.46.157:8433
-addnode=51.91.196.151:8433
-addnode=174.140.196.19:8433
-addnode=193.164.205.249:8433
-addnode=194.14.246.11:8433
-addnode=8.219.86.245:8433
-addnode=15.204.95.99:8433
-addnode=18.139.1.192:8433
-addnode=51.159.104.35:8433
-addnode=57.129.18.162:8433
-addnode=65.109.90.134:8433"; fi)
+addnode=195.3.223.29:8333
+addnode=199.217.115.27:8333
+addnode=3.142.98.179:8333
+addnode=35.163.48.30:8333
+addnode=35.198.46.157:8333
+addnode=51.91.196.151:8333
+addnode=174.140.196.19:8333
+addnode=193.164.205.249:8333
+addnode=194.14.246.11:8333
+addnode=8.219.86.245:8333
+addnode=15.204.95.99:8333
+addnode=18.139.1.192:8333
+addnode=51.159.104.35:8333
+addnode=57.129.18.162:8333
+addnode=65.109.90.134:8333"; fi)
 EOF
 
     sudo chmod 640 "$BCH_DATA/bitcoin.conf"  # 640 allows group read for CLI tools
@@ -18023,12 +18310,14 @@ install_bitcoinii() {
 
     cd /tmp
 
-    # Determine architecture suffix for download (BC2 uses -CLI suffix, not -gnu)
-    local BC2_ARCH_SUFFIX="x86_64-linux-CLI"
+    # From v31.1.0 the asset is BitcoinII-v<major.minor>-Linux-CLI.tar.gz: a "v"
+    # prefix, no patch digit (tag v31.1.0 ships BitcoinII-v31.1-...) and no arch
+    # token. Only x86_64 Linux binaries are published.
+    local BC2_ARCH_SUFFIX="Linux-CLI"
 
     # Bitcoin II download mirrors (official GitHub releases)
     local BC2_MIRRORS=(
-        "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${BITCOINII_VERSION}/BitcoinII-${BITCOINII_VERSION}-${BC2_ARCH_SUFFIX}.tar.gz"
+        "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${BITCOINII_VERSION}/BitcoinII-v${BITCOINII_VERSION%.*}-${BC2_ARCH_SUFFIX}.tar.gz"
     )
 
     # Download with retry
@@ -18071,6 +18360,14 @@ install_bitcoinii() {
         return 1
     fi
 
+    # SHA256 of the 31.1.0 asset (BitcoinII-v31.1-Linux-CLI.tar.gz): GitHub's recorded
+    # digest, matched by an independent download
+    local BC2_SHA256="78a88df783c2e15d09ea73c05065f7477cad34086b6e995991f7adeae781603f"
+    if ! verify_sha256 bitcoinii.tar.gz "$BC2_SHA256" "Bitcoin II Core $BITCOINII_VERSION"; then
+        rm -f bitcoinii.tar.gz
+        return 1
+    fi
+
     log "Extracting Bitcoin II Core..."
     # Derive directory name from tarball before extracting (no glob in /tmp)
     # Handles both naming conventions: BitcoinII-* and bitcoinII-*
@@ -18096,6 +18393,9 @@ install_bitcoinii() {
         # v29.1.0 structure: binaries are in root of extracted directory
         # Bitcoin II uses capital "II" in binary names: bitcoinIId, bitcoinII-cli
         sudo cp "${extracted_dir}/bitcoinIId" "$BC2_DIR/bin/" 2>/dev/null || true
+        # v31.1.0 renamed the daemon to bitcoinII-d. Install it under the established
+        # bitcoinIId name so the service unit, symlinks and tooling stay unchanged.
+        sudo cp "${extracted_dir}/bitcoinII-d" "$BC2_DIR/bin/bitcoinIId" 2>/dev/null || true
         sudo cp "${extracted_dir}/bitcoinII-cli" "$BC2_DIR/bin/" 2>/dev/null || true
         sudo cp "${extracted_dir}/bitcoinII-qt" "$BC2_DIR/bin/" 2>/dev/null || true
         sudo cp "${extracted_dir}/bitcoinII-tx" "$BC2_DIR/bin/" 2>/dev/null || true
@@ -18166,6 +18466,7 @@ dnsseed=1
 peertimeout=60"
     fi
 
+    ensure_rpc_password BC2
     sudo tee "$BC2_DATA/bitcoinii.conf" > /dev/null << EOF
 # Bitcoin II Core Configuration
 # Spiral Pool v3 - Multi-Coin Solo Mining
@@ -18436,6 +18737,7 @@ install_bitcoincashii() {
         sudo ln -sf "$BCH2_DIR/bin/bitcoincashII-cli" /usr/local/bin/bitcoincashii-cli
     fi  # end bch2_download_needed
 
+    ensure_rpc_password BCH2
     sudo tee "$BCH2_DATA/bitcoincashii.conf" > /dev/null << EOF
 # Bitcoin Cash II Core Configuration
 # Spiral Pool — Multi-Coin Solo Mining
@@ -18609,7 +18911,12 @@ install_bitcoinsilver() {
     fi
 
     if [[ "$btcs_download_needed" == "true" ]]; then
-        local BTCS_URL="https://github.com/bitcoin-silver/core/releases/download/v${BTCS_VERSION}/bitcoinsilver-linux.tar.gz"
+        # From 31.1.0 releases are tagged version<ver> and ship a standard
+        # bitcoinsilver-<ver>-x86_64-linux-gnu/bin/ layout (x86_64 only).
+        local BTCS_ARCHIVE="bitcoinsilver-${BTCS_VERSION}-x86_64-linux-gnu"
+        local BTCS_URL="https://github.com/bitcoin-silver/core/releases/download/version${BTCS_VERSION}/${BTCS_ARCHIVE}.tar.gz"
+        # SHA256 of the 31.1.3 asset: GitHub's recorded digest, matched by an independent download
+        local BTCS_SHA256="6743ecef53501687574a5f761ddb41dcce960953e0e0b6ef362ab69268767c4c"
 
         cd /tmp
         log "Downloading Bitcoin Silver $BTCS_VERSION..."
@@ -18618,17 +18925,20 @@ install_bitcoinsilver() {
             log_error "Please download manually from: https://github.com/bitcoin-silver/core/releases"
             return 1
         fi
+        if ! verify_sha256 bitcoinsilver.tar.gz "$BTCS_SHA256" "Bitcoin Silver $BTCS_VERSION"; then
+            rm -f bitcoinsilver.tar.gz
+            return 1
+        fi
 
         log "Extracting Bitcoin Silver..."
         sudo mkdir -p "$BTCS_BIN_DIR/bin"
-        tar -xzf bitcoinsilver.tar.gz || { log_error "Failed to extract Bitcoin Silver archive"; return 1; }
-        # Binaries are at the archive root (no subdirectory) in v1.0.2
+        tar -xzf bitcoinsilver.tar.gz || { log_error "Failed to extract Bitcoin Silver archive"; rm -f bitcoinsilver.tar.gz; return 1; }
         for _btcs_bin in bitcoinsilverd bitcoinsilver-cli bitcoinsilver-tx bitcoinsilver-wallet; do
-            [[ -f "/tmp/$_btcs_bin" ]] && sudo cp "/tmp/$_btcs_bin" "$BTCS_BIN_DIR/bin/" || true
+            [[ -f "/tmp/$BTCS_ARCHIVE/bin/$_btcs_bin" ]] && sudo cp "/tmp/$BTCS_ARCHIVE/bin/$_btcs_bin" "$BTCS_BIN_DIR/bin/" || true
         done
         sudo chmod +x "$BTCS_BIN_DIR/bin/"*
         sudo chown -R "$POOL_USER:$POOL_USER" "$BTCS_BIN_DIR"
-        rm -f bitcoinsilver.tar.gz bitcoinsilverd bitcoinsilver-cli bitcoinsilver-tx bitcoinsilver-wallet bitcoinsilver-qt
+        rm -rf bitcoinsilver.tar.gz "$BTCS_ARCHIVE"
 
         if [[ ! -f "$BTCS_BIN_DIR/bin/bitcoinsilverd" ]]; then
             log_error "Bitcoin Silver daemon binary not found after extraction"
@@ -18651,6 +18961,7 @@ install_bitcoinsilver() {
     sudo mkdir -p "$BTCS_DATA"
     sudo chown -R "$POOL_USER:$POOL_USER" "$BTCS_DIR"
 
+    ensure_rpc_password BTCS
     sudo tee "$BTCS_DATA/bitcoinsilver.conf" > /dev/null << EOF
 # Bitcoin Silver Core Configuration
 # Spiral Pool — Multi-Coin Solo Mining
@@ -18743,8 +19054,11 @@ Restart=always
 RestartSec=30
 TimeoutStartSec=infinity
 TimeoutStopSec=600
-MemoryMax=3G
-MemoryHigh=2G
+# Same 2048 dbcache as Bitcoin II, Bitcoin Cash II, Syscoin and eCash, which
+# each get 2G of headroom above it for the block index, mempool and net buffers.
+# This one had 1G for no reason anyone recorded.
+MemoryMax=4G
+MemoryHigh=3G
 LimitNOFILE=65536
 LimitNPROC=65536
 Nice=-5
@@ -18919,6 +19233,7 @@ seednode=dnsseed.koin-project.com"
 
     # Create configuration
     log "Creating Litecoin configuration..."
+    ensure_rpc_password LTC
     sudo -u "$POOL_USER" tee "$LTC_DIR/litecoin.conf" > /dev/null << EOF
 # Litecoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -19160,6 +19475,7 @@ seednode=seed2.multidoge.org"
 
     # Create configuration
     log "Creating Dogecoin configuration..."
+    ensure_rpc_password DOGE
     sudo -u "$POOL_USER" tee "$DOGE_DIR/dogecoin.conf" > /dev/null << EOF
 # Dogecoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -19394,6 +19710,7 @@ seednode=seeds.pepeblocks.com"
 
     # Create configuration
     log "Creating PepeCoin configuration..."
+    ensure_rpc_password PEP
     sudo -u "$POOL_USER" tee "$PEP_DIR/pepecoin.conf" > /dev/null << EOF
 # PepeCoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -19636,6 +19953,7 @@ seednode=cat.geekhash.org"
 
     # Create configuration
     log "Creating Catcoin configuration..."
+    ensure_rpc_password CAT
     sudo -u "$POOL_USER" tee "$CAT_DIR/catcoin.conf" > /dev/null << EOF
 # Catcoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -19870,6 +20188,7 @@ seednode=namecoin.seed.cypherstack.com"
 
     # Create configuration
     log "Creating Namecoin configuration..."
+    ensure_rpc_password NMC
     sudo -u "$POOL_USER" tee "$NMC_DIR/namecoin.conf" > /dev/null << EOF
 # Namecoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -20103,6 +20422,7 @@ seednode=seed4.syscoin.org"
 
     # Create configuration
     log "Creating Syscoin configuration..."
+    ensure_rpc_password SYS
     sudo -u "$POOL_USER" tee "$SYS_DIR/syscoin.conf" > /dev/null << EOF
 # Syscoin Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -20354,6 +20674,7 @@ seednode=xmy-seed1.coinid.org"
 
     # Create configuration
     log "Creating Myriad configuration..."
+    ensure_rpc_password XMY
     sudo -u "$POOL_USER" tee "$XMY_DIR/myriadcoin.conf" > /dev/null << EOF
 # Myriad Core Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -20525,10 +20846,17 @@ install_fbtc() {
     # Fractal Bitcoin download from GitHub releases
     local FBTC_URL="https://github.com/fractal-bitcoin/fractald-release/releases/download/v${FBTC_VERSION}/fractald-${FBTC_VERSION}-x86_64-linux-gnu.tar.gz"
 
+    # SHA256 of the 0.4.0 asset: GitHub's recorded digest, matched by an independent download
+    local FBTC_SHA256="26f44e52e8d720c44cfb6954a900f2e5042d0c9d8285d4252916fce958a1d90f"
+
     log "Downloading Fractal Bitcoin $FBTC_VERSION..."
     if ! download_with_retry "fractald.tar.gz" "$FBTC_URL"; then
         log_error "Failed to download Fractal Bitcoin"
         log_error "Please download manually from: https://github.com/fractal-bitcoin/fractald-release/releases"
+        return 1
+    fi
+    if ! verify_sha256 fractald.tar.gz "$FBTC_SHA256" "Fractal Bitcoin $FBTC_VERSION"; then
+        rm -f fractald.tar.gz
         return 1
     fi
 
@@ -20577,6 +20905,7 @@ seednode=dnsseed.fractalbitcoin.io"
 
     # Create configuration
     log "Creating Fractal Bitcoin configuration..."
+    ensure_rpc_password FBTC
     sudo -u "$POOL_USER" tee "$FBTC_DIR/fractal.conf" > /dev/null << EOF
 # Fractal Bitcoin Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -20686,7 +21015,7 @@ EOF
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.33.10 (SHA-256d)
+# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.33.12 (SHA-256d)
 # ═══════════════════════════════════════════════════════════════════════════════
 # eCash uses the Bitcoin ABC client. The binary is named bitcoind/bitcoin-cli
 # (same as BTC/FBTC) but lives in its own directory with its own service unit
@@ -20809,6 +21138,7 @@ addnode=seeder.fabien.cash"
     fi
 
     log "Creating eCash configuration..."
+    ensure_rpc_password XEC
     sudo -u "$POOL_USER" tee "$XEC_DIR/bitcoin.conf" > /dev/null << EOF
 # eCash (Bitcoin ABC) Configuration for Spiral Pool
 # Generated by installer v$VERSION
@@ -23319,7 +23649,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="2.7.1"
+    local BUILD_VERSION="3.0.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -24431,6 +24761,13 @@ EOF
 configure_stratum_multicoin() {
     log "Generating multi-coin configuration (V2 format)..."
 
+    # Stratum V2 is opt-in: without it port_v2 is written commented out, so no V2
+    # listener starts and enabling it later is a one-line uncomment.
+    local V2_PORT_PREFIX="# "
+    if [[ "$ENABLE_V2_STRATUM" == "true" ]]; then
+        V2_PORT_PREFIX=""
+    fi
+
     # CRITICAL: Read passwords from daemon configs to ensure consistency
     # This prevents mismatches if passwords were regenerated during install
     local dgb_rpc_pass=""
@@ -24564,7 +24901,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 3333
-      port_v2: 3334
+      ${V2_PORT_PREFIX}port_v2: 3334
       port_tls: 3335
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24611,7 +24948,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 4333
-      port_v2: 4334
+      ${V2_PORT_PREFIX}port_v2: 4334
       port_tls: 4335
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24658,7 +24995,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 5333
-      port_v2: 5334
+      ${V2_PORT_PREFIX}port_v2: 5334
       port_tls: 5335
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24705,7 +25042,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: $BCH2_STRATUM_PORT
-      port_v2: $((BCH2_STRATUM_PORT + 1))
+      ${V2_PORT_PREFIX}port_v2: $((BCH2_STRATUM_PORT + 1))
       port_tls: $((BCH2_STRATUM_PORT + 2))
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24751,7 +25088,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: $BC2_STRATUM_PORT
-      port_v2: $((BC2_STRATUM_PORT + 1))
+      ${V2_PORT_PREFIX}port_v2: $((BC2_STRATUM_PORT + 1))
       port_tls: $((BC2_STRATUM_PORT + 2))
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24798,7 +25135,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: $BTCS_STRATUM_PORT
-      port_v2: 11336
+      ${V2_PORT_PREFIX}port_v2: 11336
       port_tls: 11337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24844,7 +25181,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 14335
-      port_v2: 14336
+      ${V2_PORT_PREFIX}port_v2: 14336
       port_tls: 14337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24891,7 +25228,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 15335
-      port_v2: 15336
+      ${V2_PORT_PREFIX}port_v2: 15336
       port_tls: 15337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24938,7 +25275,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 17335
-      port_v2: 17336
+      ${V2_PORT_PREFIX}port_v2: 17336
       port_tls: 17337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -24985,7 +25322,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 18335
-      port_v2: 18336
+      ${V2_PORT_PREFIX}port_v2: 18336
       port_tls: 18337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25033,7 +25370,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 18338
-      port_v2: 18339
+      ${V2_PORT_PREFIX}port_v2: 18339
       port_tls: 18340
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25084,7 +25421,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 7333
-      port_v2: 7334
+      ${V2_PORT_PREFIX}port_v2: 7334
       port_tls: 7335
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25131,7 +25468,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 8335
-      port_v2: 8337
+      ${V2_PORT_PREFIX}port_v2: 8337
       port_tls: 8342
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25180,7 +25517,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 3336
-      port_v2: 3337
+      ${V2_PORT_PREFIX}port_v2: 3337
       port_tls: 3338
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25234,7 +25571,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 10335
-      port_v2: 10336
+      ${V2_PORT_PREFIX}port_v2: 10336
       port_tls: 10337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25288,7 +25625,7 @@ configure_stratum_multicoin() {
     coinbase_text: \"$COINBASE_TEXT\"
     stratum:
       port: 12335
-      port_v2: 12336
+      ${V2_PORT_PREFIX}port_v2: 12336
       port_tls: 12337
       tls:
         cert_file: \"$INSTALL_DIR/tls/stratum.crt\"
@@ -25748,6 +26085,8 @@ install_dashboard() {
 
     sudo mkdir -p "$DASH_DIR"
     sudo cp -r "$SCRIPT_DIR/src/dashboard/"* "$DASH_DIR/"
+    # Automation rules module, shared with Sentinel
+    [[ -f "$SCRIPT_DIR/src/sentinel/miner_automation.py" ]] && sudo cp "$SCRIPT_DIR/src/sentinel/miner_automation.py" "$DASH_DIR/"
     sudo chown -R "$POOL_USER:$POOL_USER" "$DASH_DIR"
 
     log "Creating Python virtual environment..."
@@ -25784,7 +26123,10 @@ install_dashboard() {
     sudo tee /etc/systemd/system/spiraldash.service > /dev/null << EOF
 [Unit]
 Description=Spiral Dash - Mining Pool Dashboard
-After=network-online.target spiralstratum.service
+# Not After=spiralstratum.service: stratum stays "activating" while wait-for-node.sh
+# waits for the chain, which held the dashboard back for minutes after every boot.
+# The dashboard already copes with the pool API being down.
+After=network-online.target
 # Prevent restart loops: max 5 restarts in 10 minutes
 # R-11 FIX: Increased from 300s to 600s — dashboard depends on stratum, which
 # can take 5+ minutes after cold boot. 300s was too aggressive.
@@ -25797,7 +26139,7 @@ User=$POOL_USER
 Group=$POOL_USER
 WorkingDirectory=$DASH_DIR
 ExecStartPre=-/bin/rm -f $DASH_DIR/gunicorn.ctl
-ExecStart=$DASH_DIR/venv/bin/gunicorn --bind 0.0.0.0:$DASHBOARD_PORT ${DASH_HTTPS_ARGS} --worker-class gthread --workers 1 --threads 4 --timeout 120 dashboard:app
+ExecStart=$DASH_DIR/venv/bin/gunicorn --bind 0.0.0.0:$DASHBOARD_PORT ${DASH_HTTPS_ARGS} --worker-class gthread --workers 1 --threads 4 --timeout 120 --no-control-socket dashboard:app
 # POST-BOOT HEALTH CHECK: After reboot, gunicorn worker can deadlock during fork
 # (post-fork threading lock inheritance). The master process stays alive and systemd
 # sees the service as "active", but no HTTP requests are served. This loop polls
@@ -25805,7 +26147,7 @@ ExecStart=$DASH_DIR/venv/bin/gunicorn --bind 0.0.0.0:$DASHBOARD_PORT ${DASH_HTTP
 # so Restart=always can recover it. Uses -k (insecure) for HTTPS self-signed certs.
 ExecStartPost=/bin/bash -c '\
   proto=http; \
-  grep -q "\\-\\-certfile" /proc/\$MAINPID/cmdline 2>/dev/null && proto=https; \
+  grep -q -- --certfile /proc/\$MAINPID/cmdline 2>/dev/null && proto=https; \
   for i in \$(seq 1 30); do \
     sleep 2; \
     curl -sfk -o /dev/null "\$\${proto}://127.0.0.1:$DASHBOARD_PORT/" 2>/dev/null && exit 0; \
@@ -25937,6 +26279,9 @@ EOF
 # Spiral Pool Dashboard - Service control permissions
 # Allows the dashboard and wallet generator to control pool services
 # These are the ONLY commands the pool user can run with sudo
+
+# One-shot reindex of a corrupt coin block database (root-owned script)
+$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/bin/daemon-reindex.sh
 
 # Clear StartLimitBurst failures (reinstall / crash-loop recovery)
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed spiralstratum
@@ -26200,6 +26545,15 @@ install_sentinel() {
     fi
     sudo chmod +x "$INSTALL_DIR/bin/SpiralSentinel.py"
     sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/SpiralSentinel.py"
+
+    # Modules Sentinel imports from its own directory: HA failover, miner automation
+    local _automation_module
+    for _automation_module in ha_manager.py miner_automation.py miner_control.py; do
+        if [[ -f "$SCRIPT_DIR/src/sentinel/$_automation_module" ]]; then
+            sudo cp "$SCRIPT_DIR/src/sentinel/$_automation_module" "$INSTALL_DIR/bin/"
+            sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/$_automation_module"
+        fi
+    done
 
     # Create Sentinel config directory
     sudo -u "$POOL_USER" mkdir -p "/home/$POOL_USER/.spiralsentinel"
@@ -26553,6 +26907,7 @@ with open('$SENTINEL_CONFIG', 'w') as f:
   "mempool_alert_threshold": 50000,
   "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
   "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
+  "simpleswap_enabled": ${SENTINEL_SIMPLESWAP_ENABLED:-true},
   "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
   "high_odds_enabled": ${SENTINEL_HIGH_ODDS_ENABLED:-true},
   "hashrate_crash_enabled": ${SENTINEL_HASHRATE_CRASH_ENABLED:-true},
@@ -26887,6 +27242,7 @@ EOF
   "mempool_alert_threshold": 50000,
   "backup_stale_enabled": ${SENTINEL_BACKUP_STALE_ENABLED:-true},
   "sats_surge_enabled": ${SENTINEL_SATS_SURGE_ENABLED:-true},
+  "simpleswap_enabled": ${SENTINEL_SIMPLESWAP_ENABLED:-true},
   "wallet_drop_alert_enabled": ${SENTINEL_WALLET_DROP_ENABLED:-true},
   "high_odds_enabled": ${SENTINEL_HIGH_ODDS_ENABLED:-true},
   "hashrate_crash_enabled": ${SENTINEL_HASHRATE_CRASH_ENABLED:-true},
@@ -27270,6 +27626,10 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 service_exists() { [[ -f "/etc/systemd/system/$1.service" ]] || systemctl cat "$1.service" &>/dev/null; }
 service_enabled() { systemctl is-enabled --quiet "$1" 2>/dev/null; }
 check_service() { systemctl is-active --quiet "$1"; }
+# A unit still running its start steps (ExecStartPre, ExecStartPost) reports
+# "activating", not "active". Restarting it then kills a healthy start: at boot
+# the monitor stopped the dashboard 5s before its post-start check finished.
+service_starting() { [[ "$(systemctl is-active "$1" 2>/dev/null)" == "activating" ]]; }
 
 restart_service() {
     local service=$1
@@ -27403,7 +27763,8 @@ check_stratum_health() {
         return
     fi
 
-    # Check if stratum service is running
+    # Check if stratum service is running (still starting counts: wait-for-node.sh can take minutes)
+    service_starting "spiralstratum" && return
     if ! check_service "spiralstratum"; then
         log "WARNING: Spiral Stratum not running (blockchain synced)"
         restart_service "spiralstratum"
@@ -27575,8 +27936,10 @@ check_blockchain_daemon_health() {
         return 0
     fi
 
+    service_starting "$daemon" && return 0
     if ! check_service "$daemon"; then
         log "WARNING: $name daemon not running"
+        report_fatal_daemon_error "$daemon" "$conf" "$name"
         restart_service "$daemon"
         return
     fi
@@ -27589,6 +27952,7 @@ check_blockchain_daemon_health() {
 
     if [[ $cli_exit -eq 0 ]]; then
         # Daemon is responsive and synced/syncing normally
+        ensure_pool_wallet_loaded "$cli" "$conf" "$name"
         return 0
     fi
 
@@ -27635,6 +27999,70 @@ check_blockchain_daemon_health() {
 
     log "WARNING: $name daemon still not responding, restarting"
     restart_service "$daemon"
+}
+
+# A wallet created over RPC stays loaded only until the daemon stops, unless it
+# is also saved to the daemon's settings.json, and nothing saved it. After any
+# reboot or daemon restart the pool wallet (pool-<coin>) was unloaded: mining
+# carried on, since the coinbase pays the configured address, but every wallet
+# RPC against it (balance, backupwallet) failed. When the pool wallet exists on
+# disk and is not loaded, load it and ask the daemon to load it on startup.
+# A daemon whose block database is corrupt exits in under a second, every time,
+# and no number of restarts will change that. Without this the monitor reports
+# only "failed 3 times this hour - manual intervention required", which does not
+# say what the intervention is. Seen on a DigiByte pool that sat dead for two days
+# after a reboot corrupted its block index.
+declare -A fatal_db_warned
+report_fatal_daemon_error() {
+    local daemon=$1
+    local conf=$2
+    local name=$3
+    local datadir tail_text
+    datadir=$(dirname "$conf")
+    [[ -r "$datadir/debug.log" ]] || return 0
+    [[ -n "${fatal_db_warned[$daemon]:-}" ]] && return 0
+    tail_text=$(tail -c 20000 "$datadir/debug.log" 2>/dev/null | tr -d '\0')
+    grep -qiE "Error opening block database|Corruption: checksum mismatch|Aborted block database rebuild" <<< "$tail_text" || return 0
+    fatal_db_warned[$daemon]=1
+    log "ERROR: $name block database is corrupt — restarting cannot fix it. Details in $datadir/debug.log"
+    if [[ -x "$INSTALL_DIR/bin/daemon-reindex.sh" ]]; then
+        sudo -n "$INSTALL_DIR/bin/daemon-reindex.sh" "$daemon" >/dev/null 2>&1 || true
+    else
+        log "ERROR: $name needs a one-time reindex: add -reindex to $daemon's ExecStart through a systemd drop-in, start it, and remove the drop-in once it is past 'Loading block index'"
+    fi
+}
+
+declare -A wallet_load_warned
+ensure_pool_wallet_loaded() {
+    local cli=$1
+    local conf=$2
+    local name=$3
+    local datadir wallet loaded out
+    datadir=$(dirname "$conf")
+    wallet="pool-$(basename "$datadir")"
+
+    # No pool wallet on this node (manual address, or a daemon without named wallets)
+    [[ -d "$datadir/$wallet" || -d "$datadir/wallets/$wallet" ]] || return 0
+
+    loaded=$(timeout 30 "$cli" -conf="$conf" listwallets 2>/dev/null) || return 0
+    grep -q "\"$wallet\"" <<< "$loaded" && return 0
+
+    if out=$(timeout 60 "$cli" -conf="$conf" loadwallet "$wallet" true 2>&1); then
+        log "$name: loaded wallet $wallet and set it to load on startup"
+    elif grep -qi "already loaded" <<< "$out"; then
+        return 0
+    elif out=$(timeout 60 "$cli" -conf="$conf" loadwallet "$wallet" 2>&1); then
+        # Daemons older than load_on_startup take only the name; this check reloads it after each restart
+        log "$name: loaded wallet $wallet (this daemon cannot save it for startup)"
+    else
+        # Warn once per failure, not every 60 seconds
+        if [[ -z "${wallet_load_warned[$wallet]:-}" ]]; then
+            log "WARNING: $name: could not load wallet $wallet: $(tr '\n' ' ' <<< "$out")"
+            wallet_load_warned[$wallet]=1
+        fi
+        return 0
+    fi
+    unset 'wallet_load_warned[$wallet]'
 }
 
 # Check all enabled blockchain daemons
@@ -27755,7 +28183,7 @@ while true; do
         : # HA backup/observer — optional services intentionally stopped, skip
     else
         for service in "${ACTIVE_OPTIONAL[@]}"; do
-            check_service "$service" || restart_service "$service"
+            check_service "$service" || service_starting "$service" || restart_service "$service"
         done
     fi
 
@@ -27764,6 +28192,99 @@ done
 HEALTHEOF
 
     sudo chmod +x "$INSTALL_DIR/bin/health-monitor.sh"
+    sudo chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/health-monitor.sh"
+
+    # One-shot reindex recovery, called by the health monitor when a coin daemon
+    # cannot open its block database. Root-owned and not writable by the pool user:
+    # the pool user may run it through sudo, so writable would mean root for anyone
+    # who can write it.
+    sudo tee "$INSTALL_DIR/bin/daemon-reindex.sh" > /dev/null << 'REINDEXEOF'
+#!/bin/bash
+# Recover a coin daemon whose block database is corrupt, once.
+#
+# A corrupt block index makes the daemon exit in well under a second, every time,
+# so restarts alone never recover it — the pool simply stops mining until someone
+# notices. This adds -reindex to the daemon's start command through a systemd
+# drop-in, starts it, and removes the drop-in again, because a drop-in left in
+# place would reindex on every future start and never finish.
+#
+# It runs at most once per daemon. If the database is still unreadable after a
+# reindex, that is a disk or hardware question and an operator has to answer it.
+# Delete the marker named in the log to allow another attempt.
+set -u
+
+DAEMON="${1:-}"
+INSTALL_DIR="__INSTALL_DIR__"
+LOG_FILE="$INSTALL_DIR/logs/health-monitor.log"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] reindex: $1" | tee -a "$LOG_FILE"; }
+
+case "$DAEMON" in
+    digibyted|bitcoind|bitcoind-bch|bitcoincashIId|bitcoiniid|bitcoinsilverd|litecoind|    dogecoind|pepecoind|catcoind|namecoind|syscoind|myriadcoind|fractald|ecashd) ;;
+    *) echo "daemon-reindex.sh: not a coin daemon: ${DAEMON}" >&2; exit 2 ;;
+esac
+
+if [[ -f "$INSTALL_DIR/config/no-auto-reindex" ]]; then
+    log "$DAEMON: automatic reindex is switched off ($INSTALL_DIR/config/no-auto-reindex); doing nothing"
+    exit 3
+fi
+
+MARKER="$INSTALL_DIR/logs/.reindex-attempted-$DAEMON"
+if [[ -f "$MARKER" ]]; then
+    log "$DAEMON: a reindex was already attempted on $(cat "$MARKER" 2>/dev/null) and the database is still unreadable. This needs an operator. Delete $MARKER to allow another attempt."
+    exit 3
+fi
+
+UNIT=$(systemctl show -p FragmentPath --value "$DAEMON" 2>/dev/null)
+if [[ -z "$UNIT" || ! -r "$UNIT" ]]; then
+    log "$DAEMON: cannot read its systemd unit, so the start command is unknown — not attempting a reindex"
+    exit 4
+fi
+EXEC=$(grep -m1 '^ExecStart=' "$UNIT" | sed 's/^ExecStart=//')
+if [[ -z "$EXEC" ]]; then
+    log "$DAEMON: no ExecStart in $UNIT — not attempting a reindex"
+    exit 4
+fi
+
+date '+%Y-%m-%d %H:%M:%S' > "$MARKER"
+log "$DAEMON: block database is corrupt. Starting a one-time reindex. On a pruned node this re-downloads the chain and takes hours; the pool cannot mine this coin until it finishes."
+
+# sudo resets the environment, so this override exists for the test suite rather
+# than for anything a caller could set.
+DROPIN_DIR="${SPIRAL_SYSTEMD_DIR:-/etc/systemd/system}/${DAEMON}.service.d"
+mkdir -p "$DROPIN_DIR"
+printf '[Service]
+ExecStart=
+ExecStart=%s -reindex
+' "$EXEC" > "$DROPIN_DIR/zz-spiral-reindex.conf"
+systemctl daemon-reload
+systemctl reset-failed "$DAEMON" 2>/dev/null || true
+
+started=1
+if systemctl start "$DAEMON" 2>/dev/null; then
+    for _ in $(seq 1 30); do
+        [[ "$(systemctl is-active "$DAEMON" 2>/dev/null)" == "active" ]] && { started=0; break; }
+        sleep 2
+    done
+fi
+
+# Remove the drop-in either way: the reindex already running keeps its arguments,
+# and leaving it would reindex on every future start.
+rm -f "$DROPIN_DIR/zz-spiral-reindex.conf"
+rmdir "$DROPIN_DIR" 2>/dev/null || true
+systemctl daemon-reload
+
+if [[ $started -eq 0 ]]; then
+    log "$DAEMON: reindex running. Watch it with: tail -f <datadir>/debug.log"
+else
+    log "$DAEMON: the reindex did not start. This needs an operator — check systemctl status $DAEMON"
+    exit 1
+fi
+REINDEXEOF
+
+    sudo sed -i "s|__INSTALL_DIR__|$INSTALL_DIR|" "$INSTALL_DIR/bin/daemon-reindex.sh"
+    sudo chmod 755 "$INSTALL_DIR/bin/daemon-reindex.sh"
+    sudo chown root:root "$INSTALL_DIR/bin/daemon-reindex.sh"
 
     # Determine correct PostgreSQL dependency for health monitor
     local health_pg_dep="postgresql.service"
@@ -29925,7 +30446,9 @@ watch_sync() {
             fi
 
             echo -e "  ${CYAN}Stratum V1: stratum+tcp://${connect_ip}:${STRATUM_V1_PORT}${NC}"
-            echo -e "  ${CYAN}Stratum V2: stratum+tcp://${connect_ip}:${STRATUM_V2_PORT}${NC}"
+            if grep -q '^ENABLE_V2_STRATUM=true' /spiralpool/config/coins.env 2>/dev/null; then
+                echo -e "  ${CYAN}Stratum V2: stratum+tcp://${connect_ip}:${STRATUM_V2_PORT}${NC}"
+            fi
             if [[ -n "$_vip_addr" ]] && [[ "$_vip_addr" != "0.0.0.0" ]]; then
                 echo -e "  ${DIM}(VIP address — miners auto-failover to healthy node)${NC}"
             fi
@@ -30474,9 +30997,9 @@ SYNCSTATUSEOF
 # Spiral Pool Wallet Generator
 # Creates a wallet in the blockchain node and generates a legacy address for pool payouts
 #
-# Supports: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC (SHA256d) and LTC, DOGE, PEP, CAT (Scrypt)
+# Supports: DGB, BTC, BCH, BCH2, BC2, BTCS, XEC, NMC, SYS, XMY, FBTC (SHA256d) and DGB-SCRYPT, LTC, DOGE, PEP, CAT (Scrypt)
 #
-# Usage: spiralpool-wallet [--coin dgb|btc|bch|bch2|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|pep|cat]
+# Usage: spiralpool-wallet [--coin dgb|dgb-scrypt|btc|bch|bch2|bc2|btcs|xec|nmc|sys|xmy|fbtc|ltc|doge|pep|cat]
 #
 # This script will WAIT for the blockchain to fully sync before generating the wallet.
 # It can take several hours to a few days depending on your connection speed.
@@ -30538,7 +31061,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            echo "Usage: spiralpool-wallet [--coin dgb|btc|bch|bch2|bc2|btcs|nmc|sys|xmy|fbtc|ltc|doge|pep|cat] [--auto] [--nowait]"
+            echo "Usage: spiralpool-wallet [--coin dgb|dgb-scrypt|btc|bch|bch2|bc2|btcs|xec|nmc|sys|xmy|fbtc|ltc|doge|pep|cat] [--auto] [--nowait]"
             echo ""
             echo "Options:"
             echo "  --coin, -c    Coin to generate wallet for (auto-detected if not specified)"
@@ -30553,6 +31076,7 @@ while [[ $# -gt 0 ]]; do
             echo "  bch2    Bitcoin Cash II"
             echo "  bc2     Bitcoin II"
             echo "  btcs    Bitcoin Silver"
+            echo "  xec     eCash"
             echo ""
             echo "SHA256d AuxPoW Coins (merge-mineable with Bitcoin):"
             echo "  nmc     Namecoin"
@@ -30561,6 +31085,7 @@ while [[ $# -gt 0 ]]; do
             echo "  fbtc    Fractal Bitcoin"
             echo ""
             echo "Scrypt Coins:"
+            echo "  dgb-scrypt  DigiByte (Scrypt)"
             echo "  ltc     Litecoin"
             echo "  doge    Dogecoin"
             echo "  pep     PepeCoin"
@@ -32014,19 +32539,42 @@ if echo "$NEW_ADDRESS" | grep -qi "error"; then
     exit 1
 fi
 
-# Verify the address actually belongs to the wallet we think generated it.
+# Ask the daemon itself about the address before it is written anywhere.
+# Every address must be valid on this chain. An address generated here must also
+# belong to the wallet it was generated in. A manually entered or HA-pulled address
+# keeps its keys elsewhere, so only validity applies to it.
+ADDR_VALID_INFO=$($CLI validateaddress "$NEW_ADDRESS" 2>&1) || true
+ISVALID=$(echo "$ADDR_VALID_INFO" | grep -o '"isvalid":[^,}]*' | grep -o 'true\|false' | head -1)
+if [[ "$ISVALID" == "false" ]]; then
+    echo -e "  ${RED}[ERROR]${NC} The ${COIN_NAME} daemon rejected ${NEW_ADDRESS} as invalid on this chain."
+    echo -e "  Nothing was written to the pool configuration. Run spiralpool-wallet again"
+    echo -e "  and use a ${COIN_SYMBOL} address (${ADDRESS_PREFIX})."
+    exit 1
+elif [[ "$ISVALID" != "true" ]]; then
+    if [[ "$MANUAL_INPUT_USED" == "true" ]] || [[ "$HA_ADDR_PULLED" == "true" ]]; then
+        echo -e "  ${YELLOW}WARNING: Could not check ${NEW_ADDRESS} with the ${COIN_NAME} daemon.${NC}"
+        echo -e "  ${YELLOW}The pool checks it again at startup and will not start if it is invalid.${NC}"
+    else
+        echo -e "  ${RED}[ERROR]${NC} Could not check the generated address with the ${COIN_NAME} daemon."
+        echo -e "  Daemon response: ${ADDR_VALID_INFO}"
+        echo -e "  Nothing was written to the pool configuration. Run spiralpool-wallet again."
+        exit 1
+    fi
+else
+    echo -e "  ${GREEN}✓${NC} Address is valid on the ${COIN_NAME} daemon"
+fi
+
+# Verify a generated address belongs to the wallet we think generated it.
 # Catches silent wrong-wallet generation (old daemon fallback, wrong default wallet, etc.)
-if [[ -n "${WALLET_NAME:-}" ]]; then
+if [[ "$MANUAL_INPUT_USED" != "true" ]] && [[ "$HA_ADDR_PULLED" != "true" ]]; then
     ISMINE=""
     ADDR_INFO=$($CLI getaddressinfo "$NEW_ADDRESS" 2>/dev/null) || true
     if ! echo "$ADDR_INFO" | grep -qi "error\|unknown RPC\|Method not found"; then
         ISMINE=$(echo "$ADDR_INFO" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
     fi
     if [[ -z "$ISMINE" ]]; then
-        ADDR_INFO=$($CLI validateaddress "$NEW_ADDRESS" 2>/dev/null) || true
-        if ! echo "$ADDR_INFO" | grep -qi "error\|unknown RPC\|Method not found"; then
-            ISMINE=$(echo "$ADDR_INFO" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
-        fi
+        # Older daemons report ismine from validateaddress instead
+        ISMINE=$(echo "$ADDR_VALID_INFO" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
     fi
     if [[ "$ISMINE" == "true" ]]; then
         echo -e "  ${GREEN}✓${NC} Address verified: confirmed owned by wallet '${WALLET_NAME}'"
@@ -32036,7 +32584,10 @@ if [[ -n "${WALLET_NAME:-}" ]]; then
         echo -e "  again on a clean node or provide your own address manually."
         exit 1
     else
-        echo -e "  ${YELLOW}WARNING: Could not verify address ownership (daemon too old).${NC}"
+        echo -e "  ${RED}[ERROR]${NC} Could not confirm that ${NEW_ADDRESS} belongs to wallet '${WALLET_NAME}':"
+        echo -e "  the daemon reported no ownership from getaddressinfo or validateaddress."
+        echo -e "  Nothing was written to the pool configuration. Do NOT use this address."
+        exit 1
     fi
 fi
 
@@ -32055,8 +32606,8 @@ if [[ -n "${WALLET_NAME:-}" ]]; then
     WALLET_BACKUP_DIR="/spiralpool/backups"
     WALLET_BACKUP_FILE="${WALLET_BACKUP_DIR}/wallet-${COIN_SYMBOL,,}-$(date +%Y%m%d-%H%M%S).dat"
     mkdir -p "$WALLET_BACKUP_DIR" 2>/dev/null || sudo mkdir -p "$WALLET_BACKUP_DIR" 2>/dev/null || true
-    sudo chown "$(whoami):$(whoami)" "$WALLET_BACKUP_DIR" 2>/dev/null || true
-    sudo chmod 700 "$WALLET_BACKUP_DIR" 2>/dev/null || chmod 700 "$WALLET_BACKUP_DIR" 2>/dev/null || true
+    sudo -n chown "$(whoami):$(whoami)" "$WALLET_BACKUP_DIR" 2>/dev/null || true
+    sudo -n chmod 700 "$WALLET_BACKUP_DIR" 2>/dev/null || chmod 700 "$WALLET_BACKUP_DIR" 2>/dev/null || true
     DUMP_OK="false"
 
     # Primary: backupwallet — atomic flush+copy, works for all wallet types
@@ -32418,16 +32969,18 @@ echo "  Your pool wallet address: $NEW_ADDRESS"
 echo ""
 echo "  Configure your miners with:"
 echo -e "    V1 Pool: ${WHITE}stratum+tcp://${SERVER_IP}:${STRATUM_PORT}${NC}"
-echo -e "    V2 Pool: ${WHITE}stratum+tcp://${SERVER_IP}:${STRATUM_V2_PORT}${NC}"
+if grep -q '^ENABLE_V2_STRATUM=true' "$(dirname "$CONFIG_FILE")/coins.env" 2>/dev/null; then
+    echo -e "    V2 Pool: ${WHITE}stratum+tcp://${SERVER_IP}:${STRATUM_V2_PORT}${NC}"
+fi
 echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V2.7.1-SPIRAL_CITADEL: Create backup command
+    # V3.0.0-SPIRAL_COVENANT: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V2.7.1-SPIRAL_CITADEL
+# Spiral Pool Backup Utility - V3.0.0-SPIRAL_COVENANT
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -32472,7 +33025,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V2.7.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -32851,7 +33404,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "2.7.1",
+    "version": "3.0.0",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33132,7 +33685,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V2.7.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33185,11 +33738,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V2.7.1-SPIRAL_CITADEL: Create restore command
+    # V3.0.0-SPIRAL_COVENANT: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V2.7.1-SPIRAL_CITADEL
+# Spiral Pool Restore Utility - V3.0.0-SPIRAL_COVENANT
 # Restores backups created by spiralpool-backup
 #
 
@@ -33236,7 +33789,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V2.7.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -33579,7 +34132,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V2.7.1-SPIRAL_CITADEL${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -38088,6 +38641,32 @@ show_all_coins_sync_status() {
         fi
     fi
 
+    if [[ "$ENABLE_BCH2" == "true" ]]; then
+        if [[ "$sha256d_shown" == "false" ]]; then
+            echo -e "  ${YELLOW}SHA-256d:${NC}"
+            sha256d_shown=true
+        fi
+        local bch2_progress=$(get_coin_sync_progress "BCH2")
+        if check_coin_sync "BCH2"; then
+            echo -e "    🟤 ${WHITE}Bitcoin Cash II:${NC} ${GREEN}✓ Synced${NC} ($bch2_progress)"
+        else
+            echo -e "    🟤 ${WHITE}Bitcoin Cash II:${NC} ${YELLOW}⏳ Syncing${NC} - $bch2_progress"
+        fi
+    fi
+
+    if [[ "$ENABLE_BTCS" == "true" ]]; then
+        if [[ "$sha256d_shown" == "false" ]]; then
+            echo -e "  ${YELLOW}SHA-256d:${NC}"
+            sha256d_shown=true
+        fi
+        local btcs_progress=$(get_coin_sync_progress "BTCS")
+        if check_coin_sync "BTCS"; then
+            echo -e "    ⚪ ${WHITE}Bitcoin Silver:${NC} ${GREEN}✓ Synced${NC} ($btcs_progress)"
+        else
+            echo -e "    ⚪ ${WHITE}Bitcoin Silver:${NC} ${YELLOW}⏳ Syncing${NC} - $btcs_progress"
+        fi
+    fi
+
     # SHA-256d AuxPoW coins (merge-mined with Bitcoin)
     if [[ "$ENABLE_NMC" == "true" ]]; then
         if [[ "$sha256d_shown" == "false" ]]; then
@@ -38998,8 +39577,8 @@ SOLO_COIN=$SOLO_COIN
 # Stratum ports (single-coin mode uses these, multi-coin uses predefined per-coin ports)
 STRATUM_PORT=$STRATUM_PORT
 STRATUM_V2_PORT=$STRATUM_V2_PORT
-# Enhanced Stratum (V2) — enables encrypted binary protocol + TLS for V1
-ENABLE_V2_STRATUM=true
+# Stratum V2 — operator opt-in; false means V2 ports are neither configured nor opened
+ENABLE_V2_STRATUM=$ENABLE_V2_STRATUM
 # Multi coin smart port (port 16180)
 # MULTIPORT_MODE: TIME (weighted 24h schedule) | DIFFICULTY (lowest network diff wins)
 MULTIPORT_ENABLED=$MULTIPORT_ENABLED
@@ -39011,6 +39590,9 @@ EOF
     sudo chown "$POOL_USER:$POOL_USER" "$_coins_env_tmp"
     sudo chmod 600 "$_coins_env_tmp"
     sudo mv "$_coins_env_tmp" "$INSTALL_DIR/config/coins.env"
+    # The Stratum V2 choice above is explicit, so upgrade.sh's one-time V2 opt-in
+    # migration must neither ask again nor switch an opted-in install off.
+    sudo touch "$INSTALL_DIR/config/.migrated-stratum-v2-opt-in" 2>/dev/null || true
 
     # Create systemd service for sync monitor with dependencies on enabled nodes
     local after_deps="network.target"
@@ -39333,8 +39915,7 @@ start_services() {
                     _wg_before=$(sudo grep -c "PENDING_GENERATION" "$_wg_config" 2>/dev/null || true)
                     _wg_before="${_wg_before:-0}"
 
-                    sudo -u "$POOL_USER" spiralpool-wallet --coin "$_wg_coin_lower" --auto --nowait \
-                        2>&1 | tee -a "$LOG_FILE" || true
+                    sudo -u "$POOL_USER" spiralpool-wallet --coin "$_wg_coin_lower" --auto --nowait 2>&1 || true
 
                     local _wg_after
                     _wg_after=$(sudo grep -c "PENDING_GENERATION" "$_wg_config" 2>/dev/null || true)
@@ -39386,7 +39967,7 @@ start_services() {
                 case "$_wg_coin_lower" in
                     dgb)  _wg_cli="digibyte-cli -conf=$(get_blockchain_dir dgb)/digibyte.conf -rpcwallet=$_wg_wallet" ;;
                     btc)  _wg_cli="bitcoin-cli -conf=$(get_blockchain_dir btc)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
-                    bch)  _wg_cli="bitcoin-cli -conf=$(get_blockchain_dir bch)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
+                    bch)  _wg_cli="bitcoin-cli-bch -conf=$(get_blockchain_dir bch)/bitcoin.conf -rpcwallet=$_wg_wallet" ;;
                     bch2) _wg_cli="bitcoincashii-cli -conf=$(get_blockchain_dir bch2)/bitcoincashii.conf -rpcwallet=$_wg_wallet" ;;
                     bc2)  _wg_cli="bitcoinii-cli -conf=$(get_blockchain_dir bc2)/bitcoinii.conf -rpcwallet=$_wg_wallet" ;;
                     btcs) _wg_cli="bitcoinsilver-cli -conf=$(get_blockchain_dir btcs)/bitcoinsilver.conf -rpcwallet=$_wg_wallet" ;;
@@ -39407,15 +39988,15 @@ start_services() {
                     # Primary: backupwallet — atomic flush+copy, safe for live daemon,
                     # works for both legacy (BerkeleyDB) and descriptor (SQLite) wallets.
                     local _wg_bak_out
-                    _wg_bak_out=$(sudo -u "$POOL_USER" $_wg_cli backupwallet "$_wg_backup_file" 2>&1) || true
-                    if ! echo "$_wg_bak_out" | grep -qi "error\|unknown"; then
+                    if _wg_bak_out=$(sudo -u "$POOL_USER" $_wg_cli backupwallet "$_wg_backup_file" 2>&1) && \
+                       sudo test -s "$_wg_backup_file"; then
                         _wg_dump_ok="true"
                     else
                         # Fallback: listdescriptors true — for wallets where backupwallet
                         # is unavailable. Writes descriptors + private keys as JSON.
                         local _wg_desc_out
-                        _wg_desc_out=$(sudo -u "$POOL_USER" $_wg_cli listdescriptors true 2>&1) || true
-                        if ! echo "$_wg_desc_out" | grep -qi "error\|unknown"; then
+                        if _wg_desc_out=$(sudo -u "$POOL_USER" $_wg_cli listdescriptors true 2>&1) && \
+                           echo "$_wg_desc_out" | grep -q '"descriptors"'; then
                             _wg_backup_file="${_wg_backup_base}/wallet-${_wg_coin_lower}-$(date +%Y%m%d-%H%M%S).dump"
                             printf '%s\n' "$_wg_desc_out" | sudo -u "$POOL_USER" tee "$_wg_backup_file" > /dev/null
                             _wg_dump_ok="true"
@@ -39505,10 +40086,6 @@ start_services() {
         # Don't enable stratum yet - sync monitor will do it
     fi
 
-    # Health monitor is ALWAYS started (critical for autonomous operation)
-    log "Starting health monitor..."
-    sudo systemctl start spiralpool-health || log_warn "Failed to start health monitor"
-
     # Full mode starts optional extras (these can run during sync)
     if [[ "$INSTALL_MODE" == "full" ]]; then
         # HA Mode: Use role-aware service control
@@ -39565,6 +40142,12 @@ start_services() {
         fi
     fi
 
+    # Health monitor is ALWAYS started (critical for autonomous operation).
+    # Started after the dashboard and Sentinel: its first check runs at once, and
+    # started earlier it found them not yet started and restarted them mid-install.
+    log "Starting health monitor..."
+    sudo systemctl start spiralpool-health || log_warn "Failed to start health monitor"
+
     log_success "Services started"
     mark_progress "services"
     log ""
@@ -39592,28 +40175,46 @@ print_completion() {
     echo ""
     if [[ "$COIN_MODE" == "multi" ]]; then
         # Multi-coin mode: show per-coin ports
-        [[ "$ENABLE_DGB" == "true" ]]        && echo -e "  ${WHITE}💎 DGB:${NC}    stratum+tcp://$connect_ip:${GREEN}3333${NC}  (V2: ${GREEN}3334${NC})"
-        [[ "$ENABLE_BTC" == "true" ]]        && echo -e "  ${WHITE}🟠 BTC:${NC}    stratum+tcp://$connect_ip:${GREEN}4333${NC}  (V2: ${GREEN}4334${NC})"
-        [[ "$ENABLE_BCH" == "true" ]]        && echo -e "  ${WHITE}🟢 BCH:${NC}    stratum+tcp://$connect_ip:${GREEN}5333${NC}  (V2: ${GREEN}5334${NC})"
-        [[ "$ENABLE_BCH2" == "true" ]]       && echo -e "  ${WHITE}🟤 BCH2:${NC}   stratum+tcp://$connect_ip:${GREEN}5336${NC}  (V2: ${GREEN}5337${NC})"
-        [[ "$ENABLE_BC2" == "true" ]]        && echo -e "  ${WHITE}🔷 BC2:${NC}    stratum+tcp://$connect_ip:${GREEN}6333${NC}  (V2: ${GREEN}6334${NC})"
-        [[ "$ENABLE_BTCS" == "true" ]]       && echo -e "  ${WHITE}⚪ BTCS:${NC}   stratum+tcp://$connect_ip:${GREEN}11335${NC} (V2: ${GREEN}11336${NC})"
-        [[ "$ENABLE_LTC" == "true" ]]        && echo -e "  ${WHITE}🪙 LTC:${NC}    stratum+tcp://$connect_ip:${GREEN}7333${NC}  (V2: ${GREEN}7334${NC})"
-        [[ "$ENABLE_DOGE" == "true" ]]       && echo -e "  ${WHITE}🐕 DOGE:${NC}   stratum+tcp://$connect_ip:${GREEN}8335${NC}  (V2: ${GREEN}8337${NC})"
-        [[ "$ENABLE_PEP" == "true" ]]        && echo -e "  ${WHITE}🐸 PEP:${NC}    stratum+tcp://$connect_ip:${GREEN}10335${NC} (V2: ${GREEN}10336${NC})"
-        [[ "$ENABLE_CAT" == "true" ]]        && echo -e "  ${WHITE}🐱 CAT:${NC}    stratum+tcp://$connect_ip:${GREEN}12335${NC} (V2: ${GREEN}12336${NC})"
-        [[ "$ENABLE_DGB_SCRYPT" == "true" ]] && echo -e "  ${WHITE}💎 DGB-S:${NC}  stratum+tcp://$connect_ip:${GREEN}3336${NC}  (V2: ${GREEN}3337${NC})"
-        [[ "$ENABLE_NMC" == "true" ]]        && echo -e "  ${WHITE}🔶 NMC:${NC}    stratum+tcp://$connect_ip:${GREEN}14335${NC} (V2: ${GREEN}14336${NC})"
-        [[ "$ENABLE_SYS" == "true" ]]        && echo -e "  ${WHITE}⚙️ SYS:${NC}    stratum+tcp://$connect_ip:${GREEN}15335${NC} (V2: ${GREEN}15336${NC})"
-        [[ "$ENABLE_XMY" == "true" ]]        && echo -e "  ${WHITE}🔴 XMY:${NC}    stratum+tcp://$connect_ip:${GREEN}17335${NC} (V2: ${GREEN}17336${NC})"
-        [[ "$ENABLE_FBTC" == "true" ]]       && echo -e "  ${WHITE}🟡 FBTC:${NC}   stratum+tcp://$connect_ip:${GREEN}18335${NC} (V2: ${GREEN}18336${NC})"
-        [[ "$ENABLE_XEC" == "true" ]]        && echo -e "  ${WHITE}💚 XEC:${NC}    stratum+tcp://$connect_ip:${GREEN}18338${NC} (V2: ${GREEN}18339${NC})"
+        [[ "$ENABLE_DGB" == "true" ]]        && echo -e "  ${WHITE}💎 DGB:${NC}    stratum+tcp://$connect_ip:${GREEN}3333${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}3334${NC})")"
+        [[ "$ENABLE_BTC" == "true" ]]        && echo -e "  ${WHITE}🟠 BTC:${NC}    stratum+tcp://$connect_ip:${GREEN}4333${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}4334${NC})")"
+        [[ "$ENABLE_BCH" == "true" ]]        && echo -e "  ${WHITE}🟢 BCH:${NC}    stratum+tcp://$connect_ip:${GREEN}5333${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}5334${NC})")"
+        [[ "$ENABLE_BCH2" == "true" ]]       && echo -e "  ${WHITE}🟤 BCH2:${NC}   stratum+tcp://$connect_ip:${GREEN}5336${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}5337${NC})")"
+        [[ "$ENABLE_BC2" == "true" ]]        && echo -e "  ${WHITE}🔷 BC2:${NC}    stratum+tcp://$connect_ip:${GREEN}6333${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}6334${NC})")"
+        [[ "$ENABLE_BTCS" == "true" ]]       && echo -e "  ${WHITE}⚪ BTCS:${NC}   stratum+tcp://$connect_ip:${GREEN}11335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}11336${NC})")"
+        [[ "$ENABLE_LTC" == "true" ]]        && echo -e "  ${WHITE}🪙 LTC:${NC}    stratum+tcp://$connect_ip:${GREEN}7333${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}7334${NC})")"
+        [[ "$ENABLE_DOGE" == "true" ]]       && echo -e "  ${WHITE}🐕 DOGE:${NC}   stratum+tcp://$connect_ip:${GREEN}8335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}8337${NC})")"
+        [[ "$ENABLE_PEP" == "true" ]]        && echo -e "  ${WHITE}🐸 PEP:${NC}    stratum+tcp://$connect_ip:${GREEN}10335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}10336${NC})")"
+        [[ "$ENABLE_CAT" == "true" ]]        && echo -e "  ${WHITE}🐱 CAT:${NC}    stratum+tcp://$connect_ip:${GREEN}12335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}12336${NC})")"
+        [[ "$ENABLE_DGB_SCRYPT" == "true" ]] && echo -e "  ${WHITE}💎 DGB-S:${NC}  stratum+tcp://$connect_ip:${GREEN}3336${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}3337${NC})")"
+        [[ "$ENABLE_NMC" == "true" ]]        && echo -e "  ${WHITE}🔶 NMC:${NC}    stratum+tcp://$connect_ip:${GREEN}14335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}14336${NC})")"
+        [[ "$ENABLE_SYS" == "true" ]]        && echo -e "  ${WHITE}⚙️ SYS:${NC}    stratum+tcp://$connect_ip:${GREEN}15335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}15336${NC})")"
+        [[ "$ENABLE_XMY" == "true" ]]        && echo -e "  ${WHITE}🔴 XMY:${NC}    stratum+tcp://$connect_ip:${GREEN}17335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}17336${NC})")"
+        [[ "$ENABLE_FBTC" == "true" ]]       && echo -e "  ${WHITE}🟡 FBTC:${NC}   stratum+tcp://$connect_ip:${GREEN}18335${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}18336${NC})")"
+        [[ "$ENABLE_XEC" == "true" ]]        && echo -e "  ${WHITE}💚 XEC:${NC}    stratum+tcp://$connect_ip:${GREEN}18338${NC}$([[ "$ENABLE_V2_STRATUM" == "true" ]] && echo " (V2: ${GREEN}18339${NC})")"
     else
         echo -e "  ${WHITE}Stratum V1:${NC}      stratum+tcp://$connect_ip:$STRATUM_PORT"
-        echo -e "  ${WHITE}Stratum V2:${NC}      stratum+tcp://$connect_ip:$STRATUM_V2_PORT"
+        if [[ "$ENABLE_V2_STRATUM" == "true" ]]; then
+            echo -e "  ${WHITE}Stratum V2:${NC}      stratum+tcp://$connect_ip:$STRATUM_V2_PORT"
+        fi
     fi
     echo -e "  ${WHITE}Worker:${NC}          YOUR_WALLET.worker_name"
     echo -e "  ${WHITE}Password:${NC}        x"
+    if [[ "$ENABLE_V2_STRATUM" == "true" ]]; then
+        # Stratum V2 miners and proxies authenticate the pool by its authority
+        # public key, so the operator needs it before anything can connect. The
+        # pool creates the key when a V2 port first starts; read it rather than
+        # generating one here, and fall back to the command if it is not there
+        # yet. Line 2 of "v2 pubkey" is the base58 form SRI configs take.
+        local v2_authority_key
+        v2_authority_key=$(sudo "$INSTALL_DIR/bin/spiralctl" v2 pubkey 2>/dev/null | sed -n '2p')
+        echo ""
+        if [[ -n "$v2_authority_key" ]]; then
+            echo -e "  ${WHITE}V2 authority key:${NC} ${DIM}(set this on Stratum V2 miners and proxies)${NC}"
+            echo -e "  ${GREEN}${v2_authority_key}${NC}"
+        else
+            echo -e "  ${WHITE}V2 authority key:${NC} ${DIM}not created yet — run ${NC}${CYAN}sudo spiralctl v2 pubkey${NC}"
+        fi
+    fi
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${WHITE}  WEB INTERFACES${NC}"
@@ -39729,6 +40330,7 @@ print_completion() {
     echo -e "  ${WHITE}spiralctl scan${NC}                - Scan network for miners"
     echo -e "  ${WHITE}spiralctl restart${NC}             - Restart all services"
     echo -e "  ${WHITE}spiralctl mining${NC}              - Mining mode management"
+    echo -e "  ${WHITE}spiralctl mining payout${NC}       - Where found blocks pay (wallet or worker name)"
     echo -e "  ${WHITE}spiralctl config${NC}              - View/edit configuration"
     echo -e "  ${WHITE}spiralctl config validate${NC}     - Validate config (dry-run check)"
     echo -e "  ${WHITE}spiralctl wallet${NC}              - Show wallet addresses"
@@ -39941,7 +40543,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V2.7.1 - SPIRAL CITADEL${NC}"
+    echo -e "                                     ${DIM}V3.0.0 - SPIRAL COVENANT${NC}"
     echo ""
 }
 
@@ -40546,7 +41148,7 @@ show_legal_acceptance() {
     echo -e "  their hashrate contributes to your wallet, not their own. Any"
     echo -e "  compensation arrangement is entirely your responsibility. This"
     echo -e "  software provides no payout mechanism to other parties."
-    echo -e "  See WARNINGS.md and TERMS.md Section 5E."
+    echo -e "  See WARNINGS.md and TERMS.md Section 5D."
     echo ""
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""

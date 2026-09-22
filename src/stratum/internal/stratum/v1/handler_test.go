@@ -425,7 +425,7 @@ func TestBuildNotify(t *testing.T) {
 		CleanJobs:      true,
 	}
 
-	msg, err := h.BuildNotify(job)
+	msg, err := h.BuildNotify(job, "")
 	if err != nil {
 		t.Fatalf("BuildNotify failed: %v", err)
 	}
@@ -1101,6 +1101,6 @@ func BenchmarkBuildNotify(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.BuildNotify(job)
+		h.BuildNotify(job, "")
 	}
 }

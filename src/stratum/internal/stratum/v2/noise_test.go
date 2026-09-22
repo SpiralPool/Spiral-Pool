@@ -1,112 +1,25 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 
-// Package v2 provides tests for Noise Protocol implementation.
+// Package v2 provides tests for the Noise transport.
 //
 // These tests validate:
-// - secp256k1 key generation and ECDH operations
-// - ChaCha20-Poly1305 IETF encryption/decryption
-// - Noise handshake state machine
-// - Encrypted connection read/write
+// - ChaCha20-Poly1305 IETF encryption/decryption and the symmetric state
+// - the SV2 NX handshake: message sizes, the authority certificate, tampering
+// - frame encryption: a separately encrypted header and 65,519-byte payload blocks
 package v2
 
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
+	"io"
 	"net"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
-
-// TestGenerateKeypair validates secp256k1 key generation.
-func TestGenerateKeypair(t *testing.T) {
-	kp1, err := generateKeypair()
-	if err != nil {
-		t.Fatalf("generateKeypair failed: %v", err)
-	}
-
-	// Keys should not be all zeros
-	allZero := true
-	for _, b := range kp1.private {
-		if b != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("private key is all zeros")
-	}
-
-	allZero = true
-	for _, b := range kp1.public {
-		if b != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("public key is all zeros")
-	}
-
-	// Private and public should be different (also different sizes: 32 vs 33)
-	if bytes.Equal(kp1.private[:], kp1.public[:DHPrivKeySize]) {
-		t.Error("private and public keys should differ")
-	}
-
-	// Generate another keypair - should be different
-	kp2, err := generateKeypair()
-	if err != nil {
-		t.Fatalf("generateKeypair failed: %v", err)
-	}
-
-	if bytes.Equal(kp1.private[:], kp2.private[:]) {
-		t.Error("two generated private keys should differ")
-	}
-	if bytes.Equal(kp1.public[:], kp2.public[:]) {
-		t.Error("two generated public keys should differ")
-	}
-}
-
-// TestDH validates secp256k1 ECDH key agreement.
-func TestDH(t *testing.T) {
-	// Generate two key pairs
-	alice, err := generateKeypair()
-	if err != nil {
-		t.Fatalf("generateKeypair failed: %v", err)
-	}
-
-	bob, err := generateKeypair()
-	if err != nil {
-		t.Fatalf("generateKeypair failed: %v", err)
-	}
-
-	// Compute shared secrets
-	aliceShared, err := dhSecp256k1(alice.private, bob.public)
-	if err != nil {
-		t.Fatalf("dhSecp256k1 (alice) failed: %v", err)
-	}
-	bobShared, err := dhSecp256k1(bob.private, alice.public)
-	if err != nil {
-		t.Fatalf("dhSecp256k1 (bob) failed: %v", err)
-	}
-
-	// Shared secrets should be equal
-	if !bytes.Equal(aliceShared[:], bobShared[:]) {
-		t.Error("DH shared secrets should be equal")
-	}
-
-	// Shared secret should not be all zeros
-	allZero := true
-	for _, b := range aliceShared {
-		if b != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("shared secret is all zeros")
-	}
-}
 
 // TestCipherState validates symmetric encryption.
 func TestCipherState(t *testing.T) {
@@ -258,256 +171,307 @@ func TestSymmetricStateSplit(t *testing.T) {
 	}
 }
 
-// TestGenerateServerKeys validates server key generation.
-func TestGenerateServerKeys(t *testing.T) {
+// countingConn records what a connection carries.
+type countingConn struct {
+	net.Conn
+	mu     sync.Mutex
+	read   int
+	writes []int
+}
+
+func (c *countingConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	c.mu.Lock()
+	c.read += n
+	c.mu.Unlock()
+	return n, err
+}
+
+func (c *countingConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	c.mu.Lock()
+	c.writes = append(c.writes, n)
+	c.mu.Unlock()
+	return n, err
+}
+
+func (c *countingConn) counts() (int, []int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.read, append([]int(nil), c.writes...)
+}
+
+type noisePair struct {
+	server, client *NoiseConn
+	cert           *Certificate
+	clientWire     *countingConn
+	serverRaw      net.Conn
+}
+
+// handshakeOver runs the server handshake on one end of serverRaw/clientRaw and the
+// client handshake on the other.
+func handshakeOver(t *testing.T, serverRaw, clientRaw net.Conn, keys *ServerKeys, authority *[32]byte) (*noisePair, error) {
+	t.Helper()
+	wire := &countingConn{Conn: clientRaw}
+	type result struct {
+		nc  *NoiseConn
+		err error
+	}
+	serverCh := make(chan result, 1)
+	go func() {
+		nc, err := ServerHandshake(serverRaw, keys)
+		serverCh <- result{nc, err}
+	}()
+
+	client, cert, err := ClientHandshake(wire, authority)
+	if err != nil {
+		_ = serverRaw.Close()
+		<-serverCh
+		return nil, err
+	}
+	select {
+	case res := <-serverCh:
+		if res.err != nil {
+			return nil, res.err
+		}
+		return &noisePair{server: res.nc, client: client, cert: cert, clientWire: wire, serverRaw: serverRaw}, nil
+	case <-time.After(5 * time.Second):
+		t.Fatal("server handshake timed out")
+		return nil, nil
+	}
+}
+
+func pipeHandshake(t *testing.T, keys *ServerKeys, authority *[32]byte) (*noisePair, error) {
+	t.Helper()
+	serverRaw, clientRaw := net.Pipe()
+	t.Cleanup(func() {
+		_ = serverRaw.Close()
+		_ = clientRaw.Close()
+	})
+	return handshakeOver(t, serverRaw, clientRaw, keys, authority)
+}
+
+// readFrameFrom reads one SV2 frame (header and payload) from a decrypting reader.
+func readFrameFrom(t *testing.T, r io.Reader) []byte {
+	t.Helper()
+	var header MessageHeader
+	headerBytes := make([]byte, HeaderSize)
+	if _, err := io.ReadFull(r, headerBytes); err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+	if err := header.Decode(bytes.NewReader(headerBytes)); err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, header.Length)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	return append(headerBytes, payload...)
+}
+
+func TestNoiseHandshake_AuthenticatesServerAndEncryptsBothWays(t *testing.T) {
 	keys, err := GenerateServerKeys()
 	if err != nil {
-		t.Fatalf("GenerateServerKeys failed: %v", err)
+		t.Fatal(err)
 	}
-
-	// Validate key properties
-	allZero := true
-	for _, b := range keys.Private {
-		if b != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("server private key is all zeros")
-	}
-
-	allZero = true
-	for _, b := range keys.Public {
-		if b != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("server public key is all zeros")
-	}
-}
-
-// TestNoiseHandshake validates the full Noise handshake.
-func TestNoiseHandshake(t *testing.T) {
-	// Create a pipe for testing
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	// Generate server keys
-	serverKeys, err := GenerateServerKeys()
+	authority := keys.AuthorityPublicKey()
+	p, err := pipeHandshake(t, keys, &authority)
 	if err != nil {
-		t.Fatalf("GenerateServerKeys failed: %v", err)
+		t.Fatalf("handshake: %v", err)
 	}
 
-	// Run handshake concurrently
-	errChan := make(chan error, 2)
-	var serverNoise, clientNoise *NoiseConn
-	var serverPubKey [DHPubKeySize]byte
+	read, writes := p.clientWire.counts()
+	if len(writes) != 1 || writes[0] != 64 {
+		t.Errorf("client handshake writes = %v, want one 64-byte act 1", writes)
+	}
+	if read != 234 {
+		t.Errorf("client read %d handshake bytes, want 234 (act 2)", read)
+	}
+	if now := time.Now().Unix(); p.cert.Version != 0 || now < int64(p.cert.ValidFrom) || now > int64(p.cert.NotValidAfter) {
+		t.Errorf("certificate = %+v, want version 0 valid now", p.cert)
+	}
 
-	go func() {
-		var err error
-		serverNoise, err = ServerHandshake(serverConn, serverKeys)
-		errChan <- err
-	}()
+	toServer := EncodeMessage(MsgSetupConnection, []byte("client to server"))
+	go func() { _, _ = p.client.Write(toServer) }()
+	if got := readFrameFrom(t, p.server); !bytes.Equal(got, toServer) {
+		t.Errorf("server received %x, want %x", got, toServer)
+	}
 
-	go func() {
-		var err error
-		clientNoise, serverPubKey, err = ClientHandshake(clientConn)
-		errChan <- err
-	}()
+	toClient := EncodeMessage(MsgSetupConnectionSuccess, []byte("server to client"))
+	go func() { _, _ = p.server.Write(toClient) }()
+	if got := readFrameFrom(t, p.client); !bytes.Equal(got, toClient) {
+		t.Errorf("client received %x, want %x", got, toClient)
+	}
+}
 
-	// Wait for both handshakes
-	for i := 0; i < 2; i++ {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				t.Fatalf("handshake failed: %v", err)
+func TestNoiseHandshake_ClientRejectsServerNotSignedByAuthority(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	impostor, _ := GenerateServerKeys()
+	authority := impostor.AuthorityPublicKey()
+	if _, err := pipeHandshake(t, keys, &authority); err == nil || !strings.Contains(err.Error(), "authority") {
+		t.Fatalf("handshake error = %v, want a rejected certificate", err)
+	}
+}
+
+func TestNoiseHandshake_WithoutAuthorityAcceptsAnyServer(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	if _, err := pipeHandshake(t, keys, nil); err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+}
+
+// Flipping any bit of act 2 must break the handshake: the static key and the
+// certificate are authenticated against the transcript.
+func TestNoiseHandshake_TamperedAct2Fails(t *testing.T) {
+	for _, pos := range []int{10, 64 + 5, 64 + 80 + 20, 233} {
+		keys, _ := GenerateServerKeys()
+		serverRaw, relayToServer := net.Pipe()
+		relayToClient, clientRaw := net.Pipe()
+		t.Cleanup(func() {
+			for _, c := range []net.Conn{serverRaw, relayToServer, relayToClient, clientRaw} {
+				_ = c.Close()
 			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("handshake timeout")
+		})
+		go func() {
+			act1 := make([]byte, 64)
+			if _, err := io.ReadFull(relayToClient, act1); err != nil {
+				return
+			}
+			_, _ = relayToServer.Write(act1)
+			act2 := make([]byte, 234)
+			if _, err := io.ReadFull(relayToServer, act2); err != nil {
+				return
+			}
+			act2[pos] ^= 0x01
+			_, _ = relayToClient.Write(act2)
+		}()
+
+		authority := keys.AuthorityPublicKey()
+		if _, err := handshakeOver(t, serverRaw, clientRaw, keys, &authority); err == nil {
+			t.Errorf("handshake with act 2 byte %d flipped succeeded", pos)
 		}
 	}
+}
 
-	// Verify server public key was transmitted
-	if !bytes.Equal(serverPubKey[:], serverKeys.Public[:]) {
-		t.Error("client did not receive correct server public key")
-	}
-
-	// Test encrypted communication
-	testData := []byte("Hello from client to server!")
-
-	go func() {
-		clientNoise.Write(testData)
-	}()
-
-	buf := make([]byte, 100)
-	n, err := serverNoise.Read(buf)
+func TestVerifyCertificate(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	now := time.Now()
+	cert, err := keys.certificate(now)
 	if err != nil {
-		t.Fatalf("server read failed: %v", err)
+		t.Fatal(err)
 	}
+	static := SchnorrPubKey(keys.Static)
+	authority := keys.AuthorityPublicKey()
 
-	if !bytes.Equal(buf[:n], testData) {
-		t.Errorf("received = %q, want %q", buf[:n], testData)
+	if err := VerifyCertificate(cert, static, authority, now); err != nil {
+		t.Fatalf("valid certificate rejected: %v", err)
 	}
+	if VerifyCertificate(cert, static, authority, now.Add(2*certificateSkew)) == nil {
+		t.Error("expired certificate accepted")
+	}
+	if VerifyCertificate(cert, static, authority, now.Add(-2*certificateSkew)) == nil {
+		t.Error("not-yet-valid certificate accepted")
+	}
+	other, _ := GenerateServerKeys()
+	if VerifyCertificate(cert, SchnorrPubKey(other.Static), authority, now) == nil {
+		t.Error("certificate accepted for a different static key")
+	}
+	future := *cert
+	future.Version = 1
+	if VerifyCertificate(&future, static, authority, now) == nil {
+		t.Error("unknown certificate version accepted")
+	}
+	stretched := *cert
+	stretched.NotValidAfter += 3600
+	if VerifyCertificate(&stretched, static, authority, now) == nil {
+		t.Error("certificate with an altered validity window accepted")
+	}
+}
 
-	// Test in reverse direction
-	reverseData := []byte("Hello from server to client!")
-
-	go func() {
-		serverNoise.Write(reverseData)
-	}()
-
-	n, err = clientNoise.Read(buf)
+// A frame is sent as a 22-byte encrypted header and payload blocks of at most
+// 65,519 bytes, each with its own tag.
+func TestNoiseFrame_WireLayout(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	p, err := pipeHandshake(t, keys, nil)
 	if err != nil {
-		t.Fatalf("client read failed: %v", err)
+		t.Fatal(err)
 	}
+	before, _ := p.clientWire.counts()
 
-	if !bytes.Equal(buf[:n], reverseData) {
-		t.Errorf("received = %q, want %q", buf[:n], reverseData)
+	payload := make([]byte, 70000)
+	rand.Read(payload)
+	frame := EncodeMessage(MsgNewExtendedMiningJob, payload)
+	go func() { _, _ = p.server.Write(frame) }()
+
+	if got := readFrameFrom(t, p.client); !bytes.Equal(got, frame) {
+		t.Fatal("large frame corrupted in transit")
 	}
-}
-
-// TestNoiseConnLargeMessage validates handling of large messages.
-func TestNoiseConnLargeMessage(t *testing.T) {
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	serverKeys, _ := GenerateServerKeys()
-
-	errChan := make(chan error, 2)
-	var serverNoise, clientNoise *NoiseConn
-
-	go func() {
-		var err error
-		serverNoise, err = ServerHandshake(serverConn, serverKeys)
-		errChan <- err
-	}()
-
-	go func() {
-		var err error
-		clientNoise, _, err = ClientHandshake(clientConn)
-		errChan <- err
-	}()
-
-	for i := 0; i < 2; i++ {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				t.Fatalf("handshake failed: %v", err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("handshake timeout")
-		}
-	}
-
-	// Send a large message (but under max size)
-	largeData := make([]byte, 10000)
-	for i := range largeData {
-		largeData[i] = byte(i % 256)
-	}
-
-	done := make(chan struct{})
-	go func() {
-		clientNoise.Write(largeData)
-		close(done)
-	}()
-
-	received := make([]byte, len(largeData))
-	totalRead := 0
-	for totalRead < len(largeData) {
-		n, err := serverNoise.Read(received[totalRead:])
-		if err != nil {
-			t.Fatalf("read failed at offset %d: %v", totalRead, err)
-		}
-		totalRead += n
-	}
-
-	<-done
-
-	if !bytes.Equal(received, largeData) {
-		t.Error("large message was corrupted in transit")
+	after, _ := p.clientWire.counts()
+	want := 22 + (MaxNoiseMessageSize + TagSize) + (70000 - MaxNoiseMessageSize + TagSize)
+	if after-before != want {
+		t.Errorf("frame took %d bytes on the wire, want %d", after-before, want)
 	}
 }
 
-// TestNoiseConnMultipleMessages validates multiple message handling.
-func TestNoiseConnMultipleMessages(t *testing.T) {
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	serverKeys, _ := GenerateServerKeys()
-
-	errChan := make(chan error, 2)
-	var serverNoise, clientNoise *NoiseConn
-
-	go func() {
-		var err error
-		serverNoise, err = ServerHandshake(serverConn, serverKeys)
-		errChan <- err
-	}()
-
-	go func() {
-		var err error
-		clientNoise, _, err = ClientHandshake(clientConn)
-		errChan <- err
-	}()
-
-	for i := 0; i < 2; i++ {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				t.Fatalf("handshake failed: %v", err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("handshake timeout")
-		}
+func TestNoiseFrame_ManyFramesInOrder(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	p, err := pipeHandshake(t, keys, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Send multiple messages
-	messages := []string{
-		"First message",
-		"Second message",
-		"Third message with some more data",
+	frames := [][]byte{
+		EncodeMessage(MsgSubmitSharesStandard, []byte("first")),
+		EncodeMessage(MsgUpdateChannel, nil),
+		EncodeMessage(MsgCloseChannel, []byte("third frame with more data")),
 	}
-
 	go func() {
-		for _, msg := range messages {
-			clientNoise.Write([]byte(msg))
+		for _, f := range frames {
+			_, _ = p.client.Write(f)
 		}
 	}()
-
-	for _, expected := range messages {
-		buf := make([]byte, 100)
-		n, err := serverNoise.Read(buf)
-		if err != nil {
-			t.Fatalf("read failed: %v", err)
-		}
-		if string(buf[:n]) != expected {
-			t.Errorf("received = %q, want %q", buf[:n], expected)
+	for i, want := range frames {
+		if got := readFrameFrom(t, p.server); !bytes.Equal(got, want) {
+			t.Errorf("frame %d = %x, want %x", i, got, want)
 		}
 	}
 }
 
-// Benchmark tests
-
-func BenchmarkKeyGeneration(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		generateKeypair()
+func TestNoiseWrite_RejectsIncompleteFrames(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	p, err := pipeHandshake(t, keys, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.client.Write([]byte{1, 2, 3}); err == nil {
+		t.Error("write of a partial header succeeded")
+	}
+	frame := EncodeMessage(MsgSetupConnection, []byte("payload"))
+	if _, err := p.client.Write(frame[:len(frame)-1]); err == nil {
+		t.Error("write of a frame shorter than its header's length succeeded")
 	}
 }
 
-func BenchmarkDH(b *testing.B) {
-	kp1, _ := generateKeypair()
-	kp2, _ := generateKeypair()
+func TestNoiseRead_RejectsOversizeFrame(t *testing.T) {
+	keys, _ := GenerateServerKeys()
+	p, err := pipeHandshake(t, keys, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := make([]byte, HeaderSize)
+	length := MaxMessageSize + 1
+	header[2] = MsgSetupConnection
+	header[3], header[4], header[5] = byte(length), byte(length>>8), byte(length>>16)
+	encrypted, err := p.server.send.Encrypt(nil, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = p.serverRaw.Write(encrypted) }()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dhSecp256k1(kp1.private, kp2.public) //nolint:errcheck
+	// Without the size check the read would wait for a megabyte that never comes.
+	_ = p.clientWire.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 16)
+	if _, err := p.client.Read(buf); !errors.Is(err, ErrMessageTooLarge) {
+		t.Fatalf("read error = %v, want ErrMessageTooLarge", err)
 	}
 }
 

@@ -1235,59 +1235,13 @@ func bitsToTarget256(bits string) *big.Int {
 // coinbase, and the aux chain uses the parent's proof-of-work.
 //
 // RPC Methods:
-//   - getauxblock: Get aux block template from aux chain node
+//   - createauxblock: Get aux block template paying the configured aux address
 //   - submitauxblock: Submit solved aux block with AuxPoW proof
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// GetAuxBlock fetches an auxiliary block template from the daemon.
-//
-// This RPC is used for merge mining - the aux chain provides a block hash that
-// should be embedded in the parent chain's coinbase transaction.
-//
-// The response format varies by implementation but typically includes:
-//
-//	{
-//	  "hash": "aux block header hash (hex, big-endian)",
-//	  "chainid": 98,  // Dogecoin = 98
-//	  "previousblockhash": "previous block hash (hex)",
-//	  "coinbasevalue": 10000000000000,  // satoshis
-//	  "bits": "1b3cc366",  // compact target
-//	  "height": 12345678,
-//	  "target": "000000000003c366..."  // optional full target
-//	}
-//
-// If called with a hash parameter, it acts as createauxblock instead.
-func (c *Client) GetAuxBlock(ctx context.Context) (map[string]interface{}, error) {
-	resp, err := c.call(ctx, "getauxblock", nil)
-	if err != nil {
-		return nil, fmt.Errorf("getauxblock failed: %w", err)
-	}
-
-	// Check for null result
-	if len(resp.Result) == 0 || string(resp.Result) == "null" {
-		return nil, fmt.Errorf("daemon returned null result for getauxblock")
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal aux block: %w", err)
-	}
-
-	// CRITICAL FIX: Validate ALL required fields to prevent nil dereferences in callers
-	// Without this, callers accessing missing fields will panic on type assertion
-	requiredFields := []string{"hash", "chainid", "previousblockhash", "coinbasevalue", "bits", "height"}
-	for _, field := range requiredFields {
-		if _, ok := result[field]; !ok {
-			return nil, fmt.Errorf("aux block response missing required '%s' field", field)
-		}
-	}
-
-	return result, nil
-}
-
 // SubmitAuxBlock submits a completed auxiliary block with AuxPoW proof.
 //
-// This is the counterpart to GetAuxBlock - it submits the solved aux block
+// This is the counterpart to CreateAuxBlockWithAddress - it submits the solved aux block
 // along with the proof that the parent block's work is valid.
 //
 // Parameters:

@@ -2699,6 +2699,8 @@
                 ⟳<span class="btn-text"> Refresh</span>
             </button>
             <button class="appearance-btn" onclick="toggleAppearancePanel()" title="Appearance">🎨</button>
+            <a href="/explorer" class="settings-btn" title="Block explorer">⛓</a>
+            <a href="/automation" class="settings-btn" title="Miner automation">⏰</a>
             <a href="/settings" class="settings-btn" title="Settings">⚙</a>
         </div>
     </header>
@@ -3728,6 +3730,17 @@
                             <div id="device-type-legend" style="font-size: 0.75rem; font-family: var(--font-mono, 'Share Tech Mono', monospace);"></div>
                         </div>
                     </div>
+
+                    <!-- DigiDollar — hidden unless this pool runs a DigiByte node -->
+                    <div id="digidollar-card" style="display: none; background: var(--bg-card, rgba(0,0,0,0.2)); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border-primary, rgba(255,255,255,0.03));">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">DigiDollar &mdash; DigiByte stablecoin</div>
+                            <button onclick="refreshDigiDollar(true)" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div id="digidollar-body" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
+                            <div style="color: var(--text-muted);">Loading...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -3804,7 +3817,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v2.7.1</span>
+            <span>Spiral Pool Dashboard v3.0.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -3831,6 +3844,7 @@
                 lastUpdatesCheck = 0;
                 updateManagementInfo();
                 refreshCoinNodes();
+                refreshDigiDollar();
                 loadWorkerGroups();
                 refreshMinerManagement();
                 checkSystemUpdates();
@@ -5241,6 +5255,106 @@
                 }
             } catch (e) {
                 alert(`Failed to ${action} ${name}: ${e.message}`);
+            }
+        }
+
+        // =====================================================================
+        // DigiDollar (DigiByte stablecoin) — read-only network health.
+        // The card stays hidden on a pool with no DigiByte node, and says why
+        // rather than showing zeros when the node cannot answer: a pruned node
+        // is deliberately never asked, because the stats RPC would rescan the
+        // UTXO set and stall block template production.
+        // =====================================================================
+        const _DD_REASONS = {
+            pruned:   'Unavailable on a pruned node',
+            syncing:  'Stats index still syncing',
+            inactive: 'DigiDollar is not active on this chain',
+            offline:  'The DigiByte node did not answer',
+        };
+
+        function _ddCell(label, value, colour) {
+            return '<div><div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted,#6b7280);">'
+                + escapeHtml(label) + '</div><div style="font-size:0.95rem;'
+                + (colour ? 'color:' + colour + ';' : '') + '">' + escapeHtml(value) + '</div></div>';
+        }
+
+        async function refreshDigiDollar(force) {
+            const card = document.getElementById('digidollar-card');
+            const body = document.getElementById('digidollar-body');
+            if (!card || !body) return;
+            try {
+                const resp = await fetch('/api/digidollar/stats' + (force ? '?refresh=1' : ''));
+                if (!resp.ok) { card.style.display = 'none'; return; }
+                const d = await resp.json();
+
+                // No DigiByte node on this pool: the panel does not apply at all.
+                if (!d.available && d.reason === 'no_node') { card.style.display = 'none'; return; }
+                card.style.display = 'block';
+
+                if (!d.available) {
+                    const label = _DD_REASONS[d.reason] || 'Unavailable';
+                    body.innerHTML = '<div style="font-size:0.8rem;">'
+                        + '<span style="color:var(--neon-orange,#fb923c);">&#x25CF;</span> '
+                        + escapeHtml(label)
+                        + '<div style="margin-top:0.35rem;color:var(--text-muted,#6b7280);">'
+                        + escapeHtml(d.detail || '') + '</div></div>';
+                    return;
+                }
+
+                // A pruned node answers the oracle RPCs cheaply but cannot know
+                // supply or collateralisation without the stats index. Show what
+                // it does know rather than a panel of zeros, which would read as
+                // a collapsed stablecoin.
+                if (d.partial) {
+                    const o = d.oracle || {}, dep = d.deployment || {};
+                    const oracleColour = o.is_stale
+                        ? 'var(--neon-orange,#fb923c)' : 'var(--neon-green,#4ade80)';
+                    let ph = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.6rem;">';
+                    ph += _ddCell('Oracle price', '$' + (o.price_usd || 0).toFixed(6), oracleColour);
+                    ph += _ddCell('Oracle state', o.is_stale ? 'stale' : (o.status || 'unknown'), oracleColour);
+                    ph += _ddCell('Price age', (o.price_age_blocks || 0) + ' blocks');
+                    ph += _ddCell('Active oracles', String(o.oracle_count || 0));
+                    ph += _ddCell('DigiDollar', dep.enabled ? 'active' : (dep.status || 'unknown'));
+                    ph += _ddCell('MuSig2 session', dep.musig2_state || 'unknown');
+                    ph += '</div>';
+                    ph += '<div style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-muted,#6b7280);">'
+                        + escapeHtml(d.partial_detail || '') + '</div>';
+                    body.innerHTML = ph;
+                    return;
+                }
+
+                const healthy = !d.is_emergency && (d.health_percentage || 0) >= 150;
+                const healthColour = d.is_emergency
+                    ? 'var(--neon-red,#f87171)'
+                    : (healthy ? 'var(--neon-green,#4ade80)' : 'var(--neon-orange,#fb923c)');
+                const oracleColour = d.oracle && d.oracle.available
+                    ? 'var(--neon-green,#4ade80)' : 'var(--neon-orange,#fb923c)';
+
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.6rem;">';
+                html += _ddCell('Collateralisation',
+                    (d.health_percentage || 0).toFixed(1) + '%  ' + (d.health_status || ''), healthColour);
+                html += _ddCell('DD supply', '$' + formatNumber(Math.round(d.dd_supply_usd || 0)));
+                html += _ddCell('DGB collateral', formatNumber(Math.round(d.total_collateral_dgb || 0)) + ' DGB');
+                html += _ddCell('Oracle price',
+                    d.oracle && d.oracle.available ? '$' + (d.oracle.price_usd || 0).toFixed(6) : 'unavailable',
+                    oracleColour);
+                html += _ddCell('Oracle age',
+                    d.oracle ? (d.oracle.price_age_blocks || 0) + ' blocks' : '—');
+                html += _ddCell('Active positions', formatNumber(d.active_positions || 0));
+                html += '</div>';
+
+                if (d.minting_restricted_reason && d.minting_restricted_reason !== 'none') {
+                    html += '<div style="margin-top:0.75rem;font-size:0.78rem;color:var(--neon-orange,#fb923c);">'
+                        + 'Minting restricted: ' + escapeHtml(d.minting_restricted_reason) + '</div>';
+                }
+                if (d.dca_tier && d.dca_tier.status) {
+                    html += '<div style="margin-top:0.35rem;font-size:0.75rem;color:var(--text-muted,#6b7280);">'
+                        + 'DCA tier: ' + escapeHtml(String(d.dca_tier.status))
+                        + ' (x' + escapeHtml(String(d.dca_tier.multiplier)) + ')</div>';
+                }
+                body.innerHTML = html;
+            } catch (e) {
+                card.style.display = 'none';
             }
         }
 

@@ -104,14 +104,14 @@ multi_port:
   port: 16180                # Dedicated stratum port for multi-coin mining
   mode: TIME                 # Routing strategy: TIME | DIFFICULTY (default: TIME)
   coins:
- :
- weight: 96 # 96% of mining time on (~23 hours) [TIME mode only]
+    DGB:
+      weight: 96             # 96% of mining time on DigiByte (~23 hours)  [TIME mode only]
       start_hour: 0          # Start at midnight (optional — omit to auto-sequence)
     BC2:
       weight: 4              # 4% on Bitcoin II (~1 hour)  [TIME mode only]
       start_hour: 23         # Start at 11 PM (optional)
   check_interval: 5m         # Re-evaluate every 5 minutes
- prefer_coin: # Default coin on connect / tie-breaker / DIFFICULTY-mode fallback
+  prefer_coin: DGB           # Default coin on connect / tie-breaker / DIFFICULTY-mode fallback
   min_time_on_coin: 60s      # Minimum time before allowing a switch (both modes)
   timezone: America/New_York # IANA timezone for 24h schedule (TIME mode; auto-set from install)
 ```
@@ -122,10 +122,12 @@ multi_port:
 |-------|------|---------|-------------|
 | `enabled` | bool | `false` | Enable/disable the multi-coin port |
 | `port` | int | `16180` | Stratum port for multi-coin mining |
+| `tls_port` | int | none | Optional second listener on the multi-coin port speaking TLS. Certificate and key are inherited from the first enabled coin's `stratum.tls`; the pool refuses to start if that coin has none. Must differ from `port` and from every per-coin stratum port. Omit for plaintext only. |
 | `mode` | string | `TIME` | Routing strategy: `TIME` (weighted 24h schedule) or `DIFFICULTY` (lowest network diff wins). Omit for default TIME |
-| `coins` | map | required | Coin symbol to routing config. In TIME mode each coin needs `weight` (0-100) summing to 100; in DIFFICULTY mode coins are just a list, weights are ignored |
-| `coins.*.weight` | int | required (TIME) | Percentage of daily mining time (0-100). Ignored in DIFFICULTY mode |
+| `coins` | map | required | Coin symbol to routing config. At least 2 coins must be listed, and each must also appear in the top-level `coins` list. Duplicate symbols are rejected case-insensitively. |
+| `coins.*.weight` | int | required | Percentage of daily mining time (0-100). Must sum to exactly 100 **in both modes** — DIFFICULTY mode ignores weights when routing, but still rejects a config whose weights do not sum to 100. |
 | `coins.*.start_hour` | float | auto | Optional custom start hour (0-23.99) in the configured timezone. If omitted, coins are sequenced from midnight in alphabetical order |
+| `exclude_coins` | list | none | Coin symbols never selected during DIFFICULTY-mode rotation, even when their network difficulty is the lowest. Matched case-insensitively. **No effect in TIME mode.** |
 | `check_interval` | duration | `30s` | How often to re-evaluate coin assignments |
 | `prefer_coin` | string | first coin | Default coin for new connections and tie-breaking |
 | `min_time_on_coin` | duration | `60s` | Minimum time a miner stays on a coin before switching. Prevents rapid flip-flopping. Bypassed if the current coin's daemon goes down |
@@ -161,7 +163,7 @@ coins:
   # Total: 100
 ```
 
-At least 2 coins must have a positive weight. Set `weight: 0` to exclude a coin from the schedule.
+At least 2 coins must be **listed**, and their weights must sum to exactly 100. Set `weight: 0` to keep a coin listed but out of the schedule — a zero-weight coin still counts toward the two-coin minimum.
 
 ### Custom Start Times
 
@@ -169,7 +171,7 @@ By default, coins are sequenced from midnight in alphabetical order. You can ove
 
 ```yaml
 coins:
- :
+  DGB:
     weight: 96           # 23 hours
     start_hour: 0        # Midnight to 11 PM
   BC2:
@@ -266,7 +268,7 @@ All SHA-256d miners are supported:
 - Avalon Nano, A1246, A1366, A1466
 - Any stratum V1 compatible SHA-256d miner
 
-The multi-coin port only works for SHA-256d coins. Scrypt coins (LTC, DOGE, DGB-Scrypt) cannot participate because the miner hardware is algorithm-specific.
+The multi-coin port rotates miners between coins, so every coin listed under `coins` must use the **same mining algorithm** — miner hardware is algorithm-specific. Config validation enforces this: mixing SHA-256d and scrypt coins (LTC, DOGE, DGB-Scrypt, PEP, CAT are scrypt) is rejected at startup, naming the algorithms and the coins on each side. In practice this means a SHA-256d set, since that is where the merge-mineable and highest-value chains are.
 
 ---
 
@@ -282,15 +284,16 @@ Returns current multi-port configuration, computed schedule, and live stats.
   "port": 16180,
   "mode": "TIME",
   "routing_mode": "TIME",
- "coins": { "": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
- "prefer_coin":   "timezone": "America/New_York",
+  "coins": { "DGB": { "weight": 96, "start_hour": 0 }, "BC2": { "weight": 4, "start_hour": 23 } },
+  "prefer_coin": "DGB",
+  "timezone": "America/New_York",
   "schedule": [
- { "symbol": "weight": 96, "start_h": 0, "end_h": 23 },
+    { "symbol": "DGB", "weight": 96, "start_h": 0, "end_h": 23 },
     { "symbol": "BC2", "weight": 4, "start_h": 23, "end_h": 24 }
   ],
   "wallet_map": {},
- "live": { "active_coin": "next_switch": "BC2", "time_remaining": "2h 15m" },
- "available_coins": [{ "symbol": "name": "", "enabled": true }]
+  "live": { "active_coin": "DGB", "next_switch": "BC2", "time_remaining": "2h 15m" },
+  "available_coins": [{ "symbol": "DGB", "name": "DigiByte", "enabled": true }]
 }
 ```
 
@@ -361,7 +364,7 @@ The Sentinel monitors the multi-coin port and fires alerts for:
 
 | Alert | Severity | Trigger |
 |-------|----------|---------|
-| `multi_port_difficulty_spike` | Warning | >15% difficulty change on any multi-port coin |
+| `multi_port_difficulty_spike` | Warning | Network difficulty **rises** by more than `diff_spike_percent` (default 80%) on a multi-port coin that currently has active miners. Difficulty drops never fire, and coins reading ≤1 or >1e12 are skipped as out-of-range. |
 | `multi_port_coin_switch` | Info | 5+ coin switches in a single check interval |
 
 ---

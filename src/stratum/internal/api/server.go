@@ -39,11 +39,11 @@ import (
 // mirroring the pattern already used for main.Version and
 // ha.SpiralPoolVersion. Keep the fallback in sync with the VERSION file —
 // it is what an un-injected `go build` reports.
-var Version = "2.7.1"
+var Version = "3.0.0"
 
 // Codename is the release codename appended to the reported version, giving
 // the "X.Y.Z-CODENAME" form that API consumers expect.
-const Codename = "SPIRAL_CITADEL"
+const Codename = "SPIRAL_COVENANT"
 
 // SECURITY: Request body size limits to prevent DoS attacks
 const (
@@ -128,6 +128,9 @@ type Server struct {
 	// HA components (optional - set when HA mode is enabled)
 	dbManager       *database.DatabaseManager
 	failoverManager *discovery.FailoverManager
+
+	// Read-only miner portal (/portal, /api/portal/{address})
+	portal *portal
 
 	// Cached responses
 	cacheMu     sync.RWMutex
@@ -229,13 +232,30 @@ type ConnectionStatsProvider interface {
 
 // NewServer creates a new API server.
 func NewServer(cfg *config.APIConfig, poolCfg *config.PoolConfig, db *database.PostgresDB, logger *zap.Logger) *Server {
-	return &Server{
+	s := &Server{
 		cfg:         cfg,
 		poolCfg:     poolCfg,
 		logger:      logger.Sugar(),
 		db:          db,
 		rateLimiter: NewRateLimiter(cfg.RateLimiting),
 	}
+	s.portal = newPortal(s.portalPools, s.logger)
+	return s
+}
+
+// portalPools lists this node's single pool for the miner portal.
+func (s *Server) portalPools() []portalPool {
+	pool := portalPool{
+		PoolID:    s.poolCfg.ID,
+		Coin:      s.poolCfg.Coin,
+		Algorithm: coin.AlgorithmFromCoinSymbol(s.poolCfg.Coin),
+	}
+	// Check the pointer before storing it: a nil *PostgresDB in the interface
+	// would not compare equal to nil.
+	if db := s.getDB(); db != nil {
+		pool.Store = db
+	}
+	return []portalPool{pool}
 }
 
 // SetStatsProvider sets the stats provider.
@@ -314,6 +334,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Coin registry endpoint (public - for Sentinel/Dashboard validation)
 	mux.HandleFunc("/api/coins", s.handleCoins)
 
+	// Read-only miner portal (public)
+	s.portal.register(mux)
+
 	// Apply middleware
 	handler := s.rateLimitMiddleware(mux)
 	handler = s.loggingMiddleware(handler)
@@ -348,6 +371,9 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Stop() error {
 	if s.rateLimiter != nil {
 		s.rateLimiter.Stop()
+	}
+	if s.portal != nil {
+		s.portal.stop()
 	}
 	if s.server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -540,6 +566,15 @@ func (s *Server) handlePoolRoutes(w http.ResponseWriter, r *http.Request) {
 		}).ServeHTTP(w, r)
 	case "miners":
 		if len(parts) < 3 {
+			// SECURITY: the list enumerates every active wallet address, so it
+			// requires the admin key. Installs with no key configured keep the
+			// old public list rather than losing Sentinel's miner checks.
+			if s.cfg.AdminAPIKey != "" {
+				s.adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+					s.handlePoolMiners(w, r, poolID)
+				}).ServeHTTP(w, r)
+				return
+			}
 			s.handlePoolMiners(w, r, poolID)
 			return
 		}

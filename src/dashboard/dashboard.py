@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "2.7.1"
+__version__ = "3.0.0"
 
 import os
 import json
@@ -51,6 +51,14 @@ import shutil
 import requests
 import secrets
 import yaml
+
+import explorer as block_explorer  # block explorer node queries (explorer.py)
+
+try:
+    import miner_automation  # automation rules shared with Sentinel, installed next to dashboard.py
+except ImportError:  # running from the source tree
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sentinel"))
+    import miner_automation
 
 try:
     import bcrypt
@@ -3902,6 +3910,12 @@ def fetch_live_block_reward(coin):
 
     Supports 16 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, LTC, DOGE, DGB-SCRYPT, PEP, CAT.
     """
+    # No coin configured yet (fresh install, or config.yaml not written). The
+    # later fallbacks in fetch_block_reward already guard on "if primary_coin",
+    # so hand back a neutral reading and let Method 4 supply the default rather
+    # than raising AttributeError on None.upper() and 500-ing /api/combined.
+    if not coin:
+        return {"block_height": 0, "block_reward": 0}
     coin = coin.upper()
     # SHA-256d coins with live API lookup
     if coin == "DGB":
@@ -4280,9 +4294,24 @@ def _get_cached_coin_version(symbol):
     return ""
 
 
-def coin_rpc(symbol, method, params=None, wallet=None):
+class CoinRPCError(Exception):
+    """A daemon answered with a JSON-RPC error and the caller asked to see it.
+
+    coin_rpc() returns None for every failure by design, which is right for the
+    callers that only need a value or nothing. It is wrong for a caller that has
+    to tell "the feature is not active on this chain" apart from "the node is
+    down", because those read identically as None. Opt in with raise_error=True.
+    """
+
+
+def coin_rpc(symbol, method, params=None, wallet=None, timeout=10, raise_error=False):
     """Make an RPC call to a specific coin's node.
-    If wallet is specified, targets that named wallet via /wallet/<name> URL path."""
+    If wallet is specified, targets that named wallet via /wallet/<name> URL path.
+    timeout is the HTTP timeout in seconds (UTXO scans need far longer than 10).
+    raise_error=True raises CoinRPCError with the daemon's message instead of
+    returning None when the daemon itself reports an error."""
+    if not symbol:
+        return None
     symbol = symbol.upper()
     if symbol not in MULTI_COIN_NODES:
         return None
@@ -4326,7 +4355,7 @@ def coin_rpc(symbol, method, params=None, wallet=None):
             rpc_url,
             json=payload,
             auth=(node['rpc_user'], node['rpc_password']),
-            timeout=10
+            timeout=timeout
         )
         if response.status_code == 401:
             print(f"RPC auth failed ({symbol} {method}): 401 Unauthorized")
@@ -4334,8 +4363,13 @@ def coin_rpc(symbol, method, params=None, wallet=None):
         result = response.json()
         if result.get("error"):
             print(f"RPC error ({symbol} {method}): {result['error']}")
+            if raise_error:
+                err = result["error"]
+                raise CoinRPCError(str(err.get("message") or err) if isinstance(err, dict) else str(err))
             return None
         return result.get("result")
+    except CoinRPCError:
+        raise        # asked for, not a transport failure — must not become None
     except Exception as e:
         print(f"RPC error ({symbol} {method}): {e}")
         return None
@@ -10406,6 +10440,22 @@ def update_config():
         is_first_run_completion
     )
 
+    # GET /api/config returns every device password as ***REDACTED***. Saving the
+    # devices back must not store that placeholder as the password: keep the
+    # stored password for the same device type and IP, or drop the field.
+    if isinstance(new_config.get("devices"), dict):
+        old_devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
+        for dtype, devices in new_config["devices"].items():
+            if not isinstance(devices, list):
+                continue
+            stored = {d.get("ip"): d.get("password") for d in old_devices.get(dtype, []) if isinstance(d, dict)}
+            for device in devices:
+                if isinstance(device, dict) and device.get("password") == "***REDACTED***":
+                    if stored.get(device.get("ip")):
+                        device["password"] = stored[device.get("ip")]
+                    else:
+                        device.pop("password")
+
     # Merge new config (only allowed keys)
     allowed_keys = {"dashboard_title", "pool_mode", "multi_coin_enabled", "coins", "devices",
                     "refresh_interval", "theme", "power_cost", "first_run", "expected_fleet_ths"}
@@ -11579,6 +11629,521 @@ def settings():
     return render_template('settings.html', config=config)
 
 
+# ─────────────────────────────────────────────
+# DigiDollar (DigiByte): network-wide stablecoin health, read from our own node.
+#
+# DigiDollar activated on DGB mainnet at block 23,869,440 on 17 July 2026, and
+# this pool already mines it -- digibyte.go requests the "digidollar-oracle"
+# getblocktemplate rule and daemon/client.go copies the MuSig2 oracle price
+# bundle into the coinbase. This is the read-only counterpart: what the
+# network's collateral and supply look like, for an operator mining the chain.
+#
+# SAFETY, and the reason this is not simply an RPC call: getdigidollarstats
+# reads DigiByte's DigiDollar stats index, and that index is off on every
+# pruned node -- it syncs from genesis, so it cannot start below a prune point,
+# and DigiByte turns it off for you (init.cpp: "-prune set -> setting
+# -digidollarstatsindex=0"). Turning it back on in digibyte.conf does not help:
+# the index would then refuse to start rather than run.
+#
+# Without the index those RPCs still answer, via ForceFlushStateToDisk() plus a
+# full UTXO-set scan held under cs_main. Upstream calls that a working
+# fallback, and for a wallet it is. For a mining node it is not: cs_main is the
+# lock getblocktemplate needs, so the pool stops building blocks for as long as
+# the scan runs. Four RPCs reach that scan -- getdigidollarstats,
+# getprotectionstatus, getdcamultiplier and calculatecollateralrequirement, the
+# last two through a helper rather than directly -- and none of the four is
+# ever sent to a pruned node.
+#
+# getoracleprice and getdigidollardeploymentinfo touch neither the index nor
+# the UTXO set, so a pruned node answers both cheaply and the panel shows what
+# they carry. Supply and collateralisation are omitted rather than zeroed: a
+# zero supply reads as a collapsed stablecoin. Spiral Pool offers DGB pruning
+# and recommends it, so this is the path most operators will be on.
+# ─────────────────────────────────────────────
+
+_DIGIDOLLAR_TTL = 60            # DGB blocks are ~15s; the index moves once per block
+_digidollar_cache = {"at": 0.0, "payload": None}
+_digidollar_lock = threading.Lock()
+
+
+def _dd_num(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _digidollar_symbol():
+    """The enabled DigiByte node to ask, or None. DGB and DGB-SCRYPT are one chain."""
+    enabled = get_enabled_coins().get("enabled") or []
+    for symbol in ("DGB", "DGB-SCRYPT"):
+        if symbol in enabled and symbol in MULTI_COIN_NODES:
+            return symbol
+    return None
+
+
+def _digidollar_unavailable(reason, detail):
+    """Why the stats could not be read. Never conflated with zero or healthy."""
+    return {"available": False, "reason": reason, "detail": detail}
+
+
+def _digidollar_error_reason(message):
+    """Map a daemon error to a reason, keeping "cannot ask" distinct from "nothing"."""
+    lowered = message.lower()
+    if "not yet active" in lowered:
+        return "inactive"
+    if "syncing" in lowered:
+        return "syncing"
+    return "error"
+
+
+def _digidollar_pruned_read(symbol, chain):
+    """What a pruned node can answer, which is more than nothing.
+
+    Four of DigiDollar's read-only RPCs route through GetDigiDollarRpcTotals or
+    GetDigiDollarRpcSystemHealth, and both fall back to a UTXO-set scan under
+    cs_main when the stats index is absent -- which it always is on a pruned
+    node. Those four stay unasked here: getdigidollarstats, getprotectionstatus,
+    getdcamultiplier and calculatecollateralrequirement.
+
+    getoracleprice and getdigidollardeploymentinfo touch neither, so a pruned
+    node answers both cheaply. That happens to cover the half a mining operator
+    has most use for: whether the oracle is live and current. The pool copies
+    the oracle price bundle into its coinbases, so a stale oracle is not a
+    market curiosity -- it is the reason a block carries no bundle at all.
+    """
+    try:
+        oracle = coin_rpc(symbol, "getoracleprice", timeout=10, raise_error=True)
+    except CoinRPCError as e:
+        return _digidollar_unavailable(_digidollar_error_reason(str(e)), str(e))
+    if not isinstance(oracle, dict):
+        return _digidollar_unavailable("offline", "The DigiByte node did not answer.")
+
+    # Not gated behind activation upstream, so a failure here is not fatal to
+    # the panel: the oracle block above is the part worth showing.
+    deployment = coin_rpc(symbol, "getdigidollardeploymentinfo", timeout=10)
+    session = (deployment or {}).get("musig2_session") or {}
+
+    price_usd = _dd_num(oracle.get("price_usd"))
+    if price_usd == 0.0:
+        price_usd = _dd_num(oracle.get("price_micro_usd")) / 1000000.0
+
+    last_height = int(_dd_num(oracle.get("last_update_height")))
+    tip = int(_dd_num(chain.get("blocks")))
+    age = tip - last_height if (tip and last_height) else 0
+
+    return {
+        "available": True,
+        "partial": True,
+        "partial_reason": "pruned",
+        "partial_detail": (
+            "Supply and collateralisation need DigiByte's DigiDollar stats index, which is "
+            "off on every pruned node. Asking for them anyway would rescan the whole UTXO "
+            "set while holding cs_main and stall block template production, so the pool "
+            "does not ask. The oracle figures below cost the node nothing."),
+        "coin": symbol,
+        "checked_at": time.time(),
+        "oracle": {
+            "available": not bool(oracle.get("is_stale")),
+            "status": oracle.get("status") or "unknown",
+            "price_usd": price_usd,
+            "price_age_blocks": max(0, age),
+            "is_stale": bool(oracle.get("is_stale")),
+            "oracle_count": int(_dd_num(oracle.get("oracle_count"))),
+            "validity_blocks": int(_dd_num(oracle.get("validity_blocks"))),
+            "volatility": _dd_num(oracle.get("volatility")),
+        },
+        "deployment": {
+            "enabled": bool((deployment or {}).get("enabled")),
+            "status": (deployment or {}).get("status") or "unknown",
+            "activation_height": int(_dd_num((deployment or {}).get("activation_height"))),
+            "musig2_state": session.get("state") or "unknown",
+            "musig2_nonces": int(_dd_num(session.get("nonce_count"))),
+        },
+    }
+
+
+def _digidollar_read(symbol):
+    chain = coin_rpc(symbol, "getblockchaininfo", timeout=8)
+    if not isinstance(chain, dict):
+        return _digidollar_unavailable("offline", "The DigiByte node did not answer.")
+
+    if chain.get("pruned"):
+        return _digidollar_pruned_read(symbol, chain)
+
+    try:
+        stats = coin_rpc(symbol, "getdigidollarstats", timeout=15, raise_error=True)
+    except CoinRPCError as e:
+        return _digidollar_unavailable(_digidollar_error_reason(str(e)), str(e))
+
+    if not isinstance(stats, dict):
+        return _digidollar_unavailable("offline", "The DigiByte node did not answer.")
+
+    return {
+        "available": True,
+        "partial": False,
+        "coin": symbol,
+        "checked_at": time.time(),
+        "health_percentage": _dd_num(stats.get("health_percentage")),
+        "health_status": stats.get("health_status") or "unknown",
+        "is_emergency": bool(stats.get("is_emergency")),
+        "active_positions": int(_dd_num(stats.get("active_positions"))),
+        "total_collateral_dgb": _dd_num(stats.get("total_collateral_dgb")),
+        # total_dd_supply is quoted in cents; the panel shows dollars.
+        "dd_supply_usd": _dd_num(stats.get("total_dd_supply")) / 100.0,
+        "minting_restricted_reason": stats.get("minting_restricted_reason") or "none",
+        "oracle": {
+            "available": bool(stats.get("oracle_available")),
+            "status": stats.get("oracle_status") or "unknown",
+            # oracle_price_micro_usd: 1,000,000 == $1.00
+            "price_usd": _dd_num(stats.get("oracle_price_micro_usd")) / 1000000.0,
+            "price_age_blocks": int(_dd_num(stats.get("oracle_price_age"))),
+        },
+        "dca_tier": stats.get("dca_tier") if isinstance(stats.get("dca_tier"), dict) else None,
+        "err_tier": stats.get("err_tier") if isinstance(stats.get("err_tier"), dict) else None,
+    }
+
+
+def digidollar_stats(force=False):
+    """Cached DigiDollar health, or a reason it could not be read.
+
+    The lock is held across the RPC on purpose: concurrent dashboard tabs then
+    wait for one in-flight query and share its answer, rather than each opening
+    its own against the node.
+    """
+    now = time.time()
+    with _digidollar_lock:
+        cached = _digidollar_cache["payload"]
+        if not force and cached is not None and now - _digidollar_cache["at"] < _DIGIDOLLAR_TTL:
+            return cached
+        symbol = _digidollar_symbol()
+        payload = (_digidollar_read(symbol) if symbol else _digidollar_unavailable(
+            "no_node", "No DigiByte node is enabled on this pool."))
+        _digidollar_cache["at"] = now
+        _digidollar_cache["payload"] = payload
+        return payload
+
+
+@app.route('/api/digidollar/stats')
+@api_key_or_login_required
+def digidollar_stats_route():
+    """DigiDollar system health, as seen by this pool's own DigiByte node"""
+    return jsonify(digidollar_stats(force=request.args.get('refresh') == '1'))
+
+
+# ─────────────────────────────────────────────
+# Block explorer (operator only): queries this pool's own coin nodes.
+# Works on pruned nodes; explorer.py documents what a pruned node can answer.
+# Session login only (admin_required): address scans walk the whole UTXO set.
+# ─────────────────────────────────────────────
+
+_explorer_found_cache = {}
+_explorer_found_lock = threading.Lock()
+_explorer_scan_locks = {symbol: threading.Lock() for symbol in MULTI_COIN_NODES}
+
+
+def _explorer_symbol(coin):
+    symbol = str(coin or "").upper()
+    if symbol not in MULTI_COIN_NODES:
+        raise block_explorer.ExplorerError(404, "Unknown coin.")
+    return symbol
+
+
+def _explorer_rpc(symbol):
+    def rpc(method, params=None, timeout=None):
+        return coin_rpc(symbol, method, params, timeout=timeout or 10)
+    return rpc
+
+
+def _explorer_pool_block_hashes(symbol):
+    """Hashes of blocks this pool found for a coin, cached for a minute."""
+    now = time.time()
+    with _explorer_found_lock:
+        cached = _explorer_found_cache.get(symbol)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    hashes = set()
+    try:
+        data = requests.get(f"{POOL_API_URL}/api/pools", timeout=5).json()
+        for pool in data.get("pools", []):
+            coin_info = pool.get("coin", {})
+            coin_type = coin_info.get("type", "") if isinstance(coin_info, dict) else ""
+            if coin_type.upper() != symbol or not pool.get("id"):
+                continue
+            blocks = requests.get(
+                f"{POOL_API_URL}/api/pools/{pool['id']}/blocks?pageSize=500", timeout=5
+            ).json()
+            hashes.update(b.get("hash") for b in blocks if b.get("hash"))
+    except (requests.exceptions.RequestException, ValueError, AttributeError, TypeError):
+        pass  # The explorer still works; blocks just are not marked as found by the pool.
+
+    with _explorer_found_lock:
+        _explorer_found_cache[symbol] = (now + 60, hashes)
+    return hashes
+
+
+def _explorer_json(run):
+    try:
+        return jsonify(run())
+    except block_explorer.ExplorerError as e:
+        return jsonify({"error": e.message}), e.status
+
+
+@app.route('/explorer')
+@admin_required
+def explorer_page():
+    """Block explorer page (operator only)"""
+    return render_template('explorer.html')
+
+
+@app.route('/api/explorer/coins')
+@admin_required
+def explorer_coins():
+    """Coins the explorer can query"""
+    enabled = get_enabled_coins().get("enabled") or []
+    return jsonify({"coins": [
+        {"symbol": s, "name": MULTI_COIN_NODES[s].get("name", s)}
+        for s in enabled if s in MULTI_COIN_NODES
+    ]})
+
+
+@app.route('/api/explorer/<coin>/summary')
+@admin_required
+def explorer_summary(coin):
+    """Chain state, mempool and recent blocks for a coin's node"""
+    def run():
+        symbol = _explorer_symbol(coin)
+        return block_explorer.chain_summary(_explorer_rpc(symbol), _explorer_pool_block_hashes(symbol))
+    return _explorer_json(run)
+
+
+@app.route('/api/explorer/<coin>/block/<block_id>')
+@admin_required
+def explorer_block(coin, block_id):
+    """A block by height or hash"""
+    def run():
+        symbol = _explorer_symbol(coin)
+        return block_explorer.block_detail(_explorer_rpc(symbol), block_id, _explorer_pool_block_hashes(symbol))
+    return _explorer_json(run)
+
+
+@app.route('/api/explorer/<coin>/tx/<txid>')
+@admin_required
+def explorer_tx(coin, txid):
+    """A transaction, optionally located by ?block=<hash>"""
+    def run():
+        symbol = _explorer_symbol(coin)
+        return block_explorer.tx_detail(_explorer_rpc(symbol), txid, request.args.get('block'))
+    return _explorer_json(run)
+
+
+@app.route('/api/explorer/<coin>/address/<address>')
+@admin_required
+def explorer_address(coin, address):
+    """Unspent outputs for an address (full UTXO-set scan)"""
+    def run():
+        symbol = _explorer_symbol(coin)
+        # A node runs one scantxoutset at a time and a scan can take minutes:
+        # refuse a second one rather than queue requests behind it.
+        lock = _explorer_scan_locks[symbol]
+        if not lock.acquire(blocking=False):
+            raise block_explorer.ExplorerError(
+                409, "An address scan is already running for this coin. Try again when it finishes."
+            )
+        try:
+            return block_explorer.address_utxos(_explorer_rpc(symbol), address)
+        finally:
+            lock.release()
+    return _explorer_json(run)
+
+
+# ============================================
+#  MINER AUTOMATION (rules run by Sentinel)
+# ============================================
+# The page edits automation.json and device_credentials.json in Sentinel's shared
+# data directory (next to miners.json); Sentinel re-reads both when they change.
+
+_automation_credentials_lock = threading.Lock()
+
+
+def _automation_data_dir():
+    return Path(os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")) / "data"
+
+
+def _automation_path(filename):
+    return _automation_data_dir() / filename
+
+
+def _automation_device_types():
+    """IP -> miner type for every miner configured on the dashboard."""
+    types = {}
+    for miner_type, devices in (load_config().get("devices") or {}).items():
+        for device in devices or []:
+            ip = device.get("ip") if isinstance(device, dict) else None
+            if ip and ip not in types:
+                types[ip] = miner_type
+    return types
+
+
+def _load_automation():
+    """(settings, error message). An unreadable file is reported, never replaced."""
+    try:
+        raw = miner_automation.read_json(_automation_path(miner_automation.AUTOMATION_FILE))
+    except ValueError as e:
+        return None, str(e)
+    settings, _ = miner_automation.validate_automation(raw if raw is not None else miner_automation.default_automation())
+    return settings, None
+
+
+def _sentinel_config():
+    install_dir = os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")
+    for path in (Path(install_dir) / "config" / "sentinel" / "config.json", Path.home() / ".spiralsentinel" / "config.json"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+def _int_setting(value, default):
+    return value if type(value) is int else default
+
+
+@app.route('/automation')
+@admin_required
+def automation_page():
+    """Miner automation: sleep windows, power schedules and auto-restart"""
+    return render_template('automation.html')
+
+
+@app.route('/api/automation', methods=['GET'])
+@admin_required
+def automation_get():
+    """Automation settings and what each configured miner supports. Passwords are never returned."""
+    settings, error = _load_automation()
+    if error:
+        return jsonify({"error": f"automation.json cannot be read, so it was left untouched: {error}"}), 500
+    try:
+        credentials = miner_automation.read_json(_automation_path(miner_automation.CREDENTIALS_FILE)) or {}
+    except ValueError:
+        credentials = {}
+    miners = []
+    for ip, miner_type in _automation_device_types().items():
+        device = next((d for d in load_config()["devices"].get(miner_type, []) if isinstance(d, dict) and d.get("ip") == ip), {})
+        device_settings = settings["devices"].get(ip, {})
+        caps = miner_automation.capabilities_for(miner_type, device_settings.get("model", ""))
+        stored = credentials.get(ip) if isinstance(credentials, dict) else None
+        miners.append({
+            "ip": ip, "name": device.get("nickname") or device.get("name") or ip, "type": miner_type,
+            "family": caps["family"], "label": caps["label"], "sleep": caps["sleep"], "levels": list(caps["levels"]),
+            "watts": caps["watts"], "credentials": caps["credentials"],
+            "model": device_settings.get("model", ""), "auto_restart": device_settings.get("auto_restart", True),
+            "has_credentials": isinstance(stored, dict) and bool(stored.get("password")),
+        })
+    sentinel_cfg = _sentinel_config()
+    defaults = {
+        "enabled": sentinel_cfg.get("auto_restart_enabled", True) is not False,
+        "offline_minutes": _int_setting(sentinel_cfg.get("auto_restart_min_offline"), 20),
+        "cooldown_minutes": max(5, _int_setting(sentinel_cfg.get("auto_restart_cooldown"), 1800) // 60),
+        "low_hashrate_minutes": 0,
+    }
+    return jsonify({
+        "settings": settings,
+        "miners": sorted(miners, key=lambda m: str(m["name"]).lower()),
+        "avalon_models": miner_automation.AVALON_HOME_MODELS,
+        "auto_restart_defaults": defaults,
+        "timezone": str(sentinel_cfg.get("display_timezone", "America/New_York")),
+    })
+
+
+@app.route('/api/automation', methods=['PUT'])
+@admin_required
+def automation_put():
+    """Replace the automation settings after validating every rule against the miners' types"""
+    settings, errors = miner_automation.validate_automation(request.get_json(silent=True),
+                                                           device_types=_automation_device_types())
+    if errors:
+        return jsonify({"errors": errors}), 400
+    path = _automation_path(miner_automation.AUTOMATION_FILE)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        miner_automation.write_json_atomic(path, settings, mode=0o644)
+    except OSError as e:
+        print(f"[AUTOMATION] Cannot save {path}: {e}")
+        return jsonify({"error": "Could not save the automation settings."}), 500
+    return jsonify({"success": True, "settings": settings})
+
+
+@app.route('/api/automation/credentials/<ip>', methods=['PUT', 'DELETE'])
+@admin_required
+def automation_credentials(ip):
+    """Store or clear a miner's API login. Write-only: the password is never sent back."""
+    if ip not in _automation_device_types():
+        return jsonify({"error": "Not a configured miner."}), 404
+    path = _automation_path(miner_automation.CREDENTIALS_FILE)
+    with _automation_credentials_lock:
+        try:
+            credentials = miner_automation.read_json(path) or {}
+        except ValueError:
+            return jsonify({"error": "The stored credentials file cannot be read, so it was left untouched."}), 500
+        if not isinstance(credentials, dict):
+            credentials = {}
+        if request.method == 'DELETE':
+            credentials.pop(ip, None)
+        else:
+            data = request.get_json(silent=True) or {}
+            username, password = data.get("username", ""), data.get("password", "")
+            if not all(isinstance(v, str) and re.fullmatch(r"[\x20-\x7e]{0,128}", v) for v in (username, password)) or not password:
+                return jsonify({"error": "A password is required. Username and password must be printable ASCII, at most 128 characters."}), 400
+            credentials[ip] = {"username": username, "password": password}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            miner_automation.write_json_atomic(path, credentials, mode=0o600)
+        except OSError as e:
+            print(f"[AUTOMATION] Cannot save {path}: {e}")
+            return jsonify({"error": "Could not save the credentials."}), 500
+    return jsonify({"success": True})
+
+
+def migrate_avalon_schedules_to_automation():
+    """Move Nano 3S and Avalon Q schedules to the Automation page, once.
+
+    Sentinel runs those models' schedules now. Other Avalon models stay on the
+    dashboard's Avalon scheduler. The schedules file is backed up first as
+    avalon_schedules.json.pre-automation. Returns the migrated IPs.
+    """
+    home = {ip: s for ip, s in avalon_schedules.items() if isinstance(s, dict) and s.get("model") in ("nano3s", "avalon_q")}
+    if not home:
+        return []
+    path = _automation_path(miner_automation.AUTOMATION_FILE)
+    try:
+        current = miner_automation.read_json(path)
+    except ValueError as e:
+        print(f"[AUTOMATION] Not moving Avalon schedules: {e}")
+        return []
+    current, _ = miner_automation.validate_automation(current if current is not None else miner_automation.default_automation())
+    migrated_settings, migrated = miner_automation.migrate_avalon_schedules(home, current)
+    if not migrated:
+        return []
+    try:
+        backup = os.path.join(CONFIG_DIR, "avalon_schedules.json.pre-automation")
+        if not os.path.exists(backup):
+            _atomic_json_save(backup, avalon_schedules, indent=2)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        miner_automation.write_json_atomic(path, migrated_settings, mode=0o644)
+    except OSError as e:
+        print(f"[AUTOMATION] Not moving Avalon schedules, cannot write: {e}")
+        return []
+    for ip in migrated:
+        avalon_schedules.pop(ip, None)
+    save_avalon_schedules()
+    print(f"[AUTOMATION] Moved Avalon schedules for {len(migrated)} miner(s) to the Automation page")
+    return migrated
+
+
 @app.route('/api/device/restart', methods=['POST'])
 @admin_required
 def restart_device():
@@ -12023,7 +12588,7 @@ def get_themes():
     if themes_dir.exists():
         for theme_file in themes_dir.glob('*.json'):
             try:
-                with open(theme_file, 'r') as f:
+                with open(theme_file, 'r', encoding='utf-8') as f:
                     theme_data = json.load(f)
                     themes.append({
                         'id': theme_data.get('id', theme_file.stem),
@@ -12031,7 +12596,7 @@ def get_themes():
                         'description': theme_data.get('description', ''),
                         'category': theme_data.get('category', 'Other')
                     })
-            except (json.JSONDecodeError, IOError):
+            except (json.JSONDecodeError, UnicodeDecodeError, IOError):
                 continue
 
     return jsonify(themes)
@@ -12052,10 +12617,10 @@ def get_theme(theme_id):
         return jsonify({'error': 'Theme not found'}), 404
 
     try:
-        with open(theme_file, 'r') as f:
+        with open(theme_file, 'r', encoding='utf-8') as f:
             theme_data = json.load(f)
         return jsonify(theme_data)
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, UnicodeDecodeError, IOError) as e:
         app.logger.error(f"Theme load error for {theme_id}: {e}")
         return jsonify({'error': 'Failed to load theme'}), 500
 
@@ -13613,6 +14178,23 @@ def generate_wallet(symbol):
         app.logger.error(f"Node generated invalid address for {symbol}: {address}")
         return jsonify({"success": False, "error": "Node returned an unexpected address format"}), 500
 
+    # Ask the node itself: the address must be valid on its chain and owned by its wallet
+    valid_info = coin_rpc(symbol, "validateaddress", params=[address])
+    if not isinstance(valid_info, dict) or valid_info.get("isvalid") is not True:
+        app.logger.error(f"Node did not confirm generated {symbol} address as valid: {address}")
+        return jsonify({"success": False, "error": f"The {symbol} node did not confirm the generated address as valid"}), 500
+    addr_info = coin_rpc(symbol, "getaddressinfo", wallet=wallet_name, params=[address])
+    if not isinstance(addr_info, dict):
+        # The address may have come from the default wallet (fallback above)
+        addr_info = coin_rpc(symbol, "getaddressinfo", params=[address])
+    is_mine = addr_info.get("ismine") if isinstance(addr_info, dict) else None
+    if is_mine is None:
+        # Older daemons report ismine from validateaddress instead
+        is_mine = valid_info.get("ismine")
+    if is_mine is not True:
+        app.logger.error(f"Node did not confirm generated {symbol} address is owned by its wallet: {address}")
+        return jsonify({"success": False, "error": f"The {symbol} node did not confirm the generated address belongs to its wallet"}), 500
+
     # Update config.yaml with the new address (locked to prevent concurrent overwrites)
     try:
         import yaml as pyyaml_gen
@@ -14912,10 +15494,22 @@ def get_stratum_connect_info():
     client_ip = request.remote_addr or "unknown"
     app.logger.info(f"Stratum connect info requested from {client_ip}")
 
-    # Call the main stratum address function and extract key fields
-    with app.test_request_context():
-        response = get_stratum_address()
-        data = response.get_json()
+    # Call the main stratum address function and extract key fields.
+    # get_stratum_address is itself wrapped in api_key_or_login_required. Running
+    # it inside a fresh app.test_request_context() handed it a context with no
+    # session and no X-API-Key, so its decorator answered with a redirect to
+    # /login — and get_json() on a redirect is None, so the next line raised
+    # AttributeError and this endpoint returned 500 for every caller, including
+    # an authenticated one. This view's own decorator has already authorised the
+    # live request context, so call it in that.
+    response = get_stratum_address()
+    data = response.get_json(silent=True) if hasattr(response, "get_json") else None
+
+    if not data:
+        return jsonify({
+            "success": False,
+            "error": "Could not get stratum info"
+        }), 502
 
     if not data.get("success"):
         return jsonify({
@@ -15653,7 +16247,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v2.7.1"},
+        "footer": {"text": f"Spiral Pool v3.0.0"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -17554,8 +18148,11 @@ def delete_miner_tags(miner_id):
 # - Device specifications from official Canaan sources
 #
 # Workmode API: ascset|0,workmode,<mode> where mode is 0=normal, 1=high, 255=query
+#   Nano 3S and Avalon Q firmware: ascset|0,workmode,set,<mode> (0=Low/Eco, 1=Mid/Standard, 2=High/Super)
 # Frequency API: ascset|0,freq,<MHz>
 # Voltage API: ascset|0,voltage,1-<value>
+AVALON_WORKMODE_SET_MODELS = {"nano3s", "avalon_q"}
+
 AVALON_PROFILES = {
     # ═══════════════════════════════════════════════════════════════════════════
     # AVALON NANO SERIES (Home/Desktop miners, voltage range ~5000-9000)
@@ -17570,11 +18167,12 @@ AVALON_PROFILES = {
     },
 
     # Avalon Nano 3S - Desktop miner (6 TH/s max, 140W)
-    # Same chipset as Nano 3 but factory tuned higher
+    # Same chipset as Nano 3 but factory tuned higher. Canaan documents only the
+    # Low/Mid/High workmode for it, so no freq/voltage writes.
     "nano3s": {
-        "efficiency": {"freq": 200, "voltage": 6000, "workmode": 0, "description": "~3 TH/s @ 70W, quiet"},
-        "balanced": {"freq": 300, "voltage": 6500, "workmode": 0, "description": "~4.5 TH/s @ 100W"},
-        "high": {"freq": 400, "voltage": 7500, "workmode": 1, "description": "~6 TH/s @ 140W"},
+        "efficiency": {"freq": 0, "voltage": 0, "workmode": 0, "description": "~3 TH/s @ 70W, quiet"},
+        "balanced": {"freq": 0, "voltage": 0, "workmode": 1, "description": "~4.5 TH/s @ 100W"},
+        "high": {"freq": 0, "voltage": 0, "workmode": 2, "description": "~6 TH/s @ 140W"},
     },
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -17763,7 +18361,8 @@ def apply_avalon_profile(ip, profile_name, model="generic"):
         dict with success status and message
     """
     # Get profile settings for this model
-    model_profiles = AVALON_PROFILES.get(model.lower(), AVALON_PROFILES["generic"])
+    model_key = model.lower()
+    model_profiles = AVALON_PROFILES.get(model_key, AVALON_PROFILES["generic"])
     profile = model_profiles.get(profile_name)
 
     if not profile:
@@ -17781,7 +18380,11 @@ def apply_avalon_profile(ip, profile_name, model="generic"):
         # Apply workmode first (most important for many Avalon models)
         # This controls the major power/performance mode
         if workmode is not None:
-            workmode_result = cgminer_command(ip, 4028, "ascset", f"0,workmode,{workmode}", timeout=5)
+            if model_key in AVALON_WORKMODE_SET_MODELS:
+                workmode_param = f"0,workmode,set,{workmode}"
+            else:
+                workmode_param = f"0,workmode,{workmode}"
+            workmode_result = cgminer_command(ip, 4028, "ascset", workmode_param, timeout=5)
             if "error" in workmode_result and "invalid" not in str(workmode_result.get("error", "")).lower():
                 errors.append(f"Workmode: {workmode_result.get('error')}")
             else:
@@ -17950,6 +18553,9 @@ def set_avalon_schedule(ip):
         return jsonify({"success": False, "error": "Invalid IP - only private network IPs allowed"})
 
     data = request.json or {}
+
+    if data.get("model") in ("nano3s", "avalon_q"):
+        return jsonify({"success": False, "error": "Nano 3S and Avalon Q schedules are set on the Automation page (/automation), where Sentinel runs them."})
 
     # Validate rules
     rules = data.get("rules", [])
@@ -20073,6 +20679,17 @@ def _is_celebration_quiet_hours():
                     return True
     except Exception:
         pass
+
+    # Automation rules (run by Sentinel): a sleep or low-power window is quiet
+    try:
+        settings, _ = _load_automation()
+        if settings and settings["rules"]:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(str(_sentinel_config().get("display_timezone", "America/New_York")))
+            if miner_automation.low_power_active(settings, datetime.now(tz)):
+                return True
+    except Exception:
+        pass
     return False
 
 
@@ -21082,6 +21699,7 @@ load_historical_data()
 load_activity_feed()
 load_share_audit_log()
 load_avalon_schedules()
+migrate_avalon_schedules_to_automation()
 
 # Start Avalon schedule worker if any schedules are enabled (gunicorn path)
 if any(s.get("enabled") for s in avalon_schedules.values()):

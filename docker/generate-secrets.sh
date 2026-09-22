@@ -101,11 +101,30 @@ add_if_missing() {
     fi
 }
 
+# add_if_missing only acts on a variable that is absent. A variable that ships
+# in .env.example with an empty value is present, so it was skipped — which is
+# how SPIRAL_METRICS_TOKEN stayed blank, and an empty token means the /metrics
+# Bearer check never runs at all while docker-compose publishes 9100 on every
+# interface. Fill an empty one the same way a placeholder is filled.
+fill_if_empty() {
+    local var_name="$1"
+    local comment="$2"
+    if grep -q "^${var_name}=[[:space:]]*$" "$ENV_FILE"; then
+        password=$(generate_password)
+        sed -i "s|^${var_name}=[[:space:]]*$|${var_name}=${password}|" "$ENV_FILE"
+        echo "  + ${var_name}"
+        added=$((added + 1))
+    else
+        add_if_missing "$var_name" "$comment"
+    fi
+}
+
 echo ""
 echo "Checking required passwords..."
 add_if_missing "DB_PASSWORD" "PostgreSQL application user password"
 add_if_missing "GRAFANA_ADMIN_PASSWORD" "Grafana admin dashboard password"
 add_if_missing "ADMIN_API_KEY" "Pool admin API key"
+fill_if_empty "SPIRAL_METRICS_TOKEN" "Bearer token required on the /metrics endpoint"
 echo "Checking HA infrastructure passwords..."
 add_if_missing "REDIS_PASSWORD" "Redis authentication password (HA mode)"
 add_if_missing "REPLICATION_PASSWORD" "Patroni PostgreSQL replication password (HA mode)"

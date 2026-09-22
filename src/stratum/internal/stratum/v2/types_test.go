@@ -31,8 +31,8 @@ func TestProtocolConstants(t *testing.T) {
 		t.Errorf("HeaderSize = %d, want 6", HeaderSize)
 	}
 
-	if NoiseHandshakePattern != "Noise_NX_secp256k1_ChaChaPoly_SHA256" {
-		t.Errorf("NoiseHandshakePattern = %q, want 'Noise_NX_secp256k1_ChaChaPoly_SHA256'",
+	if NoiseHandshakePattern != "Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256" {
+		t.Errorf("NoiseHandshakePattern = %q, want 'Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256'",
 			NoiseHandshakePattern)
 	}
 }
@@ -217,7 +217,8 @@ func TestErrorCodeStrings(t *testing.T) {
 		{"max-target-out-of-range", ErrCodeMaxTargetOutOfRange},
 		{"invalid-channel-id", ErrCodeInvalidChannelID},
 		{"stale-share", ErrCodeStaleShare},
-		{"difficulty-target-not-met", ErrCodeDifficultyNotMet},
+		{"difficulty-too-low", ErrCodeDifficultyTooLow},
+		{"invalid-job-id", ErrCodeInvalidJobID},
 		{"rate-limited", ErrCodeRateLimited},
 	}
 
@@ -568,15 +569,15 @@ func TestSubmitSharesExtended_ExtraNonce2(t *testing.T) {
 		Nonce:       0,
 		NTime:       0,
 		Version:     0x20000000,
-		ExtraNonce2: extraNonce2,
+		Extranonce:  extraNonce2,
 	}
 
-	if len(msg.ExtraNonce2) != 8 {
-		t.Errorf("ExtraNonce2 length = %d, want 8", len(msg.ExtraNonce2))
+	if len(msg.Extranonce) != 8 {
+		t.Errorf("ExtraNonce2 length = %d, want 8", len(msg.Extranonce))
 	}
 	for i, b := range extraNonce2 {
-		if msg.ExtraNonce2[i] != b {
-			t.Errorf("ExtraNonce2[%d] = %#x, want %#x", i, msg.ExtraNonce2[i], b)
+		if msg.Extranonce[i] != b {
+			t.Errorf("ExtraNonce2[%d] = %#x, want %#x", i, msg.Extranonce[i], b)
 		}
 	}
 }

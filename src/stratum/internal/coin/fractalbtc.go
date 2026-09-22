@@ -440,13 +440,6 @@ func (c *FractalBTCCoin) AuxPowVersionBit() uint32 {
 	return FractalBTCAuxPowVersionBit
 }
 
-// UseCreateAuxBlock returns true because Fractal Bitcoin uses createauxblock(address)
-// instead of the older getauxblock RPC for fetching aux block templates.
-// Reference: https://docs.fractalbitcoin.io/node-operation/mining/how-to-mine
-func (c *FractalBTCCoin) UseCreateAuxBlock() bool {
-	return true
-}
-
 // ParseAuxBlockResponse parses the createauxblock RPC response from Fractal Bitcoin Core.
 //
 // Fractal Bitcoin's createauxblock returns (same format as Namecoin):

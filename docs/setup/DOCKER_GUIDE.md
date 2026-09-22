@@ -12,10 +12,10 @@ Docker supports **V1 + V2 Stratum** in both single-coin and multi-coin mode:
 - **Multi-coin mode:** All enabled coins in one deployment via `POOL_MODE=multi` + `--profile multi`
 - **Stratum V1** (plain + TLS encrypted connections)
 - **Stratum V2** (SV2 binary protocol with Noise NX encryption) — opt-in via `STRATUM_V2_ENABLED=true`
-- All 17 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, LTC, DOGE, DGB-SCRYPT, PEP, CAT
+- All 16 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, LTC, DOGE, DGB-SCRYPT, PEP, CAT
 - Merge mining in multi-coin mode: SHA-256d (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, or DGB as parent) and Scrypt (LTC+DOGE, LTC+PEP)
 - Dashboard, Sentinel monitoring, Prometheus, and Grafana included
-- Self-signed TLS certificates auto-generated (V1 TLS); Noise keys generated in memory (V2)
+- Self-signed TLS certificates auto-generated (V1 TLS); V2 authority and static keys created on first V2 start in `config/stratum-v2/`
 
 **Optional: Database HA (experimental, not validated for production):**
 
@@ -44,7 +44,7 @@ sudo usermod -aG docker $USER
 
 > **EXPERIMENTAL.** The Windows/Docker Desktop deployment has not been validated for production use. Docker Desktop can be terminated by Windows updates, sleep, or memory pressure. For 24/7 production mining, use native Ubuntu on dedicated hardware.
 
-> **Two Windows paths exist.** This guide covers the **Docker Desktop path** (`install-windows.ps1`). If you installed Spiral Pool by running `install.sh` directly inside WSL2 Ubuntu, see the [WSL2 Native path](#wsl2-native-path-installsh-in-wsl2) below instead.
+> **Two Windows paths exist.** This guide covers the **Docker Desktop path** (`install-windows.ps1`). If you installed Spiral Pool by running `install.sh` directly inside WSL2 Ubuntu, see the [WSL2 Native path](#wsl2-native-path-experimental--not-recommended-for-production) below instead.
 
 **Docker Desktop path requirements:**
 
@@ -115,7 +115,7 @@ POOL_COIN=digibyte
 POOL_ADDRESS=YOUR_WALLET_ADDRESS_HERE
 ```
 
-Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoincashii`, `bitcoinsilver`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`, `ecash`, ``
+Valid `POOL_COIN` values: `digibyte`, `dgb-scrypt` (or `digibyte-scrypt`), `bitcoin`, `litecoin`, `bitcoincash`, `bitcoincashii`, `bitcoinsilver`, `bitcoinii`, `dogecoin`, `pepecoin`, `catcoin`, `namecoin`, `syscoin`, `myriadcoin`, `fractalbitcoin`, `ecash`
 
 Also set your Pool ID to match your coin:
 
@@ -175,7 +175,6 @@ Available single-coin profiles:
 | `xmy` | Myriadcoin | SHA-256d |
 | `fbtc` | Fractal Bitcoin | SHA-256d |
 | `xec` | eCash | SHA-256d |
-| `` | SHA-256d |
 | `ltc` | Litecoin | Scrypt |
 | `doge` | Dogecoin | Scrypt |
 | `dgb-scrypt` | DigiByte (Scrypt) | Scrypt |
@@ -426,7 +425,7 @@ After the pool starts (allow 5-10 minutes for blockchain daemon initialization):
 | Fractal BTC | 18335 | 18336 | 18337 |
 | eCash | 18338 | 18339 | 18340 |
 
-> V2 ports are only active when `STRATUM_V2_ENABLED=true` is set in `.env`. V2 uses the Noise NX protocol (`secp256k1 + ChaCha20-Poly1305 + SHA-256`) — encryption keys are generated in memory at startup, no certificate files needed.
+> V2 ports are only active when `STRATUM_V2_ENABLED=true` is set in `.env`. V2 uses the specification's Noise handshake (`Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256`). On first start the pool creates its authority and static keys in `config/stratum-v2/`, which is bind-mounted, so they survive container recreation. Miners and proxies verify the pool with the authority public key: `docker compose exec -u root stratum spiralctl v2 pubkey` prints it in hex and, on the second line, in the base58 form that Stratum Reference Implementation configs (such as the translator's `authority_pubkey`) take. The `authorityPubkey` field in the stratum log line "Stratum V2 server started" shows the hex form.
 
 ### Miner Configuration Example (cgminer/bfgminer)
 
@@ -491,12 +490,12 @@ The blockchain daemon must fully sync before mining can begin. Sync times vary:
 
 | Coin | Approximate Sync Time (SSD) | Data Size |
 |------|---------------------------|-----------|
-| DigiByte | 4-8 hours | ~80 GB |
-| Bitcoin | 2-5 days | ~600 GB |
-| Litecoin | 12-24 hours | ~150 GB |
-| Dogecoin | 12-24 hours | ~80 GB |
-| Bitcoin Cash | 1-3 days | ~250 GB |
-| Other coins | 2-12 hours | 1-25 GB |
+| DigiByte | 2-5 hours | ~40 GB |
+| Bitcoin | 2-5 days | ~780 GB |
+| Litecoin | 1-2 days | ~240 GB |
+| Dogecoin | 1-2 days | ~190 GB |
+| Bitcoin Cash | 1-3 days | ~220 GB |
+| Other coins | 2-12 hours | 5-25 GB |
 
 Monitor sync progress:
 
@@ -842,6 +841,34 @@ To remove: `.\scripts\windows\wsl2-shutdown-hook.ps1 -Uninstall`
 
 ---
 
+## Coin Daemon Updates
+
+Docker upgrades a coin by rebuilding its image, not by replacing a binary in place. That makes the upgrade immutable and the rollback trivial — there is no half-completed swap to recover from:
+
+```bash
+# 1. Edit the version pin in the coin's Dockerfile, e.g. docker/Dockerfile.digibyte
+#    ARG DIGIBYTE_VERSION=9.26.6
+# 2. Rebuild just that image and recreate just that container.
+#    Volumes, chainstate and every other service are untouched.
+docker compose build digibyte
+docker compose up -d digibyte
+```
+
+Rolling back is the same two commands with the previous version restored.
+
+### Knowing when an update exists
+
+Sentinel checks each coin's upstream release feed and alerts when a project publishes something newer than this release targets. It normally works out which coins you run by executing each daemon binary — which it cannot do here, since the daemons are in other containers. Tell it instead:
+
+```bash
+# .env — the coins this deployment runs, as tickers
+SPIRALPOOL_INSTALLED_COINS=dgb,btc
+```
+
+It defaults to `COMPOSE_PROFILES`, so if you select coins that way in `.env` it is already correct and you can leave it unset. **If you start the stack with `--profile` on the command line, set it explicitly** — a command-line profile never reaches the container, and without it no coin release will ever be reported. The variable only decides which coins are *asked about*; it cannot trigger an upgrade.
+
+`spiralctl`'s apply path (`coin-upgrade.sh --coin <TICKER>`) does **not** work in Docker and is not meant to: it stops a systemd unit and swaps a binary on disk, and the container has neither. Use the rebuild above.
+
 ## Known Limitations
 
 ### Docker Limitations
@@ -852,7 +879,7 @@ Docker deployments are **single-node only** and carry the following restrictions
 |------------|--------|
 | **No multi-node HA** | VIP failover (Keepalived), multi-node stratum clustering, and cross-server replication require native installation on bare metal. The Docker HA overlay (`docker-compose.ha.yml`) provides single-node PostgreSQL failover only. |
 | **No "Enable HTTPS" button** | The dashboard's "Enable HTTPS" feature uses `systemctl` to restart Gunicorn with TLS bindings. Docker containers do not run systemd, so this button has no effect. To serve the dashboard over HTTPS in Docker, place a reverse proxy (Nginx, Caddy, Traefik) in front of the container. |
-| **No coin binary checksum verification** | Coin daemon Dockerfiles download binaries from upstream release pages without SHA-256 checksum verification. A compromised mirror or CDN could serve tampered binaries. Pin and verify checksums manually if running in a high-security environment. |
+| **Partial coin binary checksum verification** | Nine of the fifteen coin Dockerfiles verify the downloaded binary against a pinned SHA-256 and fail the build on a mismatch: Bitcoin, Bitcoin Cash, Bitcoin Cash II, Bitcoin II, Bitcoin Silver, eCash, Fractal Bitcoin, Litecoin and Syscoin. The remaining six — Catcoin, DigiByte, Dogecoin, Myriadcoin, Namecoin and Pepecoin — download without verification, so a compromised mirror or CDN could serve a tampered binary. Pin and verify those manually in a high-security environment. |
 | **Prometheus URL hardcoded** | The Sentinel container defaults to `http://localhost:9090` for Prometheus. In Docker networking, Prometheus is reachable at `http://prometheus:9090`. Override with `PROMETHEUS_URL=http://prometheus:9090` in `.env` if Sentinel metrics collection shows connection errors. |
 | **Bridge networking only** | Docker Compose uses bridge networking. `--network host` is not supported in the Compose files. All ports are explicitly mapped. |
 | **Experimental status** | Docker deployment has not been validated for 24/7 production mining. For production use, install natively on dedicated Ubuntu hardware. |

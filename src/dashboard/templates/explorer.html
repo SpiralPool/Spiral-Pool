@@ -1,0 +1,41 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <title>Block Explorer - Spiral Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/explorer.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="explorer-page">
+    <div class="explorer-container">
+        <header class="explorer-header">
+            <a href="/" class="explorer-home">&larr; Dashboard</a>
+            <h1>Block Explorer</h1>
+            <p class="explorer-lede">Reads your own coin nodes. On a pruned node every block header is available, but block data only inside the retained window.</p>
+        </header>
+
+        <section class="explorer-controls">
+            <label for="explorer-coin">Coin</label>
+            <select id="explorer-coin"></select>
+            <form id="explorer-search" autocomplete="off">
+                <input id="explorer-query" type="text" spellcheck="false" maxlength="100"
+                       placeholder="Block height, block hash, transaction ID or address">
+                <button type="submit">Search</button>
+            </form>
+            <p class="explorer-hint">A 64-character ID is tried as a block, then as a transaction. Transactions in a mined block need its block hash on pruned nodes: open the block and pick the transaction there. Address lookups scan the node's whole UTXO set and can take minutes.</p>
+        </section>
+
+        <p id="explorer-status" role="status" aria-live="polite"></p>
+        <section id="explorer-summary"></section>
+        <section id="explorer-result"></section>
+    </div>
+    <script src="{{ url_for('static', filename='js/explorer.js') }}"></script>
+</body>
+</html>

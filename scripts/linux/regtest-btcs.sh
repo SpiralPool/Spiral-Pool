@@ -21,9 +21,9 @@
 #   - Config: config/regtest/config-btcs-regtest.yaml
 #
 # PREREQUISITES:
-#   1. Bitcoin Silver installed (build from source — no binary releases)
-#      - Source: https://github.com/bitcoin-silver/core (commit ff5c3c3d)
-#      - install.sh builds this automatically via install_bitcoinsilver()
+#   1. Bitcoin Silver installed (release binary, 31.1.3)
+#      - Source: https://github.com/bitcoin-silver/core (tag version31.1.3)
+#      - install.sh installs this automatically via install_bitcoinsilver()
 #   2. cpuminer with SHA256d support (minerd / cpuminer-multi)
 #   3. PostgreSQL running locally (install.sh sets this up)
 #   4. Pool binary built

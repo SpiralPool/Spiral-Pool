@@ -678,7 +678,22 @@ check_for_updates() {
 
     local RELEASE_URL=""
     local RELEASE_INFO=""
-    if command -v curl &> /dev/null; then
+    if [[ "$USE_LOCAL" == "true" ]]; then
+        # "--local --check" asks what upgrading from THIS tree would give, which is
+        # a different question from "what is the newest published release?". The
+        # flag used to be accepted and silently ignored here, so --local --check
+        # against a release that is not tagged yet answered update_available:false
+        # -- the most reassuring possible way to be wrong, on the one command an
+        # operator runs precisely to find out what is about to happen.
+        # PROJECT_ROOT stays empty until detect_source_directory runs, and the
+        # --check path exits long before main() reaches it, so call it here. Its
+        # log lines go to stderr: stdout must stay parseable JSON for Sentinel.
+        detect_source_directory 1>&2
+        if [[ -n "$PROJECT_ROOT" && -f "$PROJECT_ROOT/VERSION" ]]; then
+            TARGET_VERSION=$(tr -d '[:space:]' < "$PROJECT_ROOT/VERSION")
+            RELEASE_URL="file://$PROJECT_ROOT"
+        fi
+    elif command -v curl &> /dev/null; then
         local raw http_code
         local -a api_auth=()
         [[ -n "${GITHUB_TOKEN:-}" ]] && api_auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
@@ -984,8 +999,14 @@ repair_wallet_backups() {
         [xec]="ecash-cli -conf=$INSTALL_DIR/xec/bitcoin.conf"
     )
 
-    # Descriptor wallet coins — use SQLite recovery when daemon is down
-    local descriptor_coins="|dgb|btc|xec|fbtc|"
+    # Descriptor wallet coins — use SQLite recovery when daemon is down.
+    #
+    # BC2 31.1 and BTCS 31.1 are built on Bitcoin Core 31.1, and Core 30 removed
+    # BDB legacy wallets: they "can no longer be created or loaded", only
+    # migrated. So any wallet these nodes can load is SQLite. Both daemons also
+    # dropped -salvagewallet, so Method 4 below cannot run for them — until they
+    # were listed here, a downed BC2 or BTCS node had no automated recovery at all.
+    local descriptor_coins="|dgb|btc|xec|fbtc|btcs|bc2|"
 
     for cn in "${unique[@]}"; do
         local cli="${_wbr_cli[$cn]:-}"
@@ -1466,7 +1487,10 @@ rollback_to_backup() {
         rollback_were_running=("${SERVICES_WERE_RUNNING[@]}")
     else
         for service in "${services[@]}"; do
-            if systemctl is-active --quiet "$service" 2>/dev/null; then
+            # "activating" counts, as in stop_services: a stratum still waiting for
+            # its coin daemon must come back up after the rollback.
+            local rb_state; rb_state=$(systemctl is-active "$service" 2>/dev/null) || true
+            if [[ "$rb_state" == "active" || "$rb_state" == "activating" || "$rb_state" == "reloading" ]]; then
                 rollback_were_running+=("$service")
             fi
         done
@@ -2097,7 +2121,13 @@ stop_services() {
     fi
 
     for service in "${services[@]}"; do
-        if systemctl is-active --quiet "$service" 2>/dev/null; then
+        # "activating" counts as running. spiralstratum waits for its coin daemon in
+        # ExecStartPre, which can take minutes on a node that is catching up, and
+        # `is-active --quiet` is false for the whole of it — so an upgrade started in
+        # that window used to record a running pool as "wasn't running", and said so
+        # in its summary.
+        local pre_state; pre_state=$(systemctl is-active "$service" 2>/dev/null) || true
+        if [[ "$pre_state" == "active" || "$pre_state" == "activating" || "$pre_state" == "reloading" ]]; then
             SERVICES_WERE_RUNNING+=("$service")
 
             if [[ "$service" == "$STRATUM_SERVICE" ]]; then
@@ -2947,6 +2977,27 @@ rightsize_daemon_resources() {
         "xec:bitcoin.conf:4096"
     )
 
+    # The caps above are sized for a box running several daemons at once. A
+    # single-coin pool with RAM to spare was knocked down to them anyway: a
+    # DigiByte node whose operator had deliberately raised dbcache to 8192 was
+    # silently halved to 4096 on upgrade, and only found out weeks later when a
+    # resync thrashed. Give every existing config an equal share of the same
+    # 55%-of-RAM budget install.sh sizes daemons against, and cap below the
+    # operator's value only when that share is smaller than what they set.
+    local _total_mb _ram_share=0 _conf_count=0 _entry
+    # The override exists so the test suite can present a box of a given size;
+    # nothing in the upgrade sets it.
+    _total_mb=${SPIRAL_TEST_TOTAL_MB:-$(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)}
+    for _entry in "${COIN_LIMITS[@]}"; do
+        local _cd="${_entry%%:*}" _cn="${_entry#*:}"
+        _cn="${_cn%%:*}"
+        [[ -f "$(resolve_coin_dir "$_cd" 2>/dev/null)/${_cn}" ]] && _conf_count=$((_conf_count + 1))
+    done
+    if [[ "${_total_mb:-0}" -gt 0 && "$_conf_count" -gt 0 ]]; then
+        _ram_share=$(( _total_mb * 55 / 100 / _conf_count ))
+        log_info "  - RAM budget: ${_total_mb}MB total across ${_conf_count} daemon config(s) — ${_ram_share}MB each"
+    fi
+
     for entry in "${COIN_LIMITS[@]}"; do
         local coin_dir="${entry%%:*}"
         local rest="${entry#*:}"
@@ -3060,12 +3111,71 @@ rightsize_daemon_resources() {
         # arithmetic error because 8 is not an octal digit -- also skipping the
         # cap, which is the failure this function exists to prevent.
         [[ -n "$current_cache" ]] && current_cache=$((10#$current_cache)) || current_cache=0
-        if [[ "$current_cache" -gt "$max_cache" ]]; then
+        # Never cap below what this box can actually afford (see the RAM budget
+        # above). On a machine with headroom the operator's value stands.
+        local max_cache_eff="$max_cache"
+        [[ "$_ram_share" -gt "$max_cache_eff" ]] && max_cache_eff="$_ram_share"
+        local _cache_changed=false
+        if [[ "$current_cache" -gt "$max_cache_eff" ]]; then
             _backup_conf_once || continue
-            _conf_set_int dbcache "$max_cache" || continue
-            log_warn "  - ${conf_name} (${coin_dir}): dbcache ${current_cache} -> ${max_cache} (capped for RAM safety — your value was overridden)"
+            _conf_set_int dbcache "$max_cache_eff" || continue
+            log_warn "  - ${conf_name} (${coin_dir}): dbcache ${current_cache} -> ${max_cache_eff} (capped for RAM safety — your value was overridden)"
             FIXES=$((FIXES + 1))
             changed=true
+            _cache_changed=true
+        fi
+
+        # Put back what an older upgrade took. install.sh auto-sizes these five
+        # long chains to as much as 8192 on a box with the RAM for it, and the
+        # flat cap above cut them to exactly 4096 — so a pool installed with 8GB
+        # of cache has been running on 4GB ever since, and only found out when a
+        # resync thrashed. Restore only from that exact 4096, which is the value
+        # the cap wrote: an operator who deliberately chose 2048 keeps it.
+        case "$coin_dir" in
+            dgb|btc|bch|ltc|doge)
+                local want_cache=8192
+                [[ "$_ram_share" -lt "$want_cache" ]] && want_cache="$_ram_share"
+                if [[ "$current_cache" -eq 4096 && "$want_cache" -gt 4096 ]]; then
+                    _backup_conf_once || continue
+                    _conf_set_int dbcache "$want_cache" || continue
+                    log_info "  - ${conf_name} (${coin_dir}): dbcache 4096 -> ${want_cache} (restored — this box has the RAM for it)"
+                    FIXES=$((FIXES + 1))
+                    changed=true
+                    _cache_changed=true
+                fi
+                ;;
+        esac
+
+        # A dbcache change needs the unit's memory ceiling moved with it, or
+        # systemd kills the daemon mid-sync. install.sh sizes that ceiling as
+        # dbcache + 5GB; keep an upgraded box consistent through a drop-in
+        # rather than rewriting an operator's unit file.
+        if [[ "$_cache_changed" == "true" ]]; then
+            local _svc=""
+            case "$coin_dir" in
+                dgb) _svc="digibyted" ;;
+                btc) _svc="bitcoind" ;;
+                bch) _svc="bitcoind-bch" ;;
+            esac
+            # The override exists so the test suite can point this at a scratch
+            # directory; nothing in the upgrade sets it.
+            local _sysd="${SPIRAL_SYSTEMD_DIR:-/etc/systemd/system}"
+            if [[ -n "$_svc" && -f "${_sysd}/${_svc}.service" ]] &&
+               grep -q '^MemoryMax=' "${_sysd}/${_svc}.service"; then
+                local _final _max_gb
+                _final=$(_conf_int dbcache)
+                _final=$((10#${_final:-0}))
+                if [[ "$_final" -gt 0 ]]; then
+                    _max_gb=$(( (_final + 5120) / 1024 ))
+                    [[ "$_max_gb" -lt 3 ]] && _max_gb=3
+                    mkdir -p "${_sysd}/${_svc}.service.d"
+                    printf '[Service]\nMemoryMax=%sG\nMemoryHigh=%sG\n' \
+                        "$_max_gb" "$(( _max_gb - 1 ))" \
+                        > "${_sysd}/${_svc}.service.d/zz-spiral-memory.conf"
+                    systemctl daemon-reload 2>/dev/null || true
+                    log_info "  - ${_svc}: MemoryMax=${_max_gb}G to match dbcache=${_final}MB"
+                fi
+            fi
         fi
 
         # Restore ownership before leaving this iteration by ANY path. The
@@ -3076,7 +3186,10 @@ rightsize_daemon_resources() {
         _restore_conf_owner() {
             [[ "$changed" == "true" ]] && [[ -n "$POOL_USER" ]] || return 0
             chown "${POOL_USER}:${POOL_USER}" "$conf_path" 2>/dev/null
-            chmod 0600 "$conf_path" 2>/dev/null
+            # 0640 is the mode install.sh creates these with. Rewriting them as
+            # 0600 silently tightened a file the operator had not asked to
+            # change, and the two scripts then disagreed about the same file.
+            chmod 0640 "$conf_path" 2>/dev/null
         }
 
         # Check maxconnections
@@ -3195,7 +3308,7 @@ ensure_daemon_peer_config() {
     COIN_PEERS=(
         ["dgb"]="digibyte.conf|addnode=64.182.71.16:12024 addnode=80.120.148.66:12024 addnode=185.242.227.238:12024 addnode=173.212.197.63:12024 addnode=185.150.190.101:12024 addnode=83.85.77.100:12024"
         ["btc"]="bitcoin.conf|addnode=45.55.132.91:8333 addnode=71.196.197.14:8333 addnode=72.83.184.215:8333 addnode=65.93.70.99:8333 addnode=67.60.239.105:8333 addnode=71.86.88.157:8333 addnode=173.249.47.215:8333 addnode=203.11.72.77:8333 addnode=216.107.135.60:8333 addnode=72.230.224.175:8333 addnode=77.247.151.58:8333 addnode=78.145.65.241:8333"
-        ["bch"]="bitcoin.conf|addnode=195.3.223.29:8433 addnode=199.217.115.27:8433 addnode=3.142.98.179:8433 addnode=35.163.48.30:8433 addnode=35.198.46.157:8433 addnode=51.91.196.151:8433 addnode=174.140.196.19:8433 addnode=193.164.205.249:8433 addnode=194.14.246.11:8433 addnode=8.219.86.245:8433 addnode=15.204.95.99:8433 addnode=18.139.1.192:8433 addnode=51.159.104.35:8433 addnode=57.129.18.162:8433 addnode=65.109.90.134:8433"
+        ["bch"]="bitcoin.conf|addnode=195.3.223.29:8333 addnode=199.217.115.27:8333 addnode=3.142.98.179:8333 addnode=35.163.48.30:8333 addnode=35.198.46.157:8333 addnode=51.91.196.151:8333 addnode=174.140.196.19:8333 addnode=193.164.205.249:8333 addnode=194.14.246.11:8333 addnode=8.219.86.245:8333 addnode=15.204.95.99:8333 addnode=18.139.1.192:8333 addnode=51.159.104.35:8333 addnode=57.129.18.162:8333 addnode=65.109.90.134:8333"
         ["bch2"]="bitcoincashii.conf|forcednsseed=1"
         ["bc2"]="bitcoinii.conf|addnode=173.249.0.253:8338 addnode=193.164.205.250:8338 addnode=89.38.128.175:8338 addnode=98.22.238.18:8338 addnode=144.76.79.60:8338 addnode=75.130.145.1:8338 addnode=45.32.205.199:8338"
         ["btcs"]="bitcoinsilver.conf|forcednsseed=1"
@@ -3751,12 +3864,42 @@ build_stratum() {
     local build_tags="-buildvcs=false"
     log_info "  - Building with ZMQ support (pure Go implementation)"
 
+    # Resolve go to an absolute path before dropping privileges. install.sh puts
+    # Go in /usr/local/go/bin, which this script adds to its own PATH — but sudo
+    # replaces PATH with secure_path, so the sandboxed build below got
+    # "go: command not found" and fell through to the root build EVERY time.
+    # The sandbox never ran on any box where Go is not on the system PATH.
+    local GO_BIN
+    GO_BIN=$(command -v go 2>/dev/null) || GO_BIN="go"
+
     # Build as non-root if possible (sandboxed)
     # NOTE: All builds use explicit cd in subshell/subprocess to avoid changing main script CWD
+    # The source normally sits in the invoking operator's home directory, which
+    # is mode 750 and owned by them — the pool user cannot traverse it, and
+    # chowning the tree does not help because the block is the parent directory.
+    # Combined with sudo's secure_path hiding /usr/local/go/bin, the sandboxed
+    # build failed with "cd: Permission denied" on every install and silently
+    # fell through to compiling as root. Stage the source somewhere both users
+    # can reach and build there instead.
+    local SANDBOX_DIR=""
     if [[ "$EUID" -eq 0 ]] && id "$POOL_USER" &>/dev/null; then
+        SANDBOX_DIR=$(mktemp -d "/tmp/spiral-build.XXXXXX" 2>/dev/null) || SANDBOX_DIR=""
+        if [[ -n "$SANDBOX_DIR" ]]; then
+            if cp -a "${STRATUM_SOURCE}/." "${SANDBOX_DIR}/" 2>/dev/null; then
+                chown -R "${POOL_USER}:${POOL_USER}" "$SANDBOX_DIR"
+                chmod 0755 "$SANDBOX_DIR"
+            else
+                log_warn "  - Could not stage the source for a sandboxed build"
+                rm -rf "$SANDBOX_DIR"
+                SANDBOX_DIR=""
+            fi
+        fi
+    fi
+
+    if [[ -n "$SANDBOX_DIR" ]]; then
         log_info "  - Building as non-privileged user '${POOL_USER}' (sandboxed)..."
-        chown -R "${POOL_USER}:${POOL_USER}" "$PROJECT_ROOT"
-        if ! sudo -u "$POOL_USER" bash -c "cd '${STRATUM_SOURCE}' && go build ${build_tags} -ldflags '${ldflags}' -o '${BUILD_OUTPUT}' ./cmd/spiralpool/"; then
+        if ! sudo -u "$POOL_USER" bash -c "cd '${SANDBOX_DIR}' && '${GO_BIN}' build ${build_tags} -ldflags '${ldflags}' -o '${SANDBOX_DIR}/stratum.out' ./cmd/spiralpool/" ||
+           ! mv "${SANDBOX_DIR}/stratum.out" "${BUILD_OUTPUT}"; then
             log_warn "Sandboxed build failed, trying as root..."
             ( cd "$STRATUM_SOURCE" && go build ${build_tags} -ldflags "${ldflags}" -o "${BUILD_OUTPUT}" ./cmd/spiralpool/ ) || {
                 log_error "Build failed!"
@@ -3774,14 +3917,18 @@ build_stratum() {
     # Build spiralctl control utility (CGO_ENABLED=0 — no ZMQ needed)
     log_info "Building spiralctl..."
     SPIRALCTL_OUTPUT="${TEMP_DIR}/spiralctl-build"
-    if [[ "$EUID" -eq 0 ]] && id "$POOL_USER" &>/dev/null; then
-        sudo -u "$POOL_USER" bash -c "cd '${STRATUM_SOURCE}' && CGO_ENABLED=0 go build -buildvcs=false -ldflags '${ldflags}' -o '${SPIRALCTL_OUTPUT}' ./cmd/spiralctl/" 2>/dev/null || \
-            ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -buildvcs=false -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
-            log_warn "spiralctl build failed (non-fatal)"
+    if [[ -n "$SANDBOX_DIR" ]] && \
+       sudo -u "$POOL_USER" bash -c "cd '${SANDBOX_DIR}' && CGO_ENABLED=0 '${GO_BIN}' build -buildvcs=false -ldflags '${ldflags}' -o '${SANDBOX_DIR}/spiralctl.out' ./cmd/spiralctl/" 2>/dev/null && \
+       mv "${SANDBOX_DIR}/spiralctl.out" "${SPIRALCTL_OUTPUT}"; then
+        :
     else
-        ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 go build -buildvcs=false -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
+        ( cd "$STRATUM_SOURCE" && CGO_ENABLED=0 "${GO_BIN}" build -buildvcs=false -ldflags "${ldflags}" -o "${SPIRALCTL_OUTPUT}" ./cmd/spiralctl/ ) || \
             log_warn "spiralctl build failed (non-fatal)"
     fi
+
+    # Both binaries are out of the staging copy by now.
+    [[ -n "$SANDBOX_DIR" ]] && rm -rf "$SANDBOX_DIR"
+    local SANDBOX_DIR=""
 
     log_success "Build phase complete — binaries ready for deployment"
     echo
@@ -3992,6 +4139,8 @@ update_dashboard() {
 
     # Copy Python files
     cp "$DASHBOARD_SOURCE"/*.py "$DASHBOARD_INSTALL/" 2>/dev/null || true
+    # Automation rules module, shared with Sentinel
+    cp "$DASHBOARD_SOURCE/../sentinel/miner_automation.py" "$DASHBOARD_INSTALL/" 2>/dev/null || true
     cp "$DASHBOARD_SOURCE/requirements.txt" "$DASHBOARD_INSTALL/" 2>/dev/null || true
 
     # Copy templates (overwrite) - atomic swap prevents data loss if cp fails
@@ -4010,7 +4159,10 @@ update_dashboard() {
     # Copy static assets
     mkdir -p "$DASHBOARD_INSTALL/static"
     cp -r "$DASHBOARD_SOURCE/static/css" "$DASHBOARD_INSTALL/static/" 2>/dev/null || true
+    cp -r "$DASHBOARD_SOURCE/static/js" "$DASHBOARD_INSTALL/static/" 2>/dev/null || true
     cp -r "$DASHBOARD_SOURCE/static/templates" "$DASHBOARD_INSTALL/static/" 2>/dev/null || true
+    cp -r "$DASHBOARD_SOURCE/static/icons" "$DASHBOARD_INSTALL/static/" 2>/dev/null || true
+    cp "$DASHBOARD_SOURCE/static/manifest.json" "$DASHBOARD_SOURCE/static/service-worker.js" "$DASHBOARD_INSTALL/static/" 2>/dev/null || true
 
     # Merge themes (don't overwrite user custom themes)
     mkdir -p "$DASHBOARD_INSTALL/static/themes"
@@ -4234,12 +4386,17 @@ update_sentinel() {
     cp "$SENTINEL_SOURCE/SpiralSentinel.py" "$SENTINEL_BIN"
     chmod +x "$SENTINEL_BIN"
 
-    # Copy HA manager module if present
-    [[ -f "$SENTINEL_SOURCE/ha_manager.py" ]] && cp "$SENTINEL_SOURCE/ha_manager.py" "$INSTALL_DIR/bin/"
+    # Copy HA manager and miner automation modules if present
+    local _sentinel_module
+    for _sentinel_module in ha_manager.py miner_automation.py miner_control.py; do
+        [[ -f "$SENTINEL_SOURCE/$_sentinel_module" ]] && cp "$SENTINEL_SOURCE/$_sentinel_module" "$INSTALL_DIR/bin/"
+    done
 
     # Fix ownership
     chown "$POOL_USER:$POOL_USER" "$SENTINEL_BIN" 2>/dev/null || true
-    [[ -f "$INSTALL_DIR/bin/ha_manager.py" ]] && chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/ha_manager.py"
+    for _sentinel_module in ha_manager.py miner_automation.py miner_control.py; do
+        [[ -f "$INSTALL_DIR/bin/$_sentinel_module" ]] && chown "$POOL_USER:$POOL_USER" "$INSTALL_DIR/bin/$_sentinel_module"
+    done
 
     # Ensure fallback config directory exists with correct ownership
     # systemd's ProtectHome=yes blocks ~/.spiralsentinel — sentinel falls back to this dir
@@ -4256,8 +4413,19 @@ update_sentinel() {
     # the OS (apt python3-requests), patched by the OS, so nothing is done here.
     if [[ -x "$INSTALL_DIR/sentinel-venv/bin/pip" ]] && [[ -f "$SENTINEL_SOURCE/requirements.txt" ]]; then
         log_info "  - Refreshing sentinel Python dependencies (venv)..."
-        local _spip_out _spip_rc=0
-        _spip_out=$(sudo -u "$POOL_USER" "$INSTALL_DIR/sentinel-venv/bin/pip" install -q -r "$SENTINEL_SOURCE/requirements.txt" 2>&1) || _spip_rc=$?
+        local _spip_out _spip_rc=0 _sreq
+        # pip runs as the pool user, which cannot traverse the operator's home
+        # directory where the source normally sits — the same block that stopped
+        # the sandboxed stratum build. Hand it a copy it can actually read.
+        _sreq=$(mktemp "/tmp/spiral-sentinel-req.XXXXXX" 2>/dev/null) || _sreq=""
+        if [[ -n "$_sreq" ]] && cp "$SENTINEL_SOURCE/requirements.txt" "$_sreq" 2>/dev/null; then
+            chmod 0644 "$_sreq"
+        else
+            [[ -n "$_sreq" ]] && rm -f "$_sreq"
+            _sreq="$SENTINEL_SOURCE/requirements.txt"
+        fi
+        _spip_out=$(sudo -u "$POOL_USER" "$INSTALL_DIR/sentinel-venv/bin/pip" install -q -r "$_sreq" 2>&1) || _spip_rc=$?
+        [[ "$_sreq" == /tmp/spiral-sentinel-req.* ]] && rm -f "$_sreq"
         if [[ $_spip_rc -ne 0 ]]; then
             log_warn "  - Failed to refresh sentinel Python dependencies (kept existing):"
             echo "$_spip_out" | tail -10 >&2
@@ -4726,6 +4894,84 @@ APTEOF
         log_warn "  /usr/local/bin/spiralpool-* will stay at their currently installed version"
     fi
 
+    # wait-for-node.sh and health-monitor.sh live in $INSTALL_DIR/bin and were
+    # written only by install.sh, so no upgrade ever delivered a fix to either.
+    local WFN_SRC="$PROJECT_ROOT/scripts/linux/wait-for-node.sh"
+    local WFN_DST="$INSTALL_DIR/bin/wait-for-node.sh"
+    if [[ -f "$WFN_SRC" && -f "$WFN_DST" ]] && ! cmp -s "$WFN_SRC" "$WFN_DST"; then
+        if bash -n "$WFN_SRC" 2>/dev/null; then
+            cp "$WFN_SRC" "$WFN_DST"
+            chmod +x "$WFN_DST"
+            chown "$POOL_USER:$POOL_USER" "$WFN_DST" 2>/dev/null || true
+            log_info "  - Updated wait-for-node.sh"
+            updated=$((updated + 1))
+        else
+            log_warn "  - New wait-for-node.sh is not valid bash — keeping the installed copy"
+        fi
+    fi
+
+    local HM_DST="$INSTALL_DIR/bin/health-monitor.sh"
+    if [[ -f "$HM_DST" && -f "$PROJECT_ROOT/install.sh" ]]; then
+        local hm_new
+        hm_new=$(mktemp)
+        sed -n "/health-monitor.sh\" > \/dev\/null << 'HEALTHEOF'/,/^HEALTHEOF\$/p" "$PROJECT_ROOT/install.sh" | sed '1d;$d' > "$hm_new"
+        # bash -n accepts an empty or partial file, so also require the script's
+        # shebang and its main check function before replacing a working monitor
+        if ! head -1 "$hm_new" | grep -q '^#!/bin/bash' || \
+           ! grep -q '^check_blockchain_health() {' "$hm_new" || \
+           ! bash -n "$hm_new" 2>/dev/null; then
+            log_warn "  - Could not extract a valid health-monitor.sh from install.sh — keeping the installed copy"
+        elif ! cmp -s "$hm_new" "$HM_DST"; then
+            cp "$hm_new" "$HM_DST"
+            chmod +x "$HM_DST"
+            chown "$POOL_USER:$POOL_USER" "$HM_DST" 2>/dev/null || true
+            log_info "  - Updated health-monitor.sh"
+            updated=$((updated + 1))
+            # A stopped monitor picks up the new copy when services start; a running one needs a restart
+            systemctl is-active --quiet spiralpool-health 2>/dev/null && systemctl restart spiralpool-health 2>/dev/null || true
+        fi
+        rm -f "$hm_new"
+    fi
+
+    # daemon-reindex.sh is new in v3.0 and the monitor calls it by path, so an
+    # upgraded install needs it too. Root-owned: the pool user runs it through
+    # sudo, so a copy it could write would be a way to become root.
+    local DR_DST="$INSTALL_DIR/bin/daemon-reindex.sh"
+    if [[ -f "$PROJECT_ROOT/install.sh" ]]; then
+        local dr_new
+        dr_new=$(mktemp)
+        sed -n "/daemon-reindex.sh\" > \/dev\/null << 'REINDEXEOF'/,/^REINDEXEOF\$/p" "$PROJECT_ROOT/install.sh" | sed '1d;$d' > "$dr_new"
+        if ! head -1 "$dr_new" | grep -q '^#!/bin/bash' ||            ! grep -q 'zz-spiral-reindex.conf' "$dr_new" ||            ! bash -n "$dr_new" 2>/dev/null; then
+            log_warn "  - Could not extract a valid daemon-reindex.sh from install.sh — skipping it"
+        else
+            sed -i "s|__INSTALL_DIR__|$INSTALL_DIR|" "$dr_new"
+            if ! cmp -s "$dr_new" "$DR_DST"; then
+                cp "$dr_new" "$DR_DST"
+                chmod 755 "$DR_DST"
+                chown root:root "$DR_DST" 2>/dev/null || true
+                log_info "  - Updated daemon-reindex.sh"
+                updated=$((updated + 1))
+            fi
+        fi
+        rm -f "$dr_new"
+    fi
+
+    # And the one sudoers line that lets the monitor call it.
+    local DASH_SUDOERS="/etc/sudoers.d/spiralpool-dashboard"
+    if [[ -f "$DASH_SUDOERS" ]] && ! grep -q "bin/daemon-reindex.sh" "$DASH_SUDOERS"; then
+        local sudo_tmp
+        sudo_tmp=$(mktemp)
+        { cat "$DASH_SUDOERS"; echo "$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/bin/daemon-reindex.sh"; } > "$sudo_tmp"
+        if visudo -cf "$sudo_tmp" >/dev/null 2>&1; then
+            cat "$sudo_tmp" > "$DASH_SUDOERS"
+            chmod 440 "$DASH_SUDOERS"
+            log_info "  - Allowed the health monitor to run daemon-reindex.sh"
+        else
+            log_warn "  - Could not add the daemon-reindex sudoers entry (visudo refused it)"
+        fi
+        rm -f "$sudo_tmp"
+    fi
+
     if [[ $updated -gt 0 ]]; then
         log_success "Updated $updated utility script(s)"
     else
@@ -4781,10 +5027,35 @@ fi
 # Dashboard & Sentinel status
 DASH_STATUS=$(systemctl is-active spiraldash 2>/dev/null) || DASH_STATUS="inactive"
 SENT_STATUS=$(systemctl is-active spiralsentinel 2>/dev/null) || SENT_STATUS="inactive"
-DASH_ICON="○"; [ "$DASH_STATUS" = "active" ] && DASH_ICON="●"
-SENT_ICON="○"; [ "$SENT_STATUS" = "active" ] && SENT_ICON="●"
-DASH_COLOR="${YELLOW}"; [ "$DASH_STATUS" = "active" ] && DASH_COLOR="${GREEN}"
-SENT_COLOR="${YELLOW}"; [ "$SENT_STATUS" = "active" ] && SENT_COLOR="${GREEN}"
+
+# Status color/icon helpers
+si() { [ "$1" = "active" ] && echo -n "●" || echo -n "○"; }
+sc() { case "$1" in active) echo -n "${GREEN}" ;; failed) echo -n "${RED}" ;; *) echo -n "${YELLOW}" ;; esac; }
+POOL_C=$(sc "$POOL_STATUS"); POOL_I=$(si "$POOL_STATUS"); POOL_P=$(printf '%-8s' "$POOL_STATUS")
+DASH_C=$(sc "$DASH_STATUS"); DASH_I=$(si "$DASH_STATUS"); DASH_P=$(printf '%-8s' "$DASH_STATUS")
+SENT_C=$(sc "$SENT_STATUS"); SENT_I=$(si "$SENT_STATUS"); SENT_P=$(printf '%-8s' "$SENT_STATUS")
+
+# Coin daemons. A pool whose chain daemon is down mines nothing, and the stratum
+# line alone does not say which coin is at fault — or that a coin is at fault at
+# all. A DigiByte pool once sat dead for two days with only this banner to warn.
+COIN_LINE=""
+for _d in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ecashd; do
+    systemctl is-enabled --quiet "$_d" 2>/dev/null || continue
+    _st=$(systemctl is-active "$_d" 2>/dev/null) || _st="inactive"
+    case "$_d" in
+        digibyted) _label="DGB" ;; bitcoind) _label="BTC" ;; bitcoind-bch) _label="BCH" ;;
+        bitcoincashIId) _label="BCH2" ;; bitcoiniid) _label="BC2" ;; bitcoinsilverd) _label="BTCS" ;;
+        litecoind) _label="LTC" ;; dogecoind) _label="DOGE" ;; pepecoind) _label="PEP" ;;
+        catcoind) _label="CAT" ;; namecoind) _label="NMC" ;; syscoind) _label="SYS" ;;
+        myriadcoind) _label="XMY" ;; fractald) _label="FBTC" ;; ecashd) _label="XEC" ;;
+        *) _label="$_d" ;;
+    esac
+    COIN_LINE="${COIN_LINE}   $(sc "$_st")$(si "$_st")${NC} ${_label} $(sc "$_st")${_st}${NC}"
+done
+
+# Column helpers — cmd padded to 26 chars, desc to 15 chars for grid alignment
+C() { printf '%-26s' "$1"; }
+D() { printf '%-15s' "$1"; }
 
 echo ""
 echo -e "${CYAN}  █████████             ███                      ████     ███████████                    ████${NC}"
@@ -4799,32 +5070,38 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V2.7.1 - SPIRAL CITADEL${NC}"
+echo -e "                                     ${DIM}V3.0.0 — SPIRAL COVENANT${NC}"
 echo ""
-echo -e "  ${STATUS_COLOR}${STATUS_ICON}${NC} Stratum: ${STATUS_COLOR}${POOL_STATUS}${NC}    ${DASH_COLOR}${DASH_ICON}${NC} Dash: ${DASH_COLOR}${DASH_STATUS}${NC}    ${SENT_COLOR}${SENT_ICON}${NC} Sentinel: ${SENT_COLOR}${SENT_STATUS}${NC}"
-echo -e "    Uptime: ${GREEN}${UPTIME}${NC}    Load: ${GREEN}${LOAD}${NC}"
-echo -e "    Memory: ${GREEN}${MEM_USED} / ${MEM_TOTAL}${NC}    Disk: ${GREEN}${DISK_USED}${NC}"
+echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
+[ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
+echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}${LOAD}${NC}   ${DIM}Mem:${NC} ${GREEN}${MEM_USED}/${MEM_TOTAL}${NC}   ${DIM}Disk:${NC} ${GREEN}${DISK_USED}${NC}"
 echo ""
 echo -e "${CYAN}━━━ STATUS & MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl status${NC}         Overview       ${YELLOW}spiralctl watch${NC}            Live monitor"
-echo -e "    ${YELLOW}spiralctl stats${NC}          Pool stats     ${YELLOW}spiralctl logs${NC}             Stratum logs"
-echo -e "    ${YELLOW}spiralctl sync${NC}           Sync status    ${YELLOW}spiralctl scan${NC}             Find miners"
+echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 'spiralctl watch')${NC}  Live monitor"
+echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
+echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl scan')${NC}  Find miners"
+echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miner control')${NC}  Control hardware"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl mining${NC}         Mining mode    ${YELLOW}spiralctl mining multiport${NC} Smart port"
-echo -e "    ${YELLOW}spiralctl coin enable${NC}    Add coin       ${YELLOW}spiralctl coin disable${NC}     Remove coin"
-echo -e "    ${YELLOW}spiralctl coin-upgrade${NC}   Upgrade nodes  ${YELLOW}spiralctl restart${NC}          Restart services"
+echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  $(D 'Smart port')"
+echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl v2')${NC}  $(D 'Stratum V2')"
+echo -e "  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  $(D 'Add coin')  ${YELLOW}$(C 'spiralctl coin disable <SYM>')${NC}  Remove coin"
+echo -e "  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  $(D 'Upgrade nodes')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart services"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${YELLOW}spiralctl config${NC}         Configuration  ${YELLOW}spiralctl security${NC}         Security audit"
-echo -e "    ${YELLOW}spiralctl alerts${NC}         Alerts on/off  ${YELLOW}spiralctl webhook${NC}          Notifications"
-echo -e "    ${YELLOW}spiralctl data backup${NC}    Backup         ${YELLOW}spiralctl data restore${NC}     Restore"
-echo -e "    ${YELLOW}spiralctl test${NC}           Connectivity   ${YELLOW}spiralctl ha${NC}               HA cluster"
-echo -e "    ${CYAN}▶  spiralctl help${NC}          Full command reference"
+echo -e "  ${YELLOW}$(C 'spiralctl config')${NC}  $(D 'Configuration')  ${YELLOW}$(C 'spiralctl security')${NC}  Security audit"
+echo -e "  ${YELLOW}$(C 'spiralctl alerts')${NC}  $(D 'Alerts on/off')  ${YELLOW}$(C 'spiralctl webhook')${NC}  Notifications"
+echo -e "  ${YELLOW}$(C 'spiralctl data backup')${NC}  $(D 'Backup')  ${YELLOW}$(C 'spiralctl data restore')${NC}  Restore"
+echo -e "  ${YELLOW}$(C 'spiralctl test')${NC}  $(D 'Connectivity')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
 echo ""
+echo -e "  ${CYAN}▶  spiralctl help${NC}   —  Full command reference"
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "    ${GREEN}SHA-256d${NC}: BTC  BCH  BCH2  BC2  BTCS  DGB  XEC   ${GREEN}Scrypt${NC}: LTC  DOGE  DGB-S  PEP  CAT"
-echo -e "    ${GREEN}AuxPoW${NC}:  BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
-echo ""
+echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BCH2  BC2  BTCS  DGB  XEC    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
+echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Cloud facts the installer recorded. This script runs as whoever logs in and is
+# written from a quoted heredoc, so these cannot be inherited or substituted —
+# without this read the cloud branch below is unreachable.
+CLOUD_DETECTED=""; CLOUD_SERVER_IP=""; ADMIN_USER=""
+[ -r /spiralpool/data/cloud-info ] && . /spiralpool/data/cloud-info 2>/dev/null
 # Detect HTTPS at runtime from the service file
 DASH_PROTO="http"
 if grep -q "^ExecStart.*\-\-certfile" /etc/systemd/system/spiraldash.service 2>/dev/null; then
@@ -4832,7 +5109,12 @@ if grep -q "^ExecStart.*\-\-certfile" /etc/systemd/system/spiraldash.service 2>/
 fi
 DASH_PORT=$(grep -oP '0\.0\.0\.0:\K[0-9]+' /etc/systemd/system/spiraldash.service 2>/dev/null | head -1)
 DASH_PORT="${DASH_PORT:-1618}"
-echo -e "    Dashboard: ${GREEN}${DASH_PROTO}://${IP_ADDR}:${DASH_PORT}${NC}    API: ${GREEN}http://${IP_ADDR}:4000${NC}"
+if [[ -n "$CLOUD_DETECTED" ]]; then
+echo -e "  ${YELLOW}Dashboard${NC}  ssh -L ${DASH_PORT}:localhost:${DASH_PORT} ${ADMIN_USER}@${CLOUD_SERVER_IP:-YOUR_SERVER_IP}  then  ${DASH_PROTO}://localhost:${DASH_PORT}"
+else
+echo -e "  ${DIM}Dashboard${NC}  ${GREEN}${DASH_PROTO}://${IP_ADDR}:${DASH_PORT}${NC}    ${DIM}API${NC}  ${GREEN}http://${IP_ADDR}:4000${NC}"
+fi
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 MOTDEOF
 
@@ -4907,6 +5189,113 @@ migrate_dgb_job_rebroadcast() {
     fi
 
     # Both paths: nothing-to-change is as final an outcome as a rewrite.
+    touch "$marker" 2>/dev/null || true
+}
+
+# Per-miner payout became opt-in. The first v3.0 builds paid a block to the address
+# in the finding miner's worker name unconditionally; it is now gated on
+# stratum.payout_from_worker_name, which ships absent, meaning off. An operator who
+# upgrades from one of those builds therefore changes where blocks pay, so say so
+# rather than let it be discovered from a coinbase. Nothing is written to the
+# config: absent already means the wallet default. One-time, via a marker.
+notify_payout_default_change() {
+    local config="${INSTALL_DIR}/config/config.yaml"
+    local marker="${INSTALL_DIR}/config/.notified-payout-default"
+    [[ -f "$config" ]] || return 0
+    [[ -f "$marker" ]] && return 0
+
+    # An operator who already turned it on keeps it; nothing to announce.
+    if grep -qE '^[[:space:]]*(payout_from_worker_name|payoutFromWorkerName):[[:space:]]*true' "$config"; then
+        sudo touch "$marker" 2>/dev/null || true
+        return 0
+    fi
+
+    log_info ""
+    log_info "Block rewards pay the wallet configured for each coin."
+    log_info "  Earlier v3.0 builds paid the address in a miner's worker name instead,"
+    log_info "  whenever that name was a valid address for the coin. That is now off by"
+    log_info "  default: every block pays your configured wallet, whatever a miner calls"
+    log_info "  itself."
+    log_info "  To route your own rigs to your own addresses again:"
+    log_info "    spiralctl mining payout worker"
+    log_info "  Single-operator use only — you must own every wallet and rig, and the"
+    log_info "  stratum port must not be reachable from outside your network."
+    log_info ""
+
+    sudo touch "$marker" 2>/dev/null || true
+}
+
+# Stratum V2 became opt-in in v3.0. Earlier installers configured port_v2 and opened
+# the V2 firewall ports on every install without asking, so a configured V2 port does
+# not mean the operator chose it. Ask once; anything but an explicit yes (including
+# --auto and non-interactive runs) comments out port_v2 and closes those ports.
+# One-time via a marker, so an operator who re-enables V2 later is never switched off.
+migrate_stratum_v2_opt_in() {
+    local config="${INSTALL_DIR}/config/config.yaml"
+    local coins_env="${INSTALL_DIR}/config/coins.env"
+    local marker="${INSTALL_DIR}/config/.migrated-stratum-v2-opt-in"
+    [[ -f "$config" ]] || return 0
+    [[ -f "$marker" ]] && return 0
+
+    # V2 ports this install exposes: per-coin port_v2 (multi-coin) and the
+    # single-coin STRATUM_V2_PORT firewall rule recorded in coins.env.
+    local ports
+    ports=$( {
+        sed -nE 's/^[[:space:]]*port_v2:[[:space:]]*([0-9]+).*/\1/p' "$config"
+        [[ -f "$coins_env" ]] && sed -nE 's/^STRATUM_V2_PORT="?([0-9]+).*/\1/p' "$coins_env"
+    } | sort -un )
+    local port_list="${ports//$'\n'/, }"
+
+    local keep_v2="false"
+    if [[ -n "$ports" ]] && [[ "$AUTO_MODE" != "true" ]] && [[ -t 0 ]]; then
+        echo ""
+        log_warn "Stratum V2 is now opt-in. This install has Stratum V2 ports configured: ${port_list}"
+        echo "  Stratum V1 and TLS ports are not affected. Keep V2 only if you run Stratum V2"
+        echo "  miners and accept one additional stratum port per coin exposed to your network."
+        echo ""
+        echo "  This upgrade is WAITING FOR YOUR ANSWER: type y or n, then press ENTER."
+        echo "  Pressing ENTER on its own answers n and disables Stratum V2."
+        local answer=""
+        read -r -p "  Keep Stratum V2 ports open? [y/N]: " answer
+        if [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            keep_v2="true"
+        fi
+    fi
+
+    if [[ "$keep_v2" != "true" ]] && [[ -n "$ports" ]]; then
+        if grep -qE '^[[:space:]]*port_v2:' "$config"; then
+            local tmp="${config}.v2.$$"
+            if sed -E 's/^([[:space:]]*)port_v2:/\1# port_v2:/' "$config" > "$tmp" && [[ -s "$tmp" ]]; then
+                cp -p "$config" "${config}.bak.stratumv2"
+                # Write through the existing inode so ownership and mode 600 survive.
+                cat "$tmp" > "$config"
+                log_success "Stratum V2 disabled: port_v2 commented out (backup: ${config}.bak.stratumv2)"
+            fi
+            rm -f "$tmp"
+        fi
+        if command -v ufw >/dev/null 2>&1; then
+            local port
+            for port in $ports; do
+                ufw delete allow "${port}/tcp" >/dev/null 2>&1 || true
+            done
+            log_success "Closed Stratum V2 firewall ports: ${port_list}"
+        fi
+        log_info "To re-enable Stratum V2: uncomment port_v2 in ${config}, set ENABLE_V2_STRATUM=true in ${coins_env}, allow the ports in ufw, and restart spiralstratum."
+    fi
+
+    # Record the decision so the installer and helper scripts honour the same answer.
+    if [[ -f "$coins_env" ]]; then
+        if grep -q '^ENABLE_V2_STRATUM=' "$coins_env"; then
+            local env_tmp="${coins_env}.v2.$$"
+            if sed "s/^ENABLE_V2_STRATUM=.*/ENABLE_V2_STRATUM=${keep_v2}/" "$coins_env" > "$env_tmp"; then
+                cat "$env_tmp" > "$coins_env"
+            fi
+            rm -f "$env_tmp"
+        else
+            echo "ENABLE_V2_STRATUM=${keep_v2}" >> "$coins_env"
+        fi
+    fi
+
     touch "$marker" 2>/dev/null || true
 }
 
@@ -5352,6 +5741,58 @@ update_upgrade_script() {
 }
 
 # =============================================================================
+# Pre-flight state
+# =============================================================================
+
+# Report what is actually running before anything is touched. An operator upgrading
+# a pool that has been dead for days should learn it here, at the one moment they
+# are certainly watching — a DigiByte install sat with a corrupt block index for two
+# days, its only complaint one line a minute in the health monitor's log.
+report_pool_state() {
+    local svc state daemon label datadir down=0
+
+    log_info "Current state:"
+    for svc in "$STRATUM_SERVICE" "$DASHBOARD_SERVICE" "$SENTINEL_SERVICE" "$HEALTH_SERVICE"; do
+        [[ -z "$svc" ]] && continue
+        state=$(systemctl is-active "$svc" 2>/dev/null) || true
+        [[ -z "$state" ]] && state="inactive"
+        if [[ "$state" == "active" || "$state" == "activating" ]]; then
+            log_info "  - ${svc}: ${state}"
+        elif systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            log_warn "  - ${svc}: ${state} (enabled, so it is meant to be running)"
+            [[ "$svc" == "$STRATUM_SERVICE" ]] && down=1
+        else
+            log_info "  - ${svc}: ${state} (not enabled)"
+        fi
+    done
+
+    for daemon in digibyted bitcoind bitcoind-bch bitcoincashIId bitcoiniid bitcoinsilverd                   litecoind dogecoind pepecoind catcoind namecoind syscoind myriadcoind fractald ecashd; do
+        systemctl is-enabled --quiet "$daemon" 2>/dev/null || continue
+        state=$(systemctl is-active "$daemon" 2>/dev/null) || true
+        [[ -z "$state" ]] && state="inactive"
+        if [[ "$state" == "active" || "$state" == "activating" ]]; then
+            log_info "  - ${daemon}: ${state}"
+            continue
+        fi
+        log_warn "  - ${daemon}: ${state} — this coin is not mining"
+        down=1
+        # Name the cause when the daemon has written one.
+        for label in dgb btc bch bch2 bc2 btcs ltc doge pep cat nmc sys xmy fbtc xec; do
+            datadir=$(resolve_coin_dir "$label")
+            [[ -r "$datadir/debug.log" ]] || continue
+            if tail -c 20000 "$datadir/debug.log" 2>/dev/null | tr -d '\0' |                grep -qiE "Error opening block database|Corruption: checksum mismatch"; then
+                log_warn "    ${datadir}/debug.log reports a corrupt block database — it needs a one-time reindex, not a restart"
+            fi
+        done
+    done
+
+    if [[ $down -eq 1 ]]; then
+        log_warn "This pool is not mining right now. The upgrade will proceed, but fix the above afterwards."
+    fi
+    echo ""
+}
+
+# =============================================================================
 # Verification
 # =============================================================================
 
@@ -5384,6 +5825,20 @@ verify_upgrade() {
     for service in "${verify_services[@]}"; do
         local status; status=$(systemctl is-active "$service" 2>/dev/null) || true
         [[ -z "$status" ]] && status="inactive"
+
+        # A service that was stopped before the upgrade and is not enabled was never
+        # meant to come up — say so plainly instead of warning about it.
+        if [[ "$status" != "active" && "$status" != "activating" ]]; then
+            local was_running="false" prev
+            for prev in "${SERVICES_WERE_RUNNING[@]}"; do
+                [[ "$prev" == "$service" ]] && was_running="true" && break
+            done
+            if [[ "$was_running" != "true" ]] && ! systemctl is-enabled --quiet "$service" 2>/dev/null; then
+                log_info "  - ${service}: not started (was stopped before the upgrade and is not enabled)"
+                continue
+            fi
+        fi
+
         case "$status" in
             active)      log_info "  - ${service}: ${GREEN}RUNNING${NC}" ;;
             activating)  log_info "  - ${service}: ${CYAN}STARTING${NC}" ;;
@@ -5689,7 +6144,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v2.7.1 — Spiral Citadel  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v3.0.0 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -6060,6 +6515,8 @@ SSHDEOF
         echo ""
     fi
 
+    report_pool_state
+
     # Execute upgrade
     create_backup
 
@@ -6160,6 +6617,10 @@ SSHDEOF
     # Must run before start_services so the new interval is picked up by the
     # same restart, rather than needing a second one.
     migrate_dgb_job_rebroadcast
+    # Also before start_services, so the stratum restart already runs without V2.
+    migrate_stratum_v2_opt_in
+    # Says where blocks pay now; writes nothing, since absent already means off.
+    notify_payout_default_change
     update_motd
     update_version_file
     update_upgrade_script

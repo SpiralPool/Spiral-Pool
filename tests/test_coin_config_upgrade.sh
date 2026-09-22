@@ -304,13 +304,10 @@ done
 # coin-upgrade.sh itself prints on failure — `--check` reported "current" while
 # the node kept following the BIP-110 minority chain.
 #
-# The opposite error is equally real: BTCS is pinned to a SOURCE COMMIT
-# ("source-<40 hex>"), which a compiled binary cannot report from --version, so
-# for that pin the cache IS the record and asking the binary would report
-# "update available" forever, immediately after a successful upgrade.
-#
-# Both directions are asserted here because fixing either one alone re-breaks
-# the other.
+# BTCS used to be pinned to a source commit, which a binary cannot report, so its
+# cache was the record. It now ships release binaries like every other coin: an
+# install whose cache still holds the old "source-<commit>" pin must be read from
+# its binary, or it would never be offered the 31.1 upgrade.
 log_test "coin-upgrade.sh get_installed_version — binary vs version cache"
 
 CUV="$PROJECT_ROOT/coin-upgrade.sh"
@@ -331,7 +328,7 @@ else
 
     printf '%s\n' "$GIV_BODY" > "$GW/fn.sh"
     cat > "$GW/run.sh" <<'GIVEOF'
-declare -A COIN_TARGET=([BTC]="31.1" [BTCS]="source-ff5c3c3d381fa3c783862768d5a2e4fbb50f0931")
+declare -A COIN_TARGET=([BTC]="31.1" [BTCS]="31.1.3")
 VERSION_CACHE_DIR="$GW/cache"
 get_binary_path(){ echo "$BIN"; }
 source "$GW/fn.sh"
@@ -350,8 +347,8 @@ GIVEOF
         "a Knots binary is reported as Knots even when the cache says 31.1"
     giv_eq "31.1.0" "$(giv BTC "$GW/bin/core")" \
         "a Core binary is reported from the binary, not the cache"
-    giv_eq "source-ff5c3c3d381fa3c783862768d5a2e4fbb50f0931" "$(giv BTCS "$GW/bin/btcs")" \
-        "a source-commit pin still reads from the cache (no permanent 'update available')"
+    giv_eq "1.0.2" "$(giv BTCS "$GW/bin/btcs")" \
+        "a BTCS install whose cache holds the old source pin is read from its binary"
     giv_eq "31.1" "$(giv BTC "$GW/bin/mute")" \
         "the cache is still the fallback when the binary prints nothing"
 

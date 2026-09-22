@@ -13,7 +13,7 @@ package v2
 
 import (
 	"bytes"
-	"encoding/binary"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -105,11 +105,11 @@ func FuzzNoiseCipherDecryptMalformed(f *testing.F) {
 // handshake must fail gracefully (return an error) without panicking.
 func FuzzNoiseHandshakeGarbage(f *testing.F) {
 	// Seed corpus: various lengths of garbage.
-	f.Add([]byte{})                                    // empty
-	f.Add(make([]byte, 1))                             // 1 byte
-	f.Add(make([]byte, DHPubKeySize))                        // exactly one DH key
-	f.Add(make([]byte, DHPubKeySize+DHPubKeySize+TagSize)) // Act1 + Act2 sized
-	f.Add(make([]byte, 4096))                          // large blob
+	f.Add([]byte{})                                   // empty
+	f.Add(make([]byte, 1))                            // 1 byte
+	f.Add(make([]byte, act1Size))                     // exactly act 1
+	f.Add(make([]byte, act1Size+act2Size))            // act 1 + act 2 sized
+	f.Add(make([]byte, 4096))                         // large blob
 	f.Add([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}) // short non-zero garbage
 
 	f.Fuzz(func(t *testing.T, garbage []byte) {
@@ -128,7 +128,7 @@ func FuzzNoiseHandshakeGarbage(f *testing.F) {
 		}()
 
 		// Set a tight deadline to avoid deadlocks. net.Pipe is synchronous:
-		// if the garbage is larger than Act 1 (32 bytes), the server will
+		// if the garbage is larger than Act 1 (64 bytes), the server will
 		// try to write Act 2 while we're still blocked writing garbage,
 		// causing a deadlock. The deadline breaks the deadlock.
 		_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
@@ -158,9 +158,9 @@ func FuzzNoiseHandshakeGarbage(f *testing.F) {
 }
 
 // FuzzNoiseConnReadMalformed constructs a NoiseConn with valid cipher states
-// and feeds it malformed framed data. NoiseConn.Read uses a 2-byte LE length
-// prefix followed by that many bytes of ciphertext. The Read must not panic
-// regardless of what bytes are supplied.
+// and feeds it malformed framed data. NoiseConn.Read expects a 22-byte encrypted
+// header followed by the encrypted payload blocks its length calls for. The Read
+// must not panic regardless of what bytes are supplied.
 //
 // Since NoiseConn fields are unexported but this test file is in the same
 // package (v2), we can construct the struct directly.
@@ -295,26 +295,23 @@ func FuzzNoiseConnReadTamperedFrame(f *testing.F) {
 			t.Fatalf("NewCipherState (recv) failed: %v", err)
 		}
 
-		plaintext := []byte("authenticated plaintext for tamper test")
-		ciphertext, err := sendCS.Encrypt(nil, plaintext)
-		if err != nil {
-			t.Fatalf("Encrypt failed: %v", err)
+		// Encrypt a real frame with NoiseConn.Write and capture the wire bytes.
+		plaintext := EncodeMessage(MsgSetupConnection, []byte("authenticated plaintext for tamper test"))
+		writeSide, captureSide := net.Pipe()
+		go func() {
+			w := &NoiseConn{conn: writeSide, send: sendCS}
+			_, _ = w.Write(plaintext)
+			_ = writeSide.Close()
+		}()
+		frame, err := io.ReadAll(captureSide)
+		if err != nil || len(frame) == 0 {
+			t.Fatalf("capture encrypted frame: %d bytes, %v", len(frame), err)
 		}
 
-		// Tamper with the ciphertext at a position derived from the
-		// fuzz input. The position wraps around the ciphertext length.
-		if len(ciphertext) == 0 {
-			t.Skip("empty ciphertext")
-		}
-		pos := int(posOffset) % len(ciphertext)
-		ciphertext[pos] ^= xorByte
-
-		// Frame the tampered ciphertext with its length prefix.
-		var frame []byte
-		var lengthBuf [2]byte
-		binary.LittleEndian.PutUint16(lengthBuf[:], uint16(len(ciphertext)))
-		frame = append(frame, lengthBuf[:]...)
-		frame = append(frame, ciphertext...)
+		// Tamper with the header or payload ciphertext at a position derived
+		// from the fuzz input.
+		pos := int(posOffset) % len(frame)
+		frame[pos] ^= xorByte
 
 		// Feed it to a NoiseConn via net.Pipe.
 		serverSide, clientSide := net.Pipe()

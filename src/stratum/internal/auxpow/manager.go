@@ -128,17 +128,11 @@ func (m *Manager) RefreshAuxBlocks(ctx context.Context) ([]AuxBlockData, error) 
 			continue
 		}
 
-		// Fetch aux block template via getauxblock or createauxblock RPC
-		// Fractal Bitcoin uses createauxblock(address) instead of getauxblock
-		var (
-			response map[string]interface{}
-			err      error
-		)
-		if cab, ok := auxCfg.Coin.(coin.CreateAuxBlockCoin); ok && cab.UseCreateAuxBlock() {
-			response, err = auxCfg.DaemonClient.CreateAuxBlockWithAddress(ctx, auxCfg.Address)
-		} else {
-			response, err = auxCfg.DaemonClient.GetAuxBlock(ctx)
-		}
+		// Fetch the aux block template with createauxblock(address) so the aux coinbase
+		// pays the configured aux wallet. getauxblock takes no address and pays a key
+		// from the aux node's own wallet, which need not be the configured address.
+		// Every supported aux daemon (DOGE, PEP, NMC, SYS, XMY, FBTC) implements it.
+		response, err := auxCfg.DaemonClient.CreateAuxBlockWithAddress(ctx, auxCfg.Address)
 		if err != nil {
 			m.logger.Errorw("Failed to fetch aux block",
 				"chain", auxCfg.Symbol,

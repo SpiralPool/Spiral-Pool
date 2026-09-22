@@ -31,13 +31,13 @@ const (
 	// 2 bytes extension_type + 1 byte msg_type + 3 bytes msg_length = 6
 	HeaderSize = 6
 
-	// NoiseHandshakePattern is the Noise protocol pattern used.
-	// NX: No static key for initiator, static key for responder.
-	// NOTE: Our implementation uses standard compressed secp256k1 pubkeys (33 bytes).
-	// The official SV2 spec uses "Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256"
-	// with EllSwift 64-byte pubkey encoding (BIP-324). For interoperability with SRI
-	// (Stratum Reference Implementation), implement EllSwift and update this string.
-	NoiseHandshakePattern = "Noise_NX_secp256k1_ChaChaPoly_SHA256"
+	// ChannelMsgBit is set in extension_type on messages addressed to a channel.
+	ChannelMsgBit uint16 = 0x8000
+
+	// NoiseHandshakePattern is the Noise protocol the SV2 specification defines.
+	// NX: no static key for the initiator, a static key for the responder, with
+	// public keys in 64-byte ElligatorSwift encoding (BIP324).
+	NoiseHandshakePattern = NoiseProtocolName
 )
 
 // Message type identifiers per SV2 spec.
@@ -101,15 +101,30 @@ const (
 	ErrCodeProtocolVersionMismatch = "protocol-version-mismatch"
 
 	// OpenMiningChannelError codes
-	ErrCodeUnknownUser         = "unknown-user"
-	ErrCodeMaxTargetOutOfRange = "max-target-out-of-range"
+	ErrCodeUnknownUser                  = "unknown-user"
+	ErrCodeMaxTargetOutOfRange          = "max-target-out-of-range"
+	ErrCodeUnsupportedMinExtranonceSize = "unsupported-min-extranonce-size"
 
-	// SubmitSharesError codes
-	ErrCodeInvalidChannelID = "invalid-channel-id"
-	ErrCodeStaleShare       = "stale-share"
-	ErrCodeDifficultyNotMet = "difficulty-target-not-met"
-	ErrCodeRateLimited      = "rate-limited"
+	// SubmitSharesError codes (also UpdateChannel.Error: invalid-channel-id)
+	ErrCodeInvalidChannelID      = "invalid-channel-id"
+	ErrCodeStaleShare            = "stale-share"
+	ErrCodeDifficultyTooLow      = "difficulty-too-low"
+	ErrCodeInvalidJobID          = "invalid-job-id"
+	ErrCodeRateLimited           = "rate-limited"
+	ErrCodeInvalidExtranonceSize = "invalid-extranonce-size"
 )
+
+// isChannelMessage reports whether a message type carries the channel_msg bit.
+func isChannelMessage(msgType uint8) bool {
+	switch msgType {
+	case MsgChannelEndpointChanged, MsgNewMiningJob, MsgUpdateChannel, MsgUpdateChannelError,
+		MsgCloseChannel, MsgSetExtranoncePrefix, MsgSubmitSharesStandard, MsgSubmitSharesExtended,
+		MsgSubmitSharesSuccess, MsgSubmitSharesError, MsgNewExtendedMiningJob, MsgSetNewPrevHash,
+		MsgSetTarget, MsgSetCustomMiningJob, MsgSetCustomMiningJobSuccess, MsgSetCustomMiningJobError:
+		return true
+	}
+	return false
+}
 
 // Protocol sub-types
 const (
@@ -169,7 +184,8 @@ func (h *MessageHeader) Decode(r io.Reader) error {
 // SetupConnection is sent by the client to initiate connection.
 // SV2 spec fields: protocol(U8), min_version(U16), max_version(U16),
 // flags(U32), endpoint_host(STR0_255), endpoint_port(U16),
-// vendor(STR0_255), hardware_version(STR0_255), firmware(STR0_255)
+// vendor(STR0_255), hardware_version(STR0_255), firmware(STR0_255),
+// device_id(STR0_255)
 type SetupConnection struct {
 	Protocol        uint8  // Protocol identifier (0 = Mining Protocol)
 	MinVersion      uint16 // Minimum supported protocol version
@@ -180,6 +196,7 @@ type SetupConnection struct {
 	VendorID        string // Vendor identifier (STR0_255)
 	HardwareVersion string // Hardware version string (STR0_255)
 	FirmwareVersion string // Firmware version string (STR0_255)
+	DeviceID        string // Vendor-defined device identifier (STR0_255)
 }
 
 // SetupConnectionSuccess is sent by the server on successful setup
@@ -219,6 +236,42 @@ type OpenStandardMiningChannelSuccess struct {
 type OpenMiningChannelError struct {
 	RequestID uint32 // Echoed request ID
 	ErrorCode string // Error code (STR0_255 per SV2 spec)
+}
+
+// OpenExtendedMiningChannel requests an extended channel, whose miner builds the
+// coinbase itself from each job's prefix and suffix and its own extranonce.
+// SV2 spec fields: OpenStandardMiningChannel's, then min_extranonce_size(U16).
+type OpenExtendedMiningChannel struct {
+	OpenStandardMiningChannel
+	MinExtranonceSize uint16 // Extranonce bytes the client needs to control
+}
+
+// OpenExtendedMiningChannelSuccess confirms an extended channel.
+// SV2 spec fields: request_id(U32), channel_id(U32), target(U256),
+// extranonce_size(U16), extranonce_prefix(B0_32), group_channel_id(U32)
+type OpenExtendedMiningChannelSuccess struct {
+	RequestID        uint32   // Echoed request ID
+	ChannelID        uint32   // Server-assigned channel ID
+	Target           [32]byte // Initial target (U256, little-endian)
+	ExtranonceSize   uint16   // Extranonce bytes the client controls
+	ExtranoncePrefix []byte   // Pool-assigned bytes before the client's extranonce (B0_32)
+	GroupChannelID   uint32   // Group channel ID (0 for ungrouped)
+}
+
+// UpdateChannel reports a channel's nominal hashrate and the largest target it
+// accepts. SV2 spec fields: channel_id(U32), nominal_hash_rate(F32),
+// maximum_target(U256)
+type UpdateChannel struct {
+	ChannelID       uint32
+	NominalHashRate float32
+	MaximumTarget   [32]byte
+}
+
+// UpdateChannelError rejects an UpdateChannel.
+// SV2 spec fields: channel_id(U32), error_code(STR0_255)
+type UpdateChannelError struct {
+	ChannelID uint32
+	ErrorCode string
 }
 
 // NewMiningJob distributes a new mining job.
@@ -272,6 +325,7 @@ type SubmitSharesStandard struct {
 }
 
 // SubmitSharesExtended submits a share for extended channel
+// SV2 spec fields: SubmitSharesStandard's, then extranonce(B0_32)
 type SubmitSharesExtended struct {
 	ChannelID   uint32 // Channel ID
 	SequenceNum uint32 // Monotonic sequence number
@@ -279,7 +333,7 @@ type SubmitSharesExtended struct {
 	Nonce       uint32 // Nonce value
 	NTime       uint32 // nTime value
 	Version     uint32 // Block version
-	ExtraNonce2 []byte // Extranonce2 value
+	Extranonce  []byte // The client's extranonce: exactly the channel's extranonce_size bytes
 }
 
 // SubmitSharesSuccess confirms share acceptance

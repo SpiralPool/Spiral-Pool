@@ -1,5 +1,5 @@
 ================================================================================
-Spiral Pool v2.7.0 - Asset Provenance
+Spiral Pool v3.0.0 - Asset Provenance
 ================================================================================
 
 This file documents the origin and licensing status of all visual assets
@@ -56,10 +56,11 @@ itself (attribution is required only when redistributing the font files).
 THIRD-PARTY ASSETS
 ================================================================================
 
-The only visual asset included is `icon.svg`, a first-party SVG file containing a
+No third-party visual assets are included in this distribution. Apart from the
+two AI-generated images documented above, the only other visual asset is
+`icon.svg` (src/dashboard/static/icons/), a first-party SVG file containing a
 Unicode pickaxe emoji (U+26CF). It was created by Spiral Pool Contributors and
-contains no third-party artwork, logos, or copyrighted imagery. No other images,
-icons, or visual assets from third parties are included in this distribution.
+contains no third-party artwork, logos, or copyrighted imagery.
 All other visual elements are either:
 - Dynamically loaded from external CDNs (fonts)
 - Generated programmatically (CSS gradients, effects)
@@ -114,7 +115,7 @@ AI-GENERATED ASSETS. USE AT YOUR OWN RISK.
 
 ================================================================================
 Last Updated: 2026-05-02
-Spiral Pool Version: 2.7.0
+Spiral Pool Version: 3.0.0
 Origin: Canada
 ================================================================================
 

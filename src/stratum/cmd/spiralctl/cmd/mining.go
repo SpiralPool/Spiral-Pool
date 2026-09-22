@@ -85,20 +85,20 @@ var syncRequirements = map[string]struct {
 	diskGB   int
 	syncDays string
 }{
-	"btc":  {600, "3-7 days"},
-	"bch":  {350, "2-4 days"},
-	"bch2": {15, "< 1 day"},  // Bitcoin Cash II: young chain (Dec 2024)
-	"btcs": {8, "< 1 day"},   // Bitcoin Silver: young chain (Jul 2024), 5-min blocks
-	"dgb":  {45, "1-2 days"},
-	"bc2":  {5, "< 1 day"},
-	"nmc":  {12, "1-2 days"},
-	"sys":  {85, "1-2 days"},
-	"xmy":  {6, "< 1 day"},
-	"fbtc": {50, "< 1 day"}, // Fractal Bitcoin: 30-second blocks, fast sync
-	"ltc":  {180, "2-4 days"},
-	"doge": {75, "1-2 days"},
-	"pep":  {2, "< 1 day"},
-	"cat":       {1, "< 1 day"},
+	"btc":        {600, "3-7 days"},
+	"bch":        {350, "2-4 days"},
+	"bch2":       {15, "< 1 day"}, // Bitcoin Cash II: young chain (Dec 2024)
+	"btcs":       {8, "< 1 day"},  // Bitcoin Silver: young chain (Jul 2024), 5-min blocks
+	"dgb":        {45, "1-2 days"},
+	"bc2":        {5, "< 1 day"},
+	"nmc":        {12, "1-2 days"},
+	"sys":        {85, "1-2 days"},
+	"xmy":        {6, "< 1 day"},
+	"fbtc":       {50, "< 1 day"}, // Fractal Bitcoin: 30-second blocks, fast sync
+	"ltc":        {180, "2-4 days"},
+	"doge":       {75, "1-2 days"},
+	"pep":        {2, "< 1 day"},
+	"cat":        {1, "< 1 day"},
 	"dgb-scrypt": {45, "1-2 days"}, // Shares DGB blockchain
 }
 
@@ -328,6 +328,8 @@ func runMining(args []string) error {
 		default:
 			return fmt.Errorf("unknown merge action: %s. Use 'enable' or 'disable'", args[1])
 		}
+	case "payout":
+		return runMiningPayout(args[1:], autoYes)
 	case "multiport":
 		if len(args) < 2 {
 			return multiportStatus()
@@ -379,6 +381,9 @@ func printMiningUsage() {
 	fmt.Printf("  %smulti <coins>%s    Switch to multi-coin mode (comma-separated)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge enable%s     Enable merge mining (AuxPoW)\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smerge disable%s    Disable merge mining\n", ColorCyan, ColorReset)
+	fmt.Printf("  %spayout%s           Show where found blocks pay (wallet or worker name)\n", ColorCyan, ColorReset)
+	fmt.Printf("  %spayout wallet%s    Pay every block to the configured wallet (default)\n", ColorCyan, ColorReset)
+	fmt.Printf("  %spayout worker%s    Let a miner name its own payout address\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport%s        Show multi coin smart port status\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport enable%s Interactive wizard to set up smart port\n", ColorCyan, ColorReset)
 	fmt.Printf("  %smultiport enable <spec>%s\n", ColorCyan, ColorReset)
@@ -408,6 +413,8 @@ func printMiningUsage() {
 	fmt.Println("  spiralctl mining status")
 	fmt.Println("  spiralctl mining solo dgb")
 	fmt.Println("  spiralctl mining multi btc,bch")
+	fmt.Println("  spiralctl mining payout")
+	fmt.Println("  spiralctl mining payout wallet")
 	fmt.Println("  spiralctl mining merge enable                # Enable with default aux chain")
 	fmt.Println("  spiralctl mining merge enable nmc           # Enable with specific aux chain")
 	fmt.Println("  spiralctl mining merge enable nmc,sys,fbtc  # Enable multiple aux chains (SHA-256d)")

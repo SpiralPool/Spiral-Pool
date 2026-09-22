@@ -173,6 +173,13 @@ EOF
     else
       fail "getblocktemplate (segwit) did not return a template"
     fi
+    # Same pairing as the pruned case below: segwit alone is not what the pool
+    # asks for, so on its own it would pass while the real request failed.
+    if cli getblocktemplate '{"rules":["segwit","digidollar-oracle"]}' 2>/dev/null | grep -q '"coinbasevalue"'; then
+      pass "full node returns a template for the pool's own rules (segwit + digidollar-oracle)"
+    else
+      fail "full node did not return a template for rules segwit + digidollar-oracle"
+    fi
     cli stop >/dev/null 2>&1 || true
     wait "$DAEMON_PID" 2>/dev/null || true
     DAEMON_PID=""
@@ -198,6 +205,16 @@ EOF
   if $pok; then
     pass "regtest daemon started with the PRUNED config (prune=550, no txindex)"
     if pcli getblockchaininfo | grep -qE '"pruned":[[:space:]]*true'; then pass "node reports pruned (prune honored, txindex off)"; else fail "pruned config did not report pruned=true"; fi
+    # The template request the pool actually sends. digibyte.go returns
+    # ["segwit","digidollar-oracle"] from GBTRules(), and a pruned node is the
+    # configuration operators run in production, so this pairing is the one that
+    # has to work. Booting pruned proves the daemon starts; only this proves it
+    # will still hand the pool a block to mine.
+    if pcli getblocktemplate '{"rules":["segwit","digidollar-oracle"]}' 2>/dev/null | grep -q '"coinbasevalue"'; then
+      pass "pruned node returns a template for the pool's own rules (segwit + digidollar-oracle)"
+    else
+      fail "pruned node did not return a template for rules segwit + digidollar-oracle"
+    fi
     pcli stop >/dev/null 2>&1 || true
     wait "$DAEMON_PID" 2>/dev/null || true
     DAEMON_PID=""

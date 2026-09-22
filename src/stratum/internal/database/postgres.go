@@ -693,6 +693,52 @@ func (db *PostgresDB) GetBlocksWithOrphans(ctx context.Context, limit int) ([]*B
 	return blocks, nil
 }
 
+// GetBlocksByMiner returns the blocks a miner address found, including orphaned
+// ones, newest first. Used by the read-only miner portal.
+func (db *PostgresDB) GetBlocksByMiner(ctx context.Context, miner string, limit int) ([]*Block, error) {
+	tableName := fmt.Sprintf("blocks_%s", db.poolID)
+
+	query := fmt.Sprintf(`
+		SELECT id, blockheight, networkdifficulty, status, type,
+			   confirmationprogress, effort, transactionconfirmationdata,
+			   miner, COALESCE(source, '') as source, reward, hash, created,
+			   COALESCE(orphan_mismatch_count, 0) as orphan_mismatch_count,
+			   COALESCE(stability_check_count, 0) as stability_check_count,
+			   COALESCE(last_verified_tip, '') as last_verified_tip
+		FROM %s
+		WHERE miner = $1
+		ORDER BY blockheight DESC
+		LIMIT $2
+	`, tableName)
+
+	rows, err := db.pool.Query(ctx, query, miner, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var blocks []*Block
+	for rows.Next() {
+		b := &Block{}
+		err := rows.Scan(
+			&b.ID, &b.Height, &b.NetworkDifficulty, &b.Status, &b.Type,
+			&b.ConfirmationProgress, &b.Effort, &b.TransactionConfirmationData,
+			&b.Miner, &b.Source, &b.Reward, &b.Hash, &b.Created,
+			&b.OrphanMismatchCount, &b.StabilityCheckCount, &b.LastVerifiedTip,
+		)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating miner blocks: %w", err)
+	}
+
+	return blocks, nil
+}
+
 // GetConfirmedBlocks returns blocks that have reached maturity confirmation.
 // Used by deep reorg detection to periodically re-verify confirmed blocks.
 func (db *PostgresDB) GetConfirmedBlocks(ctx context.Context) ([]*Block, error) {

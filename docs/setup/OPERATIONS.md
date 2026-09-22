@@ -18,7 +18,7 @@ These systems work together to ensure miners of vastly different hashrates (50 K
 When a miner connects, Spiral Pool performs the following sequence:
 
 1. **Extract User-Agent** - The Stratum `mining.subscribe` message includes a user-agent string
-2. **Pattern Matching** - The Spiral Router matches the user-agent against 47 verified regex patterns
+2. **Pattern Matching** - The Spiral Router matches the user-agent against 52 verified regex patterns
 3. **Class Assignment** - Miner is assigned to a class (Lottery, Low, Mid, High, Pro, or 7 Avalon-specific classes) with an Unknown fallback for unrecognized devices
 4. **Profile Lookup** - Each class has a profile with `InitialDiff`, `MinDiff`, `MaxDiff`, and `TargetShareTime`
 5. **Block Time Scaling** - Profile values are scaled based on the blockchain's block time
@@ -195,7 +195,8 @@ docker compose --profile btcs up -d      # Bitcoin Silver
 docker compose --profile nmc up -d       # Namecoin
 docker compose --profile xmy up -d       # Myriadcoin
 docker compose --profile fbtc up -d      # Fractal Bitcoin
-docker compose --profile up -d # docker compose --profile sys up -d       # Syscoin (daemon sync only — mining requires native install)
+docker compose --profile sys up -d       # Syscoin (daemon sync only — mining requires native install)
+docker compose --profile xec up -d       # eCash
 docker compose --profile ltc up -d       # Litecoin
 docker compose --profile doge up -d      # Dogecoin
 docker compose --profile dgb-scrypt up -d # DigiByte-Scrypt
@@ -249,7 +250,7 @@ For the full Windows installation guide, decision tree, port forwarding setup, s
 
 ### How install.sh Works
 
-The installer is a single self-contained script (~36,500 lines) that handles the entire deployment. Here is the high-level flow:
+The installer is a single self-contained script (~41,900 lines) that handles the entire deployment. Here is the high-level flow:
 
 ```
 main()
@@ -259,7 +260,7 @@ main()
  ├── show_legal_acceptance   # Terms of use prompt — cloud: YES gate; non-cloud: I AGREE gate
  ├── acquire_operation_lock  # Prevent concurrent install/upgrade
  ├── check_resume            # Resume from checkpoint if previous run was interrupted
- ├── detect_operating_system # Verify Ubuntu 24.04 LTS or 26.04 LTS
+ ├── detect_operating_system # Verify Ubuntu 24.04 / 26.04 LTS, or Debian 13 (Trixie)
  ├── select_deploy_method    # Docker (bare metal) or VM Native (traditional)
  │
  ├── [Docker path] ──────────> docker_main() → build images → start compose
@@ -377,24 +378,69 @@ To mine a non-majority chain deliberately, set `allow_nonmajority_chain: true` f
 
 | Coin | Symbol | Approximate Storage |
 |------|--------|-------------------|
-| Bitcoin | BTC | 600 GB |
-| Bitcoin Cash | BCH | 250 GB |
+| Bitcoin | BTC | 780 GB |
+| Bitcoin Cash | BCH | 220 GB |
 | Bitcoin Cash II | BCH2 | 15 GB |
-| Bitcoin II | BC2 | 5 GB |
+| Bitcoin II | BC2 | 10 GB |
 | Bitcoin Silver | BTCS | 8 GB |
-| Litecoin | LTC | 150 GB |
+| Litecoin | LTC | 240 GB |
 | Syscoin | SYS | 25 GB + NEVM state (see note below) |
-| Dogecoin | DOGE | 80 GB |
-| DigiByte | DGB | 80 GB |
-| Fractal Bitcoin | FBTC | 10 GB |
-| eCash | XEC | 20 GB |
+| Dogecoin | DOGE | 190 GB |
+| DigiByte | DGB | 40 GB |
+| Fractal Bitcoin | FBTC | 3100 GB (3.1 TB — see note) |
+| eCash | XEC | 160 GB |
 | Namecoin | NMC | 15 GB |
-| Myriad | XMY | 6 GB |
+| Myriad | XMY | 8 GB |
 | PepeCoin | PEP | 5 GB |
 | Catcoin | CAT | 5 GB |
 | DGB-Scrypt | DGB-SCRYPT | (shares DGB data) |
 
-> Storage values are approximate and will vary based on blockchain growth and index configuration. All nodes run as full (unpruned) nodes. Plan for additional headroom.
+> Storage values are approximate and will vary based on blockchain growth and index configuration. Nodes run as full (unpruned) nodes unless the installer's pruning option is taken, which caps each coin at roughly 5 GB. Plan for additional headroom.
+
+> **Where these figures come from.** Every one carries its provenance in
+> `config/coins.manifest.yaml`, which is the source the installer, the Windows
+> installer and these tables are all checked against. BTC, BCH, LTC, DOGE and
+> XEC were measured on **2026-09-21** from Blockchair's `blockchain_size`
+> statistic; DGB (and DGB-Scrypt, which shares its chain) from the DigiByte
+> project's node guide; FBTC from Fractal's own node documentation.
+> **BCH2, BC2, BTCS, NMC, SYS, XMY, PEP and CAT are marked `source: estimate`**
+> — no public size statistic exists for those chains, so treat them as a floor
+> rather than a measurement.
+>
+> **Don't trust this table over your own nodes.** Chains only grow, and a
+> figure here is a snapshot: when last checked, five were understated by
+> between 30 GB and 135 GB, eCash was listed at 20 GB against a real ~155 GB,
+> and Fractal Bitcoin at 10 GB against a documented 2 TB. Ask the daemons
+> instead — they report their own size:
+>
+> ```bash
+> sudo spiralctl coin storage
+> ```
+>
+> It prints each enabled chain's `size_on_disk` beside the published figure and
+> flags any that has outgrown it. When one has, correct `chain_gb` in the
+> manifest; `tests/test_coin_storage_consistency.py` then requires every
+> document and both installers to follow, so the figure cannot be updated in
+> one place and left stale in five others.
+
+> **Fractal Bitcoin needs about 3.1 TB, and grows by 1.5–2 TB a year.**
+> Not a typo and not a safety margin. Spiral Pool budgeted 10 GB for it until
+> v3.0.0 — roughly three hundred times under.
+>
+> [Fractal's own node documentation](https://docs.fractalbitcoin.io/for-miners/minning-overview/full-node-configuration)
+> asks for "2TB (Based on the current scale, the data is growing by
+> approximately 2TB per year. Please plan for expansion accordingly.)" — but
+> that is a *recommendation*, and the chain has since outgrown it. Deriving it
+> from the chain instead: 2,139,820 blocks at a mean 1.45 MB across the full
+> history gives **~3.1 TB**. The derivation checks out both ways — 30-second
+> blocks at that size produce ~1.5 TB/year, matching the "~2TB per year" the
+> same document states, and the height times 30 seconds implies 743 days
+> against 742 actually elapsed since launch.
+>
+> **Run FBTC pruned unless you genuinely have the disk.** A pruned node caps at
+> roughly 5 GB, and merge mining works fine on one: the pool needs block
+> templates and submission, not history. Confirm with `spiralctl coin storage`,
+> which reads the real figure off the daemon.
 
 > Syscoin (SYS) is merge-mining only and requires BTC as parent chain. The SYS daemon must still be installed and synced.
 
@@ -478,23 +524,25 @@ Spiral Sentinel can send swap recommendations when a mined coin rises 25%+ again
 
 The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. All swap activity happens entirely on the SimpleSwap website in the operator's own browser — click the link in the alert, enter your BTC address on the site, and complete the swap there. This keeps the pool server completely out of any financial transaction.
 
-**Enable during installation** — the installer will prompt to enable or disable the feature.
+**Enable during installation** — the Sentinel configuration menu has a **SimpleSwap link** toggle
+(item 14). It is on by default.
 
-**Enable manually:**
+**Turn the link off or on at any time:**
 ```bash
-sudo tee /etc/spiralpool/simpleswap.conf > /dev/null << 'EOF'
-SIMPLESWAP_ENABLED=true
-EOF
-sudo chmod 600 /etc/spiralpool/simpleswap.conf
-sudo chown root:root /etc/spiralpool/simpleswap.conf
+sudo spiralctl config set simpleswap off     # keeps the surge alert, drops the link
+sudo spiralctl config set simpleswap on
+sudo spiralctl config get simpleswap         # prints "on" or "off"
+sudo systemctl restart spiralsentinel
+```
+This is the equivalent of `"simpleswap_enabled": false` in the Sentinel config. A config file written
+before this key existed reads as **on**, matching the old behaviour.
+
+**To stop the surge alert entirely** (link included), mute the alert instead:
+```bash
+sudo spiralctl alerts disable sats_surge
 ```
 
-**Disable:**
-```bash
-sudo sed -i 's/SIMPLESWAP_ENABLED=true/SIMPLESWAP_ENABLED=false/' /etc/spiralpool/simpleswap.conf
-```
-
-> **Operator responsibility:** You are solely responsible for compliance with SimpleSwap.io's Terms of Service, all AML/KYC requirements, fees, tax obligations, and financial regulations in your jurisdiction. See [TERMS.md](../../TERMS.md) section 5D and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
+> **Operator responsibility:** You are solely responsible for compliance with SimpleSwap.io's Terms of Service, all AML/KYC requirements, fees, tax obligations, and financial regulations in your jurisdiction. See [TERMS.md](../../TERMS.md) section 5C and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
 
 ---
 
@@ -715,8 +763,8 @@ For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-up
   ltc-bin/, doge-bin/, pep-bin/...       Daemon binaries (Scrypt coins, symlinked to /usr/local/bin/)
   nmc/, sys/, xmy/, fbtc/               Blockchain data + config (merge-mined coins)
   nmc-bin/, sys-bin/, xmy-bin/, fbtc-bin/ Daemon binaries (merge-mined coins)
- / Blockchain data + config (, standalone SHA-256d)
- -bin/ Daemon binaries (, symlinked to /usr/local/bin/)
+  xec/                                  Blockchain data + config (eCash, standalone SHA-256d)
+  xec-bin/                              Daemon binaries (eCash, symlinked to /usr/local/bin/)
 
 ~spiraluser/.spiralsentinel/             Sentinel state
   config.json                           Sentinel settings (webhook URLs, etc.)
@@ -830,4 +878,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0*
+*Spiral Pool — Spiral Covenant 3.0.0*

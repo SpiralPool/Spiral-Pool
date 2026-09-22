@@ -17,14 +17,14 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool - Multi-Coin Solo Mining Pool"
-LABEL version="2.7.1"
+LABEL version="3.0.0"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # Build arguments for configuration
-ARG GO_VERSION=1.26.4
+ARG GO_VERSION=1.26.8
 ARG DIGIBYTE_VERSION=9.26.5
 ARG POSTGRES_VERSION=18
 
@@ -127,11 +127,24 @@ RUN rm -rf ${INSTALL_DIR}/config/config.yaml || true
 # BUILD SPIRAL STRATUM
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Stamp the binary the way upgrade.sh does. Without these the image reported
+# "Build Time: unknown / Git Commit: unknown", so a container could not be
+# traced back to the code it was built from — the one thing you want when a
+# bug report arrives from a deployment you did not build yourself.
+# GIT_COMMIT is a build arg because the build context may be a zip extract with
+# no .git directory; pass it with --build-arg GIT_COMMIT=$(git rev-parse --short HEAD).
+ARG VERSION=3.0.0
+ARG GIT_COMMIT=unknown
+
 # Build with ZMQ support
-RUN CGO_ENABLED=1 go build -o ${INSTALL_DIR}/bin/spiralstratum ./cmd/spiralpool
+RUN CGO_ENABLED=1 go build \
+        -ldflags "-X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${GIT_COMMIT} -X github.com/spiralpool/stratum/internal/ha.SpiralPoolVersion=${VERSION} -X github.com/spiralpool/stratum/internal/api.Version=${VERSION}" \
+        -o ${INSTALL_DIR}/bin/spiralstratum ./cmd/spiralpool
 
 # Build spiralctl (pool administration CLI, includes VIP management)
-RUN go build -o ${INSTALL_DIR}/bin/spiralctl ./cmd/spiralctl
+RUN go build \
+        -ldflags "-X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${GIT_COMMIT}" \
+        -o ${INSTALL_DIR}/bin/spiralctl ./cmd/spiralctl
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SETUP PYTHON ENVIRONMENT FOR DASHBOARD/SENTINEL

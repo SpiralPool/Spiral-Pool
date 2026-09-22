@@ -77,7 +77,7 @@ func TestSessionAddChannel(t *testing.T) {
 	session := NewSession("test-session", nc)
 
 	// Add first channel
-	ch1 := session.AddChannel("worker1", 1000000.0, 0x1d00ffff, 8)
+	ch1 := session.AddChannel("worker1", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	if ch1 == nil {
 		t.Fatal("AddChannel returned nil")
@@ -91,18 +91,18 @@ func TestSessionAddChannel(t *testing.T) {
 	if ch1.NominalHashRate != 1000000.0 {
 		t.Errorf("NominalHashRate = %f, want 1000000.0", ch1.NominalHashRate)
 	}
-	if ch1.TargetNBits != 0x1d00ffff {
-		t.Errorf("TargetNBits = %x, want 1d00ffff", ch1.TargetNBits)
+	if ch1.Difficulty != 1 {
+		t.Errorf("Difficulty = %v, want 1", ch1.Difficulty)
 	}
-	if ch1.ExtraNonce2Size != 8 {
-		t.Errorf("ExtraNonce2Size = %d, want 8", ch1.ExtraNonce2Size)
+	if ch1.MinerAddress != "worker1" || ch1.WorkerName != "default" {
+		t.Errorf("MinerAddress/WorkerName = %q/%q, want worker1/default", ch1.MinerAddress, ch1.WorkerName)
 	}
-	if len(ch1.ExtraNonce2) != 8 {
-		t.Errorf("ExtraNonce2 length = %d, want 8", len(ch1.ExtraNonce2))
+	if len(ch1.ExtranoncePrefix) != extranoncePrefixSize {
+		t.Errorf("ExtranoncePrefix length = %d, want %d", len(ch1.ExtranoncePrefix), extranoncePrefixSize)
 	}
 
 	// Add second channel
-	ch2 := session.AddChannel("worker2", 2000000.0, 0x1d00ffff, 8)
+	ch2 := session.AddChannel("worker2", 2000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 	if ch2.ID != 2 {
 		t.Errorf("second channel ID = %d, want 2", ch2.ID)
 	}
@@ -119,7 +119,7 @@ func TestSessionGetChannel(t *testing.T) {
 	defer nc.Close()
 
 	session := NewSession("test-session", nc)
-	ch := session.AddChannel("worker1", 1000000.0, 0x1d00ffff, 8)
+	ch := session.AddChannel("worker1", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	// Get existing channel
 	retrieved := session.GetChannel(ch.ID)
@@ -143,7 +143,7 @@ func TestSessionRemoveChannel(t *testing.T) {
 	defer nc.Close()
 
 	session := NewSession("test-session", nc)
-	ch := session.AddChannel("worker1", 1000000.0, 0x1d00ffff, 8)
+	ch := session.AddChannel("worker1", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	// Remove channel
 	session.RemoveChannel(ch.ID)
@@ -163,9 +163,9 @@ func TestSessionGetChannels(t *testing.T) {
 	defer nc.Close()
 
 	session := NewSession("test-session", nc)
-	session.AddChannel("worker1", 1000000.0, 0x1d00ffff, 8)
-	session.AddChannel("worker2", 2000000.0, 0x1d00ffff, 8)
-	session.AddChannel("worker3", 3000000.0, 0x1d00ffff, 8)
+	session.AddChannel("worker1", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
+	session.AddChannel("worker2", 2000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
+	session.AddChannel("worker3", 3000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	channels := session.GetChannels()
 	if len(channels) != 3 {
@@ -234,7 +234,7 @@ func TestSessionSend(t *testing.T) {
 	}()
 
 	go func() {
-		nc, _, err := ClientHandshake(clientConn)
+		nc, _, err := ClientHandshake(clientConn, nil)
 		clientCh <- handshakeResult{nc, err}
 	}()
 
@@ -328,7 +328,7 @@ func TestChannelShareCounters(t *testing.T) {
 	defer nc.Close()
 
 	session := NewSession("test-session", nc)
-	ch := session.AddChannel("worker1", 1000000.0, 0x1d00ffff, 8)
+	ch := session.AddChannel("worker1", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	ch.SharesAccepted.Add(5)
 	ch.SharesRejected.Add(1)
@@ -482,7 +482,7 @@ func TestSessionManagerStats(t *testing.T) {
 		nc := mockNoiseConn()
 		defer nc.Close()
 		session := NewSession(string(rune('A'+i)), nc)
-		session.AddChannel("worker", 1000000.0, 0x1d00ffff, 8)
+		session.AddChannel("worker", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 		session.TotalSharesAccepted.Add(10)
 		session.TotalSharesRejected.Add(2)
 		session.BytesSent.Add(1000)
@@ -526,7 +526,7 @@ func TestSessionConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			ch := session.AddChannel("worker", 1000000.0, 0x1d00ffff, 8)
+			ch := session.AddChannel("worker", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 			session.GetChannel(ch.ID)
 			session.GetChannels()
 			session.ChannelCount()
@@ -616,7 +616,7 @@ func BenchmarkSessionAddChannel(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		session.AddChannel("worker", 1000000.0, 0x1d00ffff, 8)
+		session.AddChannel("worker", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 	}
 }
 
@@ -624,7 +624,7 @@ func BenchmarkSessionGetChannel(b *testing.B) {
 	nc := mockNoiseConn()
 	defer nc.Close()
 	session := NewSession("test-session", nc)
-	ch := session.AddChannel("worker", 1000000.0, 0x1d00ffff, 8)
+	ch := session.AddChannel("worker", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

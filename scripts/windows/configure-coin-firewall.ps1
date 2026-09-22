@@ -9,7 +9,8 @@
 .DESCRIPTION
     This script creates Windows Firewall inbound rules for a newly added
     cryptocurrency's stratum ports. It reads the coin's configuration from
-    the manifest (mining section) and creates rules for Stratum V1, V2, and TLS ports.
+    the manifest (mining section) and creates rules for Stratum V1 and TLS ports,
+    plus V2 only when STRATUM_V2_ENABLED=true in docker\.env (Stratum V2 is opt-in).
 
     The script is called automatically by spiralpool-add-coin.bat after
     successfully generating coin support files.
@@ -21,7 +22,8 @@
     Stratum V1 port (miners connect here). If not specified, reads from manifest.
 
 .PARAMETER StratumV2Port
-    Stratum V2 binary protocol port. Defaults to StratumV1Port + 1.
+    Stratum V2 binary protocol port. Defaults to StratumV1Port + 1. Opened only
+    when STRATUM_V2_ENABLED=true in docker\.env.
 
 .PARAMETER StratumTlsPort
     Stratum TLS encrypted port. Defaults to StratumV1Port + 2.
@@ -242,12 +244,21 @@ if ($StratumTlsPort -eq 0) {
     $StratumTlsPort = $StratumV1Port + 2
 }
 
+# Stratum V2 is opt-in: open its port only when docker\.env enables it.
+$envFile = if ($PSScriptRoot) { Join-Path $PSScriptRoot "..\..\docker\.env" } else { "" }
+$v2Enabled = $envFile -and (Test-Path $envFile) -and
+    (Select-String -Path $envFile -Pattern '^\s*STRATUM_V2_ENABLED\s*=\s*true\s*$' -Quiet)
+
 # Convert profile array to comma-separated string for firewall rule
 $profileString = $networkProfiles -join ","
 
 Write-Log "Configuring firewall for $Symbol" "STEP"
 Write-Log "  Stratum V1:  $StratumV1Port/TCP" "INFO"
-Write-Log "  Stratum V2:  $StratumV2Port/TCP" "INFO"
+if ($v2Enabled) {
+    Write-Log "  Stratum V2:  $StratumV2Port/TCP" "INFO"
+} else {
+    Write-Log "  Stratum V2:  not opened (STRATUM_V2_ENABLED is not true in docker\.env)" "INFO"
+}
 Write-Log "  Stratum TLS: $StratumTlsPort/TCP" "INFO"
 Write-Log "  Profiles:    $profileString" "INFO"
 Write-Host ""
@@ -279,16 +290,18 @@ $rules = @(
         Desc = "$Symbol mining connections (Stratum V1)"
     }
     @{
-        Name = "$Symbol Stratum V2"
-        Port = $StratumV2Port
-        Desc = "$Symbol mining connections (Stratum V2 binary)"
-    }
-    @{
         Name = "$Symbol Stratum TLS"
         Port = $StratumTlsPort
         Desc = "$Symbol encrypted mining connections"
     }
 )
+if ($v2Enabled) {
+    $rules += @{
+        Name = "$Symbol Stratum V2"
+        Port = $StratumV2Port
+        Desc = "$Symbol mining connections (Stratum V2 binary)"
+    }
+}
 
 try {
     foreach ($rule in $rules) {
@@ -324,7 +337,9 @@ try {
     Write-Host ""
     Write-Host "  You may need to manually create firewall rules:" -ForegroundColor Yellow
     Write-Host "    - Spiral Pool - $Symbol Stratum V1: $StratumV1Port/TCP ($profileString)" -ForegroundColor DarkGray
-    Write-Host "    - Spiral Pool - $Symbol Stratum V2: $StratumV2Port/TCP ($profileString)" -ForegroundColor DarkGray
+    if ($v2Enabled) {
+        Write-Host "    - Spiral Pool - $Symbol Stratum V2: $StratumV2Port/TCP ($profileString)" -ForegroundColor DarkGray
+    }
     Write-Host "    - Spiral Pool - $Symbol Stratum TLS: $StratumTlsPort/TCP ($profileString)" -ForegroundColor DarkGray
     Write-Host ""
     exit 1

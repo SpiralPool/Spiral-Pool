@@ -10,7 +10,7 @@
 
 Spiral Sentinel is a Python-based monitoring system that watches your mining fleet, blockchain nodes, pool infrastructure, and market conditions. It sends real-time alerts via Discord, Telegram, XMPP/Jabber, ntfy, and email (SMTP) with cyberpunk or professional theming.
 
-**Source:** `src/sentinel/SpiralSentinel.py` (~20,700 lines)
+**Source:** `src/sentinel/SpiralSentinel.py` (~23,800 lines)
 **Service:** `spiralsentinel`
 **State directory:** `~spiraluser/.spiralsentinel/`
 
@@ -49,7 +49,7 @@ systemctl restart spiralsentinel
 # One-shot status check
 python3 /spiralpool/bin/SpiralSentinel.py --status
 
-# Test all configured notification channels (Discord, Telegram, XMPP, ntfy, SMTP)
+# Test the Discord webhook (this flag tests Discord only, not the other transports)
 python3 /spiralpool/bin/SpiralSentinel.py --test
 
 # Hot-reload miner database (no restart needed)
@@ -90,13 +90,15 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `pool_api_url` | string | `"http://localhost:4000"` | Spiral Stratum API endpoint |
 | `pool_admin_api_key` | string | `""` | Admin API key for device hints |
 | `pool_id` | string | `"dgb_sha256_1"` | Legacy single-coin pool ID |
-| `wallet_address` | string | `""` | Legacy single-coin wallet address |
+| `dashboard_api_key` | string | `""` | API key for authenticated calls to the dashboard |
+| `wallet_address` | string | `"YOUR_DGB_ADDRESS"` | Legacy single-coin wallet address. The default is a placeholder, which `spiralctl config validate` flags as unset. |
 | `push_device_hints` | bool | `true` | Push device info to pool for difficulty hints |
 | `pool_url` | string | `""` | Expected stratum URL for mismatch detection (e.g. `stratum+tcp://192.168.1.21:3333`) |
 | `fallback_pool_urls` | list | `[]` | Additional valid pool URLs (HA failover, VIP, etc.) |
 | `firmware_auto_detect` | bool | `true` | Probe BraiinsOS/Vnish on port 80 when CGMiner probe fails on antminer devices |
 | `update_check_enabled` | bool | `true` | Periodically check for Spiral Pool updates |
 | `update_check_interval` | int | `21600` | Seconds between update checks (6 hours) |
+| `led_idle_state` | string | `"off"` | What a miner's LED shows between celebrations. `off` = dark; `restore` = put back what it showed before. Read by `block-celebrate.sh`, not by Sentinel itself. |
 | `auto_update_mode` | string | `"notify"` | `"notify"` (alert only), `"auto"` (run upgrade.sh), or `"disabled"` |
 | `sentinel_health_enabled` | bool | `true` | Expose `/health` and `/cooldowns` endpoints on loopback |
 | `sentinel_health_port` | int | `9191` | Port for the health endpoint (loopback only) |
@@ -121,6 +123,8 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `auto_restart_enabled` | bool | `true` | Enable automatic miner restart |
 | `auto_restart_min_offline` | int | `20` | Minutes offline before restart trigger |
 | `auto_restart_cooldown` | int | `1800` | Seconds between restart attempts (30 min) |
+
+Once the dashboard's Automation page saves auto-restart settings, they replace these three keys and are picked up without a restart. The page also adds a restart after a miner has been below its expected hashrate for a set time, and per-miner exclusions. See [Automation](#automation).
 
 ### Fleet & Network
 
@@ -179,6 +183,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `sats_surge_lookback_days` | int | `7` | Compare against N days ago |
 | `sats_surge_cooldown_hours` | int | `24` | Per-coin cooldown |
 | `sats_surge_sample_interval` | int | `3600` | How often sat values are sampled (seconds) |
+| `simpleswap_enabled` | bool | `true` | Append the SimpleSwap link to surge alerts (the alert still fires without it) |
 
 ### Prometheus Metrics
 
@@ -216,8 +221,11 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `chain_identity_enabled` | bool | `true` | Alert when the BTC node is not verifiably on Bitcoin's majority chain (BTC only) |
+| `coin_version_check_enabled` | bool | `true` | Alert when a coin daemon is behind the version `coin-upgrade.sh` targets |
+| `block_payout_audit_enabled` | bool | `true` | Read each found block's coinbase and alert (`block_payout_mismatch`) if it paid no configured address. Skipped entirely when worker-name payout is on. |
+| `coin_version_check_fail_threshold` | int | `4` | Consecutive failed release-feed checks before `coin_version_check_failing` fires |
 | `dry_streak_enabled` | bool | `true` | Alert when no block found for N × ETB |
-| `dry_streak_multiplier` | int | `3` | ETB multiple before dry streak alert fires |
+| `dry_streak_multiplier` | int | `5` | ETB multiple before dry streak alert fires |
 | `difficulty_alert_enabled` | bool | `true` | Alert on significant network difficulty changes |
 | `difficulty_alert_threshold_pct` | int | `25` | Difficulty change percentage threshold |
 | `disk_monitor_enabled` | bool | `true` | Monitor disk space on key paths |
@@ -244,16 +252,20 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `smtp_username` | string | `""` | SMTP login username |
 | `smtp_password` | string | `""` | SMTP login password (stored in config.json, chmod 600) |
 | `smtp_from` | string | `""` | Sender email address |
-| `smtp_to` | list | `[]` | Recipient email address(es) |
+| `smtp_to` | string | `""` | Recipient email address(es) — **comma-separated**, not a JSON array. Sentinel reads it as a string (`CONFIG.get("smtp_to", "").strip()`), so a list value raises `AttributeError` at startup |
 | `smtp_use_tls` | bool | `true` | `true`=STARTTLS (587), `false`=SSL (465) |
 | `telegram_commands_enabled` | bool | `true` | Enable Telegram bot command responses (when Telegram is configured) |
+| `telegram_enabled` | bool | `false` | Enable Telegram notifications |
+| `xmpp_enabled` | bool | `false` | Enable XMPP notifications |
+| `xmpp_use_tls` | bool | `true` | Use TLS encryption for the XMPP connection |
+| `xmpp_muc` | bool | `false` | Treat `xmpp_recipient` as a MUC (group chat) room rather than a user JID |
 
 ### Multi-Coin
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `multi_coin_enabled` | bool | `false` | Explicit multi-coin mode |
-| `coins` | list | 17 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
+| `coins` | list | 16 coin defs | Per-coin configuration (symbol, pool_id, wallet_address, ports) |
 
 ### Historical Data
 
@@ -280,6 +292,7 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `zombie_miner` | Online but no valid shares for 30 min | Respects | 3600s |
 | `degradation` | Hashrate drops significantly below baseline | Respects | 3600s |
 | `auto_restart` | Auto-restart triggered | Respects | 1800s |
+| `automation_failed` | A scheduled sleep, wake or power change could not be sent (retried every 5 min) | Respects | 3600s |
 | `excessive_restarts` | Frequent reboots (restart loop) | Bypasses | 3600s |
 | `chronic_issue` | Recurring problems on same miner | Bypasses | 3600s |
 | `power_event` | Fleet-wide power blip (multiple offline simultaneously) | Respects | 600s |
@@ -302,11 +315,13 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 |------------|---------|-------------|----------|
 | `hashrate_crash` | Network hashrate drops 25%+ for 30 min | Bypasses | 21600s (6h) |
 | `pool_hashrate_drop` | Fleet hashrate drops 50%+ for 15 min | Bypasses | 1800s |
+| `group_offline` | Every miner in a fleet group offline past the threshold (individual `miner_offline` alerts are suppressed for those miners) | Respects | None |
+| `group_online` | A fleet group's miners came back online | Respects | None |
 | `high_odds` | Mining odds exceed threshold (40%) | Respects | 4h internal |
-| `dry_streak` | No block found for `dry_streak_multiplier × ETB` (default 3×) | Respects | 21600s (6h) |
+| `dry_streak` | No block found for `dry_streak_multiplier × ETB` (default 5×) | Respects | 21600s (6h) |
 | `difficulty_change` | Network difficulty drifts ≥`difficulty_alert_threshold_pct`% from last-alert baseline | Respects | 3600s (1h) |
 | `mempool_congestion` | BTC mempool exceeds `mempool_alert_threshold` transactions (default 50,000) | Respects | 3600s (1h) |
-| `stratum_down` | Pool API unreachable for 5+ minutes | **Bypasses** | None |
+| `stratum_down` | Pool API unreachable for 5+ minutes. Sent directly, **not** an alert type: fires once per outage (with a recovery notice), and `spiralctl alerts disable stratum_down` will not mute it. | N/A | Once per outage |
 
 ### Block Events
 
@@ -315,6 +330,8 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `block_found` | Solo block found | **Always sends** | None |
 | `block_orphaned` | Previously confirmed block orphaned | Bypasses | None |
 | `best_share` | New all-time highest difficulty share | Respects | None |
+| `block_payout_mismatch` | A found block's coinbase paid no configured address — skipped entirely when worker-name payout is on | Respects | 86400s (24h), per block |
+| `block_notify_mode_change` | Block notification mode changed (ZMQ ↔ polling) | Respects | 3600s (1h) |
 
 > **`block_found` is special:** It bypasses quiet hours, startup suppression, maintenance mode, HA suppression, and alert batching. All nodes celebrate.
 
@@ -325,6 +342,8 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `circuit_breaker` | Pool circuit breaker open | Bypasses | None |
 | `backpressure` | Buffer backpressure level >= 2 | Bypasses | 300s |
 | `wal_errors` | WAL write/commit errors increasing | Bypasses | None |
+| `zmq_health` | ZMQ block-notification health degrades past level 2 (critical at 4); a recovery notice follows when it returns to 2 or better. Toggle with `infra_zmq_health_alert`. | Respects | None |
+| `share_loss` | Shares dropped outright because of database problems. Toggle with `infra_share_loss_alert`. | Respects | None |
 | `zmq_disconnected` | ZMQ socket connection lost | Bypasses | 1800s |
 | `zmq_stale` | ZMQ message age too high | Respects | 1800s |
 | `orphan_rate_spike` | Orphan rate increasing | Bypasses | 3600s |
@@ -332,6 +351,8 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 ### Go Stratum API Sentinel Alerts (bridged via `/api/sentinel/alerts`)
 
 `pool_wal_stuck_entry`, `pool_block_drought`, `pool_share_db_critical`, `pool_share_db_degraded`, `pool_share_batch_dropped`, `pool_all_nodes_down`, `pool_chain_tip_stall`, `pool_daemon_no_peers`, `pool_daemon_low_peers`, `pool_wal_recovery_stuck`, `pool_miner_disconnect_spike`, `pool_hashrate_drop`, `pool_node_health_low`, `pool_wal_disk_space_low`, `pool_wal_file_count_high`, `pool_false_rejection_rate`, `pool_retry_storm`, `pool_payment_processor_stalled`, `pool_db_failover`, `pool_ha_flapping`, `pool_block_maturity_stall`, `pool_goroutine_limit`, `pool_goroutine_growth`, `pool_multi_port_difficulty_spike`, `pool_multi_port_coin_switch`
+
+These are the names the alerts arrive under. To mute one, use the **canonical name without the `pool_` prefix** — `spiralctl alerts disable wal_stuck_entry`, not `pool_wal_stuck_entry`, which the command rejects as unknown. The mute then covers the native, `infra_*` and `pool_*` variants together. The same applies to the Prometheus (`infra_*`) alerts above.
 
 ### HA Cluster
 
@@ -343,15 +364,16 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `ha_demoted` | Node demoted to BACKUP | Bypasses | None |
 | `ha_replication_lag` | DB replication falling behind | Bypasses | 3600s |
 | `ha_replica_drop` | Replica count decreased | Bypasses | 3600s |
+| `ha_resync` | Replica resynchronisation triggered (cluster returned from `failover` to `running`) | Bypasses | 1800s |
 
 ### Infrastructure Monitoring
 
 | Alert Type | Trigger | Quiet Hours | Cooldown |
 |------------|---------|-------------|----------|
-| `disk_space_warn` | Disk usage ≥ `disk_warn_pct` (default 85%) on monitored paths | Respects | 3600s (1h) |
-| `disk_space_critical` | Disk usage ≥ `disk_critical_pct` (default 95%) on monitored paths | Bypasses | 300s (5m) |
+| `disk_warning` | Disk usage ≥ `disk_warn_pct` (default 85%) on monitored paths | Respects | 3600s (1h), per path |
+| `disk_critical` | Disk usage ≥ `disk_critical_pct` (default 95%) on monitored paths | Respects | 300s (5m), per path |
 | `backup_stale` | Newest backup older than `backup_stale_days` (default 2). Only active when backup cron installed. | Respects | 86400s (24h) |
-| `config_warning` | Placeholder values or invalid config detected at startup | Bypasses | Once per restart |
+| `config_warning` | Placeholder values or invalid config detected at startup. Sent directly, **not** an alert type: no cooldown key, and `spiralctl alerts disable config_warning` will not mute it. | N/A | Once per restart |
 
 ### Financial
 
@@ -362,14 +384,15 @@ Bypass list: `block_found`, `startup_summary`, `temp_critical`, `6h_report`, `we
 | `payout_received` | Wallet balance increased | Respects | None |
 | `missing_payout` | Wallet balance unchanged for N days | Bypasses | 86400s |
 | `wallet_drop` | Wallet balance decreased unexpectedly | Bypasses | 3600s |
+| `revenue_decline` | Mining pace is `revenue_decline_pct`% below last month's earnings (default 50%) | Respects | 86400s (24h) |
 
 #### SimpleSwap Swap Alerts (`sats_surge`)
 
-When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap.conf`), every `sats_surge` alert includes a **"SimpleSwap"** field with a [SimpleSwap.io](https://simpleswap.io) link with the source coin and BTC pre-selected.
+By default every `sats_surge` alert includes a **"SimpleSwap"** field with a [SimpleSwap.io](https://simpleswap.io) link, the source coin and BTC pre-selected. The link has its own switch, separate from the alert: `sudo spiralctl config set simpleswap off` (or `"simpleswap_enabled": false`) drops the field and keeps the surge alert. To stop the alert as well, mute it — `spiralctl alerts disable sats_surge`, or `"sats_surge_enabled": false`.
 
 **This is a notification only.** No swap is executed automatically. The pool software makes no API calls to SimpleSwap.io and stores no wallet addresses or API keys. All swap activity happens on the SimpleSwap website in the operator's own browser — click the link, enter your BTC address on the site, and complete the swap there.
 
-> **Operator responsibility:** You are solely responsible for AML/KYC compliance, taxes, SimpleSwap.io Terms of Service, and all applicable financial regulations. See [TERMS.md](../../TERMS.md) section 5D and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
+> **Operator responsibility:** You are solely responsible for AML/KYC compliance, taxes, SimpleSwap.io Terms of Service, and all applicable financial regulations. See [TERMS.md](../../TERMS.md) section 5C and [WARNINGS.md](../../WARNINGS.md) for full disclosure.
 
 **Configuration fields** (in `config.json`):
 
@@ -380,13 +403,14 @@ When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap
 | `sats_surge_lookback_days` | `7` | Baseline comparison window (days) |
 | `sats_surge_cooldown_hours` | `24` | Minimum hours between alerts for the same coin |
 | `sats_surge_sample_interval` | `3600` | How often sat values are recorded (seconds) |
+| `simpleswap_enabled` | `true` | Include the SimpleSwap link in the alert |
 
 ### Security
 
 | Alert Type | Trigger | Quiet Hours | Cooldown |
 |------------|---------|-------------|----------|
 | `stratum_url_mismatch` | Miner pointing at unexpected pool URL | Bypasses | None |
-| `wallet_mismatch` | Configured wallet not found in coin node (startup check) | N/A | One-shot |
+| `wallet_mismatch` | Configured wallet not found in coin node (startup check). Sent directly, **not** an alert type: no cooldown key, and `spiralctl alerts disable wallet_mismatch` will not mute it. | N/A | One-shot |
 
 ### Coin Node
 
@@ -396,10 +420,15 @@ When the optional SimpleSwap integration is enabled (`/etc/spiralpool/simpleswap
 | `coin_sync_behind` | Coin node syncing, blocks behind | Respects | 3600s |
 | `coin_config_change` | Mode switch, coin add/remove | Respects | None |
 | `chain_identity` | BTC node not verifiably on Bitcoin's majority chain — BIP-110 enforcement detected, block 961,632 hash mismatch, or a tip older than 3h | Bypasses | 21600s |
+| `coin_upgrade_available` | A coin daemon is behind the version `coin-upgrade.sh` targets | Respects | 86400s (24h) |
+| `coin_version_check_failing` | No release feed answered for a coin on `coin_version_check_fail_threshold` consecutive runs (default 4) — silence is reported instead of being read as "up to date" | Respects | 86400s (24h) |
+| `coin_change` | Active mining coin changed | Respects | None |
 
 **`chain_identity`** is BTC-only and covers two distinct conditions with different wording: following a minority chain (red — blocks found there are unlikely to have value), and a stalled tip on the correct chain (amber — the node lost peers or wedged; the chain itself is fine). It is silent when the daemon is unreachable or still syncing below the split height, since neither is a wrong-chain verdict. Disable with `chain_identity_enabled: false` if you deliberately mine a non-majority chain — the stratum has a matching `allow_nonmajority_chain` setting. It can also be toggled at runtime with `spiralctl alerts disable chain_identity` (it is listed under the **Coin node** group), which writes `disabled_alerts` rather than the config key.
 
 Three suppression paths are deliberately bypassed, because every one of them is a state in which a wrong-chain node keeps mining worthless blocks while the alert waits: it bypasses quiet hours, it is never batched into a digest, and it is exempt from the "blockchain not ready" gate that holds back most alerts during startup. Its cooldown is also only started once the alert is actually **delivered**, so an alert suppressed by maintenance mode or HA replica status is retried rather than silently absorbing six hours of silence. The matching journal line is throttled separately, so a long suppression window cannot flood the log.
+
+**`coin_upgrade_available`** runs `coin-upgrade.sh --list` every six hours and reports whatever that script says, rather than comparing versions itself — the comparison has enough traps in it (build suffixes, four-component padding, cached values that disagree with the binary) that a second implementation would drift from the first. `MAJOR` entries are worded as a consensus problem; `MINOR` and `PATCH` are worded as routine, so the alert does not train you to ignore it. The cooldown is keyed on the *set* of pending daemons, so a newly released upgrade is not swallowed by a cooldown opened for an unrelated routine one. It is silent when the script is missing, fails or times out, and when a daemon's installed version could not be read at all — unknown is not the same as all-current. It also reports **newer stable releases published upstream**, which is a different question: `COIN_TARGET` is a static table shipped with each Spiral Pool release, so asking only "is this daemon at its target?" answers "yes" forever no matter what the coin's developers publish afterwards. Sentinel asks `coin-upgrade.sh --list-upstream`, which reads each coin's release feed and reports anything newer than the targeted version. Those entries are **advisory**: they carry no `coin-upgrade.sh --coin` command, because a target also carries a download URL, sometimes a pinned SHA256, and a risk note saying what the upgrade costs — none of which is known for a release nobody has tested, and Namecoin's newest release ships no binaries at all. Upgrading Spiral Pool is what moves the target. Only **stable** releases count: prereleases are skipped, and a tag that does not normalise to a plain dotted number (`v29.2.0rc1`, `v1.0.0-beta`, `nightly-20260101`) is ignored rather than guessed at. Answers are cached for 24 hours, only installed coins are queried, and no network means silence rather than "nothing new". It respects quiet hours: a daemon that has been behind for weeks does not need to wake you. Disable with `coin_version_check_enabled: false`, or at runtime with `spiralctl alerts disable coin_upgrade_available` (it is listed under the **Coin node** group).
 
 ---
 
@@ -511,9 +540,9 @@ If all configured channels fail (Discord, Telegram, ntfy, email, XMPP): retries 
 | **Weekly report** | Monday at `major_report_hour` | `enable_weekly_reports` |
 | **Monthly earnings** | 1st of month at `major_report_hour` | `enable_monthly_reports` |
 | **Quarterly report** | End of quarter (Mar/Jun/Sep/Dec) | `enable_quarterly_reports` |
-| **Maintenance reminder** | 1st of month at 8am | Always on |
-| **Special date** | Solstices and equinoxes | Always on |
-| **Startup summary** | On Sentinel start | Always on |
+| **Maintenance reminder** | 1st of month at 8am | No config key; mute with `spiralctl alerts disable maintenance_reminder` |
+| **Special date** | Solstices and equinoxes | No config key; mute with `spiralctl alerts disable special_date` |
+| **Startup summary** | On Sentinel start | No config key, and not offered by `spiralctl alerts` — mutable only by adding `startup_summary` to `disabled_alerts` by hand |
 
 ---
 
@@ -521,10 +550,24 @@ If all configured channels fail (Discord, Telegram, ntfy, email, XMPP): retries 
 
 ### Auto-Restart
 
-- Sends restart via AxeOS HTTP (`POST /api/system/restart`) or CGMiner API (`restart` command)
+- Sends restart via AxeOS HTTP (`POST /api/system/restart`) and similar per-type endpoints. Avalon, stock Antminer, Braiins OS, LuxOS, Vnish, Whatsminer (API v3) and Elphapex restart through `miner_control.py`, using stored credentials when set; if that fails, the older method is still tried. See [MINER_SUPPORT.md](MINER_SUPPORT.md#remote-control-and-automation).
+- Miners are found by IP, so a miner whose display name became its worker name is still restarted.
+- Triggers: offline for `auto_restart_min_offline` minutes; a zombie that a stratum kick did not fix; and, when set on the Automation page, below expected hashrate for a set number of minutes.
+- Never restarted: miners excluded on the Automation page, and miners asleep on a schedule.
 - 30-minute startup grace period (no auto-restarts during initial startup)
 - Zombie detection: online but no shares for 30 min. Remediation is **two-stage**: kick stratum session first (forces reconnect in ~5s), only escalate to full miner reboot if zombie persists 15+ minutes after the kick. Controlled by `pool_admin_api_key` — if not set, goes straight to reboot.
 - Cooldown: 30 minutes between restart attempts per miner
+
+### Automation
+
+Rules set on the dashboard's Automation page run in Sentinel, on the master node only, right after each poll of the miners.
+
+- **Files:** `/spiralpool/data/automation.json` (rules, per-miner settings, auto-restart overrides) and `/spiralpool/data/device_credentials.json` (mode 0600), both re-read when they change. A file that fails to parse keeps the previous settings. What Sentinel has put to sleep is saved in `automation_state.json` in its data directory, so a restarted Sentinel still wakes those miners.
+- **Schedules:** weekdays plus a start and end time in `display_timezone`; a window whose end is earlier than its start runs past midnight and belongs to the day it starts. A sleep rule sleeps its miners for the window and wakes them at the end. A power rule sets a power mode or power target when the window starts; outside all power windows a miner keeps its last mode. The first matching rule of each kind wins.
+- **Re-apply:** a miner that goes offline and comes back gets its power mode sent again, because a reboot resets it.
+- **Failures:** a failed action is retried after 5 minutes and raises `automation_failed`.
+- **Suppression:** a miner asleep on a schedule gets no offline, zombie or degradation alerts and is never auto-restarted.
+- Modules: `miner_automation.py` (rules, shared with the dashboard) and `miner_control.py` (device commands), installed next to `SpiralSentinel.py`. If they are missing, Sentinel runs without automation.
 
 ### Device Discovery Integration
 
@@ -660,7 +703,7 @@ State is persisted via atomic write (temp file + fsync + rename).
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/pools` | Pool list, coin detection |
-| `GET /api/pools/{id}/miners` | Connected miners |
+| `GET /api/pools/{id}/miners` | Connected miners (sends X-API-Key from `pool_admin_api_key`) |
 | `GET /api/pools/{id}/blocks` | Block history for found/orphan detection |
 | `POST /api/admin/device-hints` | Push device classification (requires X-API-Key) |
 | `POST /api/admin/kick?ip=X.X.X.X` | Disconnect all stratum sessions from the given IP (requires X-API-Key). Returns `{"ip":"...","kicked":N}` |
@@ -792,7 +835,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "2.4.0-PHI_HASH_REACTOR"}
+{"alive": true, "uptime_s": 3600, "version": "3.0.0"}
 ```
 
 ### `GET /cooldowns`
@@ -810,4 +853,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Citadel 2.7.0*
+*Spiral Sentinel &mdash; Spiral Covenant 3.0.0*

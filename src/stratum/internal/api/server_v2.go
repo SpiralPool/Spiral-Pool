@@ -47,6 +47,9 @@ type ServerV2 struct {
 	// Multi-port (Multi coin smart port) stats provider
 	multiPortProvider MultiPortStatsProvider
 
+	// Read-only miner portal (/portal, /api/portal/{address})
+	portal *portal
+
 	// Cached responses
 	cacheMu     sync.RWMutex
 	poolsCache  []byte
@@ -154,13 +157,35 @@ func NewServerV2(cfg *config.ConfigV2, db *database.PostgresDB, logger *zap.Logg
 		Whitelist:         []string{"127.0.0.1"}, // IPv4-only (IPv6 disabled at OS level)
 	}
 
-	return &ServerV2{
+	s := &ServerV2{
 		cfg:           cfg,
 		logger:        logger.Sugar(),
 		db:            db,
 		rateLimiter:   NewRateLimiter(rateCfg),
 		poolProviders: make(map[string]CoinPoolProvider),
 	}
+	s.portal = newPortal(s.portalPools, s.logger)
+	return s
+}
+
+// portalPools lists every registered pool for the miner portal.
+func (s *ServerV2) portalPools() []portalPool {
+	s.poolProvidersMu.RLock()
+	defer s.poolProvidersMu.RUnlock()
+
+	pools := make([]portalPool, 0, len(s.poolProviders))
+	for id, provider := range s.poolProviders {
+		pool := portalPool{
+			PoolID:    id,
+			Coin:      provider.Symbol(),
+			Algorithm: s.getAlgorithmForCoin(provider.Symbol()),
+		}
+		if s.db != nil {
+			pool.Store = s.db.WithPoolID(id)
+		}
+		pools = append(pools, pool)
+	}
+	return pools
 }
 
 // RegisterPool registers a coin pool provider for API stats.
@@ -212,6 +237,9 @@ func (s *ServerV2) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/multiport/switches", s.handleMultiPortSwitches)
 	mux.HandleFunc("/api/multiport/difficulty", s.handleMultiPortDifficulty)
 
+	// Read-only miner portal (public)
+	s.portal.register(mux)
+
 	// Apply middleware
 	handler := s.rateLimitMiddleware(mux)
 	handler = s.loggingMiddleware(handler)
@@ -242,6 +270,9 @@ func (s *ServerV2) Start(ctx context.Context) error {
 func (s *ServerV2) Stop() error {
 	if s.rateLimiter != nil {
 		s.rateLimiter.Stop()
+	}
+	if s.portal != nil {
+		s.portal.stop()
 	}
 	if s.server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -390,6 +421,15 @@ func (s *ServerV2) handlePoolRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 	case "miners":
 		if len(parts) < 3 {
+			// SECURITY: the list enumerates every active wallet address, so it
+			// requires the admin key. Installs with no key configured keep the
+			// old public list rather than losing Sentinel's miner checks.
+			if s.cfg.Global.AdminAPIKey != "" {
+				s.adminAuthMiddlewareV2(func(w http.ResponseWriter, r *http.Request) {
+					s.handlePoolMinersV2(w, r, poolID)
+				})(w, r)
+				return
+			}
 			s.handlePoolMinersV2(w, r, poolID)
 			return
 		}

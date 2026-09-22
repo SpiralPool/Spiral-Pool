@@ -1,0 +1,54 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <title>Miner Automation - Spiral Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/explorer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/automation.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="explorer-page">
+    <div class="explorer-container">
+        <header class="explorer-header">
+            <a href="/" class="explorer-home">&larr; Dashboard</a>
+            <h1>Miner Automation</h1>
+            <p class="explorer-lede">Sentinel runs these schedules and restarts on its next check after you save. Times are in Sentinel's display timezone: <span id="automation-timezone"></span>.</p>
+        </header>
+
+        <p id="automation-status" role="status" aria-live="polite"></p>
+        <ul id="automation-errors" class="automation-errors" hidden></ul>
+
+        <article class="explorer-card">
+            <h2>Schedules</h2>
+            <p class="explorer-hint">A sleep window stops mining and wakes the miner when it ends. A power window switches the miner to a power mode or power target; outside every window the miner keeps its last mode, so pair windows to cover the day. When windows overlap, the first one in the list wins.</p>
+            <div id="automation-rules"></div>
+        </article>
+
+        <article id="automation-editor" class="explorer-card" hidden></article>
+
+        <article class="explorer-card">
+            <h2>Miners</h2>
+            <p class="explorer-hint">Stored credentials are write-only and used only by Sentinel. Without them Sentinel tries the firmware's default login. Avalon power modes need the model set; Avalons cannot sleep.</p>
+            <div id="automation-miners"></div>
+        </article>
+
+        <article class="explorer-card">
+            <h2>Auto-restart</h2>
+            <p class="explorer-hint">Sentinel restarts a miner that stays offline, or below its expected hashrate, for this long. Miners asleep on a schedule are never restarted.</p>
+            <div id="automation-restart"></div>
+        </article>
+
+        <div class="automation-savebar">
+            <button id="automation-save" type="button" class="automation-button" disabled>Save changes</button>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/automation.js') }}"></script>
+</body>
+</html>

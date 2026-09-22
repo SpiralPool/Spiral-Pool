@@ -6,6 +6,7 @@ package v2
 import (
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -21,24 +22,39 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Noise Protocol constants per SV2 specification:
-//   - DH: secp256k1 ECDH (compressed 33-byte public keys)
-//   - Cipher: ChaCha20-Poly1305 IETF (12-byte nonce)
-//   - Hash: SHA-256
-//   - KDF: HKDF with HMAC-SHA256
+// Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256, as the Stratum V2 specification
+// (04-Protocol-Security) defines it:
+//
+//   - Public keys travel as 64-byte ElligatorSwift encodings, and DH results are
+//     BIP324's x-only ECDH, hashed with both parties' encodings.
+//   - The server proves its static key with a certificate
+//     (SIGNATURE_NOISE_MESSAGE): a BIP340 signature by the pool's authority key
+//     over the static key and a validity window.
+//   - After the handshake each SV2 frame is sent as its encrypted 6-byte header,
+//     then its payload encrypted in blocks of at most 65,519 bytes.
 const (
-	// Key sizes
-	DHPrivKeySize = 32 // secp256k1 private key (scalar)
-	DHPubKeySize  = 33 // secp256k1 compressed public key
 	CipherKeySize = 32 // ChaCha20-Poly1305 key size
 	HashSize      = 32 // SHA-256 hash size
 	TagSize       = 16 // Poly1305 tag size
 
-	// Maximum message sizes
+	// MaxNoiseMessageSize is the largest plaintext one Noise message carries.
 	MaxNoiseMessageSize = 65535 - TagSize
 
-	// Protocol name for hashing (Noise NX pattern with secp256k1)
-	NoiseProtocolName = "Noise_NX_secp256k1_ChaChaPoly_SHA256"
+	NoiseProtocolName = "Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256"
+
+	// CertificateSize is SIGNATURE_NOISE_MESSAGE: version (U16), valid_from (U32),
+	// not_valid_after (U32) and a 64-byte signature.
+	CertificateSize = 2 + 4 + 4 + 64
+
+	// Handshake message sizes: -> e, then <- e, ee, s, es, SIGNATURE_NOISE_MESSAGE.
+	act1Size = EllSwiftPubKeySize
+	act2Size = EllSwiftPubKeySize + (EllSwiftPubKeySize + TagSize) + (CertificateSize + TagSize)
+
+	encryptedHeaderSize = HeaderSize + TagSize
+
+	// The server signs a new certificate for every handshake, valid this long on
+	// either side of its clock, so no certificate expires while the pool runs.
+	certificateSkew = time.Hour
 )
 
 // NoiseError represents a Noise protocol error
@@ -48,51 +64,6 @@ type NoiseError struct {
 
 func (e *NoiseError) Error() string {
 	return "noise: " + e.msg
-}
-
-// keypair represents a secp256k1 key pair
-type keypair struct {
-	private [DHPrivKeySize]byte
-	public  [DHPubKeySize]byte
-}
-
-// generateKeypair generates a new secp256k1 key pair
-func generateKeypair() (*keypair, error) {
-	privKey, err := secp256k1.GeneratePrivateKey()
-	if err != nil {
-		return nil, err
-	}
-	kp := &keypair{}
-	copy(kp.private[:], privKey.Serialize())
-	pubBytes := privKey.PubKey().SerializeCompressed()
-	copy(kp.public[:], pubBytes)
-	return kp, nil
-}
-
-// dhSecp256k1 performs secp256k1 ECDH: shared_secret = x-coordinate(privKey * pubKey)
-func dhSecp256k1(privateKey [DHPrivKeySize]byte, publicKey [DHPubKeySize]byte) ([HashSize]byte, error) {
-	privKey := secp256k1.PrivKeyFromBytes(privateKey[:])
-	pubKey, err := secp256k1.ParsePubKey(publicKey[:])
-	if err != nil {
-		return [HashSize]byte{}, fmt.Errorf("invalid secp256k1 public key: %w", err)
-	}
-
-	// ECDH: scalar multiply pubKey by privKey, take x-coordinate
-	var pubJacobian secp256k1.JacobianPoint
-	pubKey.AsJacobian(&pubJacobian)
-
-	var result secp256k1.JacobianPoint
-	secp256k1.ScalarMultNonConst(&privKey.Key, &pubJacobian, &result)
-	result.ToAffine()
-
-	// Check for point at infinity (invalid DH output)
-	var shared [HashSize]byte
-	if (result.X.IsZero() && result.Y.IsZero()) || result.Z.IsZero() {
-		return shared, errors.New("ECDH produced point at infinity")
-	}
-
-	result.X.PutBytesUnchecked(shared[:])
-	return shared, nil
 }
 
 // CipherState holds the symmetric encryption state
@@ -255,7 +226,8 @@ func (ss *SymmetricState) DecryptAndHash(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// Split finalizes the handshake and returns two cipher states using HKDF
+// Split finalizes the handshake and returns two cipher states using HKDF: the
+// first encrypts initiator-to-responder traffic, the second the other direction.
 func (ss *SymmetricState) Split() (*CipherState, *CipherState, error) {
 	key1, key2 := hkdf2(ss.ck, nil)
 
@@ -271,6 +243,117 @@ func (ss *SymmetricState) Split() (*CipherState, *CipherState, error) {
 	return cs1, cs2, nil
 }
 
+// newHandshakeState is InitializeSymmetric with the SV2 protocol name, followed by
+// the empty prologue.
+func newHandshakeState() *SymmetricState {
+	ss := NewSymmetricState(NoiseProtocolName)
+	ss.MixHash(nil)
+	return ss
+}
+
+// Certificate is the SIGNATURE_NOISE_MESSAGE the server sends in the handshake.
+type Certificate struct {
+	Version       uint16
+	ValidFrom     uint32 // unix time
+	NotValidAfter uint32 // unix time
+	Signature     [64]byte
+}
+
+func (c *Certificate) encode() []byte {
+	out := make([]byte, CertificateSize)
+	binary.LittleEndian.PutUint16(out[0:2], c.Version)
+	binary.LittleEndian.PutUint32(out[2:6], c.ValidFrom)
+	binary.LittleEndian.PutUint32(out[6:10], c.NotValidAfter)
+	copy(out[10:], c.Signature[:])
+	return out
+}
+
+func decodeCertificate(b []byte) (*Certificate, error) {
+	if len(b) != CertificateSize {
+		return nil, fmt.Errorf("certificate is %d bytes, want %d", len(b), CertificateSize)
+	}
+	c := &Certificate{
+		Version:       binary.LittleEndian.Uint16(b[0:2]),
+		ValidFrom:     binary.LittleEndian.Uint32(b[2:6]),
+		NotValidAfter: binary.LittleEndian.Uint32(b[6:10]),
+	}
+	copy(c.Signature[:], b[10:])
+	return c, nil
+}
+
+// certificateDigest is what the authority signs: SHA-256 over the version, the
+// validity window and the server's x-only static public key.
+func certificateDigest(c *Certificate, staticKey [32]byte) [32]byte {
+	msg := make([]byte, 0, 10+32)
+	msg = binary.LittleEndian.AppendUint16(msg, c.Version)
+	msg = binary.LittleEndian.AppendUint32(msg, c.ValidFrom)
+	msg = binary.LittleEndian.AppendUint32(msg, c.NotValidAfter)
+	msg = append(msg, staticKey[:]...)
+	return sha256.Sum256(msg)
+}
+
+// VerifyCertificate checks a server certificate for its x-only static key against
+// the pool's authority public key at the given time.
+func VerifyCertificate(c *Certificate, staticKey, authority [32]byte, now time.Time) error {
+	if c.Version != 0 {
+		return fmt.Errorf("unsupported certificate version %d", c.Version)
+	}
+	if ts := now.Unix(); ts < int64(c.ValidFrom) || ts > int64(c.NotValidAfter) {
+		return fmt.Errorf("certificate valid %d-%d, not at %d", c.ValidFrom, c.NotValidAfter, ts)
+	}
+	digest := certificateDigest(c, staticKey)
+	if !SchnorrVerify(authority, digest[:], c.Signature) {
+		return errors.New("certificate is not signed by the pool authority key")
+	}
+	return nil
+}
+
+// ServerKeys are the server's static Noise key and the authority key that signs
+// its certificates.
+type ServerKeys struct {
+	Static    *secp256k1.PrivateKey
+	Authority *secp256k1.PrivateKey
+}
+
+// GenerateServerKeys makes new random static and authority keys. Miners cannot pin
+// an authority key that changes on every start, so a pool loads persistent keys
+// with LoadServerKeys.
+func GenerateServerKeys() (*ServerKeys, error) {
+	static, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	authority, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	return &ServerKeys{Static: static, Authority: authority}, nil
+}
+
+// AuthorityPublicKey is the x-only key miners and proxies configure to
+// authenticate the pool.
+func (k *ServerKeys) AuthorityPublicKey() [32]byte {
+	return SchnorrPubKey(k.Authority)
+}
+
+func (k *ServerKeys) certificate(now time.Time) (*Certificate, error) {
+	c := &Certificate{
+		ValidFrom:     uint32(now.Add(-certificateSkew).Unix()),
+		NotValidAfter: uint32(now.Add(certificateSkew).Unix()),
+	}
+	digest := certificateDigest(c, SchnorrPubKey(k.Static))
+	var aux [32]byte
+	if _, err := rand.Read(aux[:]); err != nil {
+		return nil, err
+	}
+	sig, err := SchnorrSign(k.Authority, digest[:], aux)
+	if err != nil {
+		return nil, err
+	}
+	c.Signature = sig
+	return c, nil
+}
+
 // NoiseConn wraps a net.Conn with Noise encryption
 // Uses separate mutexes for read and write to allow bidirectional traffic
 type NoiseConn struct {
@@ -284,263 +367,249 @@ type NoiseConn struct {
 	isServer bool
 }
 
-// ServerKeys holds the server's static secp256k1 key pair
-type ServerKeys struct {
-	Private [DHPrivKeySize]byte
-	Public  [DHPubKeySize]byte
-}
+// ServerHandshake performs the responder side of the SV2 Noise NX handshake.
+func ServerHandshake(conn net.Conn, keys *ServerKeys) (*NoiseConn, error) {
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	ss := newHandshakeState()
 
-// GenerateServerKeys generates a new server secp256k1 key pair
-func GenerateServerKeys() (*ServerKeys, error) {
-	kp, err := generateKeypair()
-	if err != nil {
+	// Act 1: -> e
+	var re [EllSwiftPubKeySize]byte
+	if _, err := io.ReadFull(conn, re[:]); err != nil {
+		return nil, &NoiseError{"failed to read act 1: " + err.Error()}
+	}
+	ss.MixHash(re[:])
+	if _, err := ss.DecryptAndHash(nil); err != nil {
 		return nil, err
 	}
-	return &ServerKeys{
-		Private: kp.private,
-		Public:  kp.public,
-	}, nil
-}
 
-// ServerHandshake performs the server-side Noise NX handshake using secp256k1
-func ServerHandshake(conn net.Conn, serverKeys *ServerKeys) (*NoiseConn, error) {
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-
-	ss := NewSymmetricState(NoiseProtocolName)
-
-	// --- Act 1: Receive initiator's ephemeral public key (33 bytes compressed) ---
-	var ephemeralPub [DHPubKeySize]byte
-	if _, err := io.ReadFull(conn, ephemeralPub[:]); err != nil {
-		return nil, &NoiseError{"failed to read ephemeral key: " + err.Error()}
-	}
-
-	// Validate the received key is a valid secp256k1 point
-	if _, err := secp256k1.ParsePubKey(ephemeralPub[:]); err != nil {
-		return nil, &NoiseError{"invalid initiator ephemeral key: " + err.Error()}
-	}
-
-	ss.MixHash(ephemeralPub[:])
-
-	// --- Act 2: Send responder's ephemeral + encrypted static ---
-	responderEphemeral, err := generateKeypair()
+	// Act 2: <- e, ee, s, es, SIGNATURE_NOISE_MESSAGE
+	e, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
 		return nil, &NoiseError{"failed to generate ephemeral key: " + err.Error()}
 	}
-
-	// Mix ephemeral public key
-	ss.MixHash(responderEphemeral.public[:])
-
-	// DH(ephemeral, initiator_ephemeral)
-	dh1, err := dhSecp256k1(responderEphemeral.private, ephemeralPub)
+	eEnc, err := EllSwiftEncode(e.PubKey())
 	if err != nil {
-		return nil, &NoiseError{"DH1 failed: " + err.Error()}
+		return nil, &NoiseError{err.Error()}
 	}
-	if err := ss.MixKey(dh1); err != nil {
+	ss.MixHash(eEnc[:])
+	ee, err := EllSwiftECDH(e, eEnc, re, false)
+	if err != nil {
+		return nil, &NoiseError{"ee: " + err.Error()}
+	}
+	if err := ss.MixKey(ee); err != nil {
 		return nil, err
 	}
 
-	// Encrypt and send responder's static public key
-	encryptedStatic, err := ss.EncryptAndHash(serverKeys.Public[:])
+	sEnc, err := EllSwiftEncode(keys.Static.PubKey())
+	if err != nil {
+		return nil, &NoiseError{err.Error()}
+	}
+	encStatic, err := ss.EncryptAndHash(sEnc[:])
 	if err != nil {
 		return nil, &NoiseError{"failed to encrypt static key: " + err.Error()}
 	}
-
-	// DH(static, initiator_ephemeral)
-	dh2, err := dhSecp256k1(serverKeys.Private, ephemeralPub)
+	es, err := EllSwiftECDH(keys.Static, sEnc, re, false)
 	if err != nil {
-		return nil, &NoiseError{"DH2 failed: " + err.Error()}
+		return nil, &NoiseError{"es: " + err.Error()}
 	}
-	if err := ss.MixKey(dh2); err != nil {
+	if err := ss.MixKey(es); err != nil {
 		return nil, err
 	}
 
-	// Send: ephemeral_pub || encrypted_static
-	act2 := make([]byte, 0, DHPubKeySize+len(encryptedStatic))
-	act2 = append(act2, responderEphemeral.public[:]...)
-	act2 = append(act2, encryptedStatic...)
+	cert, err := keys.certificate(time.Now())
+	if err != nil {
+		return nil, &NoiseError{"failed to sign certificate: " + err.Error()}
+	}
+	encCert, err := ss.EncryptAndHash(cert.encode())
+	if err != nil {
+		return nil, &NoiseError{"failed to encrypt certificate: " + err.Error()}
+	}
 
+	act2 := make([]byte, 0, act2Size)
+	act2 = append(act2, eEnc[:]...)
+	act2 = append(act2, encStatic...)
+	act2 = append(act2, encCert...)
 	if _, err := conn.Write(act2); err != nil {
 		return nil, &NoiseError{"failed to write act 2: " + err.Error()}
 	}
 
-	// Split into send/receive cipher states
-	// Client sends on key1, receives on key2
-	// Server sends on key2, receives on key1
-	cs1, cs2, err := ss.Split()
+	toServer, toClient, err := ss.Split()
 	if err != nil {
 		return nil, err
 	}
-
 	_ = conn.SetDeadline(time.Time{})
-
-	return &NoiseConn{
-		conn:     conn,
-		send:     cs2, // Server sends on key2
-		recv:     cs1, // Server receives on key1
-		isServer: true,
-	}, nil
+	return &NoiseConn{conn: conn, send: toClient, recv: toServer, isServer: true}, nil
 }
 
-// ClientHandshake performs the client-side Noise NX handshake using secp256k1
-func ClientHandshake(conn net.Conn) (*NoiseConn, [DHPubKeySize]byte, error) {
+// ClientHandshake performs the initiator side of the SV2 Noise NX handshake. With a
+// non-nil authority key it verifies the server's certificate and fails the
+// handshake if the certificate does not check out; with nil it accepts any server.
+func ClientHandshake(conn net.Conn, authority *[32]byte) (*NoiseConn, *Certificate, error) {
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	ss := newHandshakeState()
 
-	ss := NewSymmetricState(NoiseProtocolName)
-
-	// --- Act 1: Send initiator's ephemeral public key (33 bytes compressed) ---
-	initiatorEphemeral, err := generateKeypair()
+	// Act 1: -> e
+	e, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"failed to generate ephemeral key: " + err.Error()}
+		return nil, nil, &NoiseError{"failed to generate ephemeral key: " + err.Error()}
+	}
+	eEnc, err := EllSwiftEncode(e.PubKey())
+	if err != nil {
+		return nil, nil, &NoiseError{err.Error()}
+	}
+	ss.MixHash(eEnc[:])
+	if _, err := ss.EncryptAndHash(nil); err != nil {
+		return nil, nil, err
+	}
+	if _, err := conn.Write(eEnc[:]); err != nil {
+		return nil, nil, &NoiseError{"failed to write act 1: " + err.Error()}
 	}
 
-	ss.MixHash(initiatorEphemeral.public[:])
-
-	if _, err := conn.Write(initiatorEphemeral.public[:]); err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"failed to write act 1: " + err.Error()}
-	}
-
-	// --- Act 2: Receive responder's ephemeral + encrypted static ---
-	// Act 2 size: 33 (ephemeral) + 33 (static) + 16 (tag) = 82 bytes
-	act2 := make([]byte, DHPubKeySize+DHPubKeySize+TagSize)
+	// Act 2: <- e, ee, s, es, SIGNATURE_NOISE_MESSAGE
+	act2 := make([]byte, act2Size)
 	if _, err := io.ReadFull(conn, act2); err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"failed to read act 2: " + err.Error()}
+		return nil, nil, &NoiseError{"failed to read act 2: " + err.Error()}
 	}
-
-	var responderEphemeralPub [DHPubKeySize]byte
-	copy(responderEphemeralPub[:], act2[:DHPubKeySize])
-	encryptedStatic := act2[DHPubKeySize:]
-
-	// Validate the received ephemeral key
-	if _, err := secp256k1.ParsePubKey(responderEphemeralPub[:]); err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"invalid responder ephemeral key: " + err.Error()}
-	}
-
-	// Mix ephemeral
-	ss.MixHash(responderEphemeralPub[:])
-
-	// DH(initiator_ephemeral, responder_ephemeral)
-	dh1, err := dhSecp256k1(initiatorEphemeral.private, responderEphemeralPub)
+	var re [EllSwiftPubKeySize]byte
+	copy(re[:], act2[:EllSwiftPubKeySize])
+	ss.MixHash(re[:])
+	ee, err := EllSwiftECDH(e, eEnc, re, true)
 	if err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"DH1 failed: " + err.Error()}
+		return nil, nil, &NoiseError{"ee: " + err.Error()}
 	}
-	if err := ss.MixKey(dh1); err != nil {
-		return nil, [DHPubKeySize]byte{}, err
+	if err := ss.MixKey(ee); err != nil {
+		return nil, nil, err
 	}
 
-	// Decrypt responder's static key
-	staticBytes, err := ss.DecryptAndHash(encryptedStatic)
+	staticEnd := EllSwiftPubKeySize + EllSwiftPubKeySize + TagSize
+	staticBytes, err := ss.DecryptAndHash(act2[EllSwiftPubKeySize:staticEnd])
 	if err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"failed to decrypt static key: " + err.Error()}
+		return nil, nil, &NoiseError{"failed to decrypt static key: " + err.Error()}
 	}
-
-	var responderStaticPub [DHPubKeySize]byte
-	copy(responderStaticPub[:], staticBytes)
-
-	// Validate the decrypted static key
-	if _, err := secp256k1.ParsePubKey(responderStaticPub[:]); err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"invalid responder static key: " + err.Error()}
-	}
-
-	// DH(initiator_ephemeral, responder_static)
-	dh2, err := dhSecp256k1(initiatorEphemeral.private, responderStaticPub)
+	var rs [EllSwiftPubKeySize]byte
+	copy(rs[:], staticBytes)
+	es, err := EllSwiftECDH(e, eEnc, rs, true)
 	if err != nil {
-		return nil, [DHPubKeySize]byte{}, &NoiseError{"DH2 failed: " + err.Error()}
+		return nil, nil, &NoiseError{"es: " + err.Error()}
 	}
-	if err := ss.MixKey(dh2); err != nil {
-		return nil, [DHPubKeySize]byte{}, err
+	if err := ss.MixKey(es); err != nil {
+		return nil, nil, err
 	}
 
-	// Split into send/receive cipher states
-	cs1, cs2, err := ss.Split()
+	certBytes, err := ss.DecryptAndHash(act2[staticEnd:])
 	if err != nil {
-		return nil, [DHPubKeySize]byte{}, err
+		return nil, nil, &NoiseError{"failed to decrypt certificate: " + err.Error()}
+	}
+	cert, err := decodeCertificate(certBytes)
+	if err != nil {
+		return nil, nil, &NoiseError{err.Error()}
+	}
+	if authority != nil {
+		if err := VerifyCertificate(cert, EllSwiftDecode(rs), *authority, time.Now()); err != nil {
+			return nil, nil, &NoiseError{err.Error()}
+		}
 	}
 
+	toServer, toClient, err := ss.Split()
+	if err != nil {
+		return nil, nil, err
+	}
 	_ = conn.SetDeadline(time.Time{})
-
-	return &NoiseConn{
-		conn:     conn,
-		send:     cs1, // Client sends on key1
-		recv:     cs2, // Client receives on key2
-		isServer: false,
-	}, responderStaticPub, nil
+	return &NoiseConn{conn: conn, send: toServer, recv: toClient}, cert, nil
 }
 
-// Read reads and decrypts data (uses readMu — independent from Write)
+// Read returns the decrypted SV2 frames as a byte stream.
 func (nc *NoiseConn) Read(b []byte) (int, error) {
 	nc.readMu.Lock()
 	defer nc.readMu.Unlock()
 
-	// If we have buffered data, return it first
-	if len(nc.readBuf) > nc.readPos {
-		n := copy(b, nc.readBuf[nc.readPos:])
-		nc.readPos += n
-		if nc.readPos >= len(nc.readBuf) {
-			nc.readBuf = nil
-			nc.readPos = 0
+	if nc.readPos >= len(nc.readBuf) {
+		frame, err := nc.readFrame()
+		if err != nil {
+			return 0, err
 		}
-		return n, nil
+		nc.readBuf, nc.readPos = frame, 0
 	}
-
-	// Read length prefix (2 bytes)
-	var lengthBuf [2]byte
-	if _, err := io.ReadFull(nc.conn, lengthBuf[:]); err != nil {
-		return 0, err
-	}
-	length := binary.LittleEndian.Uint16(lengthBuf[:])
-
-	if length == 0 {
-		return 0, nil
-	}
-
-	// Read ciphertext
-	ciphertext := make([]byte, length)
-	if _, err := io.ReadFull(nc.conn, ciphertext); err != nil {
-		return 0, err
-	}
-
-	// Decrypt
-	plaintext, err := nc.recv.Decrypt(nil, ciphertext)
-	if err != nil {
-		return 0, err
-	}
-
-	// Copy to output buffer
-	n := copy(b, plaintext)
-	if n < len(plaintext) {
-		// Buffer the rest
-		nc.readBuf = plaintext
-		nc.readPos = n
-	}
-
+	n := copy(b, nc.readBuf[nc.readPos:])
+	nc.readPos += n
 	return n, nil
 }
 
-// Write encrypts and writes data (uses writeMu — independent from Read)
+// readFrame reads and decrypts one frame: the 22-byte encrypted header, then the
+// payload blocks its length calls for.
+func (nc *NoiseConn) readFrame() ([]byte, error) {
+	var encHeader [encryptedHeaderSize]byte
+	if _, err := io.ReadFull(nc.conn, encHeader[:]); err != nil {
+		return nil, err
+	}
+	header, err := nc.recv.Decrypt(nil, encHeader[:])
+	if err != nil {
+		return nil, err
+	}
+	length := int(header[3]) | int(header[4])<<8 | int(header[5])<<16
+	if length > MaxMessageSize {
+		return nil, ErrMessageTooLarge
+	}
+
+	frame := make([]byte, HeaderSize, HeaderSize+length)
+	copy(frame, header)
+	for remaining := length; remaining > 0; {
+		block := remaining
+		if block > MaxNoiseMessageSize {
+			block = MaxNoiseMessageSize
+		}
+		ciphertext := make([]byte, block+TagSize)
+		if _, err := io.ReadFull(nc.conn, ciphertext); err != nil {
+			return nil, err
+		}
+		plaintext, err := nc.recv.Decrypt(nil, ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		frame = append(frame, plaintext...)
+		remaining -= block
+	}
+	return frame, nil
+}
+
+// Write encrypts and sends one complete SV2 frame: a 6-byte header and exactly the
+// payload its length field gives.
 func (nc *NoiseConn) Write(b []byte) (int, error) {
 	nc.writeMu.Lock()
 	defer nc.writeMu.Unlock()
 
-	if len(b) > MaxNoiseMessageSize {
-		return 0, errors.New("message too large")
+	if len(b) < HeaderSize {
+		return 0, errors.New("noise: frame shorter than its header")
+	}
+	length := int(b[3]) | int(b[4])<<8 | int(b[5])<<16
+	if len(b) != HeaderSize+length {
+		return 0, fmt.Errorf("noise: frame is %d bytes but its header gives %d", len(b), HeaderSize+length)
 	}
 
-	// Encrypt
-	ciphertext, err := nc.send.Encrypt(nil, b)
+	blocks := (length + MaxNoiseMessageSize - 1) / MaxNoiseMessageSize
+	out := make([]byte, 0, encryptedHeaderSize+length+blocks*TagSize)
+	encHeader, err := nc.send.Encrypt(nil, b[:HeaderSize])
 	if err != nil {
 		return 0, err
 	}
-
-	// Combine length prefix + ciphertext into a single write to prevent
-	// partial sends that could corrupt framing
-	frame := make([]byte, 2+len(ciphertext))
-	binary.LittleEndian.PutUint16(frame[:2], uint16(len(ciphertext)))
-	copy(frame[2:], ciphertext)
-
-	if _, err := nc.conn.Write(frame); err != nil {
-		return 0, err
+	out = append(out, encHeader...)
+	for payload := b[HeaderSize:]; len(payload) > 0; {
+		block := payload
+		if len(block) > MaxNoiseMessageSize {
+			block = block[:MaxNoiseMessageSize]
+		}
+		ciphertext, err := nc.send.Encrypt(nil, block)
+		if err != nil {
+			return 0, err
+		}
+		out = append(out, ciphertext...)
+		payload = payload[len(block):]
 	}
 
+	// One write per frame, so a partial send cannot interleave with another frame.
+	if _, err := nc.conn.Write(out); err != nil {
+		return 0, err
+	}
 	return len(b), nil
 }
 

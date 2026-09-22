@@ -181,16 +181,6 @@ type AuxPowCoin interface {
 	SerializeAuxPowProof(proof *AuxPowProof) ([]byte, error)
 }
 
-// CreateAuxBlockCoin is an optional interface for aux chains that use the newer
-// createauxblock(address)/submitauxblock RPC pair instead of the older getauxblock RPC.
-// Fractal Bitcoin uses this style. If an AuxPowCoin does NOT implement this interface,
-// the pool defaults to getauxblock.
-type CreateAuxBlockCoin interface {
-	// UseCreateAuxBlock returns true if this coin uses createauxblock(address)
-	// instead of getauxblock for fetching aux block templates.
-	UseCreateAuxBlock() bool
-}
-
 // ParentChainCoin extends Coin for coins that can serve as merge mining parents.
 // This is separate from AuxPowCoin because parent chains have different requirements.
 type ParentChainCoin interface {

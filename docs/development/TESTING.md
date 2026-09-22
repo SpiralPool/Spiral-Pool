@@ -1,9 +1,9 @@
 # Spiral Stratum - Test Suite Reference
 
 **Version**: 1.1
-**Updated**: 2026-03-20
-**Total Test Files**: 240
-**Total Test Functions**: 3,500+
+**Updated**: 2026-09-21
+**Total Test Files**: 285 Go (`*_test.go`) + 27 Python (`tests/test_*.py`)
+**Total Test Functions**: 3,889 Go `Test*` functions (4,107 including `Fuzz*` and `Benchmark*`)
 
 ---
 
@@ -15,7 +15,8 @@
 4. [Chaos Tests & Production Bug Findings](#chaos-tests--production-bug-findings)
 5. [Production Fixes Applied](#production-fixes-applied)
 6. [Execution Commands](#execution-commands)
-7. [Related Documentation](#related-documentation)
+7. [Documentation Guards](#documentation-guards)
+8. [Related Documentation](#related-documentation)
 
 ---
 
@@ -172,7 +173,7 @@ All tests are designed to run with `go test -race` and should produce zero data 
 |------|-------|
 | `integration_test.go` | Basic cross-package integration |
 | `lifecycle_e2e_test.go` | End-to-end pool lifecycle |
-| `chaos_stress_test.go` | **32 tests**: HeightEpoch, DuplicateTracker, VarDiff, CircuitBreaker, WAL, RateLimiter, BlockQueue, multi-coin |
+| `chaos_stress_test.go` | **33 tests**: HeightEpoch, DuplicateTracker, VarDiff, CircuitBreaker, WAL, RateLimiter, BlockQueue, multi-coin |
 | `chaos_stress_extended_test.go` | **36 tests**: Goroutine lifecycle, connection churn, reorg storms, memory exhaustion, crash recovery, boundary conditions |
 | `build_verification_test.go` | Build verification smoke tests |
 
@@ -303,9 +304,15 @@ All tests are designed to run with `go test -race` and should produce zero data 
 | `v1/stress_test.go` | V1 handler under load |
 | **V2 Protocol** | |
 | `v2/server_test.go` | V2 server lifecycle |
-| `v2/adapter_test.go` | V1↔V2 protocol adapter |
+| `v2/adapter_test.go` | nBits to target conversion |
 | `v2/encoding_test.go` | Binary encoding correctness |
-| `v2/noise_test.go` | Noise protocol handshake |
+| `v2/noise_test.go` | Noise handshake: message sizes, authority certificate, tampering, frame layout |
+| `v2/ellswift_test.go` | ElligatorSwift and x-only ECDH against the BIP324 vectors |
+| `v2/schnorr_test.go` | Schnorr signatures against the BIP340 vectors |
+| `v2/keys_test.go` | Authority and static key files; base58 key form against the Stratum Reference Implementation's example key |
+| `v2/interop_test.go` | Skipped unless `SPIRAL_SV2_INTEROP_ADDR` is set: serves an external SV2 client (such as the Stratum Reference Implementation's `mining_device` or translator) and checks every share it submits |
+| `v2/pipeline_test.go` | Standard channels over TCP against the real share validator: blocks, payout, job sequencing |
+| `v2/conformance_test.go` | Channel bit, SetupConnection, UpdateChannel, vardiff SetTarget, extended channels |
 | `v2/session_test.go` | V2 session management |
 | `v2/types_test.go` | V2 type serialization |
 
@@ -337,6 +344,11 @@ All tests are designed to run with `go test -race` and should produce zero data 
 ## Chaos Tests & Production Bug Findings
 
 The chaos test suite consists of 10 numbered tests designed to find concurrency bugs, plus extensive pool/integration chaos tests. Each targets specific production code paths and documents invariants.
+
+> **The `file.go:line` targets below are historical.** They point at the code as it stood when each
+> bug was found, which is in most cases the code the fix then changed. Treat them as a record of
+> where the bug lived, not as current line numbers — use the test file in the **File** column to
+> find what is exercised today.
 
 ### Numbered Chaos Tests (Tests 1-10)
 
@@ -541,7 +553,7 @@ The dashboard (`src/dashboard/dashboard.py`) has standalone Python tests in `tes
 
 ### `_safe_num()` Proof Test
 
-`tests/test_safe_num.py` — 48 tests proving that `_safe_num()` wrapping is safe across all 11 miner fetch functions.
+`tests/test_safe_num.py` — 42 tests proving that `_safe_num()` wrapping is safe across all 11 miner fetch functions.
 
 ```bash
 # Run standalone (no pytest required)
@@ -559,6 +571,35 @@ python -m pytest tests/test_safe_num.py -v
 | Arithmetic | 8 | Division, comparison, `int()`, `sum()`, `max()`, truthiness all work on output |
 | Real API patterns | 13 | `or`-fallback chains, `dict.get()`, full Innosilicon simulation, normal API passthrough |
 | List comprehension | 1 | Mixed string/int/zero filtering — exact pattern from vnish/whatsminer/innosilicon loops |
+
+---
+
+## Documentation Guards
+
+Four suites assert that the documentation still describes the code. None of
+them tests behaviour; each exists because a class of drift had already shipped
+and nothing else could see it.
+
+| Test | Asserts | The drift it exists for |
+|------|---------|-------------------------|
+| `tests/test_doc_crossrefs.py` | Every link target, `#anchor` and "Section N" citation resolves, across all markdown plus the shell/Python/PowerShell sources that print citations | Five documents **and `install.sh`** sent operators to `TERMS.md` Section 5D, which did not exist |
+| `tests/test_doc_facts.py` | The counts the docs state (source line counts, test-file and test-function totals, router patterns) match the tree | `SENTINEL.md` described `SpiralSentinel.py` as ~20,700 lines when it was 23,763 |
+| `tests/test_coin_storage_consistency.py` | All six surfaces publishing a per-coin disk figure agree | `install-windows.ps1` contradicted **itself** — its coin table said BCH2 20 GB while its own menu said 15 GB |
+| `tests/test_spiralctl_docs_match.py` | Documented commands are dispatched, advertised config keys are handled, and every key `install.sh` writes has a declared default | Seven Sentinel keys, `alerts_enabled` among them, were written by the installer and read by Sentinel with no entry in `DEFAULT_CONFIG` |
+
+```bash
+python -m pytest tests/test_doc_crossrefs.py tests/test_doc_facts.py                  tests/test_coin_storage_consistency.py tests/test_spiralctl_docs_match.py -v
+```
+
+Each extractor asserts it parsed something before comparing. A regex that
+silently matches nothing turns a guard into a decoration, which is a real
+hazard here rather than a theoretical one: three of these extractors did
+exactly that on their first attempt, and the anchor checker reported twelve
+working links as broken because its slug function collapsed consecutive
+hyphens where GitHub keeps them.
+
+**Adding a test file or a router pattern will fail `test_doc_facts.py`.** That
+is intended — update the figure in the document in the same commit.
 
 ---
 

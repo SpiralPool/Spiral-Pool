@@ -307,7 +307,7 @@ services:
 
   # Bitcoin Silver (BTCS) - SHA-256d, BTC-style consensus, 5-min blocks
   # NOTE: no-new-privileges NOT set - gosu requires setuid for privilege drop
-  # NOTE: BTCS is built from source — first docker build will take 20-60 minutes
+  # NOTE: BTCS installs the upstream release binary, verified against a pinned SHA256
   bitcoinsilver:
     profiles: ["btcs", "multi"]
     build:
@@ -745,7 +745,7 @@ services:
   # NOTE: no-new-privileges NOT set - official postgres image uses gosu
   postgres:
     profiles: ["dgb", "btc", "bch", "bc2", "bch2", "btcs", "nmc", "sys", "xmy", "fbtc", "xec", "ltc", "doge", "dgb-scrypt", "pep", "cat", "multi"]
-    image: postgres:18.4-alpine
+    image: postgres:18.6-alpine
     container_name: spiralpool-postgres
     restart: unless-stopped
     logging: *default-logging
@@ -783,6 +783,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      # Stamps the binary so a running container can be traced to its source.
+      # Build time is taken inside the image; the commit has to be passed in,
+      # since the build context may be a zip extract with no .git directory:
+      #   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose --profile dgb build
+      args:
+        VERSION: ${POOL_VERSION:-3.0.0}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: spiralpool-stratum
     restart: unless-stopped
     logging: *default-logging
@@ -1150,6 +1157,21 @@ services:
       - DGB_SCRYPT_WALLET_ADDRESS=${DGB_SCRYPT_ADDRESS:-${DGB_POOL_ADDRESS:-}}
       - EXPECTED_FLEET_THS=${EXPECTED_FLEET_THS:-22}
       - ALERT_THEME=${ALERT_THEME:-cyberpunk}
+      # Which coins to check for upstream daemon releases.
+      #
+      # coin-upgrade.sh normally works this out by executing each daemon
+      # binary. In this deployment the daemons are in other containers, so it
+      # cannot see them and would otherwise conclude that nothing is installed
+      # and report no releases for anything — silently, and identically to a
+      # healthy check that found nothing new.
+      #
+      # Defaults to the profiles the stack was brought up with, since those are
+      # the coin tickers (dgb, btc, bch, …). Set it explicitly if you start the
+      # stack with `--profile` on the command line rather than COMPOSE_PROFILES
+      # in .env, because a command-line profile does not reach the container.
+      # It only selects which coins are asked about: it can never cause an
+      # upgrade, which Docker does by rebuilding that coin's image.
+      - SPIRALPOOL_INSTALLED_COINS=${SPIRALPOOL_INSTALLED_COINS:-${COMPOSE_PROFILES:-}}
     volumes:
       - sentinel-config:/home/spiraluser/.spiralsentinel
       - shared-data:/spiralpool/data

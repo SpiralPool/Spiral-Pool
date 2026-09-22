@@ -47,8 +47,8 @@ global:
 database:
   host: localhost
   port: 5432
-  user: spiralstratum
-  password: "spiralstratum"       # Change if your local PG uses different creds
+  user: spiralregtest
+  password: "spiralregtest"       # Change if your local PG uses different creds
   database: spiralstratum_regtest # Separate DB so regtest doesn't pollute mainnet data
   maxConnections: 50
   batching:

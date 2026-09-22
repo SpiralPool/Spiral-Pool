@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Spiral Citadel V2.7.0</em>
+  <em>Spiral Covenant V3.0.0</em>
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@ Spiral Pool is **free, open-source, self-hosted Stratum mining pool software** f
 
 Block rewards are embedded directly in the coinbase transaction paying the **miner's own wallet address**. The intended fund flow is: **Blockchain &rarr; Coinbase Transaction &rarr; Miner's Wallet.** There is no pool wallet, no intermediate balance, no fees, and no withdrawal process &mdash; the software is designed to never hold, route, or access funds at any point in the payment path.
 
-At its core is the **Spiral Router** &mdash; a miner classification engine that identifies miners via 47 verified user-agent patterns at connection time and maps each to one of 14 SHA-256d or 8 Scrypt difficulty profiles before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4&times; up / 0.75&times; down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
+At its core is the **Spiral Router** &mdash; a miner classification engine that identifies miners via 52 verified user-agent patterns at connection time and maps each to one of 17 SHA-256d or 8 Scrypt difficulty profiles before a single share is submitted. Paired with a **lock-free vardiff engine** using per-session atomic state, asymmetric ramp limits (4&times; up / 0.75&times; down), and a 50% variance floor, difficulty spirals toward equilibrium rather than oscillating around a target.
 
 16 coins. 2 algorithms. 6 merge-mining pairs. One binary.
 
@@ -50,7 +50,7 @@ There is no token, no chain, no governance layer, and no protocol-level fee extr
 
 This is pure free and open-source software. Fork it, audit it, modify it, redistribute it. The code speaks for itself.
 
-> **SINGLE-OPERATOR NOTICE:** Spiral Pool is designed for **one operator running their own miners**. One wallet address per coin is set at install time &mdash; **all block rewards go to that address**, regardless of which miner found the block. If you allow others to mine on your pool, you must inform them that their hashrate contributes to your wallet, not their own. See [WARNINGS.md](WARNINGS.md) and [TERMS.md Section 5E](TERMS.md).
+> **SINGLE-OPERATOR NOTICE:** Spiral Pool is designed for **one operator running their own miners**, who owns every wallet those miners are pointed at. **Every block pays the wallet address set per coin at install time.** An operator who wants individual rigs paid at their own addresses can enable `spiralctl mining payout worker`, which pays the address in a miner's worker name — it is off by default, and the multi-coin smart port ignores it — that port always pays the address configured for the active coin, or an explicit `wallet_map` entry where the operator set one. If you allow others to mine on your pool, you must tell them which wallet their hashrate pays. See [WARNINGS.md](WARNINGS.md) and [TERMS.md Section 5D](TERMS.md).
 
 ---
 
@@ -60,17 +60,17 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 |---------|---------|
 | **High availability** | VIP failover, Patroni replication, blockchain rsync, advisory lock payment fencing |
 | **Stratum V1 + V2 + TLS** | Multi-port per coin; Noise Protocol encryption for V2 |
-| **Spiral Router** | Classifies miners at connect via 47 user-agent patterns across 23 difficulty profiles (15 SHA-256d, 8 Scrypt) |
+| **Spiral Router** | Classifies miners at connect via 52 user-agent patterns across 25 difficulty profiles (17 SHA-256d, 8 Scrypt) |
 | **Lock-free vardiff** | Per-session atomic state, asymmetric retarget (4&times; up / 0.75&times; down), 50% variance floor |
 | **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles |
 | **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
 | **Non-custodial solo payout** | Block reward embedded in coinbase tx directly to miner's wallet &mdash; no pool custody |
 | **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
 | **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, LTC 100 GB&rarr;5 GB, DGB 80 GB&rarr;5 GB (DGB pruning requires DigiByte Core v9.26.4+, which runs DigiDollar pruned) |
-| **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 25 themes (port 1618) |
+| **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 26 themes (port 1618) |
 | **Spiral Sentinel** | Device discovery, auto-scan (BraiinsOS/Vnish), stratum &amp; wallet mismatch detection, health/temp/hashrate alerts, block notifications, dry streak &amp; difficulty detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, webhooks |
 | **Multi coin smart port** | Single port (16180) rotating SHA-256d coins by either a 24h weighted schedule (TIME mode) or live lowest-network-difficulty selection (DIFFICULTY mode), with failover |
-| **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link (operator-initiated, no auto-swaps). See [TERMS.md 5D](TERMS.md) |
+| **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link (operator-initiated, no auto-swaps). See [TERMS.md 5C](TERMS.md) |
 | **Runtime tuning** | Live operator control via `spiralctl` CLI |
 | **Prometheus metrics** | Per-session observability with worker-level labels |
 | **Test suite** | 3,500+ unit, integration, chaos, and fuzz tests |
@@ -79,7 +79,7 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 
 ## Compatible Hardware
 
-Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spiral Router classifies hardware at connection time using 47 verified user-agent patterns.
+Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spiral Router classifies hardware at connection time using 52 verified user-agent patterns.
 
 **SHA-256d** &mdash; Antminer S9/S17/S19/S19 Pro/S21/S21 Pro, Whatsminer M20S/M30S/M50S/M60S, Avalon A1246/A1346/A1366, BitAxe Gamma/Ultra/Max, iBeLink BM-S1 Max, FutureBit Apollo BTC, NerdMiner, NM Miner, NerdAxe, NerdQAxe, Compac F, LuckyMiner
 
@@ -129,7 +129,7 @@ BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
       ├── XMY  (Myriad)
       └── FBTC (Fractal Bitcoin)
 
-XEC (standalone — no merge mining)
+Standalone (no merge mining) — SHA-256d: BCH, BCH2, DGB, BC2, BTCS, XEC   Scrypt: DGB-SCRYPT, CAT
 ```
 
 ---
@@ -223,7 +223,7 @@ cd docker && cp .env.example .env
 docker compose --profile dgb up -d
 ```
 
-Docker supports V1 + V2 Stratum (plain, TLS, Noise), all 17 coins, multi-coin mode, and merge mining. For HA with VIP failover, use native installation. See [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md).
+Docker supports V1 + V2 Stratum (plain, TLS, Noise), all 16 coins, multi-coin mode, and merge mining. For HA with VIP failover, use native installation. See [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md).
 
 ### Connect Your Miners
 
@@ -246,7 +246,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v2.7.0 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v3.0.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -319,4 +319,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Spiral Citadel 2.7.0 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Spiral Covenant 3.0.0 &mdash; Convergent difficulty. Minimal oscillation.*

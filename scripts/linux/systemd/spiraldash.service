@@ -26,7 +26,7 @@ WorkingDirectory={{INSTALL_DIR}}/dashboard
 # Single worker required: scan progress uses in-memory state that cannot be shared across processes
 # 4 threads handle concurrent requests (polls, page loads, API calls) within the single process
 # HTTPS: enable from dashboard Management tab (runs enable-https.sh to add TLS args)
-ExecStart={{INSTALL_DIR}}/dashboard/venv/bin/gunicorn --bind 0.0.0.0:{{DASHBOARD_PORT}} --workers 1 --threads 4 --timeout 120 dashboard:app
+ExecStart={{INSTALL_DIR}}/dashboard/venv/bin/gunicorn --bind 0.0.0.0:{{DASHBOARD_PORT}} --workers 1 --threads 4 --timeout 120 --no-control-socket dashboard:app
 # POST-BOOT HEALTH CHECK: After reboot, gunicorn worker can deadlock during fork
 # (post-fork threading lock inheritance). The master process stays alive and systemd
 # sees the service as "active", but no HTTP requests are served. This loop polls
@@ -34,7 +34,7 @@ ExecStart={{INSTALL_DIR}}/dashboard/venv/bin/gunicorn --bind 0.0.0.0:{{DASHBOARD
 # so Restart=always can recover it. Uses -k (insecure) for HTTPS self-signed certs.
 ExecStartPost=/bin/bash -c '\
   proto=http; \
-  grep -q "\\-\\-certfile" /proc/$MAINPID/cmdline 2>/dev/null && proto=https; \
+  grep -q -- --certfile /proc/$MAINPID/cmdline 2>/dev/null && proto=https; \
   for i in $(seq 1 30); do \
     sleep 2; \
     curl -sfk -o /dev/null "$${proto}://127.0.0.1:{{DASHBOARD_PORT}}/" 2>/dev/null && exit 0; \

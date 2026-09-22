@@ -49,6 +49,8 @@ curl http://localhost:1618/api/health/ready     # Readiness (checks pool API)
 | `/` | Main dashboard &mdash; fleet stats, hashrate charts, miner cards, earnings, health |
 | `/setup` | First-time setup wizard &mdash; coin selection, miner config, pool mode |
 | `/settings` | Settings &mdash; theme, devices, wallet, alerts, auto-discovery, webhooks |
+| `/explorer` | Block explorer &mdash; your coin nodes' chain state, blocks, transactions and address balances; works on pruned nodes (login session only) |
+| `/automation` | Miner automation &mdash; sleep windows, power schedules, auto-restart settings and miner credentials, run by Sentinel (login session only) |
 | `/login` | Login page &mdash; also handles first-time password creation |
 
 ---
@@ -130,7 +132,7 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 
 ## Themes
 
-25 themes available in `src/dashboard/static/themes/`:
+26 themes available in `src/dashboard/static/themes/`:
 
 | Theme | Category |
 |-------|----------|
@@ -138,6 +140,7 @@ Auth can be disabled with `DASHBOARD_AUTH_ENABLED=false` (not recommended).
 | **V1.2.2 — Convergent Spiral** | Codename |
 | **V2.0 — Phi Hash Reactor** | Codename |
 | **V2.2 — Phi Forge** | Codename |
+| **V3.0 — Spiral Covenant** | Codename |
 | **cyberpunk** (default) | Core |
 | 1337-h4x0r | Core |
 | dracula | Developer |
@@ -282,7 +285,7 @@ Progressive Web App manifest (`static/manifest.json`) enables "Add to Home Scree
 
 ### Avalon Power Scheduling
 
-- Per-device time-based power profiles (efficiency/performance)
+- RGB LED celebration on block find, run by `/spiralpool/scripts/block-celebrate.sh` (duration from `config.yaml`, default 2 hours); `POST /api/test/block-celebration` triggers the same script against the configured Avalons. Between celebrations the LED follows the Sentinel config key `led_idle_state`: `off` (default) leaves it dark, `restore` puts back whatever it showed before.
 - RGB LED celebration on block find, run by `scripts/block-celebrate.sh` (duration from `config.yaml`, default 2 hours); `POST /api/test/block-celebration` triggers the same script against the configured Avalons
 - Quiet hours suppression
 
@@ -367,6 +370,29 @@ Per-device-type control endpoints for AxeOS, CGMiner, Whatsminer, BraiinsOS, Vni
 | GET | `/api/blocks/finder/<hash>` | User | Which miner found a block |
 | GET | `/api/blocks/history` | User | Block find history with time ranges |
 | GET | `/api/blocks/leaderboard` | User | Miner leaderboard by blocks found |
+
+### Block Explorer
+
+Operator only: session login, API keys not accepted. Queries the coin node directly.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/explorer/coins` | Admin | Coins the explorer can query |
+| GET | `/api/explorer/<coin>/summary` | Admin | Chain state, prune height, mempool, last 10 blocks (pool-found blocks marked) |
+| GET | `/api/explorer/<coin>/block/<height-or-hash>` | Admin | Block header always; transactions and coinbase outputs while the node still has the block data |
+| GET | `/api/explorer/<coin>/tx/<txid>?block=<hash>` | Admin | Transaction from the mempool, or from the named block (no txindex on pruned nodes) |
+| GET | `/api/explorer/<coin>/address/<address>` | Admin | Unspent outputs and balance via `scantxoutset`; one scan per coin at a time (409 while busy), up to 300 s |
+
+### Miner Automation
+
+Operator only: session login, API keys not accepted. Settings go to `automation.json` and credentials to `device_credentials.json` in the shared data directory (`/spiralpool/data`), where Sentinel reads them on its next check. See [SENTINEL.md](SENTINEL.md#automation) for how the rules run.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/automation` | Admin | Settings; each configured miner's capabilities and whether credentials are stored (passwords are never returned); auto-restart defaults from Sentinel's config; display timezone |
+| PUT | `/api/automation` | Admin | Replace the settings. Every rule is checked against its miners' types; 400 with a list of errors, and nothing saved, if any rule asks a miner for something it cannot do |
+| PUT | `/api/automation/credentials/<ip>` | Admin | Store a configured miner's API username and password (write-only; file mode 0600) |
+| DELETE | `/api/automation/credentials/<ip>` | Admin | Remove a miner's stored credentials |
 
 ### Fleet Management
 
@@ -555,4 +581,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Spiral Citadel 2.7.0*
+*Spiral Dash &mdash; Spiral Covenant 3.0.0*

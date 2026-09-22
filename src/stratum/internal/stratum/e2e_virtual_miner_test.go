@@ -572,7 +572,7 @@ func TestJobNotificationFormat(t *testing.T) {
 		CreatedAt:      time.Now(),
 	}
 
-	msg, err := handler.BuildNotify(job)
+	msg, err := handler.BuildNotify(job, "")
 	if err != nil {
 		t.Fatalf("BuildNotify error: %v", err)
 	}

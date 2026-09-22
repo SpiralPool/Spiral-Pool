@@ -374,12 +374,6 @@ func (c *MyriadCoin) AuxPowVersionBit() uint32 {
 	return MyriadAuxPowVersionBit
 }
 
-// UseCreateAuxBlock returns true because Myriadcoin uses createauxblock(address)
-// instead of getauxblock. Myriadcoin's RPC: createauxblock / submitauxblock.
-func (c *MyriadCoin) UseCreateAuxBlock() bool {
-	return true
-}
-
 // ParseAuxBlockResponse parses the createauxblock RPC response from Myriad Core.
 func (c *MyriadCoin) ParseAuxBlockResponse(response map[string]interface{}) (*AuxBlock, error) {
 	auxBlock := &AuxBlock{

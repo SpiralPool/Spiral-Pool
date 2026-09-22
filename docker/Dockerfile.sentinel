@@ -9,13 +9,20 @@ FROM python:3.14-slim
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Sentinel - Mining Monitor"
-LABEL version="2.7.1"
+LABEL version="3.0.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Create user
 RUN useradd -r -m -s /bin/bash spiraluser
+
+# curl is required by coin-upgrade.sh's release-feed reader (_http_get falls
+# back to wget, and python:slim ships neither). Without it every upstream check
+# reports the feed unreachable, which is at least honest but useless.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies from pinned requirements.txt (reproducible builds)
 COPY src/sentinel/requirements.txt /tmp/requirements.txt
@@ -30,6 +37,21 @@ RUN mkdir -p /home/spiraluser/.spiralsentinel \
 # Copy sentinel
 COPY --chown=spiraluser:spiraluser src/sentinel/SpiralSentinel.py /app/SpiralSentinel.py
 COPY --chown=spiraluser:spiraluser src/sentinel/ha_manager.py /app/ha_manager.py
+COPY --chown=spiraluser:spiraluser src/sentinel/miner_automation.py /app/miner_automation.py
+COPY --chown=spiraluser:spiraluser src/sentinel/miner_control.py /app/miner_control.py
+
+# coin-upgrade.sh, for its read-only release check only.
+#
+# Sentinel resolves it at $SPIRALPOOL_INSTALL_DIR/scripts/coin-upgrade.sh and
+# runs --list-upstream, which exits long before check_root and never touches a
+# daemon. The APPLY half of this script cannot work in a container and is not
+# meant to: it stops a systemd unit and swaps a binary on disk, and here there
+# is neither. Upgrading a coin under Docker is a rebuild of that coin's image
+# followed by `docker compose up -d <service>`.
+#
+# SPIRALPOOL_INSTALLED_COINS (set on the service in docker-compose.yml) tells
+# it which coins to ask about, since it cannot see the daemons to find out.
+COPY --chown=spiraluser:spiraluser coin-upgrade.sh /spiralpool/scripts/coin-upgrade.sh
 
 WORKDIR /app
 

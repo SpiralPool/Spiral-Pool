@@ -1670,7 +1670,7 @@ func (p *Pool) handleBlock(share *protocol.Share, result *protocol.ShareResult) 
 				// Populate raw reconstruction components from job
 				if jobFound && job != nil {
 					emergencyEntry.CoinBase1 = job.CoinBase1
-					emergencyEntry.CoinBase2 = job.CoinBase2
+					emergencyEntry.CoinBase2 = job.CoinBase2For(share.MinerAddress)
 					emergencyEntry.Version = job.Version
 					emergencyEntry.NBits = job.NBits
 					emergencyEntry.NTime = share.NTime
@@ -2419,13 +2419,13 @@ blockLogging:
 		p.logger.Infow("Block reward will be sent to configured pool address",
 			"note", "SOLO mining - reward goes directly to your wallet",
 		)
-		p.startCelebration(share.SessionID, share.BlockHeight, share.MinerAddress, share.WorkerName, rewardCoins, p.cfg.Pool.Coin)
+		p.startCelebration(share.SessionID, share.BlockHeight, share.MinerAddress, share.WorkerName, rewardCoins, p.cfg.Pool.Coin, result.BlockHash)
 	}
 }
 
 // startCelebration sends a block found message to all miners when a block is found.
 // The finder gets a direct message, ALL miners get a broadcast, and Avalon LEDs are triggered.
-func (p *Pool) startCelebration(sessionID uint64, height uint64, miner, worker string, reward float64, coinSymbol string) {
+func (p *Pool) startCelebration(sessionID uint64, height uint64, miner, worker string, reward float64, coinSymbol, blockHash string) {
 	// Check if celebration is enabled in config
 	if !p.cfg.Celebration.Enabled {
 		p.logger.Debugw("Celebration disabled, skipping block announcement", "height", height)
@@ -2456,14 +2456,21 @@ func (p *Pool) startCelebration(sessionID uint64, height uint64, miner, worker s
 
 	// Trigger full RGB LED celebration via block-celebrate.sh
 	// The script handles Avalon LED discovery, 12-phase color sequences, and state restore
-	go func(hours int) {
+	go func(hours int, hash string) {
 		scriptPath := "/spiralpool/scripts/block-celebrate.sh"
 		if _, err := os.Stat(scriptPath); err != nil {
 			p.logger.Debugw("Celebration script not found, skipping LED celebration", "path", scriptPath)
 			return
 		}
 		durationSecs := strconv.Itoa(hours * 3600)
-		cmd := exec.Command(scriptPath, "--duration", durationSecs)
+		// Name the block. block-celebrate.sh records it so that if this block is
+		// later orphaned, Sentinel can withdraw it and end the celebration -- and
+		// so a celebration standing for several blocks is only ended by the last.
+		args := []string{"--duration", durationSecs}
+		if hash != "" {
+			args = append(args, "--block", hash)
+		}
+		cmd := exec.Command(scriptPath, args...)
 		if err := cmd.Start(); err != nil {
 			p.logger.Warnw("Failed to start celebration script", "error", err)
 			return
@@ -2478,7 +2485,7 @@ func (p *Pool) startCelebration(sessionID uint64, height uint64, miner, worker s
 		if err := cmd.Wait(); err != nil {
 			p.logger.Debugw("Celebration script exited with error", "error", err)
 		}
-	}(durationHours)
+	}(durationHours, blockHash)
 
 	p.logger.Infow("Block celebration started",
 		"coin", coinSymbol,
@@ -2874,7 +2881,7 @@ func (p *Pool) handleAuxBlocks(share *protocol.Share, auxResults []protocol.AuxB
 			)
 
 			// Celebrate merge-mined block (same light show as parent blocks)
-			p.startCelebration(share.SessionID, auxResult.Height, share.MinerAddress, share.WorkerName, float64(auxResult.CoinbaseValue)/1e8, auxResult.Symbol)
+			p.startCelebration(share.SessionID, auxResult.Height, share.MinerAddress, share.WorkerName, float64(auxResult.CoinbaseValue)/1e8, auxResult.Symbol, auxResult.BlockHash)
 
 			// AUDIT FIX (ISSUE-6): Increment AuxBlocksSubmitted metric.
 			if p.metricsServer != nil {

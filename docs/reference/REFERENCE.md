@@ -27,19 +27,23 @@ Strict lookup tables. No explanations. For context, see [ARCHITECTURE.md](../arc
 | eCash | XEC | 18338 | 18339 | 18340 |
 | Bitcoin Silver | BTCS | 11335 | 11336 | 11337 |
 
+> **V2 ports are opt-in (v3.0+).** They are configured and opened only when `ENABLE_V2_STRATUM=true` in `coins.env` (installer question, or kept during `upgrade.sh`); otherwise `port_v2` is commented out in `config.yaml` and the firewall port stays closed.
+>
+> **V2 miners and proxies authenticate the pool with its authority public key.** Print it with `sudo spiralctl v2 pubkey`: hex on the first line, and on the second the base58 form that Stratum Reference Implementation configs (such as the translator's `authority_pubkey`) take. The pool creates the key the first time a V2 port starts, in `stratum-v2/authority.key` next to `config.yaml` (`global.stratum_v2_key_dir` overrides the location). `sudo spiralctl v2 keygen --rotate` replaces it, after which every V2 miner and proxy must be given the new key.
+
 ## Daemon RPC Ports
 
 | Coin | Symbol | RPC Port | P2P Port | ZMQ Port |
 |------|--------|----------|----------|----------|
 | DigiByte | DGB | 14022 | 12024 | 28532 |
 | Bitcoin | BTC | 8332 | 8333 | 28332 |
-| Bitcoin Cash | BCH | 8432 | 8434 | 28432 |
+| Bitcoin Cash | BCH | 8432 | 8433 | 28432 |
 | Bitcoin Cash II | BCH2 | 8533 | 8534 | 28533 |
 | Bitcoin II | BC2 | 8339 | 8338 | 28338 |
 | Bitcoin Silver | BTCS | 10567 | 10566 | 28567 |
 | Litecoin | LTC | 9332 | 9333 | 28933 |
 | Dogecoin | DOGE | 22555 | 22556 | 28555 |
-| PepeCoin | PEP | 33873 | 33872 | 28873 |
+| PepeCoin | PEP | 33873 | 33874 | 28873 |
 | Catcoin | CAT | 9932 | 9933 | 28932 |
 | Namecoin | NMC | 8336 | 8334 | 28336 |
 | Syscoin | SYS | 8370 | 8369 | 28370 |
@@ -120,6 +124,8 @@ bitcoin-cli getdeploymentinfo | grep reduced_data   # no output = not enforcing
 | `spiralctl mining solo <coin>` | Single coin mode |
 | `spiralctl mining multi <a,b,c>` | Multi-coin mode (same algorithm) |
 | `spiralctl mining merge enable\|disable` | Enable or disable merge mining |
+| `spiralctl mining payout` | Show whether blocks pay the configured wallet (default) or the miner's worker name |
+| `spiralctl mining payout wallet\|worker` | Switch reward routing; `worker` is single-operator only and requires accepting the on-screen conditions |
 | `spiralctl node status` | Show daemon status |
 | `spiralctl node start\|stop\|restart <coin>` | Node control |
 | `spiralctl coin list\|status` | Show coins and blockchain sync status |
@@ -179,7 +185,7 @@ Base: `http://localhost:4000`
 | GET | `/api/pools` | List all configured pools |
 | GET | `/api/pools/{id}/stats` | Pool statistics (hashrate, miners, blocks) |
 | GET | `/api/pools/{id}/blocks` | Block history (paginated) |
-| GET | `/api/pools/{id}/miners` | Miner list (paginated) |
+| GET | `/api/pools/{id}/miners` | Miner list (paginated). Requires `X-API-Key` when `admin_api_key` is set |
 | GET | `/api/pools/{id}/miners/{addr}` | Miner statistics and workers |
 | GET | `/api/pools/{id}` | Pool info |
 | GET | `/api/pools/{id}/hashrate/history` | Pool hashrate history |
@@ -192,6 +198,8 @@ Base: `http://localhost:4000`
 | GET | `/api/pools/{id}/router/profiles` | Spiral Router difficulty profiles |
 | GET | `/api/pools/{id}/pipeline/stats` | Share pipeline statistics |
 | GET | `/api/pools/{id}/payments/stats` | Payment statistics |
+| GET | `/portal` | Read-only miner portal page: look up a wallet address (public, no login) |
+| GET | `/api/portal/{addr}` | A wallet address's 24h hashrate, workers and found blocks across all pools (public, 2 requests/s per IP) |
 | GET | `/api/coins` | Supported coins list |
 | GET | `/api/sentinel/alerts` | Sentinel alert history |
 | GET | `/api/admin/stats` | Admin statistics (admin, requires API key) |
@@ -216,6 +224,9 @@ Base: `http://localhost:4000`
 | `spiralpool-health` | Health monitor |
 | `spiralpool-sync` | Multi-coin blockchain sync monitor |
 | `spiralpool-ha-watcher` | HA role watcher (HA nodes only) |
+| `spiralpool-startup` | Post-reboot startup ordering for the pool stack |
+| `spiraldash-redirect` | Redirects HTTP :80 to the HTTPS dashboard port (only when HTTPS is enabled) |
+| `spiralpool-pg-maintenance.timer` | Scheduled PostgreSQL `VACUUM ANALYZE` |
 
 Daemon service names follow the pattern of the coin's CLI name.
 
@@ -223,7 +234,7 @@ Daemon service names follow the pattern of the coin's CLI name.
 
 ## Miner Classes (SHA-256d)
 
-Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
+Source: `src/stratum/internal/stratum/spiralrouter.go` (`DefaultProfiles`)
 
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
@@ -234,6 +245,7 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
 | Mid | NerdQAxe++, BitAxe Hex/Gamma, FutureBit Apollo | 1-10 TH/s | 1,165 | 1,165 | 50,000 | 1s |
 | High | Antminer S9/S15, older gen | 10-20 TH/s | 3,260 | 3,260 | 100,000 | 1s |
 | Pro | Antminer S19/S21, Whatsminer M50-M66 | 100 TH/s-2.1 PH/s | 25,600 | 25,600 | 500,000 | 1s |
+| S19 | Antminer S19 series, Braiins eco modes | 70-280 TH/s | 24,000 | 16,384 | 65,536 | 1s |
 | Avalon Nano | Nano 2/3/3S | 3-6 TH/s | 1,538 | 1,538 | 2,500 | 1s |
 | Avalon Legacy Low | Avalon 3/3S/6 series | 0.8-3.5 TH/s | 815 | 815 | 1,500 | 1s |
 | Avalon Legacy Mid | Avalon 7/8 series | 6-15 TH/s | 2,560 | 2,560 | 5,000 | 1s |
@@ -246,7 +258,7 @@ Source: `src/stratum/internal/stratum/spiralrouter.go:178-352`
 
 ## Miner Classes (Scrypt)
 
-Source: `src/stratum/internal/stratum/spiralrouter.go:373-441`
+Source: `src/stratum/internal/stratum/spiralrouter.go` (`ScryptProfiles`)
 
 | Class | Devices | Hashrate | InitialDiff | MinDiff | MaxDiff | Target |
 |-------|---------|----------|-------------|---------|---------|--------|
@@ -271,7 +283,7 @@ Source: `src/stratum/internal/vardiff/vardiff.go`
 | Decrease limit | 0.75x per retarget |
 | Variance floor | 50% minimum (hardcoded, config cannot go lower) |
 | RetargetTime | 60s (configurable) |
-| Clock jump guard | Skip retarget if elapsed < 0 or > 600s |
+| Clock jump guard | Skip retarget if elapsed ≤ 0 or > 600s |
 | Aggressive trigger (fast) | ratio < 0.8 |
 | Aggressive trigger (slow) | ratio > 2.0 |
 | Meaningful change threshold | > 5% difference |
@@ -345,6 +357,9 @@ stratum:
   versionRolling:
     enabled: true
     mask: 0x1fffe000
+  payoutFromWorkerName: false   # Pay each block to the address in the miner's worker
+                                # name instead of pool.address. Off by default.
+                                # Single-operator only — see the warning below.
 
 daemon:
   host: localhost
@@ -484,6 +499,27 @@ backup:                        # Backup settings (parsed, not enforced at runtim
   compression: gzip            # "gzip", "zstd", "none"
 ```
 
+### Worker-name payout
+
+Off by default. When on, each block pays the address a miner puts in its own worker name rather than the address configured for the coin, and it applies to **every** stratum port the pool serves — V1, TLS and Stratum V2, where the address comes from the channel's user identity rather than from a worker name. Enabling it opens all of them at once.
+
+**The key is spelled differently in the two config formats**, because the two files use different naming conventions throughout:
+
+| Config | Key | Where |
+|---|---|---|
+| Single-coin (V1, camelCase) | `payoutFromWorkerName` | under `stratum:` |
+| Multi-coin (V2, snake_case) | `payout_from_worker_name` | under each coin's `stratum:` block |
+
+Setting the wrong spelling for your config format is silently ignored — the pool keeps paying the configured wallet. Rather than edit YAML, use the CLI, which writes the correct key and shows the conditions you are accepting:
+
+```
+sudo spiralctl mining payout           # show which mode is active
+sudo spiralctl mining payout worker    # pay the worker-name address
+sudo spiralctl mining payout wallet    # back to the configured wallet
+```
+
+> **Single-operator only.** Anyone who can connect to a stratum port can then name the address their shares pay. Turn this on only when every miner pointed at this pool is yours.
+
 ---
 
 ## Dashboard Connection Quality Indicators
@@ -512,4 +548,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0*
+*Spiral Pool — Spiral Covenant 3.0.0*

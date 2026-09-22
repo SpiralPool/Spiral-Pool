@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v2.7.0 (Spiral Citadel)
+# Upgrading to Spiral Pool v3.0.0 (Spiral Covenant)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x) and v2.7.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x) and v3.0.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -93,6 +93,17 @@ v9.26.3 required a full, txindexed node; v9.26.4 lifts that. Because every DGB n
 New installs: `install.sh` configures DGB from the pool-wide pruning choice (pruned → `prune=5000`, no `txindex`; full → `txindex=1`, `prune=0`), and `spiralctl coin prune DGB` can enable pruning at any time.
 
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
+
+---
+
+## Upgrading to v3.0.0 — changes that affect a running pool
+
+- **Stratum V2 is now opt-in.** Earlier installers configured and opened a V2 port for every coin without asking. On the first v3.0 upgrade, `upgrade.sh` asks once: *Keep Stratum V2 ports open? [y/N]*. Anything but yes — including `--auto` and non-interactive runs — comments out `port_v2` in `config.yaml` (backup: `config.yaml.bak.stratumv2`), removes the V2 `ufw` rules and records `ENABLE_V2_STRATUM=false` in `coins.env`. Stratum V1 and TLS ports are untouched. The question is asked only once; to re-enable later, uncomment `port_v2`, set `ENABLE_V2_STRATUM=true`, allow the ports in `ufw` and restart `spiralstratum`.
+- **Stratum V2 now uses the specification's Noise handshake, and miners authenticate the pool with its authority key.** If you keep V2 open, the pool creates `stratum-v2/authority.key` and `static.key` next to `config.yaml` the first time a V2 port starts. Give each V2 miner or proxy the key printed by `sudo spiralctl v2 pubkey`: hex on the first line, and on the second the base58 form that Stratum Reference Implementation configs take. Clients built for the earlier, non-standard V2 handshake can no longer connect. V2 has been tested against the Stratum Reference Implementation's mining device and translator proxy, and against SV2 firmware on a real miner: a NerdQAxe++ on NerdQ v1.1.0 mined over an extended channel on a live DigiByte node. That is one miner, one firmware and one coin, which is why V2 still ships disabled.
+- **Each miner's coinbase pays the address in its own worker name.** Previously the pool held one reward address per coin, overwritten by whichever miner authorized last. A worker name that is not a valid address for the coin, and every miner on the multi-coin smart port, pays the configured wallet as before.
+- **Bitcoin Silver moves from `v1.0.2` (or the old source build) to `version31.1.3`.** All three install paths now use the upstream release binary, so the Docker image no longer compiles Bitcoin Silver from source. The release is rebased on Bitcoin Core 31.1, which cannot load a legacy (BDB) wallet: `coin-upgrade.sh` checks the data directory first and stops with the `migratewallet` commands if it finds one, before any binary is swapped. Nothing changes on the network — ports, address prefixes and genesis are the same, and no reindex is expected. A node left on the broken 31.1.0 release needs `blocks/`, `chainstate/` and `indexes/` wiped.
+- **Bitcoin Silver, Fractal Bitcoin and Bitcoin II downloads are now checksum-verified.** None of the three publishes a checksum file, so each install path pins the release asset's SHA256 and refuses to unpack an archive that does not match. If you mirror these downloads yourself, serve the exact upstream bytes.
+- **Merge-mined (aux) blocks now pay the configured aux address on every aux chain.** DOGE, PEP, NMC and SYS were fetched with `getauxblock`, which pays a key from the aux node's own wallet rather than `mergeMining.auxChains[].address`. All aux chains now use `createauxblock <address>`. Check that each configured aux address is one you control.
 
 ---
 
@@ -279,7 +290,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v2.7.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v3.0.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -383,8 +394,8 @@ These run independently with no parent chain.
 
 ```yaml
 coins:
- - symbol: # or BTC, BCH, BCH2, BC2, BTCS, DGB
- name: ""
+  - symbol: XEC                         # or BTC, BCH, BCH2, BC2, BTCS, DGB
+    name: "eCash"
     algorithm: "sha256d"
     address: ""                          # fill in step 2
     nodes:
@@ -518,13 +529,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `2.7.0`. If Sentinel is running:
+The version line should show `3.0.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v2.7.0` followed by `Spiral Citadel` in the startup log.
+Look for `Spiral Pool v3.0.0` followed by `Spiral Covenant` in the startup log.
 
 ---
 
@@ -549,8 +560,8 @@ Check: `sudo journalctl -u spiralstratum -n 50`
 Common cause: config.yaml issue. Run `chmod +x upgrade.sh && sudo ./upgrade.sh --fix-config` for automatic fixes.
 
 **Stratum binary won't build**
-Ensure Go 1.26.1 is installed: `go version`
-If missing or wrong version, re-run `upgrade.sh` — it downloads and installs Go 1.26.1 automatically from go.dev. Do not use `sudo apt install golang-go` — the Ubuntu package is too old.
+Ensure Go 1.26.8 is installed: `go version`
+If missing or wrong version, re-run `upgrade.sh` — it downloads and installs Go 1.26.8 automatically from go.dev. Do not use `sudo apt install golang-go` — the Ubuntu package is too old.
 
 **Already on latest version**
 Force reinstall: `chmod +x upgrade.sh && sudo ./upgrade.sh --force`
@@ -604,4 +615,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Citadel 2.7.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.0 — Built on what came before. Growing toward phi.*

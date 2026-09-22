@@ -7,10 +7,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/spiralpool/stratum/internal/coin"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,10 +35,10 @@ func truncateAddress(addr string, maxLen int) string {
 
 // ConfigV2 represents the V2 pool configuration with multi-coin and multi-node support.
 type ConfigV2 struct {
-	Version   int              `yaml:"version"`  // Config version (2)
-	Global    GlobalConfig     `yaml:"global"`   // Global settings
-	Database  DatabaseConfig   `yaml:"database"` // Shared database
-	Coins     []CoinPoolConfig `yaml:"coins"`    // Per-coin pool configurations
+	Version   int              `yaml:"version"`              // Config version (2)
+	Global    GlobalConfig     `yaml:"global"`               // Global settings
+	Database  DatabaseConfig   `yaml:"database"`             // Shared database
+	Coins     []CoinPoolConfig `yaml:"coins"`                // Per-coin pool configurations
 	MultiPort MultiPortConfig  `yaml:"multi_port,omitempty"` // Multi coin smart port (v2.1)
 	VIP       VIPConfig        `yaml:"vip,omitempty"`        // VIP (Virtual IP) for miner failover
 	HA        HAConfig         `yaml:"ha,omitempty"`         // High Availability coordination
@@ -46,14 +49,14 @@ type ConfigV2 struct {
 // mining time across SHA-256d coins on a 24-hour UTC schedule based on
 // configured weights. For example, DGB:80 + BTC:20 = 19.2h DGB + 4.8h BTC.
 type MultiPortConfig struct {
-	Enabled       bool          `yaml:"enabled"`
-	Port          int           `yaml:"port"`                    // Multi-port stratum port (default: 16180)
-	TLSPort       int           `yaml:"tls_port,omitempty"`      // Optional TLS port
-	Coins         map[string]CoinRouteConfig `yaml:"coins"`     // Coin symbol → routing config (weight)
-	CheckInterval time.Duration `yaml:"check_interval,omitempty"` // How often to check schedule (default 30s)
-	PreferCoin    string        `yaml:"prefer_coin,omitempty"`   // Default coin / tie-breaker
-	MinTimeOnCoin time.Duration `yaml:"min_time_on_coin,omitempty"` // Minimum time before switch (default 60s)
-	Timezone      string        `yaml:"timezone,omitempty"`      // IANA timezone for schedule (default: use display_timezone from sentinel config, fallback UTC)
+	Enabled       bool                       `yaml:"enabled"`
+	Port          int                        `yaml:"port"`                       // Multi-port stratum port (default: 16180)
+	TLSPort       int                        `yaml:"tls_port,omitempty"`         // Optional TLS port
+	Coins         map[string]CoinRouteConfig `yaml:"coins"`                      // Coin symbol → routing config (weight)
+	CheckInterval time.Duration              `yaml:"check_interval,omitempty"`   // How often to check schedule (default 30s)
+	PreferCoin    string                     `yaml:"prefer_coin,omitempty"`      // Default coin / tie-breaker
+	MinTimeOnCoin time.Duration              `yaml:"min_time_on_coin,omitempty"` // Minimum time before switch (default 60s)
+	Timezone      string                     `yaml:"timezone,omitempty"`         // IANA timezone for schedule (default: use display_timezone from sentinel config, fallback UTC)
 	// WalletMap maps worker names to per-coin payout addresses.
 	// Required when multi-port coins use different address formats.
 	// Key: worker name (case-insensitive), Value: coin symbol → wallet address.
@@ -90,15 +93,18 @@ func (m *MultiPortConfig) CoinSymbols() []string {
 
 // GlobalConfig contains settings that apply across all coins.
 type GlobalConfig struct {
-	LogLevel    string `yaml:"log_level"`    // debug, info, warn, error
-	LogFormat   string `yaml:"log_format"`   // json, text
-	MetricsPort      int    `yaml:"metrics_port"`       // Prometheus metrics port
+	LogLevel         string `yaml:"log_level"`                    // debug, info, warn, error
+	LogFormat        string `yaml:"log_format"`                   // json, text
+	MetricsPort      int    `yaml:"metrics_port"`                 // Prometheus metrics port
 	MetricsAuthToken string `yaml:"metrics_auth_token,omitempty"` // SECURITY: Bearer token for /metrics endpoint
-	APIPort          int    `yaml:"api_port"`           // REST API port
-	APIBindAddress   string `yaml:"api_bind_address"`   // Bind address for API server (default: "0.0.0.0", use "127.0.0.1" for local-only)
+	APIPort          int    `yaml:"api_port"`                     // REST API port
+	APIBindAddress   string `yaml:"api_bind_address"`             // Bind address for API server (default: "0.0.0.0", use "127.0.0.1" for local-only)
 	APIEnabled       bool   `yaml:"api_enabled"`
-	AdminAPIKey      string `yaml:"admin_api_key"`      // SECURITY: API key for admin endpoints (device hints, etc.)
-	Sentinel    SentinelConfig `yaml:"sentinel,omitempty"` // API Sentinel monitoring (internal pool health)
+	AdminAPIKey      string `yaml:"admin_api_key"` // SECURITY: API key for admin endpoints (device hints, etc.)
+	// StratumV2KeyDir holds the Stratum V2 authority and static keys. Defaults to
+	// stratum-v2/ next to the config file.
+	StratumV2KeyDir string         `yaml:"stratum_v2_key_dir,omitempty"`
+	Sentinel        SentinelConfig `yaml:"sentinel,omitempty"` // API Sentinel monitoring (internal pool health)
 
 	// Celebration settings - display messages on miner screens when blocks are found
 	Celebration CelebrationConfig `yaml:"celebration,omitempty"`
@@ -122,10 +128,10 @@ type CelebrationConfig struct {
 // interval, evaluates alert conditions, logs alerts, updates metrics, and exposes
 // them via /api/sentinel/alerts for Spiral Sentinel (Python) to consume.
 type SentinelConfig struct {
-	Enabled               bool          `yaml:"enabled"`
-	CheckInterval         time.Duration `yaml:"check_interval,omitempty"`          // Default: 60s
-	WALStuckThreshold     time.Duration `yaml:"wal_stuck_threshold,omitempty"`     // Default: 10m
-	BlockDroughtHours     int           `yaml:"block_drought_hours,omitempty"`     // Default: 0 (use probability instead)
+	Enabled           bool          `yaml:"enabled"`
+	CheckInterval     time.Duration `yaml:"check_interval,omitempty"`      // Default: 60s
+	WALStuckThreshold time.Duration `yaml:"wal_stuck_threshold,omitempty"` // Default: 10m
+	BlockDroughtHours int           `yaml:"block_drought_hours,omitempty"` // Default: 0 (use probability instead)
 	// BlockDroughtProbability fires the drought alert once a gap this improbable is
 	// reached, instead of after a fixed wall-clock time. A fixed threshold cannot be
 	// correct for more than one coin: 24h is a routine gap for a small DGB pool and
@@ -134,30 +140,30 @@ type SentinelConfig struct {
 	// so 0.01 means "alert once this is a worse-than-1-in-100 run". Set
 	// BlockDroughtHours to override with an explicit wall-clock threshold.
 	// Default: 0.01. Set negative to disable the alert entirely.
-	BlockDroughtProbability float64     `yaml:"block_drought_probability,omitempty"`
-	DisconnectDropPercent int           `yaml:"disconnect_drop_percent,omitempty"` // Default: 30
-	HashrateDropPercent   int           `yaml:"hashrate_drop_percent,omitempty"`   // Default: 30
-	WALDiskSpaceWarningMB int           `yaml:"wal_disk_space_warning_mb,omitempty"` // Default: 500
-	WALMaxFiles           int           `yaml:"wal_max_files,omitempty"`           // Default: 60
-	FalseRejectionThreshold float64     `yaml:"false_rejection_threshold,omitempty"` // Default: 0.10
-	RetryRateThreshold    int           `yaml:"retry_rate_threshold,omitempty"`    // Default: 5 per hour
-	AlertCooldown         time.Duration `yaml:"alert_cooldown,omitempty"`          // Default: 15m
-	PaymentStallChecks    int           `yaml:"payment_stall_checks,omitempty"`    // Default: 5 (checks without progress before CRITICAL)
-	GoroutineLimit        int           `yaml:"goroutine_limit,omitempty"`         // Default: 10000 (absolute warning threshold)
-	NodeHealthThreshold   float64       `yaml:"node_health_threshold,omitempty"`   // Default: 0.5 (per-node health score warning)
-	HAFlapWindow          time.Duration `yaml:"ha_flap_window,omitempty"`          // Default: 10m (window for flap detection)
-	HAFlapThreshold       int           `yaml:"ha_flap_threshold,omitempty"`       // Default: 3 (max role changes in window)
-	OrphanRateThreshold   float64       `yaml:"orphan_rate_threshold,omitempty"`   // Default: 0.20 (20% orphan rate warning)
-	ChainTipStallMinutes  int           `yaml:"chain_tip_stall_minutes,omitempty"` // Default: 30 (alert if daemon height unchanged for this long)
-	MinPeerCount          int           `yaml:"min_peer_count,omitempty"`          // Default: 3 (alert if daemon peer count drops below this)
-	MaturityStallHours    int           `yaml:"maturity_stall_hours,omitempty"`    // Default: 6 (alert if found block pending for this long)
-	DiffSpikePercent      int           `yaml:"diff_spike_percent,omitempty"`      // Default: 80 (network difficulty spike % to alert on; DGB retargets every block so 50% was too noisy)
-	HostnameOverride      string        `yaml:"hostname_override,omitempty"`       // M13: Override os.Hostname() in webhook payloads (for NAT/container environments)
+	BlockDroughtProbability float64       `yaml:"block_drought_probability,omitempty"`
+	DisconnectDropPercent   int           `yaml:"disconnect_drop_percent,omitempty"`   // Default: 30
+	HashrateDropPercent     int           `yaml:"hashrate_drop_percent,omitempty"`     // Default: 30
+	WALDiskSpaceWarningMB   int           `yaml:"wal_disk_space_warning_mb,omitempty"` // Default: 500
+	WALMaxFiles             int           `yaml:"wal_max_files,omitempty"`             // Default: 60
+	FalseRejectionThreshold float64       `yaml:"false_rejection_threshold,omitempty"` // Default: 0.10
+	RetryRateThreshold      int           `yaml:"retry_rate_threshold,omitempty"`      // Default: 5 per hour
+	AlertCooldown           time.Duration `yaml:"alert_cooldown,omitempty"`            // Default: 15m
+	PaymentStallChecks      int           `yaml:"payment_stall_checks,omitempty"`      // Default: 5 (checks without progress before CRITICAL)
+	GoroutineLimit          int           `yaml:"goroutine_limit,omitempty"`           // Default: 10000 (absolute warning threshold)
+	NodeHealthThreshold     float64       `yaml:"node_health_threshold,omitempty"`     // Default: 0.5 (per-node health score warning)
+	HAFlapWindow            time.Duration `yaml:"ha_flap_window,omitempty"`            // Default: 10m (window for flap detection)
+	HAFlapThreshold         int           `yaml:"ha_flap_threshold,omitempty"`         // Default: 3 (max role changes in window)
+	OrphanRateThreshold     float64       `yaml:"orphan_rate_threshold,omitempty"`     // Default: 0.20 (20% orphan rate warning)
+	ChainTipStallMinutes    int           `yaml:"chain_tip_stall_minutes,omitempty"`   // Default: 30 (alert if daemon height unchanged for this long)
+	MinPeerCount            int           `yaml:"min_peer_count,omitempty"`            // Default: 3 (alert if daemon peer count drops below this)
+	MaturityStallHours      int           `yaml:"maturity_stall_hours,omitempty"`      // Default: 6 (alert if found block pending for this long)
+	DiffSpikePercent        int           `yaml:"diff_spike_percent,omitempty"`        // Default: 80 (network difficulty spike % to alert on; DGB retargets every block so 50% was too noisy)
+	HostnameOverride        string        `yaml:"hostname_override,omitempty"`         // M13: Override os.Hostname() in webhook payloads (for NAT/container environments)
 	// Deprecated: Webhooks are no longer fired directly by API Sentinel.
 	// Alerts are now exposed via /api/sentinel/alerts and consumed by the Python
 	// Spiral Sentinel which handles all external notifications (Discord/Telegram).
 	// This field is kept for backward compatibility — existing configs won't break.
-	Webhooks              []WebhookConfig `yaml:"webhooks,omitempty"`
+	Webhooks []WebhookConfig `yaml:"webhooks,omitempty"`
 }
 
 // WebhookConfig defines an external webhook endpoint for Sentinel alerts.
@@ -294,14 +300,19 @@ type CoinStratumConfig struct {
 	Connection     ConnectionConfig `yaml:"connection,omitempty"`
 	VersionRolling VersionRolling   `yaml:"version_rolling,omitempty"`
 	JobRebroadcast time.Duration    `yaml:"job_rebroadcast,omitempty"`
+	// PayoutFromWorkerName lets a miner be paid at the address in its own
+	// stratum username instead of the configured wallet. Off by default: the
+	// operator owns every wallet this pool pays, and anything that can reach
+	// the port could otherwise name an address of its own.
+	PayoutFromWorkerName bool `yaml:"payout_from_worker_name,omitempty"`
 }
 
 // CoinTLSConfig defines TLS settings for encrypted V1 stratum connections.
 // Required when port_tls > 0. Provides stratum+ssl:// listener for V1 miners.
 type CoinTLSConfig struct {
-	CertFile   string `yaml:"cert_file"`              // Path to TLS certificate (PEM)
-	KeyFile    string `yaml:"key_file"`               // Path to TLS private key (PEM)
-	MinVersion string `yaml:"min_version,omitempty"`  // Minimum TLS version: "1.2" or "1.3" (default: "1.2")
+	CertFile   string `yaml:"cert_file"`             // Path to TLS certificate (PEM)
+	KeyFile    string `yaml:"key_file"`              // Path to TLS private key (PEM)
+	MinVersion string `yaml:"min_version,omitempty"` // Minimum TLS version: "1.2" or "1.3" (default: "1.2")
 }
 
 // NodeConfig defines a single daemon node with optional ZMQ.
@@ -337,13 +348,13 @@ type NodeZMQConfig struct {
 
 // CoinPaymentConfig defines payment settings for a coin.
 type CoinPaymentConfig struct {
-	Enabled        bool          `yaml:"enabled"`
-	Interval       time.Duration `yaml:"interval"`
-	MinimumPayment float64       `yaml:"minimum_payment"`
-	Scheme         string        `yaml:"scheme"`                   // SOLO only (currently)
-	BlockMaturity  int           `yaml:"blockMaturity,omitempty"` // Override coin default (0 = use coin's CoinbaseMaturity)
-	BlockTime      int           `yaml:"blockTime,omitempty"`     // Block time in seconds (auto-populated from SupportedCoins)
-	DeepReorgMaxAge uint64       `yaml:"deepReorgMaxAge,omitempty"` // Deep reorg verification depth (auto-populated)
+	Enabled         bool          `yaml:"enabled"`
+	Interval        time.Duration `yaml:"interval"`
+	MinimumPayment  float64       `yaml:"minimum_payment"`
+	Scheme          string        `yaml:"scheme"`                    // SOLO only (currently)
+	BlockMaturity   int           `yaml:"blockMaturity,omitempty"`   // Override coin default (0 = use coin's CoinbaseMaturity)
+	BlockTime       int           `yaml:"blockTime,omitempty"`       // Block time in seconds (auto-populated from SupportedCoins)
+	DeepReorgMaxAge uint64        `yaml:"deepReorgMaxAge,omitempty"` // Deep reorg verification depth (auto-populated)
 }
 
 // LoadV2 loads a V2 configuration file.
@@ -374,6 +385,9 @@ func LoadV2(path string) (*ConfigV2, error) {
 	var cfg ConfigV2
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse V2 config: %w", err)
+	}
+	if cfg.Global.StratumV2KeyDir == "" {
+		cfg.Global.StratumV2KeyDir = filepath.Join(filepath.Dir(path), "stratum-v2")
 	}
 
 	// AUDIT FIX (CB-1): Resolve credentials BEFORE validation.
@@ -490,12 +504,15 @@ func (c *ConfigV2) Validate() error {
 			}
 
 			// BTCS uses unique 'B' prefix (0x1A) — verify it's a Bitcoin Silver address.
+			// Regtest addresses (m/n/2, bcrt1q/bcrt1p) are the ones the coin decoder accepts too.
 			if strings.ToUpper(coin.Symbol) == "BTCS" {
 				addr := coin.Address
-				isLegacy := len(addr) >= 25 && len(addr) <= 35 && (addr[0] == '3' || addr[0] == 'B')
-				isBech32 := strings.HasPrefix(strings.ToLower(addr), "bs1q") || strings.HasPrefix(strings.ToLower(addr), "bs1p")
+				addrLower := strings.ToLower(addr)
+				isLegacy := len(addr) >= 25 && len(addr) <= 35 && strings.ContainsRune("3Bmn2", rune(addr[0]))
+				isBech32 := strings.HasPrefix(addrLower, "bs1q") || strings.HasPrefix(addrLower, "bs1p") ||
+					strings.HasPrefix(addrLower, "bcrt1q") || strings.HasPrefix(addrLower, "bcrt1p")
 				if !isLegacy && !isBech32 {
-					return fmt.Errorf("coins[%d].address: BTCS address must start with 'B' (P2PKH), '3' (P2SH), 'bs1q' (SegWit), or 'bs1p' (Taproot), got: %s", i, addr)
+					return fmt.Errorf("coins[%d].address: BTCS address must start with 'B' (P2PKH), '3' (P2SH), 'bs1q' (SegWit), or 'bs1p' (Taproot), or a regtest prefix ('m', 'n', '2', 'bcrt1q', 'bcrt1p'), got: %s", i, addr)
 				}
 				fmt.Println("")
 				fmt.Println("╔═══════════════════════════════════════════════════════════════════════════╗")
@@ -754,6 +771,19 @@ func (c *ConfigV2) Validate() error {
 		if conflictCoin, ok := usedPorts[c.MultiPort.Port]; ok {
 			return fmt.Errorf("multi_port.port %d conflicts with %s stratum port", c.MultiPort.Port, conflictCoin)
 		}
+		// tls_port is optional (0 = plaintext only), but when set it must be a
+		// usable port of its own — it opens a second listener alongside multi_port.port.
+		if c.MultiPort.TLSPort != 0 {
+			if c.MultiPort.TLSPort < 1 || c.MultiPort.TLSPort > 65535 {
+				return fmt.Errorf("multi_port.tls_port must be between 1 and 65535, got %d", c.MultiPort.TLSPort)
+			}
+			if c.MultiPort.TLSPort == c.MultiPort.Port {
+				return fmt.Errorf("multi_port.tls_port %d must differ from multi_port.port", c.MultiPort.TLSPort)
+			}
+			if conflictCoin, ok := usedPorts[c.MultiPort.TLSPort]; ok {
+				return fmt.Errorf("multi_port.tls_port %d conflicts with %s stratum port", c.MultiPort.TLSPort, conflictCoin)
+			}
+		}
 		if len(c.MultiPort.Coins) < 2 {
 			return fmt.Errorf("multi_port requires at least 2 coins, got %d", len(c.MultiPort.Coins))
 		}
@@ -780,6 +810,31 @@ func (c *ConfigV2) Validate() error {
 		}
 		if totalWeight != 100 {
 			return fmt.Errorf("multi_port coin weights must sum to 100, got %d", totalWeight)
+		}
+		// Every multi-port coin must use the same mining algorithm. Miner hardware
+		// is algorithm-specific, so rotating a SHA-256d miner onto a scrypt coin
+		// hands it work it cannot mine — and the pool would look healthy while that
+		// miner produced nothing. Symbols that are not in the coin registry (a
+		// custom coin added at runtime) are skipped rather than rejected.
+		algos := make(map[string][]string)
+		for sym := range c.MultiPort.Coins {
+			impl, err := coin.Create(sym)
+			if err != nil {
+				continue
+			}
+			a := impl.Algorithm()
+			algos[a] = append(algos[a], strings.ToUpper(sym))
+		}
+		if len(algos) > 1 {
+			names := make([]string, 0, len(algos))
+			for a, syms := range algos {
+				sort.Strings(syms)
+				names = append(names, fmt.Sprintf("%s (%s)", a, strings.Join(syms, ", ")))
+			}
+			sort.Strings(names)
+			return fmt.Errorf("multi_port.coins mixes mining algorithms: %s — "+
+				"miners are algorithm-specific, so every coin on the multi-coin port must use the same one",
+				strings.Join(names, "; "))
 		}
 		// Validate wallet_map: each referenced coin must be in multi_port.coins
 		for worker, wallets := range c.MultiPort.WalletMap {

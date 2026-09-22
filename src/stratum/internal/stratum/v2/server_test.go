@@ -14,77 +14,11 @@ package v2
 import (
 	"context"
 	"net"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 )
-
-// mockJobProvider implements JobProvider for testing
-type mockJobProvider struct {
-	currentJob *MiningJobData
-	jobs       map[uint32]*MiningJobData
-	callback   func()
-}
-
-func newMockJobProvider() *mockJobProvider {
-	var merkleRoot [32]byte
-	var prevHash [32]byte
-	for i := range merkleRoot {
-		merkleRoot[i] = byte(i)
-		prevHash[i] = byte(i * 2)
-	}
-
-	job := &MiningJobData{
-		ID:         1,
-		PrevHash:   prevHash,
-		MerkleRoot: merkleRoot,
-		Version:    0x20000000,
-		NBits:      0x1d00ffff,
-		NTime:      1609459200,
-		CleanJobs:  true,
-	}
-
-	return &mockJobProvider{
-		currentJob: job,
-		jobs:       map[uint32]*MiningJobData{1: job},
-	}
-}
-
-func (m *mockJobProvider) GetCurrentJob() *MiningJobData {
-	return m.currentJob
-}
-
-func (m *mockJobProvider) GetJob(id uint32) *MiningJobData {
-	return m.jobs[id]
-}
-
-func (m *mockJobProvider) RegisterNewBlockCallback(fn func()) {
-	m.callback = fn
-}
-
-// mockShareHandler implements ShareHandler for testing
-type mockShareHandler struct {
-	shares     []*ShareSubmission
-	acceptAll  bool
-	blockCount atomic.Uint32
-}
-
-func newMockShareHandler(acceptAll bool) *mockShareHandler {
-	return &mockShareHandler{
-		shares:    make([]*ShareSubmission, 0),
-		acceptAll: acceptAll,
-	}
-}
-
-func (m *mockShareHandler) ProcessShare(share *ShareSubmission) *ShareResult {
-	m.shares = append(m.shares, share)
-	return &ShareResult{
-		Accepted: m.acceptAll,
-		IsBlock:  false,
-	}
-}
 
 // TestDefaultServerConfig validates default configuration.
 func TestDefaultServerConfig(t *testing.T) {
@@ -108,11 +42,8 @@ func TestDefaultServerConfig(t *testing.T) {
 	if cfg.WriteTimeout != 30*time.Second {
 		t.Errorf("WriteTimeout = %v, want 30s", cfg.WriteTimeout)
 	}
-	if cfg.DefaultTargetNBits != 0x1d00ffff {
-		t.Errorf("DefaultTargetNBits = %x, want 1d00ffff", cfg.DefaultTargetNBits)
-	}
-	if cfg.ExtraNonce2Size != 8 {
-		t.Errorf("ExtraNonce2Size = %d, want 8", cfg.ExtraNonce2Size)
+	if cfg.InitialDifficulty != 1 {
+		t.Errorf("InitialDifficulty = %v, want 1", cfg.InitialDifficulty)
 	}
 }
 
@@ -137,7 +68,7 @@ func TestNewServer(t *testing.T) {
 
 	// Verify public key is not empty
 	allZero := true
-	for _, b := range server.PublicKey() {
+	for _, b := range server.AuthorityPublicKey() {
 		if b != 0 {
 			allZero = false
 			break
@@ -171,32 +102,15 @@ func TestNewServerWithConfig(t *testing.T) {
 	}
 }
 
-// TestServerSetJobProvider validates job provider setup.
-func TestServerSetJobProvider(t *testing.T) {
+// TestServerSetPipeline validates pipeline setup.
+func TestServerSetPipeline(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	server, _ := NewServer(nil, logger.Sugar())
 
-	jp := newMockJobProvider()
-	server.SetJobProvider(jp)
+	server.SetPipeline(&Pipeline{})
 
-	if server.jobProvider == nil {
-		t.Error("job provider should be set")
-	}
-	if jp.callback == nil {
-		t.Error("new block callback should be registered")
-	}
-}
-
-// TestServerSetShareHandler validates share handler setup.
-func TestServerSetShareHandler(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
-	server, _ := NewServer(nil, logger.Sugar())
-
-	sh := newMockShareHandler(true)
-	server.SetShareHandler(sh)
-
-	if server.shareHandler == nil {
-		t.Error("share handler should be set")
+	if server.pipeline == nil {
+		t.Error("pipeline should be set")
 	}
 }
 
@@ -290,20 +204,15 @@ func TestServerStats(t *testing.T) {
 	}
 }
 
-// TestServerBroadcastNewBlock validates job broadcasting.
-func TestServerBroadcastNewBlock(t *testing.T) {
+// TestServerBroadcastJobNoSessions validates job broadcasting with no sessions.
+func TestServerBroadcastJobNoSessions(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	server, _ := NewServer(nil, logger.Sugar())
 
-	jp := newMockJobProvider()
-	server.SetJobProvider(jp)
-
-	// Trigger broadcast (with no sessions, should just return)
-	server.broadcastNewBlock()
-
-	// With no sessions, the broadcast should complete without error
-	// Note: We don't add mock sessions here because mockNoiseConn doesn't
-	// have proper cipher states and would panic on Write
+	// With no sessions (or no job), the broadcast should just return.
+	// Broadcasts to real sessions are covered in pipeline_test.go.
+	server.BroadcastJob(nil)
+	server.BroadcastJob(sv2TestJob("1", sv2PrevHash1))
 }
 
 // TestHandleSetupConnection validates SetupConnection message parsing.
@@ -414,7 +323,7 @@ func TestHandleOpenStandardMiningChannel(t *testing.T) {
 	defer nc.Close()
 	session := NewSession("test-session", nc)
 
-	ch := session.AddChannel(msg.UserIdentity, msg.NominalHashRate, 0x1d00ffff, 8)
+	ch := session.AddChannel(msg.UserIdentity, msg.NominalHashRate, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 	if ch == nil {
 		t.Fatal("AddChannel returned nil")
 	}
@@ -425,6 +334,10 @@ func TestHandleOpenStandardMiningChannel(t *testing.T) {
 
 	if ch.UserIdentity != "DGBaddress.worker1" {
 		t.Errorf("UserIdentity = %s, want DGBaddress.worker1", ch.UserIdentity)
+	}
+	// The payout address comes from the identity, split like a V1 username
+	if ch.MinerAddress != "DGBaddress" || ch.WorkerName != "worker1" {
+		t.Errorf("MinerAddress/WorkerName = %q/%q, want DGBaddress/worker1", ch.MinerAddress, ch.WorkerName)
 	}
 }
 
@@ -464,24 +377,6 @@ func TestHandleSubmitSharesStandard(t *testing.T) {
 	if msg.Version != 0x20000000 {
 		t.Errorf("Version = %x, want 20000000", msg.Version)
 	}
-
-	// Test share handler processing directly
-	sh := newMockShareHandler(true)
-	share := &ShareSubmission{
-		ChannelID: msg.ChannelID,
-		JobID:     msg.JobID,
-		Nonce:     msg.Nonce,
-		NTime:     msg.NTime,
-		Version:   msg.Version,
-	}
-
-	result := sh.ProcessShare(share)
-	if !result.Accepted {
-		t.Error("share should be accepted")
-	}
-	if len(sh.shares) != 1 {
-		t.Errorf("shares processed = %d, want 1", len(sh.shares))
-	}
 }
 
 // TestHandleSubmitSharesStandardNoChannel validates that GetChannel returns nil for invalid channel.
@@ -508,7 +403,7 @@ func TestHandleCloseChannel(t *testing.T) {
 	nc := mockNoiseConn()
 	defer nc.Close()
 	session := NewSession("test-session", nc)
-	ch := session.AddChannel("worker", 1000000.0, 0x1d00ffff, 8)
+	ch := session.AddChannel("worker", 1000000.0, 1, [32]byte{}, make([]byte, extranoncePrefixSize))
 
 	if session.ChannelCount() != 1 {
 		t.Errorf("ChannelCount = %d, want 1", session.ChannelCount())
@@ -573,17 +468,13 @@ func TestFullConnectionFlow(t *testing.T) {
 		MaxChannelsPerSession: 5,
 		ReadTimeout:           5 * time.Second,
 		WriteTimeout:          5 * time.Second,
-		DefaultTargetNBits:    0x1d00ffff,
-		ExtraNonce2Size:       8,
+		InitialDifficulty:     1,
 	}
 
 	server, err := NewServer(cfg, logger.Sugar())
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
-
-	server.SetJobProvider(newMockJobProvider())
-	server.SetShareHandler(newMockShareHandler(true))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

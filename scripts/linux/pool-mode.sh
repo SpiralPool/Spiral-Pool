@@ -2183,6 +2183,35 @@ sync_ha_cluster() {
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Ask the daemon to confirm a generated address is valid on its chain and owned by
+# the named wallet. Messages go to stderr (callers return the address on stdout).
+# Args: $1 = cli, $2 = conf path, $3 = wallet name, $4 = address, $5 = coin label
+verify_generated_address() {
+    local cli="$1" conf="$2" wallet="$3" address="$4" label="$5"
+    local valid_info is_valid addr_info is_mine
+
+    valid_info=$("$cli" -conf="$conf" validateaddress "$address" 2>&1) || true
+    is_valid=$(echo "$valid_info" | grep -o '"isvalid":[^,}]*' | grep -o 'true\|false' | head -1)
+    if [ "$is_valid" != "true" ]; then
+        echo -e "${RED}Error: The $label node did not confirm $address as valid: $valid_info${NC}" >&2
+        return 1
+    fi
+
+    addr_info=$("$cli" -conf="$conf" -rpcwallet="$wallet" getaddressinfo "$address" 2>&1) || true
+    is_mine=$(echo "$addr_info" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
+    if [ -z "$is_mine" ]; then
+        # Older daemons report ismine from validateaddress instead
+        is_mine=$(echo "$valid_info" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
+    fi
+    if [ "$is_mine" != "true" ]; then
+        echo -e "${RED}Error: The $label node did not confirm $address belongs to wallet '$wallet'${NC}" >&2
+        return 1
+    fi
+
+    echo -e "${GREEN}✓ Address verified by the $label node (valid, owned by '$wallet')${NC}" >&2
+    return 0
+}
+
 print_banner() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -2591,6 +2620,9 @@ get_wallet_address() {
                         echo -e "${RED}Error: Failed to generate BCH2 address. Check node status.${NC}" >&2
                         return 1
                     fi
+                    if ! verify_generated_address bitcoincashII-cli "$bch2_conf" "pool-bch2" "$address" "BCH2"; then
+                        return 1
+                    fi
                     echo -e "${GREEN}Generated BCH2 address: $address${NC}" >&2
                     echo -e "${YELLOW}IMPORTANT: Back up your BCH2 wallet immediately!${NC}" >&2
                     ;;
@@ -2657,6 +2689,9 @@ get_wallet_address() {
                         echo -e "${RED}Error: Failed to generate BC2 address. Check node status.${NC}" >&2
                         return 1
                     fi
+                    if ! verify_generated_address bitcoinii-cli "$SPIRALPOOL_DIR/bc2/bitcoinii.conf" "pool" "$address" "BC2"; then
+                        return 1
+                    fi
                     echo -e "${GREEN}Generated BC2 address: $address${NC}" >&2
                     echo -e "${YELLOW}IMPORTANT: Back up your BC2 wallet immediately!${NC}" >&2
                     ;;
@@ -2710,6 +2745,9 @@ get_wallet_address() {
                     fi
                     if [ -z "$address" ]; then
                         echo -e "${RED}Error: Failed to generate BTCS address. Check node status.${NC}" >&2
+                        return 1
+                    fi
+                    if ! verify_generated_address bitcoinsilver-cli "$btcs_conf" "pool-btcs" "$address" "BTCS"; then
                         return 1
                     fi
                     echo -e "${GREEN}Generated BTCS address: $address${NC}" >&2
@@ -3959,9 +3997,10 @@ install_node_if_needed() {
                 || { echo -e "${RED}Cannot determine BC2 target version from coin-upgrade.sh${NC}"; return 1; }
             echo "Downloading Bitcoin II Core ${BC2_VERSION}..."
             cd /tmp
-            # BC2 uses -CLI suffix instead of -gnu, and extraction dir includes arch
-            local BC2_ARCH_SUFFIX="x86_64-linux-CLI"
-            local BC2_FILENAME="BitcoinII-${BC2_VERSION}-${BC2_ARCH_SUFFIX}.tar.gz"
+            # From v31.1.0 the asset is BitcoinII-v<major.minor>-Linux-CLI.tar.gz ("v"
+            # prefix, no patch digit, no arch token) and extracts to a dir of that name
+            local BC2_DIRNAME="BitcoinII-v${BC2_VERSION%.*}-Linux-CLI"
+            local BC2_FILENAME="${BC2_DIRNAME}.tar.gz"
             rm -f "$BC2_FILENAME"
             wget -q --show-progress --max-redirect=5 \
                 "https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v${BC2_VERSION}/${BC2_FILENAME}" \
@@ -3973,8 +4012,9 @@ install_node_if_needed() {
             # Extract to both /usr/local/bin (lowercase) and /spiralpool/bc2/bin (original case)
             # Service file will use the /spiralpool/bc2/bin path with original capitalization
             mkdir -p "$SPIRALPOOL_DIR/bc2/bin"
-            cp "BitcoinII-${BC2_VERSION}-${BC2_ARCH_SUFFIX}/bitcoinIId" "$SPIRALPOOL_DIR/bc2/bin/"
-            cp "BitcoinII-${BC2_VERSION}-${BC2_ARCH_SUFFIX}/bitcoinII-cli" "$SPIRALPOOL_DIR/bc2/bin/"
+            # v31.1.0 renamed the daemon to bitcoinII-d; install it as bitcoinIId
+            cp "${BC2_DIRNAME}/bitcoinII-d" "$SPIRALPOOL_DIR/bc2/bin/bitcoinIId"
+            cp "${BC2_DIRNAME}/bitcoinII-cli" "$SPIRALPOOL_DIR/bc2/bin/"
             chmod +x "$SPIRALPOOL_DIR/bc2/bin/bitcoinIId" "$SPIRALPOOL_DIR/bc2/bin/bitcoinII-cli"
             chown -R "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bc2/bin"
 
@@ -4585,7 +4625,9 @@ WantedBy=multi-user.target
 EOF
             ufw allow 12024/tcp comment "DigiByte P2P" 2>/dev/null || true
             ufw allow 3333/tcp comment "DGB Stratum V1" 2>/dev/null || true
-            ufw allow 3334/tcp comment "DGB Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then
+                ufw allow 3334/tcp comment "DGB Stratum V2" 2>/dev/null || true
+            fi
             ;;
 
         BTC)
@@ -4675,7 +4717,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8333/tcp comment "Bitcoin P2P" 2>/dev/null || true
             ufw allow 4333/tcp comment "BTC Stratum V1" 2>/dev/null || true
-            ufw allow 4334/tcp comment "BTC Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 4334/tcp comment "BTC Stratum V2" 2>/dev/null || true; fi
             ;;
 
         BCH)
@@ -4717,21 +4759,21 @@ seednode=seed.bch.loping.net
 seednode=dnsseed.electroncash.de
 seednode=bchseed.c3-soft.com
 seednode=bch.bitjson.com
-addnode=195.3.223.29:8433
-addnode=199.217.115.27:8433
-addnode=3.142.98.179:8433
-addnode=35.163.48.30:8433
-addnode=35.198.46.157:8433
-addnode=51.91.196.151:8433
-addnode=174.140.196.19:8433
-addnode=193.164.205.249:8433
-addnode=194.14.246.11:8433
-addnode=8.219.86.245:8433
-addnode=15.204.95.99:8433
-addnode=18.139.1.192:8433
-addnode=51.159.104.35:8433
-addnode=57.129.18.162:8433
-addnode=65.109.90.134:8433
+addnode=195.3.223.29:8333
+addnode=199.217.115.27:8333
+addnode=3.142.98.179:8333
+addnode=35.163.48.30:8333
+addnode=35.198.46.157:8333
+addnode=51.91.196.151:8333
+addnode=174.140.196.19:8333
+addnode=193.164.205.249:8333
+addnode=194.14.246.11:8333
+addnode=8.219.86.245:8333
+addnode=15.204.95.99:8333
+addnode=18.139.1.192:8333
+addnode=51.159.104.35:8333
+addnode=57.129.18.162:8333
+addnode=65.109.90.134:8333
 EOF
             chown "$POOL_USER:$POOL_USER" "$SPIRALPOOL_DIR/bch/bitcoin.conf"
             chmod 600 "$SPIRALPOOL_DIR/bch/bitcoin.conf"
@@ -4768,7 +4810,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8433/tcp comment "Bitcoin Cash P2P" 2>/dev/null || true
             ufw allow 5333/tcp comment "BCH Stratum V1" 2>/dev/null || true
-            ufw allow 5334/tcp comment "BCH Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 5334/tcp comment "BCH Stratum V2" 2>/dev/null || true; fi
             ;;
 
         BC2)
@@ -4855,7 +4897,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8338/tcp comment "Bitcoin II P2P" 2>/dev/null || true
             ufw allow 6333/tcp comment "BC2 Stratum V1" 2>/dev/null || true
-            ufw allow 6334/tcp comment "BC2 Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 6334/tcp comment "BC2 Stratum V2" 2>/dev/null || true; fi
             ;;
 
         BCH2)
@@ -4865,7 +4907,7 @@ EOF
             # If adding BCH2 post-install, open UFW ports and ensure service is running
             ufw allow 8534/tcp comment "Bitcoin Cash II P2P" 2>/dev/null || true
             ufw allow 5336/tcp comment "BCH2 Stratum V1" 2>/dev/null || true
-            ufw allow 5337/tcp comment "BCH2 Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 5337/tcp comment "BCH2 Stratum V2" 2>/dev/null || true; fi
             ;;
 
         BTCS)
@@ -4875,7 +4917,7 @@ EOF
             # If adding BTCS post-install, open UFW ports and ensure service is running
             ufw allow 10566/tcp comment "Bitcoin Silver P2P" 2>/dev/null || true
             ufw allow 11335/tcp comment "BTCS Stratum V1" 2>/dev/null || true
-            ufw allow 11336/tcp comment "BTCS Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 11336/tcp comment "BTCS Stratum V2" 2>/dev/null || true; fi
             ;;
 
         LTC)
@@ -4959,7 +5001,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 9333/tcp comment "Litecoin P2P" 2>/dev/null || true
             ufw allow 7333/tcp comment "LTC Stratum V1" 2>/dev/null || true
-            ufw allow 7334/tcp comment "LTC Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 7334/tcp comment "LTC Stratum V2" 2>/dev/null || true; fi
             ;;
 
         DOGE)
@@ -5041,7 +5083,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 22556/tcp comment "Dogecoin P2P" 2>/dev/null || true
             ufw allow 8335/tcp comment "DOGE Stratum V1" 2>/dev/null || true
-            ufw allow 8337/tcp comment "DOGE Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 8337/tcp comment "DOGE Stratum V2" 2>/dev/null || true; fi
             ;;
 
         DGB-SCRYPT)
@@ -5053,7 +5095,7 @@ EOF
             fi
             # Add firewall rule for DGB-SCRYPT stratum port
             ufw allow 3336/tcp comment "DGB-SCRYPT Stratum V1" 2>/dev/null || true
-            ufw allow 3337/tcp comment "DGB-SCRYPT Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 3337/tcp comment "DGB-SCRYPT Stratum V2" 2>/dev/null || true; fi
             ;;
 
         PEP)
@@ -5127,7 +5169,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 33874/tcp comment "PepeCoin P2P" 2>/dev/null || true
             ufw allow 10335/tcp comment "PEP Stratum V1" 2>/dev/null || true
-            ufw allow 10336/tcp comment "PEP Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 10336/tcp comment "PEP Stratum V2" 2>/dev/null || true; fi
             ;;
 
         CAT)
@@ -5214,7 +5256,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 9933/tcp comment "Catcoin P2P" 2>/dev/null || true
             ufw allow 12335/tcp comment "CAT Stratum V1" 2>/dev/null || true
-            ufw allow 12336/tcp comment "CAT Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 12336/tcp comment "CAT Stratum V2" 2>/dev/null || true; fi
             ;;
 
         NMC)
@@ -5299,7 +5341,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8334/tcp comment "Namecoin P2P" 2>/dev/null || true
             ufw allow 14335/tcp comment "NMC Stratum V1" 2>/dev/null || true
-            ufw allow 14336/tcp comment "NMC Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 14336/tcp comment "NMC Stratum V2" 2>/dev/null || true; fi
             ;;
 
         SYS)
@@ -5384,7 +5426,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8369/tcp comment "Syscoin P2P" 2>/dev/null || true
             ufw allow 15335/tcp comment "SYS Stratum V1" 2>/dev/null || true
-            ufw allow 15336/tcp comment "SYS Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 15336/tcp comment "SYS Stratum V2" 2>/dev/null || true; fi
             ;;
 
         XMY)
@@ -5468,7 +5510,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 10888/tcp comment "Myriad P2P" 2>/dev/null || true
             ufw allow 17335/tcp comment "XMY Stratum V1" 2>/dev/null || true
-            ufw allow 17336/tcp comment "XMY Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 17336/tcp comment "XMY Stratum V2" 2>/dev/null || true; fi
             ;;
 
         FBTC)
@@ -5545,7 +5587,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8341/tcp comment "Fractal Bitcoin P2P" 2>/dev/null || true
             ufw allow 18335/tcp comment "FBTC Stratum V1" 2>/dev/null || true
-            ufw allow 18336/tcp comment "FBTC Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 18336/tcp comment "FBTC Stratum V2" 2>/dev/null || true; fi
             ;;
 
         XEC)
@@ -5615,7 +5657,7 @@ WantedBy=multi-user.target
 EOF
             ufw allow 8343/tcp comment "eCash P2P" 2>/dev/null || true
             ufw allow 18338/tcp comment "XEC Stratum V1" 2>/dev/null || true
-            ufw allow 18339/tcp comment "XEC Stratum V2" 2>/dev/null || true
+            if grep -q '^ENABLE_V2_STRATUM=true' "$SPIRALPOOL_DIR/config/coins.env" 2>/dev/null; then ufw allow 18339/tcp comment "XEC Stratum V2" 2>/dev/null || true; fi
             ufw allow 18340/tcp comment "XEC Stratum TLS" 2>/dev/null || true
             ;;
     esac
@@ -6091,7 +6133,7 @@ generate_config() {
     local config_tmp="${CONFIG_FILE}.tmp.$$"
     trap "rm -f '${CONFIG_FILE}.tmp.$$'" EXIT
     cat > "$config_tmp" << EOF
-# Spiral Pool v2.7.1 Configuration
+# Spiral Pool v3.0.0 Configuration
 # Generated by pool-mode.sh on $(date)
 # Mode: $([ ${#coins[@]} -eq 1 ] && echo "Solo" || echo "Multi-Coin")
 # Coins: ${coins[*]}
@@ -6863,8 +6905,15 @@ elif 'pool' in config:
                 v2_stratum['port'] = int(str(v1_listen).rsplit(':', 1)[1])
             except (ValueError, IndexError):
                 pass
-        # Extract V2 port from listenV2 "0.0.0.0:3334" → 3334
-        v1_listen_v2 = v1_stratum.get('listenV2', '')
+        # Extract V2 port from listenV2 "0.0.0.0:3334" → 3334 — only when the operator
+        # opted in to Stratum V2; V1 configs carried listenV2 whether or not they did.
+        v2_opted_in = False
+        try:
+            with open(os.path.join(os.path.dirname(config_path), 'coins.env')) as env_file:
+                v2_opted_in = any(line.strip() == 'ENABLE_V2_STRATUM=true' for line in env_file)
+        except OSError:
+            pass
+        v1_listen_v2 = v1_stratum.get('listenV2', '') if v2_opted_in else ''
         if ':' in str(v1_listen_v2):
             try:
                 v2_stratum['port_v2'] = int(str(v1_listen_v2).rsplit(':', 1)[1])

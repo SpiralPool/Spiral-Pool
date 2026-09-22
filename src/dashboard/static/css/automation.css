@@ -1,0 +1,62 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors */
+
+[hidden] { display: none !important; }
+
+#automation-status { min-height: 1.4em; color: #8a97ab; }
+#automation-status.error { color: #ff6b6b; }
+
+.automation-errors { color: #ff6b6b; margin: 8px 0; padding-left: 20px; }
+
+.automation-button {
+    background: transparent;
+    border: 1px solid #00d4ff;
+    color: #00d4ff;
+    border-radius: 6px;
+    padding: 8px 16px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+}
+.automation-button:disabled { opacity: 0.4; cursor: default; }
+
+.automation-link {
+    background: none;
+    border: 0;
+    padding: 0 8px 0 0;
+    color: #00d4ff;
+    text-decoration: underline;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.automation-muted { color: #8a97ab; font-size: 0.85rem; }
+.automation-ok { color: #39d98a; }
+
+.automation-form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.automation-field { display: grid; gap: 4px; }
+.automation-field.wide { grid-column: 1 / -1; }
+.automation-field > span { color: #8a97ab; font-size: 0.85rem; }
+
+.automation-field input[type="text"],
+.automation-field input[type="time"],
+.automation-field input[type="number"],
+.automation-field select,
+.explorer-table select,
+.automation-credential-form input {
+    background: #111827;
+    color: #d8e2f0;
+    border: 1px solid #1f2a3c;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: "Share Tech Mono", ui-monospace, monospace;
+    min-width: 0;
+}
+
+.automation-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.automation-checks.column { flex-direction: column; }
+.automation-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.automation-credential-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.automation-savebar { position: sticky; bottom: 0; padding: 8px 0 12px; background: #0a0e17; }

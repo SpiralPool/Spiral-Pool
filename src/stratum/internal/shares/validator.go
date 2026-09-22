@@ -371,11 +371,28 @@ func (v *Validator) Validate(share *protocol.Share) *protocol.ShareResult {
 		}
 	}
 
+	// Network target, for the block check below.
+	// CRITICAL: Use compact bits from the job for exact target calculation.
+	// Converting float64 difficulty → big.Int target loses precision due to
+	// the float64 round-trip (bits → float64 → target). The daemon validates
+	// using the compact bits directly, so we must match its exact computation.
+	// This prevents "high-hash" rejections where the pool's slightly-permissive
+	// target accepts a hash that the daemon's exact target rejects.
+	networkTarget := compactBitsToTarget(job.NBits)
+	// Fallback: if NBits is missing or invalid, use float64 difficulty conversion
+	if networkTarget.Sign() == 0 && currentNetworkDiff > 0 {
+		networkTarget = difficultyToTarget(currentNetworkDiff)
+	}
+	meetsNetworkTarget := networkTarget.Sign() != 0 && hashInt.Cmp(networkTarget) <= 0
+
 	// 8. Check if hash meets share difficulty
 	// If it doesn't meet the expected difficulty, check against MinDifficulty as fallback.
 	// This handles vardiff transitions where miners (especially cgminer/Avalon) continue
 	// submitting shares at the old difficulty until they receive a new job.
-	if hashInt.Cmp(shareTarget) > 0 {
+	// A hash that meets the network target is a block and is never rejected here:
+	// when the share difficulty is above the network difficulty (a low-difficulty
+	// chain, regtest), a block can miss the share target.
+	if hashInt.Cmp(shareTarget) > 0 && !meetsNetworkTarget {
 		// Share doesn't meet expected difficulty - try MinDifficulty fallback
 		// Use <= to handle case where MinDifficulty equals Difficulty (e.g., during vardiff grace period)
 		if share.MinDifficulty > 0 && share.MinDifficulty <= share.Difficulty {
@@ -426,17 +443,6 @@ func (v *Validator) Validate(share *protocol.Share) *protocol.ShareResult {
 	}
 
 	// 9. Check if hash meets network difficulty (is a block)
-	// CRITICAL: Use compact bits from the job for exact target calculation.
-	// Converting float64 difficulty → big.Int target loses precision due to
-	// the float64 round-trip (bits → float64 → target). The daemon validates
-	// using the compact bits directly, so we must match its exact computation.
-	// This prevents "high-hash" rejections where the pool's slightly-permissive
-	// target accepts a hash that the daemon's exact target rejects.
-	networkTarget := compactBitsToTarget(job.NBits)
-	// Fallback: if NBits is missing or invalid, use float64 difficulty conversion
-	if networkTarget.Sign() == 0 && currentNetworkDiff > 0 {
-		networkTarget = difficultyToTarget(currentNetworkDiff)
-	}
 	// CRITICAL FIX: Check for zero network target to prevent panic
 	// This can happen if network difficulty is 0, NaN, or uninitialized
 	// Zero target means invalid difficulty - cannot determine if this is a block
@@ -628,6 +634,14 @@ func buildBlockHeader(job *protocol.Job, share *protocol.Share) ([]byte, error) 
 	return header, nil
 }
 
+// ShareMerkleRoot returns the header merkle root for the coinbase a share builds
+// (CoinBase1 || ExtraNonce1 || ExtraNonce2 || CoinBase2For(MinerAddress)). Stratum V2
+// standard channels use it to send each channel the root its shares are validated
+// against.
+func ShareMerkleRoot(job *protocol.Job, share *protocol.Share) ([]byte, error) {
+	return computeMerkleRoot(job, share)
+}
+
 // computeMerkleRoot computes the merkle root from coinbase and merkle branches.
 func computeMerkleRoot(job *protocol.Job, share *protocol.Share) ([]byte, error) {
 	// Build coinbase transaction
@@ -645,7 +659,7 @@ func computeMerkleRoot(job *protocol.Job, share *protocol.Share) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("invalid extranonce2: %w", err)
 	}
-	coinbase2, err := hex.DecodeString(job.CoinBase2)
+	coinbase2, err := hex.DecodeString(job.CoinBase2For(share.MinerAddress))
 	if err != nil {
 		return nil, fmt.Errorf("invalid coinbase2: %w", err)
 	}
@@ -746,7 +760,7 @@ func buildFullBlock(job *protocol.Job, share *protocol.Share, header []byte) (st
 	if err != nil {
 		return "", fmt.Errorf("invalid extranonce2: %w", err)
 	}
-	coinbase2, err := hex.DecodeString(job.CoinBase2)
+	coinbase2, err := hex.DecodeString(job.CoinBase2For(share.MinerAddress))
 	if err != nil {
 		return "", fmt.Errorf("invalid coinbase2: %w", err)
 	}

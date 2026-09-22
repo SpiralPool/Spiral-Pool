@@ -40,6 +40,9 @@ const (
 	BTCSBech32HRP                = "bs" // Mainnet bech32 prefix: "bs1q..." / "bs1p..."
 )
 
+// BTCSRegtestBech32HRP is the bech32 prefix bitcoinsilverd -regtest hands out ("bcrt1q...").
+const BTCSRegtestBech32HRP = "bcrt"
+
 // Bitcoin Silver network parameters
 // Verified from bitcoin-silver/core/src/kernel/chainparams.cpp and chainparamsbase.cpp:
 //
@@ -92,9 +95,12 @@ func (c *BitcoinSilverCoin) DecodeAddress(address string) ([]byte, AddressType, 
 		return nil, AddressTypeUnknown, fmt.Errorf("empty address")
 	}
 
-	// Bech32/Bech32m native SegWit (bs1q... or bs1p...)
+	// Bech32/Bech32m native SegWit (bs1q... or bs1p... or bcrt1q... for regtest)
 	addrLower := strings.ToLower(address)
 	hrp := BTCSBech32HRP
+	if strings.HasPrefix(addrLower, BTCSRegtestBech32HRP+"1") {
+		hrp = BTCSRegtestBech32HRP
+	}
 	if strings.HasPrefix(addrLower, hrp+"1") {
 		decoded, err := decodeBech32Address(address, hrp)
 		if err != nil {

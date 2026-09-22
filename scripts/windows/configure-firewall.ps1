@@ -10,7 +10,8 @@
     This script reads the coin manifest (coins.manifest.yaml) and creates
     Windows Firewall inbound rules for all necessary ports:
 
-    - Stratum ports (V1, V2, TLS) for each enabled coin
+    - Stratum ports (V1, TLS) for each enabled coin, plus V2 only when
+      STRATUM_V2_ENABLED=true in docker\.env (Stratum V2 is opt-in)
     - RPC ports for blockchain nodes
     - ZMQ ports for block notifications
     - Common ports (API, Dashboard, Metrics)
@@ -358,6 +359,11 @@ $rules += @{ Name = "Dashboard"; Port = 1618; Desc = "Web dashboard"; Category =
 $rules += @{ Name = "Metrics"; Port = 9100; Desc = "Prometheus metrics"; Category = "Common" }
 $rules += @{ Name = "Smart Multi Stratum"; Port = 16180; Desc = "Multi-coin stratum entry-point (used when pool runs in multi-coin mode)"; Category = "Common" }
 
+# Stratum V2 is opt-in: open its ports only when docker\.env enables it.
+$envFile = if ($PSScriptRoot) { Join-Path $PSScriptRoot "..\..\docker\.env" } else { "" }
+$v2Enabled = $envFile -and (Test-Path $envFile) -and
+    (Select-String -Path $envFile -Pattern '^\s*STRATUM_V2_ENABLED\s*=\s*true\s*$' -Quiet)
+
 # Coin-specific ports
 foreach ($coin in $selectedCoins) {
     $sym = $coin.Symbol
@@ -366,7 +372,7 @@ foreach ($coin in $selectedCoins) {
     if ($coin.StratumV1 -gt 0) {
         $rules += @{ Name = "$sym Stratum V1"; Port = $coin.StratumV1; Desc = "$($coin.Name) mining connections (Stratum V1)"; Category = "Stratum" }
     }
-    if ($coin.StratumV2 -gt 0) {
+    if ($v2Enabled -and $coin.StratumV2 -gt 0) {
         $rules += @{ Name = "$sym Stratum V2"; Port = $coin.StratumV2; Desc = "$($coin.Name) mining connections (Stratum V2)"; Category = "Stratum" }
     }
     if ($coin.StratumTls -gt 0) {

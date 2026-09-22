@@ -204,9 +204,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/Bitcoin-II/BitcoinII-Core"
             GBT_RULES='["segwit"]'
             # Auto-install info (BC2 uses -CLI suffix instead of -gnu)
-            DAEMON_VERSION="29.1.0"
-            DOWNLOAD_URL="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v29.1.0/BitcoinII-29.1.0-x86_64-linux-CLI.tar.gz"
-            TARBALL_DIR="BitcoinII-29.1.0-x86_64-linux-CLI"
+            DAEMON_VERSION="31.1.0"
+            DOWNLOAD_URL="https://github.com/Bitcoin-II/BitcoinII-Core/releases/download/v31.1.0/BitcoinII-v31.1-Linux-CLI.tar.gz"
+            TARBALL_DIR="BitcoinII-v31.1-Linux-CLI"
             ;;
         dgb)
             COIN_SYMBOL=DGB; COIN_NAME="DigiByte (SHA256d)"; COIN_ALGO=sha256d
@@ -292,15 +292,17 @@ setup_coin() {
             DAEMON_LOG=bitcoincashIId-regtest.log; DAEMON_STARTUP=bitcoincashIId-startup.log
             PKILL_PATTERN="bitcoincashiid.*regtest"
             GITHUB_URL="https://github.com/BitcoincashII/bitcoincashII-core"
-            GBT_RULES='[]'  # BCH2 uses BCH consensus — no SegWit
+            # bitcoincashII is Bitcoin Core 27 underneath and rejects a call with
+            # no segwit rule (error -8), whatever the name suggests.
+            GBT_RULES='["segwit"]'
             # Auto-install info
             DAEMON_VERSION="27.0.2"
-            DOWNLOAD_URL="https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v27.0.2/bitcoincashII-v27.0.2-linux-x86_64.tar.gz"
-            TARBALL_DIR="bitcoincashII-27.0.2"
+            DOWNLOAD_URL="https://github.com/BitcoincashII/bitcoincashII-core/releases/download/v27.0.2/bitcoincashII-27.0.2-linux64.tar.gz"
+            TARBALL_DIR="bitcoincashII-27.0.2-linux64"
             ;;
         btcs)
             COIN_SYMBOL=BTCS; COIN_NAME="Bitcoin Silver"; COIN_ALGO=sha256d
-            ADDR_TYPE="bech32"  # BTCS: returns bs1q... SegWit address
+            ADDR_TYPE="bech32"  # BTCS: -regtest returns bcrt1q... SegWit address (bs1q... on mainnet)
             DAEMON_CMD="${BITCOINSILVERD:-bitcoinsilverd}"; CLI_CMD="${BITCOINSILVERCLI:-bitcoinsilver-cli}"
             RPC_PORT_DEF=18767; P2P_PORT_DEF=18766; ZMQ_PORT_DEF=29567
             STRATUM_PORT_DEF=16346; STRATUM_V2_PORT_DEF=17343; API_PORT_DEF=14018; METRICS_PORT_DEF=19118
@@ -311,10 +313,10 @@ setup_coin() {
             PKILL_PATTERN="bitcoinsilverd.*regtest"
             GITHUB_URL="https://github.com/bitcoin-silver/core"
             GBT_RULES='["segwit"]'  # BTCS supports SegWit+Taproot from block 0
-            # Source build — no binary download
-            DAEMON_VERSION="source-ff5c3c3d"
-            DOWNLOAD_URL=""
-            TARBALL_DIR=""
+            # Auto-install info
+            DAEMON_VERSION="31.1.3"
+            DOWNLOAD_URL="https://github.com/bitcoin-silver/core/releases/download/version31.1.3/bitcoinsilver-31.1.3-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="bitcoinsilver-31.1.3-x86_64-linux-gnu"
             ;;
         ltc)
             COIN_SYMBOL=LTC; COIN_NAME="Litecoin"; COIN_ALGO=scrypt
@@ -329,9 +331,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/litecoin-project/litecoin"
             GBT_RULES='["mweb", "segwit"]'  # Litecoin requires MWEB rules
             # Auto-install info
-            DAEMON_VERSION="0.21.4"
-            DOWNLOAD_URL="https://github.com/litecoin-project/litecoin/releases/download/v0.21.4/litecoin-0.21.4-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="litecoin-0.21.4"
+            DAEMON_VERSION="0.21.5.8"
+            DOWNLOAD_URL="https://github.com/litecoin-project/litecoin/releases/download/v0.21.5.8/litecoin-0.21.5.8-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="litecoin-0.21.5.8"
             ;;
         nmc)
             COIN_SYMBOL=NMC; COIN_NAME="Namecoin"; COIN_ALGO=sha256d
@@ -384,17 +386,17 @@ setup_coin() {
             PKILL_PATTERN="fractald.*regtest"
             GITHUB_URL="https://github.com/nickingeniero/fractal-bitcoin"
             GBT_RULES='["segwit"]'
-            DAEMON_VERSION="0.2.9"
-            DOWNLOAD_URL="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.2.9/fractald-0.2.9-x86_64-linux-gnu.tar.gz"
-            TARBALL_DIR="fractald-0.2.9-x86_64-linux-gnu"
+            DAEMON_VERSION="0.4.0"
+            DOWNLOAD_URL="https://github.com/fractal-bitcoin/fractald-release/releases/download/v0.4.0/fractald-0.4.0-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="fractald-0.4.0-x86_64-linux-gnu"
             ;;
         xec)
             COIN_SYMBOL=XEC; COIN_NAME="eCash"; COIN_ALGO=sha256d
             ADDR_TYPE=""  # XEC: CashAddr (ecash:q...) — no address_type param to getnewaddress
             DAEMON_CMD="${ECASHD:-ecashd}"; CLI_CMD="${ECASHCLI:-ecash-cli}"
             RPC_PORT_DEF=18568; P2P_PORT_DEF=18569; ZMQ_PORT_DEF=29360
-            STRATUM_PORT_DEF=16355; STRATUM_V2_PORT_DEF=17348; API_PORT_DEF=14022; METRICS_PORT_DEF=19122
-            HA_STRATUM=16356; HA_API=14023; HA_METRICS=19123
+            STRATUM_PORT_DEF=16355; STRATUM_V2_PORT_DEF=17348; API_PORT_DEF=14024; METRICS_PORT_DEF=19122  # api moved off 14022: collides with a production digibyted RPC port
+            HA_STRATUM=16356; HA_API=14025; HA_METRICS=19123
             DB_NAME_DEF=spiralstratum_xec_regtest; WALLET_NAME=regtest-pool-xec
             POOL_ID=xec_sha256_1; DATA_DIR=.bitcoin-abc
             DAEMON_LOG=ecashd-regtest.log; DAEMON_STARTUP=ecashd-startup.log
@@ -402,9 +404,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/Bitcoin-ABC/bitcoin-abc"
             GBT_RULES='[]'  # XEC: no SegWit (CashAddr is an address format, not a script type)
             # Auto-install info
-            DAEMON_VERSION="0.31.12"
-            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.31.12/bitcoin-abc-0.31.12-x86_64-linux-gnu.tar.gz"
-            TARBALL_DIR="bitcoin-abc-0.31.12"
+            DAEMON_VERSION="0.33.12"
+            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.33.12/bitcoin-abc-0.33.12-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="bitcoin-abc-0.33.12"
             ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt
@@ -463,7 +465,9 @@ setup_coin() {
             GBT_RULES='["mweb", "segwit"]'  # Catcoin Core is Litecoin-based, daemon requires both rules
             DAEMON_VERSION="2.1.1"
             DOWNLOAD_URL="https://github.com/CatcoinCore/catcoincore/releases/download/v2.1.1/Catcoin-Linux.zip"
-            TARBALL_DIR="Catcoin-Linux"
+            # The zip has no top-level directory: catcoind and catcoin-cli sit at
+            # its root, so extraction lands them in the working directory.
+            TARBALL_DIR="."
             ARCHIVE_TYPE="zip"
             ;;
         *)
@@ -473,9 +477,10 @@ setup_coin() {
             echo "  bc2   - Bitcoin II         btc   - Bitcoin            bch   - Bitcoin Cash"
             echo "  bch2  - Bitcoin Cash II    btcs  - Bitcoin Silver     xec   - eCash"
             echo "  ltc   - Litecoin           dgb   - DigiByte (SHA256d)  nmc   - Namecoin"
-            echo "  sys   - Syscoin            xmy   - Myriad"
-            echo "  fbtc  - Fractal Bitcoin    doge  - Dogecoin           pep   - PepeCoin"
-            echo "  cat   - Catcoin            dgb-scrypt - DigiByte (Scrypt)"
+            echo "  xmy   - Myriad             fbtc  - Fractal Bitcoin"
+            echo "  doge  - Dogecoin           pep   - PepeCoin            cat   - Catcoin"
+            echo "  dgb-scrypt - DigiByte (Scrypt)"
+            echo "  (SYS is merge-mining only — use: $0 --merge btc+sys)"
             exit 1
             ;;
     esac
@@ -712,8 +717,10 @@ CPUMINER="${CPUMINER:-minerd}"
 
 # Database credentials (must match config-<coin>-regtest.yaml)
 DB_NAME="${DB_NAME:-$DB_NAME_DEF}"
-DB_USER="${DB_USER:-spiralstratum}"
-DB_PASS="${DB_PASS:-spiralstratum}"
+# Its own login: install.sh's pool connects as spiralstratum, and the setup
+# below would reset that role's password on a machine running a real pool.
+DB_USER="${DB_USER:-spiralregtest}"
+DB_PASS="${DB_PASS:-spiralregtest}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
 
@@ -800,6 +807,33 @@ coincli_wallet() {
     fi
 }
 
+# Helper: read a wallet's balances as "mature immature unconfirmed"
+# getwalletinfo stopped reporting balance, immature_balance and
+# unconfirmed_balance in recent Bitcoin Core — the fields were deprecated years
+# ago and have since been removed — so a daemon built on a modern Core answered
+# 0 for all three and the payment checks reported "no block rewards received"
+# while getbalances showed the coins sitting in the wallet. Measured on Bitcoin
+# Silver 31.1: getwalletinfo has no balance field at all, getbalances reports
+# immature 476900.00000000. Ask getbalances first and keep getwalletinfo for the
+# older forks that predate it (added in Core 0.19).
+read_wallet_balances() {
+    local cli_fn="$1" json info mature immature unconfirmed
+    json=$("$cli_fn" getbalances 2>/dev/null) || json=""
+    if [[ -n "$json" ]]; then
+        # "mine" is emitted before "watchonly", so head -1 takes our own balance.
+        mature=$(printf '%s' "$json" | grep -o '"trusted":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+        immature=$(printf '%s' "$json" | grep -o '"immature":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+        unconfirmed=$(printf '%s' "$json" | grep -o '"untrusted_pending":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+    fi
+    if [[ -z "${mature:-}" ]] && [[ -z "${immature:-}" ]]; then
+        info=$("$cli_fn" getwalletinfo 2>/dev/null) || info=""
+        mature=$(printf '%s' "$info" | grep -o '"balance":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+        immature=$(printf '%s' "$info" | grep -o '"immature_balance":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+        unconfirmed=$(printf '%s' "$info" | grep -o '"unconfirmed_balance":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ')
+    fi
+    echo "${mature:-0} ${immature:-0} ${unconfirmed:-0}"
+}
+
 # =============================================================================
 # Cleanup — runs on EXIT, INT (Ctrl+C), TERM
 # =============================================================================
@@ -827,7 +861,9 @@ cleanup() {
 
     # Fallback: kill by name in case PIDs were stale
     pkill -9 -f "regtest-cpuminer" 2>/dev/null || true
-    pkill -9 -f "spiralpool.*-config" 2>/dev/null || true
+    # Only this checkout's pool binary: a broader pattern also matched a real
+    # /spiralpool/bin/spiralstratum -config ... running on the same machine.
+    pkill -9 -f "$POOL_BINARY -config" 2>/dev/null || true
     coincli stop 2>/dev/null || true
     pkill -9 -f "$PKILL_PATTERN" 2>/dev/null || true
     # Merge mining: stop aux daemon
@@ -865,6 +901,9 @@ cleanup() {
     # Use regex to replace ANY address format to handle stale addresses from crashed runs
     # Matches: bech32 (bcrt1...), CashAddr (bchreg:...), legacy (D..., n...)
     sed -i -E 's|(address: ")[a-zA-Z0-9:]{20,}(".*$)|\1REGTEST_ADDRESS_PLACEHOLDER\2|g' "$CONFIG_FILE" 2>/dev/null || true
+    # Remove the opt-in that Step 8f writes, so the next run starts from the
+    # shipped default (worker-name payout off) and the tracked config stays clean.
+    sed -i '/^[[:space:]]*payout_from_worker_name:/d' "$CONFIG_FILE" 2>/dev/null || true
     log_info "Config address placeholder restored"
 
     rm -f "${_PGPASS_TMP:-}" 2>/dev/null || true  # SECURITY (F-02): Remove temp pgpass file
@@ -970,8 +1009,11 @@ install_daemon() {
         log_info "  Installed to $bch2_bin_dir, symlinked bitcoincashiid/bitcoincashii-cli"
     # Bitcoin II: archive ships bitcoinIId/bitcoinII-cli (mixed case) but we need lowercase
     # Create lowercase symlinks (matches production install.sh lines 10490-10491)
-    elif [[ "${DAEMON_CMD##*/}" == "bitcoiniid" ]] && [[ -f "$tarball_dir/bitcoinIId" ]]; then
-        sudo cp -v "$tarball_dir/bitcoinIId" "$tarball_dir/bitcoinII-cli" /usr/local/bin/ && installed=1
+    # v31.1.0 renamed the daemon to bitcoinII-d; it is installed under the bitcoinIId name
+    elif [[ "${DAEMON_CMD##*/}" == "bitcoiniid" ]] && [[ -f "$tarball_dir/bitcoinIId" || -f "$tarball_dir/bitcoinII-d" ]]; then
+        local bc2_daemon="$tarball_dir/bitcoinIId"
+        [[ -f "$bc2_daemon" ]] || bc2_daemon="$tarball_dir/bitcoinII-d"
+        sudo cp -v "$bc2_daemon" /usr/local/bin/bitcoinIId && sudo cp -v "$tarball_dir/bitcoinII-cli" /usr/local/bin/ && installed=1
         sudo ln -sf /usr/local/bin/bitcoinIId /usr/local/bin/bitcoiniid
         sudo ln -sf /usr/local/bin/bitcoinII-cli /usr/local/bin/bitcoinii-cli
         log_info "  Installed bitcoinIId, symlinked lowercase bitcoiniid/bitcoinii-cli"
@@ -984,6 +1026,18 @@ install_daemon() {
         sudo ln -sf "$fbtc_bin_dir/bitcoind" /usr/local/bin/fractald
         sudo ln -sf "$fbtc_bin_dir/bitcoin-cli" /usr/local/bin/fractal-cli
         log_info "  Installed to $fbtc_bin_dir, symlinked fractald/fractal-cli"
+    # eCash: the Bitcoin ABC archive ships bitcoind/bitcoin-cli, but the daemon is
+    # ecashd/ecash-cli. Copying bin/* into /usr/local/bin overwrote Bitcoin Core's
+    # own bitcoind with Bitcoin ABC — which then failed the BTC run eight seconds
+    # later with createwallet -4, because BTC was running eCash's daemon. Install
+    # to a private directory and symlink, the way install.sh does it.
+    elif [[ "${DAEMON_CMD##*/}" == "ecashd" ]] && [[ -d "$tarball_dir/bin" ]]; then
+        local xec_bin_dir="/usr/local/lib/ecash"
+        sudo mkdir -p "$xec_bin_dir"
+        sudo cp -v "$tarball_dir/bin/"* "$xec_bin_dir/" && installed=1
+        sudo ln -sf "$xec_bin_dir/bitcoind" /usr/local/bin/ecashd
+        sudo ln -sf "$xec_bin_dir/bitcoin-cli" /usr/local/bin/ecash-cli
+        log_info "  Installed to $xec_bin_dir, symlinked ecashd/ecash-cli"
     # Try standard structure: tarball_dir/bin/
     elif [[ -d "$tarball_dir/bin" ]]; then
         sudo cp -v "$tarball_dir/bin/"* /usr/local/bin/ && installed=1
@@ -1154,7 +1208,8 @@ get_block_count() {
 # =============================================================================
 # DigiByte regtest mode only supports Scrypt mining. SHA256d is not available
 # in regtest - this is a DigiByte daemon limitation, not a pool bug.
-# The pool code for DGB SHA256d is verified working via DGB-SCRYPT tests.
+# The message below states what a DGB-SCRYPT run does and does not cover for
+# SHA256d. It is not a substitute: see digibyte_scrypt.go for the overrides.
 if [[ "$COIN" == "dgb" ]]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1164,13 +1219,18 @@ if [[ "$COIN" == "dgb" ]]; then
     echo "[INFO] DigiByte regtest mode only supports Scrypt algorithm."
     echo "[INFO] SHA256d blocks cannot be mined in regtest - daemon limitation."
     echo ""
-    echo "[INFO] The pool's multi-algo code IS verified working:"
-    echo "       - DGB-SCRYPT passed all tests (8/8 HA VIP)"
-    echo "       - Same code path, just different algorithm string"
-    echo "       - DGB SHA256d will work on mainnet/testnet"
+    echo "[INFO] What a DGB-SCRYPT run covers for SHA256d, and what it does not:"
+    echo "       DigiByteScryptCoin embeds DigiByteCoin and overrides nine"
+    echo "       methods, so a Scrypt run does exercise the shared base:"
+    echo "       address handling, GBT rules, coinbase construction."
+    echo "       It runs the Scrypt versions of HashBlockHeader,"
+    echo "       DifficultyFromTarget, ShareDifficultyMultiplier and"
+    echo "       MultiAlgoGBTParam, so it says nothing about the SHA256d ones."
+    echo "       Unit tests cover the first three. MultiAlgoGBTParam has no test."
+    echo "       DGB SHA256d has never been mined end-to-end."
     echo ""
     echo "[INFO] To test DigiByte mining, use:"
-    echo "       COIN=dgb-scrypt ./scripts/linux/regtest.sh"
+    echo "       ./scripts/linux/regtest.sh dgb-scrypt"
     echo ""
     echo "[INFO] To test on DigiByte testnet (has SHA256d):"
     echo "       Configure daemon for testnet instead of regtest"
@@ -1201,18 +1261,32 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 log_ok "Config: $CONFIG_FILE"
 
-log_info "Checking pool binary..."
-if [[ ! -f "$POOL_BINARY" ]]; then
-    log_warn "Pool binary not found at $POOL_BINARY — building now..."
-    (cd "$PROJECT_ROOT/src/stratum" && go build -o spiralpool ./cmd/spiralpool)
-    if [[ ! -f "$POOL_BINARY" ]]; then
-        log_error "Build failed! Run manually: cd src/stratum && go build -o spiralpool ./cmd/spiralpool"
-        exit 1
-    fi
-    log_ok "Pool binary built successfully"
-else
-    log_ok "Pool binary: $POOL_BINARY"
+log_info "Building pool binary..."
+# Always build, never "only if the file is missing". The old check meant a binary
+# built once was reused for every later run, so a fix to the pool source was not
+# in the binary under test — a change could be verified green while the code that
+# passed was the code from days ago. Go's build cache makes a no-op build about a
+# second, which is a cheap price for testing what is actually checked out.
+# install.sh puts Go in /usr/local/go/bin and adds it through
+# /etc/profile.d/go.sh, which only a login shell reads. Run from cron, CI or
+# nohup the build died with "go: command not found" after the harness had
+# already downloaded and installed the coin daemon.
+if ! command -v go >/dev/null 2>&1 && [[ -x /usr/local/go/bin/go ]]; then
+    export PATH="/usr/local/go/bin:$PATH"
 fi
+if ! command -v go >/dev/null 2>&1; then
+    log_error "Go is not installed or not on PATH (looked for /usr/local/go/bin/go)"
+    exit 1
+fi
+if ! (cd "$PROJECT_ROOT/src/stratum" && go build -o spiralpool ./cmd/spiralpool); then
+    log_error "Build failed! Run manually: cd src/stratum && go build -o spiralpool ./cmd/spiralpool"
+    exit 1
+fi
+if [[ ! -f "$POOL_BINARY" ]]; then
+    log_error "Build reported success but $POOL_BINARY is missing"
+    exit 1
+fi
+log_ok "Pool binary built: $POOL_BINARY"
 
 # Build V2 test miner (for V2 stratum protocol testing)
 # Always rebuild to pick up source changes (build is fast)
@@ -1250,8 +1324,22 @@ log_step "Step 2/10: Start $DAEMON_CMD (regtest)"
 log_info "Stopping any existing regtest processes..."
 coincli stop 2>/dev/null || true
 # Kill any leftover pool/miner from a previous run (port conflicts)
-pkill -f "spiralpool.*config" 2>/dev/null || true
+pkill -f "$POOL_BINARY -config" 2>/dev/null || true
 pkill -f "minerd.*$STRATUM_PORT" 2>/dev/null || true
+
+# Wait for the old pool to actually exit. It shuts down gracefully, and until it
+# does it still holds its block WAL lock and still writes to the database — so a
+# run that starts too early cannot create its coin pool, and truncates the tables
+# under the run that is still going.
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    pgrep -f "$POOL_BINARY -config" >/dev/null 2>&1 || break
+    sleep 1
+done
+if pgrep -f "$POOL_BINARY -config" >/dev/null 2>&1; then
+    log_warn "A pool from a previous run is still running after 15s — forcing it down"
+    pkill -9 -f "$POOL_BINARY -config" 2>/dev/null || true
+    sleep 2
+fi
 sleep 2
 
 # Auto-cleanup: Remove previous regtest chain data for a fresh start
@@ -1325,6 +1413,13 @@ log_info "  ZMQ:        tcp://127.0.0.1:$ZMQ_PORT (hashblock + rawblock)"
 log_info "  Log:        $LOG_DIR/$DAEMON_LOG"
 
 # Build daemon arguments - some coins need extra flags for isolated regtest
+# eCash counts in XEC, which has two decimal places, so the 0.0001 every other
+# coin uses is not a representable amount: ecashd answers createwallet with
+# "Wallet creation failed. Invalid amount for -fallbackfee=<amount>: 0.0001"
+# and the run dies before it mines anything. 0.01 is the smallest XEC accepts.
+FALLBACK_FEE="0.0001"
+[[ "$COIN" == "xec" ]] && FALLBACK_FEE="0.01"
+
 DAEMON_ARGS=(
     -regtest
     -daemon=0
@@ -1339,7 +1434,7 @@ DAEMON_ARGS=(
     -connect=0
     -dnsseed=0
     -txindex=1
-    -fallbackfee=0.0001
+    -fallbackfee="$FALLBACK_FEE"
     -printtoconsole=0
     -debuglogfile="$LOG_DIR/$DAEMON_LOG"
 )
@@ -1366,6 +1461,15 @@ if [[ "$COIN" == "xec" ]]; then
     DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-abc")
 fi
 
+# Bitcoin Cash Node: the binary is bitcoind behind the bitcoind-bch symlink and
+# defaults to ~/.bitcoin, so BCH opened BTC's regtest chainstate and died with
+# "Error initializing block database. Please restart with -reindex" on a box
+# where Bitcoin had run first. The cleanup step already assumed ~/.bitcoin-bch,
+# so it was resetting a directory the daemon never used.
+if [[ "$COIN" == "bch" ]]; then
+    mkdir -p "$HOME/.bitcoin-bch"
+    DAEMON_ARGS+=(-datadir="$HOME/.bitcoin-bch")
+fi
 if [[ "$COIN" == "bch2" ]]; then
     mkdir -p "$HOME/.bitcoincashii"
     DAEMON_ARGS+=(-datadir="$HOME/.bitcoincashii")
@@ -1406,11 +1510,14 @@ case "$COIN" in
         ;;
 esac
 
-# For coins that require peers for GBT (Litecoin family + BCH), we need to run
-# two daemon instances that connect to each other
+# For coins that require peers for GBT (Litecoin family + BCH + eCash), we need
+# to run two daemon instances that connect to each other.
+# eCash is here because Bitcoin ABC kept the "not connected" guard on
+# getblocktemplate even in regtest, where Bitcoin Core skips it: with no peer,
+# ecashd answers error -9 and the pool can never build a job.
 NEEDS_PEER_DAEMON=false
 case "$COIN" in
-    ltc|doge|pep|cat|bch|xmy)
+    ltc|doge|pep|cat|bch|xmy|xec)
         NEEDS_PEER_DAEMON=true
         # Enable listening so peer daemon can connect
         DAEMON_ARGS+=(-listen=1)
@@ -1554,7 +1661,7 @@ if [[ "$MERGE_MODE" == "1" ]]; then
         -zmqpubhashblock="tcp://127.0.0.1:$AUX_ZMQ_PORT"
         -zmqpubrawblock="tcp://127.0.0.1:$AUX_ZMQ_PORT"
         -txindex=1
-        -fallbackfee=0.0001
+        -fallbackfee="$FALLBACK_FEE"
         -printtoconsole=0
         -debuglogfile="$LOG_DIR/$AUX_DAEMON_LOG"
     )
@@ -1912,9 +2019,15 @@ if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" &
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
         "DO \$\$ DECLARE t TEXT; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename LIKE 'shares_%' OR tablename LIKE 'payments_%' OR tablename LIKE 'balances_%') LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE'; END LOOP; END \$\$;" 2>/dev/null || true
 else
-    # DB not accessible — need sudo to set it up
-    if [[ ! -t 0 ]]; then
-        # No TTY (running in background via nohup/screen/cron) — can't prompt for sudo
+    # DB not accessible — need sudo to set it up.
+    # A box where the pool user has passwordless sudo needs no TTY at all, and
+    # refusing without trying meant the whole suite could not be driven from
+    # cron or a nohup loop. So refuse only when sudo would genuinely have to
+    # prompt; otherwise fall through to the creation below, which tolerates a
+    # user or database an earlier coin already made. (Creating them here instead
+    # was worse than useless: under `set -e` the "already exists" from CREATE
+    # USER killed the run outright on every coin after the first.)
+    if [[ ! -t 0 ]] && ! sudo -n true 2>/dev/null; then
         log_error "Database '$DB_NAME' not accessible and no TTY available for sudo"
         log_error ""
         log_error "The script needs sudo to create the PostgreSQL database, but it's"
@@ -1935,6 +2048,8 @@ else
     sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || \
     sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || true
     sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || true
+    # A database left by an older run is owned by the previous login
+    sudo -u postgres psql -c "ALTER DATABASE $DB_NAME OWNER TO $DB_USER;" 2>/dev/null || true
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" 2>/dev/null || true
 
     # Verify the connection actually works after setup
@@ -2174,17 +2289,104 @@ if [[ "$STRATUM_V2_PORT" -gt 0 ]] && [[ -f "$V2_MINER" ]]; then
 
     log_info "  Timeout:    $V2_TIMEOUT"
 
-    V2_OUTPUT=$("$V2_MINER" \
-        -host localhost \
-        -port "$STRATUM_V2_PORT" \
-        -wallet "$MINING_ADDRESS" \
-        -algo "$COIN_ALGO" \
-        -timeout "$V2_TIMEOUT" \
-        -verbose 2>&1) && V2_EXIT=0 || V2_EXIT=$?
-    echo "$V2_OUTPUT" > "$LOG_DIR/v2testminer-regtest.log"
+    # Pause cpuminer for the V2 test. On regtest it finds a block every fraction of
+    # a second, and every block replaces the pool's jobs. The V2 test miner mines one
+    # job to completion, so its job aged out of the pool's job history before it could
+    # submit, and the share came back "invalid-job-id" through no fault of the protocol.
+    V2_MINER_PAUSED=0
+    if [[ -n "$MINER_PID" ]] && kill -0 "$MINER_PID" 2>/dev/null; then
+        if kill -STOP "$MINER_PID" 2>/dev/null; then
+            V2_MINER_PAUSED=1
+            log_info "  cpuminer paused for the duration of this test"
+            # Then wait for the tip to stop moving. A block submitted in the moment
+            # before the pause lands a second later and invalidates the job the V2
+            # miner has just been given, which comes back as "stale-share".
+            V2_SETTLE_HEIGHT=$(get_block_count)
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                sleep 2
+                V2_SETTLE_NOW=$(get_block_count)
+                [[ "$V2_SETTLE_NOW" == "$V2_SETTLE_HEIGHT" ]] && break
+                V2_SETTLE_HEIGHT="$V2_SETTLE_NOW"
+            done
+            log_info "  Chain settled at height $V2_SETTLE_HEIGHT"
+        fi
+    fi
+
+    # A share can come back "stale-share" through no fault of the protocol: every
+    # ZMQ block notification makes the pool force a cleanJobs broadcast, and those
+    # notifications keep draining for a few seconds after the chain height itself
+    # stops moving. Retry once, after giving the pool time to go quiet.
+    # Mine to the NETWORK target on SHA-256d, so the share submitted is also a
+    # block. Stopping at the first accepted share proves the share path and
+    # nothing beyond it: block detection, block assembly and the submitblock
+    # round trip are never reached, which left the one part of V2 that actually
+    # pays the operator resting on the claim that it shares V1's code. With
+    # cpuminer paused, a height change here can only have come from V2.
+    #
+    # SHA-256d only. Regtest's target is difficulty 1 either way, but that is
+    # ~4.3 billion hashes: seconds-to-minutes for Go SHA256d, and hours for
+    # scrypt, which is ~1000x slower per hash. Scrypt keeps the share assertion.
+    V2_UNTIL_BLOCK=""
+    V2_HEIGHT_BEFORE=$(get_block_count)
+    if [[ "$COIN_ALGO" == "sha256d" ]]; then
+        V2_UNTIL_BLOCK="-untilblock"
+        log_info "  Mining to the network target — the share submitted must also be a block"
+        log_info "  Height before: $V2_HEIGHT_BEFORE"
+    fi
+
+    V2_ATTEMPT=1
+    while :; do
+        V2_OUTPUT=$("$V2_MINER" \
+            -host localhost \
+            -port "$STRATUM_V2_PORT" \
+            -wallet "$MINING_ADDRESS" \
+            -algo "$COIN_ALGO" \
+            -timeout "$V2_TIMEOUT" \
+            ${V2_UNTIL_BLOCK} \
+            -verbose 2>&1) && V2_EXIT=0 || V2_EXIT=$?
+        echo "$V2_OUTPUT" > "$LOG_DIR/v2testminer-regtest.log"
+
+        if [[ "$V2_ATTEMPT" -ge 2 ]]; then
+            break
+        fi
+        if echo "$V2_OUTPUT" | grep -q "SHARE ACCEPTED"; then
+            break
+        fi
+        if ! echo "$V2_OUTPUT" | grep -q "stale-share"; then
+            break
+        fi
+        log_warn "  share rejected as stale — pool was still clearing jobs; retrying once"
+        sleep 10
+        V2_ATTEMPT=2
+    done
+
+    if [[ "$V2_MINER_PAUSED" -eq 1 ]]; then
+        kill -CONT "$MINER_PID" 2>/dev/null || true
+        log_info "  cpuminer resumed"
+    fi
 
     if echo "$V2_OUTPUT" | grep -q "SHARE ACCEPTED"; then
         log_ok "V2 Stratum $COIN_SYMBOL ($COIN_ALGO): share accepted"
+        # The share was mined to the network target, so the pool must have
+        # recognised it as a block, assembled it and submitted it to the daemon.
+        # The chain tip is the daemon's own answer to whether that worked —
+        # nothing else in this step can move it while cpuminer is stopped.
+        if [[ -n "$V2_UNTIL_BLOCK" ]]; then
+            V2_HEIGHT_AFTER=""
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                sleep 1
+                V2_HEIGHT_AFTER=$(get_block_count)
+                [[ "$V2_HEIGHT_AFTER" -gt "$V2_HEIGHT_BEFORE" ]] && break
+            done
+            if [[ "$V2_HEIGHT_AFTER" -gt "$V2_HEIGHT_BEFORE" ]]; then
+                log_ok "V2 Stratum $COIN_SYMBOL: block submitted to the daemon (height ${V2_HEIGHT_BEFORE} → ${V2_HEIGHT_AFTER})"
+            else
+                log_error "V2 Stratum $COIN_SYMBOL: share met the network target but the chain did not advance (still ${V2_HEIGHT_BEFORE})"
+                log_error "  The pool accepted a block-difficulty share and did not get it on chain."
+                log_error "  Log: $LOG_DIR/v2testminer-regtest.log"
+                EXIT_CODE=1
+            fi
+        fi
     else
         log_error "V2 Stratum $COIN_SYMBOL ($COIN_ALGO): FAILED (exit=$V2_EXIT)"
         log_error "  Log: $LOG_DIR/v2testminer-regtest.log"
@@ -2351,15 +2553,28 @@ if [[ "$MATURITY_WAIT_SECS" -gt 0 ]] && [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; th
             "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE status = 'pending';" 2>/dev/null | tr -d ' ' || echo "?")
         DB_ORPHANED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
             "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE status = 'orphaned';" 2>/dev/null | tr -d ' ' || echo "?")
+        # Show paid too. A block passes through "confirmed" to "paid" inside one
+        # payment cycle, so confirmed reads 0 almost every time and, without paid,
+        # the pending count appears to drop into nowhere.
+        DB_PAID=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+            "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE status = 'paid';" 2>/dev/null | tr -d ' ' || echo "?")
 
-        log_info "  ${MATURITY_ELAPSED}s — height: $CHAIN_HEIGHT, confirms: ~$FIRST_BLOCK_CONFIRMS | DB: confirmed=$DB_CONFIRMED pending=$DB_PENDING orphaned=$DB_ORPHANED"
+        log_info "  ${MATURITY_ELAPSED}s — height: $CHAIN_HEIGHT, confirms: ~$FIRST_BLOCK_CONFIRMS | DB: confirmed=$DB_CONFIRMED paid=$DB_PAID pending=$DB_PENDING orphaned=$DB_ORPHANED"
 
-        # Early exit if all pool-mined blocks are confirmed AND first block specifically is confirmed
+        # Early exit once every pool-mined block has settled — confirmed OR paid.
+        # A block reaches "paid" only by way of "confirmed" (executePendingPayments
+        # reads GetConfirmedBlocks, and the status guard refuses the jump from the
+        # processor), so a paid block has passed maturity too. Counting only
+        # "confirmed" never fires: the same payment cycle that sets confirmed
+        # drains it into paid, which is why this loop always burned the full
+        # MATURITY_WAIT_SECS (1200s per coin) instead of exiting when done.
         FIRST_BLOCK_HEIGHT=$((HEIGHT_BEFORE + 1))
-        FIRST_BLOCK_CONFIRMED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-            "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE blockheight = $FIRST_BLOCK_HEIGHT AND status = 'confirmed';" 2>/dev/null | tr -d ' ' || echo "0")
-        if [[ "$DB_CONFIRMED" != "?" ]] && [[ "$DB_CONFIRMED" -ge "$BLOCKS_FOUND" ]] && [[ "$FIRST_BLOCK_CONFIRMED" -ge 1 ]]; then
-            log_ok "All $BLOCKS_FOUND pool-mined blocks confirmed! (confirmed=$DB_CONFIRMED, pending=$DB_PENDING, first_block=$FIRST_BLOCK_HEIGHT)"
+        DB_SETTLED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+            "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE status IN ('confirmed', 'paid');" 2>/dev/null | tr -d ' ' || echo "?")
+        FIRST_BLOCK_SETTLED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
+            "SELECT COUNT(*) FROM $BLOCKS_TABLE WHERE blockheight = $FIRST_BLOCK_HEIGHT AND status IN ('confirmed', 'paid');" 2>/dev/null | tr -d ' ' || echo "0")
+        if [[ "$DB_SETTLED" != "?" ]] && [[ "$DB_SETTLED" -ge "$BLOCKS_FOUND" ]] && [[ "$FIRST_BLOCK_SETTLED" -ge 1 ]]; then
+            log_ok "All $BLOCKS_FOUND pool-mined blocks confirmed! (confirmed=$DB_CONFIRMED, paid=$DB_PAID, pending=$DB_PENDING, first_block=$FIRST_BLOCK_HEIGHT)"
             break
         fi
 
@@ -2399,8 +2614,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     IMMATURE_BALANCE="0"
     CHAIN_HEIGHT=$(get_block_count)
     WALLET_BALANCE=$(coincli_wallet getbalance 2>/dev/null || echo "0")
-    IMMATURE_BALANCE=$(coincli_wallet getwalletinfo 2>/dev/null | grep -o '"immature_balance":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ') || true
-    IMMATURE_BALANCE="${IMMATURE_BALANCE:-0}"
+    IMMATURE_BALANCE=$(read_wallet_balances coincli_wallet | awk '{print $2}')
 
     if (( $(echo "$WALLET_BALANCE > 0" | bc -l 2>/dev/null || echo 0) )); then
         log_ok "[1/8] Block rewards mature and spendable: $WALLET_BALANCE $COIN_SYMBOL (height=$CHAIN_HEIGHT)"
@@ -2416,8 +2630,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
         while [[ $REWARD_WAIT -lt 120 ]]; do
             sleep 30
             REWARD_WAIT=$((REWARD_WAIT + 30))
-            IMMATURE_BALANCE=$(coincli_wallet getwalletinfo 2>/dev/null | grep -o '"immature_balance":[^,}]*' | head -1 | cut -d: -f2 | tr -d ' ') || true
-            IMMATURE_BALANCE="${IMMATURE_BALANCE:-0}"
+            IMMATURE_BALANCE=$(read_wallet_balances coincli_wallet | awk '{print $2}')
             if (( $(echo "$IMMATURE_BALANCE > 0" | bc -l 2>/dev/null || echo 0) )); then
                 log_ok "[1/8] Block rewards received (immature: $IMMATURE_BALANCE $COIN_SYMBOL)"
                 PAYMENT_PASS=$((PAYMENT_PASS + 1))
@@ -2535,20 +2748,30 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     fi
 
     # -- 5/8. Block status: confirmed -> paid --------------------------------
-    FIRST_HASH=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-        "SELECT hash FROM $BLOCKS_TABLE WHERE blockheight = $FIRST_POOL_BLOCK AND status = 'confirmed' LIMIT 1;" 2>/dev/null | tr -d ' ') || true
+    # The pool makes this transition itself, and on regtest it usually has by now:
+    # a block matures in seconds, so it is already "paid" when we look. Accept
+    # either state - "paid" is the same transition, already carried out.
+    FIRST_BLOCK_ROW=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -F'|' -c \
+        "SELECT hash, status FROM $BLOCKS_TABLE WHERE blockheight = $FIRST_POOL_BLOCK AND status IN ('confirmed', 'paid') LIMIT 1;" 2>/dev/null | tr -d ' ') || true
+    FIRST_HASH="${FIRST_BLOCK_ROW%%|*}"
+    FIRST_STATUS="${FIRST_BLOCK_ROW##*|}"
 
     if [[ -n "$FIRST_HASH" ]]; then
-        PAID_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
-            "UPDATE $BLOCKS_TABLE SET status = 'paid', confirmationprogress = 1.0
-             WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
-             AND (status = 'confirmed' AND 'paid' IN ('orphaned', 'paid'));" 2>/dev/null) || true
-
-        if [[ "$PAID_RESULT" == *"UPDATE 1"* ]]; then
-            log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed -> paid (status guard passed)"
+        if [[ "$FIRST_STATUS" == "paid" ]]; then
+            log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed -> paid already done by the pool"
             PAYMENT_PASS=$((PAYMENT_PASS + 1))
         else
-            log_warn "[5/8] Block $FIRST_POOL_BLOCK: confirmed -> paid failed ($PAID_RESULT)"
+            PAID_RESULT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
+                "UPDATE $BLOCKS_TABLE SET status = 'paid', confirmationprogress = 1.0
+                 WHERE blockheight = $FIRST_POOL_BLOCK AND hash = '$FIRST_HASH'
+                 AND (status = 'confirmed' AND 'paid' IN ('orphaned', 'paid'));" 2>/dev/null) || true
+
+            if [[ "$PAID_RESULT" == *"UPDATE 1"* ]]; then
+                log_ok "[5/8] Block $FIRST_POOL_BLOCK: confirmed -> paid (status guard passed)"
+                PAYMENT_PASS=$((PAYMENT_PASS + 1))
+            else
+                log_warn "[5/8] Block $FIRST_POOL_BLOCK: confirmed -> paid failed ($PAID_RESULT)"
+            fi
         fi
 
         # -- 6/8. Verify paid is terminal ------------------------------------
@@ -2564,7 +2787,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
             log_warn "[6/8] Block $FIRST_POOL_BLOCK: paid -> pending was NOT blocked ($REVERT_RESULT)"
         fi
     else
-        log_warn "[5/8] No confirmed block at height $FIRST_POOL_BLOCK — skipping status tests"
+        log_warn "[5/8] No confirmed or paid block at height $FIRST_POOL_BLOCK — skipping status tests"
         log_warn "[6/8] Skipped — depends on check 5"
     fi
 
@@ -2633,9 +2856,10 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
         AUX_WALLET_INFO=$(auxcli_wallet getwalletinfo 2>/dev/null) || AUX_WALLET_INFO=""
 
         if [[ -n "$AUX_WALLET_INFO" ]]; then
-            AUX_BALANCE=$(echo "$AUX_WALLET_INFO" | grep '"balance"' | head -1 | tr -d ' ",' | cut -d: -f2)
-            AUX_IMMATURE=$(echo "$AUX_WALLET_INFO" | grep '"immature_balance"' | head -1 | tr -d ' ",' | cut -d: -f2)
-            AUX_UNCONFIRMED=$(echo "$AUX_WALLET_INFO" | grep '"unconfirmed_balance"' | head -1 | tr -d ' ",' | cut -d: -f2)
+            AUX_BALANCES=$(read_wallet_balances auxcli_wallet)
+            AUX_BALANCE=$(echo "$AUX_BALANCES" | awk '{print $1}')
+            AUX_IMMATURE=$(echo "$AUX_BALANCES" | awk '{print $2}')
+            AUX_UNCONFIRMED=$(echo "$AUX_BALANCES" | awk '{print $3}')
             AUX_TXCOUNT=$(echo "$AUX_WALLET_INFO" | grep '"txcount"' | head -1 | tr -d ' ",' | cut -d: -f2)
 
             [[ -z "$AUX_BALANCE" ]] && AUX_BALANCE="0"
@@ -2813,7 +3037,9 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     log_step "Step 8e: Daemon-down resilience (4 checks)"
 
     RESIL_LOG="$LOG_DIR/spiralpool-regtest.log"
-    PRE_STOP_LINES=$(wc -l < "$RESIL_LOG")
+    # Mark the log by size, not by line count: a byte offset cannot drift, and
+    # "read everything written after this point" is what the checks below mean.
+    PRE_STOP_BYTES=$(stat -c%s "$RESIL_LOG" 2>/dev/null || echo 0)
 
     # -- 1/4. Stop the daemon ------------------------------------------------
     log_info "Stopping daemon to simulate node failure..."
@@ -2832,15 +3058,16 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     sleep 20
 
     # Check pool log for error messages that appeared AFTER daemon stop
-    if tail -n +$((PRE_STOP_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
-       grep -qiE "zmq.*error|zmq.*fail|rpc.*error|rpc.*fail|daemon.*fail|connection.*refuse|dial.*error|connect:.*refuse"; then
-        DETECTED_MSG=$(tail -n +$((PRE_STOP_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
-            grep -iE "zmq.*error|zmq.*fail|rpc.*error|rpc.*fail|daemon.*fail|connection.*refuse|dial.*error|connect:.*refuse" | head -1) || true
+    DETECTED_MSG=$(tail -c +$((PRE_STOP_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
+        grep -iE "zmq.*error|zmq.*fail|rpc.*error|rpc.*fail|daemon.*fail|connection.*refuse|dial.*error|connect:.*refuse" | head -1) || true
+
+    if [[ -n "$DETECTED_MSG" ]]; then
         log_ok "[2/4] Pool detected daemon failure"
-        log_info "  Log: ${DETECTED_MSG:-(message extracted)}"
+        log_info "  Log: $DETECTED_MSG"
         DAEMON_RESIL_PASS=$((DAEMON_RESIL_PASS + 1))
     else
         log_warn "[2/4] No daemon failure detection in pool logs"
+        log_info "  Examined $(tail -c +$((PRE_STOP_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | wc -l) new line(s) from byte $PRE_STOP_BYTES of $(stat -c%s "$RESIL_LOG" 2>/dev/null || echo '?')"
     fi
 
     # Verify pool process survived (didn't crash)
@@ -2852,7 +3079,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
 
     # -- 3/4. Restart daemon -------------------------------------------------
     log_info "Restarting daemon..."
-    PRE_RESTART_LINES=$(wc -l < "$RESIL_LOG")
+    PRE_RESTART_BYTES=$(stat -c%s "$RESIL_LOG" 2>/dev/null || echo 0)
 
     # Build restart command with coin-specific flags
     # BUG FIX: Use -listen=1 for coins that need peers (BCH, LTC, DOGE, etc.)
@@ -2873,7 +3100,7 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
         -zmqpubhashblock="tcp://127.0.0.1:$ZMQ_PORT"
         -zmqpubrawblock="tcp://127.0.0.1:$ZMQ_PORT"
         -txindex=1
-        -fallbackfee=0.0001
+        -fallbackfee="$FALLBACK_FEE"
         -printtoconsole=0
         -debuglogfile="$LOG_DIR/$DAEMON_LOG"
     )
@@ -2885,6 +3112,12 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     [[ "$COIN" == "fbtc" ]] && RESTART_ARGS+=(-datadir="$HOME/.fractal")
     # eCash: must specify datadir (ecashd is a symlink to bitcoind, defaults to ~/.bitcoin)
     [[ "$COIN" == "xec" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoin-abc")
+    # Every coin whose binary defaults to ~/.bitcoin needs the same override here
+    # that it gets at first start, or the restarted daemon comes back on another
+    # coin's chain. bch, bch2 and btcs were missing.
+    [[ "$COIN" == "bch" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoin-bch")
+    [[ "$COIN" == "bch2" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoincashii")
+    [[ "$COIN" == "btcs" ]] && RESTART_ARGS+=(-datadir="$HOME/.bitcoinsilver")
     # Note: DGB algo is set via config file (~/.digibyte/digibyte.conf), not command-line
 
     "$DAEMON_CMD" "${RESTART_ARGS[@]}" &>"$LOG_DIR/$DAEMON_STARTUP" &
@@ -2954,9 +3187,14 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     log_info "Waiting for pool to reconnect to daemon (up to 90s)..."
     RECONNECT_WAIT=0
     RECONNECTED=0
+    RECOVERY_MSG=""
     while [[ $RECONNECT_WAIT -lt 90 ]]; do
-        if tail -n +$((PRE_RESTART_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
-           grep -qiE "zmq.*recover|zmq.*connect|zmq.*stabil|rpc.*success|new.*job|block.*template|getblocktemplate"; then
+        # The last three are what the pool actually writes on recovery: the ZMQ
+        # listener returning to healthy, the job manager rebuilding the template
+        # from a ZMQ notification, and a block reaching the daemon again.
+        RECOVERY_MSG=$(tail -c +$((PRE_RESTART_BYTES + 1)) "$RESIL_LOG" 2>/dev/null | \
+            grep -iE "zmq.*recover|zmq.*connect|zmq.*stabil|rpc.*success|new.*job|block.*template|getblocktemplate|zmq status changed.*healthy|template updated after zmq|block submitted successfully" | head -1) || true
+        if [[ -n "$RECOVERY_MSG" ]]; then
             RECONNECTED=1
             break
         fi
@@ -2965,10 +3203,8 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     done
 
     if [[ $RECONNECTED -eq 1 ]]; then
-        RECOVERY_MSG=$(tail -n +$((PRE_RESTART_LINES + 1)) "$RESIL_LOG" 2>/dev/null | \
-            grep -iE "zmq.*recover|zmq.*connect|zmq.*stabil|rpc.*success|new.*job|block.*template" | head -1) || true
         log_ok "[4/4] Pool reconnected to daemon"
-        log_info "  Log: ${RECOVERY_MSG:-(recovery detected)}"
+        log_info "  Log: $RECOVERY_MSG"
         DAEMON_RESIL_PASS=$((DAEMON_RESIL_PASS + 1))
     else
         # Fallback: check if pool is at least still serving stratum
@@ -3007,11 +3243,27 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     SOLO_WALLET_NAME="regtest-solo-miner"
 
     if [[ -n "${LEGACY_WALLET:-}" ]]; then
-        # Legacy wallets can't create additional wallets - use pool wallet address
-        log_info "Legacy wallet mode — using pool wallet for SOLO test"
-        SOLO_MINER_ADDRESS="$MINING_ADDRESS"
-        log_ok "[1/5] Using pool wallet address for SOLO test (legacy wallet mode)"
-        SOLO_PASS=$((SOLO_PASS + 1))
+        # A legacy wallet cannot hold a SECOND wallet — createwallet/loadwallet are
+        # missing — but getnewaddress works, and a fresh address out of the same
+        # wallet is all this check needs. Reusing $MINING_ADDRESS here meant the
+        # address the miner asked for and the address the config already pays were
+        # the same string, so check 4/5 compared a value against itself and passed
+        # whether or not the toggle did anything. DOGE and PEP were the two coins
+        # affected; the operator owns this wallet either way, which is the
+        # single-operator model the setting is licensed for.
+        log_info "Legacy wallet mode — taking a second address from the pool wallet"
+        if [[ -n "$ADDR_TYPE" ]]; then
+            SOLO_MINER_ADDRESS=$(coincli_wallet getnewaddress "solo-miner" "$ADDR_TYPE" 2>/dev/null) || true
+        else
+            SOLO_MINER_ADDRESS=$(coincli_wallet getnewaddress "solo-miner" 2>/dev/null) || true
+        fi
+        if [[ -n "$SOLO_MINER_ADDRESS" ]] && [[ "$SOLO_MINER_ADDRESS" != "$MINING_ADDRESS" ]]; then
+            log_ok "[1/5] Second address from pool wallet: $SOLO_MINER_ADDRESS"
+            SOLO_PASS=$((SOLO_PASS + 1))
+        else
+            log_warn "[1/5] Could not get a distinct address from the legacy wallet — skipping SOLO test"
+            SOLO_MINER_ADDRESS=""
+        fi
     else
         # Create or load miner wallet
         CREATE_SOLO=$(coincli createwallet "$SOLO_WALLET_NAME" 2>&1) || \
@@ -3034,13 +3286,53 @@ if [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     fi
 
     if [[ -n "$SOLO_MINER_ADDRESS" ]]; then
-        # -- 2/5. Stop current miner and restart with miner's wallet address ---
-        log_info "Restarting miner with SOLO wallet address as username..."
-        SOLO_HEIGHT_BEFORE=$(get_block_count)
+        # -- 2/5. Turn worker-name payout on, restart the pool, restart the miner
+        # Everything up to here ran on the shipped default (payout_from_worker_name
+        # absent, so off), which is why Step 8c saw the configured wallet paid even
+        # though the miner authorized as TEST.worker1. Step 8f is the one test that
+        # is about the opt-in, so it enables the setting and restarts the pool to
+        # pick it up. Both payout paths are therefore exercised in a single run.
+        log_info "Enabling worker-name payout for the SOLO test..."
+        if grep -q "payout_from_worker_name:" "$POOL_CONFIG_FILE"; then
+            sed -i "s/payout_from_worker_name:.*/payout_from_worker_name: true/" "$POOL_CONFIG_FILE"
+        else
+            # Insert under each coin's stratum: section, matching its indentation.
+            sed -i "s/^\([[:space:]]*\)port: ${STRATUM_PORT}$/\1port: ${STRATUM_PORT}\n\1payout_from_worker_name: true/" "$POOL_CONFIG_FILE"
+        fi
+        if grep -q "payout_from_worker_name: true" "$POOL_CONFIG_FILE"; then
+            log_ok "  config: payout_from_worker_name = true"
+        else
+            log_warn "  could not set payout_from_worker_name — SOLO test will show the default (pool address)"
+        fi
 
-        # Stop the current miner
+        log_info "Restarting the pool so it reads the new setting..."
         kill -9 "$MINER_PID" 2>/dev/null || true
         wait "$MINER_PID" 2>/dev/null || true
+        # SIGKILL, the same way cleanup() does it. A graceful TERM cost 37 minutes
+        # on the first sweep: bash's wait blocks until the pool chooses to exit,
+        # the old process kept the stratum port, and the replacement could not bind.
+        kill -9 "$POOL_PID" 2>/dev/null || true
+        wait "$POOL_PID" 2>/dev/null || true
+        sleep 3
+        "$POOL_BINARY" -config "$POOL_CONFIG_FILE" &>>"$LOG_DIR/spiralpool-regtest.log" &
+        POOL_PID=$!
+        POOL_RESTART_WAIT=0
+        while [[ $POOL_RESTART_WAIT -lt 90 ]]; do
+            if (echo >/dev/tcp/127.0.0.1/"$STRATUM_PORT") 2>/dev/null; then
+                break
+            fi
+            sleep 2
+            POOL_RESTART_WAIT=$((POOL_RESTART_WAIT + 2))
+        done
+        if ! (echo >/dev/tcp/127.0.0.1/"$STRATUM_PORT") 2>/dev/null; then
+            log_error "Pool did not come back up on port $STRATUM_PORT after enabling worker-name payout"
+            log_info "  See: $LOG_DIR/spiralpool-regtest.log"
+        else
+            log_ok "  pool back up on port $STRATUM_PORT (PID $POOL_PID)"
+        fi
+
+        log_info "Restarting miner with SOLO wallet address as username..."
+        SOLO_HEIGHT_BEFORE=$(get_block_count)
         sleep 2
 
         # Start miner with miner's wallet address as username
@@ -3159,6 +3451,10 @@ fi  # End HA_ONLY skip for Steps 6-8f
 
 HA_VIP_PASS=0
 HA_VIP_TOTAL=8
+# HA_VIP_TOTAL is set unconditionally, so it cannot tell the summary whether the
+# test ran. Skipped for HA_VIP_TEST=0, no blocks, or no sudo would otherwise be
+# reported as 0/8 FAIL.
+HA_VIP_RAN=0
 
 # Check if HA VIP test should run (requires root and specific flag or always run)
 HA_VIP_ENABLED="${HA_VIP_TEST:-1}"  # Set HA_VIP_TEST=0 to skip
@@ -3188,6 +3484,7 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
     fi
 
     if [[ $HA_SUDO_OK -eq 1 ]]; then
+        HA_VIP_RAN=1
 
         # HA Network Configuration
         HA_BRIDGE="br-ha-test"
@@ -3352,7 +3649,7 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
 
             # Add fallbackfee for coins that need it
             if [[ "$COIN_SYMBOL" =~ ^(BTC|LTC|DOGE|PEP|CAT|FBTC)$ ]]; then
-                HA_DAEMON_ARGS+=(-fallbackfee=0.0001)
+                HA_DAEMON_ARGS+=(-fallbackfee="$FALLBACK_FEE")
             fi
 
             # Fractal Bitcoin: must specify datadir (binary is bitcoind, defaults to ~/.bitcoin)
@@ -3410,7 +3707,7 @@ if [[ "$HA_VIP_ENABLED" == "1" ]] && [[ $BLOCKS_FOUND -ge 1 ]]; then
                     -dnsseed=0
                     -zmqpubhashblock="tcp://0.0.0.0:$AUX_ZMQ_PORT"
                     -zmqpubrawblock="tcp://0.0.0.0:$AUX_ZMQ_PORT"
-                    -fallbackfee=0.0001
+                    -fallbackfee="$FALLBACK_FEE"
                     -printtoconsole=0
                 )
 
@@ -4035,12 +4332,17 @@ HAEOF2
         echo ""
         log_info "HA VIP failover emulation: $HA_VIP_PASS/$HA_VIP_TOTAL checks passed"
 
+        # A failure here has to reach EXIT_CODE. Without it the summary took the
+        # PASS branch on a run that had already printed "HA VIP failover test
+        # failed", and the script exited 0 — the same disagreement between banner
+        # and exit status that the V2 test was fixed for.
         if [[ $HA_VIP_PASS -ge 7 ]]; then
             log_ok "HA VIP FAILOVER: VERIFIED"
         elif [[ $HA_VIP_PASS -ge 5 ]]; then
             log_warn "HA VIP failover partial — review logs for details"
         else
             log_error "HA VIP failover test failed"
+            EXIT_CODE=1
         fi
 
         log_info "HA logs available at:"
@@ -4163,6 +4465,17 @@ if [[ ${DAEMON_RESIL_TOTAL:-0} -gt 0 ]]; then
         echo -e "  Daemon resilience:     ${RED}FAIL (0/$DAEMON_RESIL_TOTAL checks)${NC}"
     fi
 fi
+# Step 8g reported its own result but had no row here, so a run where it failed
+# still showed a table of nothing but PASS.
+if [[ ${HA_VIP_RAN:-0} -eq 1 ]]; then
+    if [[ ${HA_VIP_PASS:-0} -ge 7 ]]; then
+        echo -e "  HA VIP failover:       ${GREEN}PASS ($HA_VIP_PASS/$HA_VIP_TOTAL checks)${NC}"
+    elif [[ ${HA_VIP_PASS:-0} -ge 5 ]]; then
+        echo -e "  HA VIP failover:       ${YELLOW}PARTIAL ($HA_VIP_PASS/$HA_VIP_TOTAL checks)${NC}"
+    else
+        echo -e "  HA VIP failover:       ${RED}FAIL ($HA_VIP_PASS/$HA_VIP_TOTAL checks)${NC}"
+    fi
+fi
 # Merge Mining summary
 if [[ "$MERGE_MODE" == "1" ]]; then
     # Aux blocks table: blocks_{parentPoolId}_{auxSymbol} (lowercase)
@@ -4214,18 +4527,28 @@ if [[ "$HA_ONLY" == "1" ]]; then
         echo -e "  ${RED}HA VIP test failed: ${HA_VIP_PASS:-0}/${HA_VIP_TOTAL:-8} checks passed${NC}"
         EXIT_CODE=1
     fi
-elif [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]] && [[ $LIFECYCLE_PASS -eq $LIFECYCLE_TOTAL ]]; then
+elif [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]] && [[ $LIFECYCLE_PASS -eq $LIFECYCLE_TOTAL ]] && [[ "${EXIT_CODE:-0}" -eq 0 ]]; then
     echo -e "  ${GREEN}${BOLD}RESULT: PASS${NC}"
     echo -e "  ${GREEN}$BLOCKS_FOUND blocks mined end-to-end through the pool.${NC}"
     echo -e "  ${GREEN}Full block lifecycle verified: stratum -> submitblock -> ZMQ -> DB${NC}"
 elif [[ $BLOCKS_FOUND -ge $TEST_BLOCKS ]]; then
     echo -e "  ${YELLOW}${BOLD}RESULT: PARTIAL PASS${NC}"
-    echo -e "  ${YELLOW}$BLOCKS_FOUND blocks mined, but $((LIFECYCLE_TOTAL - LIFECYCLE_PASS)) lifecycle checks failed.${NC}"
+    if [[ $LIFECYCLE_PASS -ne $LIFECYCLE_TOTAL ]]; then
+        echo -e "  ${YELLOW}$BLOCKS_FOUND blocks mined, but $((LIFECYCLE_TOTAL - LIFECYCLE_PASS)) lifecycle checks failed.${NC}"
+    else
+        # Blocks and lifecycle are clean, but an earlier step set EXIT_CODE — the
+        # V2 protocol test, for one. Saying PASS here made the banner disagree with
+        # the exit status, and a driver that keys off the exit code recorded a
+        # failure the reader had just been told was a pass.
+        echo -e "  ${YELLOW}$BLOCKS_FOUND blocks mined and the lifecycle is clean, but an earlier step failed.${NC}"
+    fi
     echo -e "  ${YELLOW}Review logs above for details.${NC}"
+    EXIT_CODE=1
 else
     echo -e "  ${RED}${BOLD}RESULT: FAIL${NC}"
     echo -e "  ${RED}Only $BLOCKS_FOUND / $TEST_BLOCKS blocks found.${NC}"
     echo -e "  ${RED}Review logs for errors.${NC}"
+    EXIT_CODE=1
 fi
 
 echo ""

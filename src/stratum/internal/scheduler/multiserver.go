@@ -719,14 +719,18 @@ func (ms *MultiServer) sendCoinJob(session *protocol.Session, coinSymbol string,
 		}
 	}
 
+	// The coinbase must pay the same wallet handleShare resolves this session's
+	// shares to, or every share fails validation.
+	payoutAddress := ms.resolveWallet(session.MinerAddress, coinSymbol)
+
 	// Override clean_jobs flag for coin switches
 	if cleanJobs {
 		// Clone the job to avoid copying the embedded sync.RWMutex
 		switchJob := job.Clone()
 		switchJob.CleanJobs = true
-		ms.server.SendJobToSession(session, switchJob)
+		ms.server.SendJobToSession(session, switchJob, payoutAddress)
 	} else {
-		ms.server.SendJobToSession(session, job)
+		ms.server.SendJobToSession(session, job, payoutAddress)
 	}
 }
 
@@ -759,7 +763,7 @@ func (ms *MultiServer) handleCoinJobUpdate(symbol string, job *protocol.Job) {
 			return true // session gone
 		}
 
-		ms.server.SendJobToSession(session, switchJob)
+		ms.server.SendJobToSession(session, switchJob, ms.resolveWallet(session.MinerAddress, symbol))
 		relayed++
 
 		return true

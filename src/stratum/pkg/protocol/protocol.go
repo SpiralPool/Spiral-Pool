@@ -7,11 +7,14 @@
 package protocol
 
 import (
+	"encoding/hex"
 	"math"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/spiralpool/stratum/internal/crypto"
 )
 
 // Protocol defines the interface for Stratum protocol implementations.
@@ -527,6 +530,16 @@ type Job struct {
 	MerkleBranches []string
 	Version        string
 	NBits          string
+
+	// SOLO per-miner payouts. CoinBase2 pays the pool address; CoinBase2For
+	// rebuilds it with the reward output paying a miner's own address.
+	// CoinBase2Prefix/Suffix are the hex halves around the reward script, and
+	// PayoutScript returns nil for an address the coin rejects. All are empty/nil
+	// when the job cannot be split, and every miner then gets CoinBase2.
+	CoinBase2Prefix string
+	CoinBase2Suffix string
+	PayoutScript    func(minerAddress string) []byte
+
 	NTime          string
 	CleanJobs      bool
 
@@ -757,6 +770,9 @@ func (j *Job) Clone() *Job {
 		PrevBlockHash:         j.PrevBlockHash,
 		CoinBase1:             j.CoinBase1,
 		CoinBase2:             j.CoinBase2,
+		CoinBase2Prefix:       j.CoinBase2Prefix,
+		CoinBase2Suffix:       j.CoinBase2Suffix,
+		PayoutScript:          j.PayoutScript,
 		MerkleBranches:        merkleBranches,
 		Version:               j.Version,
 		NBits:                 j.NBits,
@@ -786,6 +802,24 @@ func (j *Job) Clone() *Job {
 		RTTNextTarget:         j.RTTNextTarget,
 		RTTBits:               j.RTTBits,
 	}
+}
+
+// CoinBase2For returns the coinbase2 hex with the reward output paying
+// minerAddress. It returns CoinBase2 (the pool address) when the job has no
+// payout split or the address is not valid for the coin. A job must be sent to a
+// miner and its shares validated using the same address.
+func (j *Job) CoinBase2For(minerAddress string) string {
+	if j.PayoutScript == nil || minerAddress == "" {
+		return j.CoinBase2
+	}
+	script := j.PayoutScript(minerAddress)
+	if len(script) == 0 {
+		return j.CoinBase2
+	}
+	return j.CoinBase2Prefix +
+		hex.EncodeToString(crypto.EncodeVarInt(uint64(len(script)))) +
+		hex.EncodeToString(script) +
+		j.CoinBase2Suffix
 }
 
 // Share represents a submitted share from a miner.

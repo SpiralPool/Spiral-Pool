@@ -32,8 +32,6 @@ type coinPoolJobManager interface {
 	HeightContext(parent context.Context) (context.Context, context.CancelFunc)
 	Start(ctx context.Context) error
 	GetCurrentJob() *protocol.Job
-	// SOLO mining: set miner's wallet for direct coinbase routing
-	SetSoloMinerAddress(address string) error
 	// RefreshJob forces a new job to be generated and broadcast
 	RefreshJob(ctx context.Context, force bool) error
 }

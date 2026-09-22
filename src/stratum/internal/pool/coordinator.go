@@ -414,6 +414,7 @@ func NewCoordinator(cfg *config.ConfigV2, logger *zap.Logger) (*Coordinator, err
 			DBPool:            db,
 			Logger:            logger,
 			MetricsServer:     coord.metricsServer,
+			V2KeyDir:          cfg.Global.StratumV2KeyDir,
 		})
 		if err != nil {
 			log.Warnw("Failed to create coin pool (will retry during startup)",
@@ -1103,6 +1104,7 @@ func (c *Coordinator) retryFailedCoinsLoop(ctx context.Context) {
 					DBPool:            c.db,
 					Logger:            c.logger.Desugar(),
 					MetricsServer:     c.metricsServer,
+					V2KeyDir:          c.cfg.Global.StratumV2KeyDir,
 				})
 				if err != nil {
 					c.logger.Warnw("Coin pool creation still failing",
@@ -1831,6 +1833,48 @@ func (c *Coordinator) demoteToBackup() {
 // startMultiPort initializes and starts the Multi coin smart port.
 // It creates the DifficultyMonitor, CoinSelector, and MultiServer, wiring
 // them to the running CoinPools that match the configured allowed coins.
+// buildMultiPortStratumConfig builds the stratum listener config for the
+// multi-coin port, inheriting difficulty, banning and TLS material from the
+// first enabled coin (which is where the installer writes them).
+//
+// TLS on the multi port is opt-in through multi_port.tls_port. ListenTLS must be
+// filled in here: the stratum server only opens a TLS listener when ListenTLS is
+// non-empty, so leaving it blank loads the certificate and then silently serves
+// nothing on the port the operator configured.
+func buildMultiPortStratumConfig(coins []config.CoinPoolConfig, mpCfg config.MultiPortConfig) (*config.StratumConfig, error) {
+	for _, coinCfg := range coins {
+		if !coinCfg.Enabled {
+			continue
+		}
+		mpTLS := mpCfg.TLSPort > 0
+		if mpTLS && (coinCfg.Stratum.TLS.CertFile == "" || coinCfg.Stratum.TLS.KeyFile == "") {
+			return nil, fmt.Errorf("multi_port.tls_port is %d but coin %s has no TLS certFile/keyFile to inherit; "+
+				"configure stratum.tls on that coin or remove multi_port.tls_port",
+				mpCfg.TLSPort, coinCfg.Symbol)
+		}
+		tlsListen := ""
+		if mpTLS {
+			tlsListen = fmt.Sprintf("0.0.0.0:%d", mpCfg.TLSPort)
+		}
+		return &config.StratumConfig{
+			Listen:         fmt.Sprintf("0.0.0.0:%d", mpCfg.Port),
+			Difficulty:     coinCfg.Stratum.Difficulty,
+			Banning:        coinCfg.Stratum.Banning,
+			Connection:     coinCfg.Stratum.Connection,
+			VersionRolling: coinCfg.Stratum.VersionRolling,
+			JobRebroadcast: coinCfg.Stratum.JobRebroadcast,
+			TLS: config.TLSConfig{
+				Enabled:    mpTLS,
+				ListenTLS:  tlsListen,
+				CertFile:   coinCfg.Stratum.TLS.CertFile,
+				KeyFile:    coinCfg.Stratum.TLS.KeyFile,
+				MinVersion: coinCfg.Stratum.TLS.MinVersion,
+			},
+		}, nil
+	}
+	return nil, fmt.Errorf("no enabled coin found to inherit stratum config from")
+}
+
 func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	mpCfg := c.cfg.MultiPort
 	coinSymbols := mpCfg.CoinSymbols()
@@ -1982,28 +2026,9 @@ func (c *Coordinator) startMultiPort(ctx context.Context) error {
 	})
 
 	// 4. Build a stratum config for the multi port (inherit from first coin's settings)
-	var stratumCfg *config.StratumConfig
-	for _, coinCfg := range c.cfg.Coins {
-		if coinCfg.Enabled {
-			stratumCfg = &config.StratumConfig{
-				Listen:         fmt.Sprintf("0.0.0.0:%d", mpCfg.Port),
-				Difficulty:     coinCfg.Stratum.Difficulty,
-				Banning:        coinCfg.Stratum.Banning,
-				Connection:     coinCfg.Stratum.Connection,
-				VersionRolling: coinCfg.Stratum.VersionRolling,
-				JobRebroadcast: coinCfg.Stratum.JobRebroadcast,
-				TLS: config.TLSConfig{
-					Enabled:    coinCfg.Stratum.PortTLS > 0,
-					CertFile:   coinCfg.Stratum.TLS.CertFile,
-					KeyFile:    coinCfg.Stratum.TLS.KeyFile,
-					MinVersion: coinCfg.Stratum.TLS.MinVersion,
-				},
-			}
-			break
-		}
-	}
-	if stratumCfg == nil {
-		return fmt.Errorf("no enabled coin found to inherit stratum config from")
+	stratumCfg, err := buildMultiPortStratumConfig(c.cfg.Coins, mpCfg)
+	if err != nil {
+		return err
 	}
 
 	// 5. Create and start MultiServer

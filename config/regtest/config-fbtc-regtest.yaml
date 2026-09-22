@@ -50,8 +50,8 @@ global:
 database:
   host: localhost
   port: 5432
-  user: spiralstratum
-  password: "spiralstratum"
+  user: spiralregtest
+  password: "spiralregtest"
   database: spiralstratum_fbtc_regtest
   maxConnections: 50
   batching:

@@ -377,12 +377,15 @@ func (d *Decoder) ReadSeq0_64K(itemSize int) ([][]byte, error) {
 	return items, nil
 }
 
-// EncodeMessage encodes a complete SV2 message with header
+// EncodeMessage encodes a complete SV2 message with header. Messages addressed to
+// a channel carry the channel_msg bit in extension_type.
 func EncodeMessage(msgType uint8, payload []byte) []byte {
 	header := MessageHeader{
-		ExtensionType: 0, // Standard message
-		MsgType:       msgType,
-		Length:        uint32(len(payload)),
+		MsgType: msgType,
+		Length:  uint32(len(payload)),
+	}
+	if isChannelMessage(msgType) {
+		header.ExtensionType = ChannelMsgBit
 	}
 
 	buf := new(bytes.Buffer)
@@ -409,6 +412,9 @@ func EncodeSetupConnection(msg *SetupConnection) ([]byte, error) {
 		return nil, err
 	}
 	if err := enc.WriteB0_255(msg.FirmwareVersion); err != nil {
+		return nil, err
+	}
+	if err := enc.WriteB0_255(msg.DeviceID); err != nil {
 		return nil, err
 	}
 	return EncodeMessage(MsgSetupConnection, enc.Bytes()), nil
@@ -445,6 +451,10 @@ func DecodeSetupConnection(data []byte) (*SetupConnection, error) {
 		return nil, err
 	}
 	if msg.FirmwareVersion, err = dec.ReadB0_255(); err != nil {
+		return nil, err
+	}
+	// device_id is the last field; a client that omits it is still understood.
+	if msg.DeviceID, err = dec.ReadB0_255(); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	return msg, nil
@@ -772,6 +782,233 @@ func DecodeSetTarget(data []byte) (*SetTarget, error) {
 		return nil, err
 	}
 	if msg.MaxTarget, err = dec.ReadFixedBytes32(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeOpenExtendedMiningChannel encodes an OpenExtendedMiningChannel message
+func EncodeOpenExtendedMiningChannel(msg *OpenExtendedMiningChannel) ([]byte, error) {
+	enc := NewEncoder()
+	enc.WriteU32(msg.RequestID)
+	if err := enc.WriteB0_255(msg.UserIdentity); err != nil {
+		return nil, err
+	}
+	enc.WriteF32(msg.NominalHashRate)
+	enc.WriteBytes(msg.MaxTarget[:])
+	enc.WriteU16(msg.MinExtranonceSize)
+	return EncodeMessage(MsgOpenExtendedMiningChannel, enc.Bytes()), nil
+}
+
+// DecodeOpenExtendedMiningChannel decodes an OpenExtendedMiningChannel message
+func DecodeOpenExtendedMiningChannel(data []byte) (*OpenExtendedMiningChannel, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &OpenExtendedMiningChannel{}
+	var err error
+	if msg.RequestID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.UserIdentity, err = dec.ReadB0_255(); err != nil {
+		return nil, err
+	}
+	if msg.NominalHashRate, err = dec.ReadF32(); err != nil {
+		return nil, err
+	}
+	if msg.MaxTarget, err = dec.ReadFixedBytes32(); err != nil {
+		return nil, err
+	}
+	if msg.MinExtranonceSize, err = dec.ReadU16(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeOpenExtendedMiningChannelSuccess encodes the extended channel success response
+func EncodeOpenExtendedMiningChannelSuccess(msg *OpenExtendedMiningChannelSuccess) ([]byte, error) {
+	enc := NewEncoder()
+	enc.WriteU32(msg.RequestID)
+	enc.WriteU32(msg.ChannelID)
+	enc.WriteBytes(msg.Target[:])
+	enc.WriteU16(msg.ExtranonceSize)
+	if err := enc.WriteB0_32(msg.ExtranoncePrefix); err != nil {
+		return nil, err
+	}
+	enc.WriteU32(msg.GroupChannelID)
+	return EncodeMessage(MsgOpenExtendedMiningChannelSuccess, enc.Bytes()), nil
+}
+
+// DecodeOpenExtendedMiningChannelSuccess decodes the extended channel success response
+func DecodeOpenExtendedMiningChannelSuccess(data []byte) (*OpenExtendedMiningChannelSuccess, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &OpenExtendedMiningChannelSuccess{}
+	var err error
+	if msg.RequestID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.ChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.Target, err = dec.ReadFixedBytes32(); err != nil {
+		return nil, err
+	}
+	if msg.ExtranonceSize, err = dec.ReadU16(); err != nil {
+		return nil, err
+	}
+	if msg.ExtranoncePrefix, err = dec.ReadB0_32(); err != nil {
+		return nil, err
+	}
+	if msg.GroupChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeUpdateChannel encodes an UpdateChannel message
+func EncodeUpdateChannel(msg *UpdateChannel) []byte {
+	enc := NewEncoder()
+	enc.WriteU32(msg.ChannelID)
+	enc.WriteF32(msg.NominalHashRate)
+	enc.WriteBytes(msg.MaximumTarget[:])
+	return EncodeMessage(MsgUpdateChannel, enc.Bytes())
+}
+
+// DecodeUpdateChannel decodes an UpdateChannel message
+func DecodeUpdateChannel(data []byte) (*UpdateChannel, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &UpdateChannel{}
+	var err error
+	if msg.ChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.NominalHashRate, err = dec.ReadF32(); err != nil {
+		return nil, err
+	}
+	if msg.MaximumTarget, err = dec.ReadFixedBytes32(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeUpdateChannelError encodes an UpdateChannel.Error message
+func EncodeUpdateChannelError(msg *UpdateChannelError) ([]byte, error) {
+	enc := NewEncoder()
+	enc.WriteU32(msg.ChannelID)
+	if err := enc.WriteB0_255(msg.ErrorCode); err != nil {
+		return nil, err
+	}
+	return EncodeMessage(MsgUpdateChannelError, enc.Bytes()), nil
+}
+
+// DecodeUpdateChannelError decodes an UpdateChannel.Error message
+func DecodeUpdateChannelError(data []byte) (*UpdateChannelError, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &UpdateChannelError{}
+	var err error
+	if msg.ChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.ErrorCode, err = dec.ReadB0_255(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeSubmitSharesExtended encodes a SubmitSharesExtended message
+func EncodeSubmitSharesExtended(msg *SubmitSharesExtended) ([]byte, error) {
+	enc := NewEncoder()
+	enc.WriteU32(msg.ChannelID)
+	enc.WriteU32(msg.SequenceNum)
+	enc.WriteU32(msg.JobID)
+	enc.WriteU32(msg.Nonce)
+	enc.WriteU32(msg.NTime)
+	enc.WriteU32(msg.Version)
+	if err := enc.WriteB0_32(msg.Extranonce); err != nil {
+		return nil, err
+	}
+	return EncodeMessage(MsgSubmitSharesExtended, enc.Bytes()), nil
+}
+
+// DecodeSubmitSharesExtended decodes a SubmitSharesExtended message
+func DecodeSubmitSharesExtended(data []byte) (*SubmitSharesExtended, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &SubmitSharesExtended{}
+	var err error
+	if msg.ChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.SequenceNum, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.JobID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.Nonce, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.NTime, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.Version, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.Extranonce, err = dec.ReadB0_32(); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// EncodeNewExtendedMiningJob encodes a NewExtendedMiningJob message
+func EncodeNewExtendedMiningJob(msg *NewExtendedMiningJob) ([]byte, error) {
+	enc := NewEncoder()
+	enc.WriteU32(msg.ChannelID)
+	enc.WriteU32(msg.JobID)
+	enc.WriteOptionU32(msg.MinNTime)
+	enc.WriteU32(msg.Version)
+	enc.WriteBool(msg.VersionRollingAllowed)
+	for i, leaf := range msg.MerklePath {
+		if len(leaf) != 32 {
+			return nil, fmt.Errorf("merkle path entry %d is %d bytes, want 32", i, len(leaf))
+		}
+	}
+	if err := enc.WriteSeq0_255(msg.MerklePath, 32); err != nil {
+		return nil, err
+	}
+	if err := enc.WriteB0_64KBytes(msg.CoinbaseTxPrefix); err != nil {
+		return nil, err
+	}
+	if err := enc.WriteB0_64KBytes(msg.CoinbaseTxSuffix); err != nil {
+		return nil, err
+	}
+	return EncodeMessage(MsgNewExtendedMiningJob, enc.Bytes()), nil
+}
+
+// DecodeNewExtendedMiningJob decodes a NewExtendedMiningJob message
+func DecodeNewExtendedMiningJob(data []byte) (*NewExtendedMiningJob, error) {
+	dec := NewDecoderFromBytes(data)
+	msg := &NewExtendedMiningJob{}
+	var err error
+	if msg.ChannelID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.JobID, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.MinNTime, err = dec.ReadOptionU32(); err != nil {
+		return nil, err
+	}
+	if msg.Version, err = dec.ReadU32(); err != nil {
+		return nil, err
+	}
+	if msg.VersionRollingAllowed, err = dec.ReadBool(); err != nil {
+		return nil, err
+	}
+	if msg.MerklePath, err = dec.ReadSeq0_255(32); err != nil {
+		return nil, err
+	}
+	if msg.CoinbaseTxPrefix, err = dec.ReadB0_64KBytes(); err != nil {
+		return nil, err
+	}
+	if msg.CoinbaseTxSuffix, err = dec.ReadB0_64KBytes(); err != nil {
 		return nil, err
 	}
 	return msg, nil

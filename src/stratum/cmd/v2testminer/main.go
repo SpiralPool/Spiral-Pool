@@ -44,8 +44,21 @@ func main() {
 	worker := flag.String("worker", "v2test", "Worker name")
 	algo := flag.String("algo", "sha256d", "Hash algorithm: sha256d or scrypt")
 	timeout := flag.Duration("timeout", 60*time.Second, "Max time to mine before giving up")
+	untilBlock := flag.Bool("untilblock", false, "Mine to the network target, so the share submitted is also a block (regtest only — pointless on mainnet)")
 	verbose := flag.Bool("verbose", false, "Verbose logging")
+	authorityHex := flag.String("authority", "", "Pool authority public key (64 hex characters) to verify the server; empty accepts any server")
 	flag.Parse()
+
+	var authority *[32]byte
+	if *authorityHex != "" {
+		raw, err := hex.DecodeString(*authorityHex)
+		if err != nil || len(raw) != 32 {
+			fmt.Fprintln(os.Stderr, "ERROR: -authority must be 64 hex characters")
+			os.Exit(1)
+		}
+		authority = new([32]byte)
+		copy(authority[:], raw)
+	}
 
 	if *port == 0 {
 		fmt.Fprintln(os.Stderr, "ERROR: -port is required")
@@ -79,12 +92,16 @@ func main() {
 
 	// ─── Step 2: Noise NX Handshake ──────────────────────────────────────
 	logf("Performing Noise NX handshake...")
-	noiseConn, serverPubKey, err := v2.ClientHandshake(conn)
+	noiseConn, cert, err := v2.ClientHandshake(conn, authority)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Noise handshake failed: %v\n", err)
 		os.Exit(1)
 	}
-	logf("Handshake complete, server pubkey: %s", hex.EncodeToString(serverPubKey[:8]))
+	if authority == nil {
+		logf("Handshake complete; server certificate NOT verified (no -authority given)")
+	} else {
+		logf("Handshake complete; certificate verified, valid %d-%d", cert.ValidFrom, cert.NotValidAfter)
+	}
 
 	// Set overall deadline on the underlying TCP connection.
 	// NoiseConn reads/writes through this same conn, so the deadline applies.
@@ -244,10 +261,24 @@ func main() {
 	// Nonce (4 bytes LE) — filled in mining loop
 	// header[76:80] = nonce
 
+	// A pool's share target is deliberately easier than the network's, so a run
+	// that stops at the first accepted share proves the share path and nothing
+	// else: block detection, block assembly and the submitblock round trip are
+	// never reached. Mining to the network target instead makes the very first
+	// submission a block, which is the only way to exercise that end to end
+	// without waiting on luck. Regtest only — on a real chain this never returns.
+	mineTarget := shareTarget
+	if *untilBlock {
+		if network := v2.NBitsToTarget(prevHash.NBits); network != nil && network.Sign() > 0 && network.Cmp(mineTarget) < 0 {
+			mineTarget = network
+		}
+		fmt.Printf("Mining to the network target (nBits=0x%08x): the share submitted will also be a block\n", prevHash.NBits)
+	}
+
 	// Pre-compute target as 32-byte big-endian for fast byte comparison
 	// (eliminates per-hash big.Int allocation that was the bottleneck)
 	targetBE := make([]byte, 32)
-	tb := shareTarget.Bytes()
+	tb := mineTarget.Bytes()
 	copy(targetBE[32-len(tb):], tb)
 
 	numWorkers := runtime.NumCPU()

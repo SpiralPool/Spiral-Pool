@@ -5,10 +5,13 @@ package v2
 
 import (
 	"fmt"
+	"math/big"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/spiralpool/stratum/internal/vardiff"
 )
 
 // SessionState represents the state of a V2 session
@@ -42,14 +45,36 @@ func (s SessionState) String() string {
 	}
 }
 
-// Channel represents a mining channel within a session
+// Channel represents a standard or extended mining channel within a session
 type Channel struct {
 	ID              uint32
 	UserIdentity    string // wallet.worker
+	MinerAddress    string // payout address, parsed from UserIdentity
+	WorkerName      string
 	NominalHashRate float32
-	TargetNBits     uint32 // Current target in compact form
-	ExtraNonce2Size uint16
-	ExtraNonce2     []byte // Channel's extranonce2 prefix
+	Difficulty      float64  // share difficulty for new jobs, in V1 stratum units (jobsMu once the channel is added)
+	Target          [32]byte // share target (U256, little-endian) (jobsMu once the channel is added)
+
+	// MaxTarget is the easiest target the client accepts; nil means no limit.
+	MaxTarget *big.Int
+
+	// ExtranoncePrefix is the pool's part of the coinbase's 12 reserved extranonce
+	// bytes, extranonce1 (4) || extranonce2 (8). A standard channel's miner cannot
+	// change any of it, so the prefix fills all 12 bytes and fixes the channel's
+	// merkle root. An extended channel's prefix is the 4 bytes of extranonce1 and
+	// its miner rolls the ExtranonceSize bytes after it.
+	ExtranoncePrefix []byte
+	Extended         bool
+	ExtranonceSize   int
+
+	vardiff *vardiff.SessionState // nil when vardiff is off
+
+	// Jobs sent to this channel: SV2 job ID → pool job
+	jobsMu    sync.Mutex
+	jobs      map[uint32]channelJob
+	jobOrder  []uint32
+	nextJobID uint32
+	prevHash  string // pool prevhash of the last job sent
 
 	// Stats
 	SharesAccepted  atomic.Uint64
@@ -61,6 +86,7 @@ type Channel struct {
 // Session represents a Stratum V2 client session
 type Session struct {
 	ID          string
+	NumericID   uint64 // share validator session ID; the high bit marks V2
 	Conn        *NoiseConn
 	RemoteAddr  net.Addr
 	State       SessionState
@@ -68,8 +94,9 @@ type Session struct {
 
 	// Protocol negotiation
 	ProtocolVersion uint16
-	Flags           uint32
+	Flags           uint32 // the client's SetupConnection requirements
 	VendorID        string
+	DeviceID        string
 
 	// Channels (a session can have multiple mining channels)
 	channels   map[uint32]*Channel
@@ -151,32 +178,77 @@ func (s *Session) GetState() SessionState {
 	return s.State
 }
 
-// AddChannel creates a new mining channel
-func (s *Session) AddChannel(userIdentity string, hashRate float32, targetNBits uint32, extraNonce2Size uint16) *Channel {
+// AddChannel creates a new standard mining channel. extranoncePrefix must be the
+// 12-byte coinbase extranonce the channel mines with.
+func (s *Session) AddChannel(userIdentity string, hashRate float32, difficulty float64, target [32]byte, extranoncePrefix []byte) *Channel {
+	return s.addChannel(newChannel(userIdentity, hashRate, difficulty, target, extranoncePrefix))
+}
+
+// newChannel builds a channel that is not yet part of a session, so every field can
+// be set before job broadcasts can see it.
+func newChannel(userIdentity string, hashRate float32, difficulty float64, target [32]byte, extranoncePrefix []byte) *Channel {
+	address, worker := splitUserIdentity(userIdentity)
+	return &Channel{
+		UserIdentity:     userIdentity,
+		MinerAddress:     address,
+		WorkerName:       worker,
+		NominalHashRate:  hashRate,
+		Difficulty:       difficulty,
+		Target:           target,
+		ExtranoncePrefix: extranoncePrefix,
+		jobs:             make(map[uint32]channelJob),
+	}
+}
+
+// addChannel assigns the channel an ID and adds it to the session.
+func (s *Session) addChannel(ch *Channel) *Channel {
 	s.channelsMu.Lock()
 	defer s.channelsMu.Unlock()
 
-	chanID := s.nextChanID.Add(1) - 1
-	ch := &Channel{
-		ID:              chanID,
-		UserIdentity:    userIdentity,
-		NominalHashRate: hashRate,
-		TargetNBits:     targetNBits,
-		ExtraNonce2Size: extraNonce2Size,
-		ExtraNonce2:     make([]byte, extraNonce2Size),
-	}
-
-	// Generate unique extranonce2 for this channel
-	// Use channel ID as prefix
-	if extraNonce2Size >= 4 {
-		ch.ExtraNonce2[0] = byte(chanID)
-		ch.ExtraNonce2[1] = byte(chanID >> 8)
-		ch.ExtraNonce2[2] = byte(chanID >> 16)
-		ch.ExtraNonce2[3] = byte(chanID >> 24)
-	}
-
-	s.channels[chanID] = ch
+	ch.ID = s.nextChanID.Add(1) - 1
+	s.channels[ch.ID] = ch
 	return ch
+}
+
+// splitUserIdentity splits "address.worker" at the last dot, as V1 does for
+// usernames. An identity with no dot is all address, with worker "default".
+func splitUserIdentity(identity string) (address, worker string) {
+	for i := len(identity) - 1; i >= 0; i-- {
+		if identity[i] == '.' {
+			return identity[:i], identity[i+1:]
+		}
+	}
+	return identity, "default"
+}
+
+// channelJob is a pool job as sent to one channel.
+type channelJob struct {
+	poolJobID      string
+	versionRolling bool
+	versionMask    uint32
+	difficulty     float64 // the channel's share difficulty when the job was sent
+}
+
+// addJob records a job sent to the channel and returns its SV2 job ID, evicting
+// the oldest beyond maxChannelJobs. The caller must hold jobsMu.
+func (ch *Channel) addJob(job channelJob) uint32 {
+	ch.nextJobID++
+	id := ch.nextJobID
+	ch.jobs[id] = job
+	ch.jobOrder = append(ch.jobOrder, id)
+	for len(ch.jobOrder) > maxChannelJobs {
+		delete(ch.jobs, ch.jobOrder[0])
+		ch.jobOrder = ch.jobOrder[1:]
+	}
+	return id
+}
+
+// lookupJob returns the pool job for an SV2 job ID sent to this channel.
+func (ch *Channel) lookupJob(id uint32) (channelJob, bool) {
+	ch.jobsMu.Lock()
+	defer ch.jobsMu.Unlock()
+	job, ok := ch.jobs[id]
+	return job, ok
 }
 
 // GetChannel returns a channel by ID

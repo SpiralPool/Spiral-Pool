@@ -11,6 +11,7 @@
 #
 # Usage:
 #   block-celebrate.sh [--test] [--duration SECONDS] [--miners "IP1 IP2 ..."]
+#                      [--block HASH] [--stop [--block HASH]]
 #
 # Called automatically by Sentinel when a block is found.
 #===============================================================================
@@ -25,12 +26,77 @@ MINER_CACHE_FILE="/run/spiralpool/cgminers.cache"
 MINER_CACHE_TTL=3600  # 1 hour cache for miner discovery
 LOCK_FILE="/run/spiralpool/celebrate.lock"
 DEADLINE_FILE="/run/spiralpool/celebrate.deadline"
+# The block hashes this celebration is for, one per line. A celebration is
+# started by a block and extended by later ones, so stopping it correctly means
+# knowing which blocks it still stands for: an orphaned block withdraws its own
+# entry, and the LEDs only go dark once no block is left celebrating.
+BLOCKS_FILE="/run/spiralpool/celebrate.blocks"
 MINER_DB_FILE="/spiralpool/data/miners.json"
 CELEBRATE_LOG="/spiralpool/logs/celebrate.log"
 
 # Track child PIDs for cleanup on termination
 declare -a CHILD_PIDS=()
 declare -A SAVED_STATES=()  # ip -> led state, for cleanup on signal
+
+# Record a block as one this celebration stands for. Idempotent: the same block
+# reaches this script from the stratum, from Sentinel and sometimes by hand.
+record_block() {
+    local hash="${1:-}"
+    [[ -z "$hash" ]] && return 0
+    touch "$BLOCKS_FILE" 2>/dev/null || return 0
+    grep -qxF "$hash" "$BLOCKS_FILE" 2>/dev/null || echo "$hash" >> "$BLOCKS_FILE"
+}
+
+# Stop a running celebration, optionally only on behalf of one block.
+#
+# Without --block this is an unconditional stop (an operator saying "enough").
+# With --block it withdraws that block and stops only if it was the last one
+# standing, so a block that orphans cannot switch the lights off on a different
+# block that is still perfectly good.
+#
+# A celebration with no recorded blocks is left alone: it was started by a
+# caller that did not name one, and cancelling on an unprovable attribution is
+# worse than leaving the LEDs on for their remaining time.
+stop_celebration() {
+    local hash="${1:-}"
+    local pid remaining
+
+    if [[ ! -f "$LOCK_FILE" ]]; then
+        log "No celebration is running"
+        return 0
+    fi
+    pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+    if ! [[ "$pid" =~ ^[0-9]+$ ]] || ! kill -0 "$pid" 2>/dev/null; then
+        log "No celebration is running (removing stale lock)"
+        rm -f "$LOCK_FILE" "$DEADLINE_FILE" "$BLOCKS_FILE"
+        return 0
+    fi
+
+    if [[ -n "$hash" ]]; then
+        if [[ ! -s "$BLOCKS_FILE" ]]; then
+            log "Celebration (PID $pid) is not attributed to any block — leaving it running"
+            return 0
+        fi
+        if ! grep -qxF "$hash" "$BLOCKS_FILE" 2>/dev/null; then
+            log "Celebration (PID $pid) is not for block $hash — leaving it running"
+            return 0
+        fi
+        grep -vxF "$hash" "$BLOCKS_FILE" > "${BLOCKS_FILE}.tmp" 2>/dev/null || true
+        mv -f "${BLOCKS_FILE}.tmp" "$BLOCKS_FILE" 2>/dev/null || true
+        if [[ -s "$BLOCKS_FILE" ]]; then
+            remaining=$(grep -c . "$BLOCKS_FILE" 2>/dev/null || echo 0)
+            log "Block $hash withdrawn — $remaining other block(s) still celebrating"
+            return 0
+        fi
+        log "Block $hash withdrawn and it was the last one — stopping celebration"
+    fi
+
+    # TERM, not KILL: the incumbent traps it, restores every LED it changed and
+    # releases the lock. KILL would leave the miners lit in celebration colours.
+    log "Stopping celebration (PID $pid)"
+    kill -TERM "$pid" 2>/dev/null || true
+    return 0
+}
 
 # Cleanup handler: restore LEDs and release lock on termination
 cleanup() {
@@ -43,14 +109,18 @@ cleanup() {
     # Return LEDs to their idle state. Unlike the old restore-only path this also
     # covers a miner whose pre-celebration state was never captured: with
     # led_idle_state=off there is nothing to know, the LED just goes off.
+    # No 2>/dev/null here. Every log function writes to stderr, so suppressing it
+    # discarded the whole of this loop's output — including a refused restore,
+    # which is exactly the case an operator needs to see and the one path where
+    # nobody is watching the miners at the time.
     for ip in "${!SAVED_STATES[@]}"; do
-        restore_idle_led "$ip" "${SAVED_STATES[$ip]}" 2>/dev/null || true
+        restore_idle_led "$ip" "${SAVED_STATES[$ip]}" || true
     done
     # Release lock — only if it is ours. main() exits early on several paths
     # (quiet hours, --list, --help, no miners); those must not evict a
     # celebration that another process is legitimately running.
     if [[ "$(cat "$LOCK_FILE" 2>/dev/null)" == "$$" ]]; then
-        rm -f "$LOCK_FILE" "$DEADLINE_FILE"
+        rm -f "$LOCK_FILE" "$DEADLINE_FILE" "$BLOCKS_FILE"
     fi
     log "Cleanup complete"
 }
@@ -217,10 +287,19 @@ set_led() {
     # miner rejected the command. Warn once per miner per run rather than on every
     # call — a celebration issues thousands of these.
     # Always returns 0: the script runs under `set -e`, and a transient nc timeout
-    # must not abort a multi-hour celebration.
-    if [[ "$reply" != *"STATUS=I"* ]] && [[ -z "${LED_WARNED:-}" ]]; then
-        LED_WARNED=1
-        log_error "$ip rejected ledset (reply: ${reply:-no response}) — LED effects will not display"
+    # must not abort a multi-hour celebration. Whether this particular write was
+    # accepted is recorded in LED_LAST_ACCEPTED instead, so the restore at the end
+    # can report what happened rather than assume it worked. The once-per-run
+    # warning is deliberately not the mechanism for that: by the time the restore
+    # runs it has usually already fired, and every later refusal is silent.
+    if [[ "$reply" == *"STATUS=I"* ]]; then
+        LED_LAST_ACCEPTED=1
+    else
+        LED_LAST_ACCEPTED=0
+        if [[ -z "${LED_WARNED:-}" ]]; then
+            LED_WARNED=1
+            log_error "$ip rejected ledset (reply: ${reply:-no response}) — LED effects will not display"
+        fi
     fi
     return 0
 }
@@ -230,12 +309,34 @@ set_led() {
 # state captured before the celebration began, and a state that was never
 # captured is left untouched rather than guessed — guessing is what used to turn
 # LEDs off by accident.
+# Say what the restore actually achieved, rather than what it attempted.
+#
+# The celebration's last act used to log "LED off on <ip>" whether or not the
+# miner took the command. On 18 September that produced a log reading
+#   21:22:14  192.168.1.14 rejected ledset (reply: no response)
+#   21:32:25  LED off on 192.168.1.14
+#   21:32:25  CELEBRATION COMPLETE - LEDs RESTORED
+# for a miner that stayed lit in celebration colours for a further ten hours.
+# The restore is the one write whose outcome the operator has to be able to
+# trust, because nothing checks it afterwards and nobody is watching the rig at
+# the time.
+_report_led_restore() {
+    local ip="$1" success_msg="$2"
+
+    if [[ "${LED_LAST_ACCEPTED:-0}" == "1" ]]; then
+        log "$success_msg"
+        return 0
+    fi
+    log_error "$ip did not accept the LED restore — it may still be showing celebration colours. Clear it with: ascset|0,ledset,0-0-0-0-0-0"
+    return 0
+}
+
 restore_idle_led() {
     local ip="$1" saved="$2"
 
     if [[ "$LED_IDLE_STATE" != "restore" ]]; then
         set_led "$ip" 0 0 0 0 0 0
-        log "LED off on $ip"
+        _report_led_restore "$ip" "LED off on $ip"
         return 0
     fi
 
@@ -247,7 +348,7 @@ restore_idle_led() {
     local mode brightness speed r g b
     IFS='-' read -r mode brightness speed r g b <<< "$saved"
     set_led "$ip" "$mode" "$brightness" "$speed" "$r" "$g" "$b"
-    log "Restored LED on $ip"
+    _report_led_restore "$ip" "Restored LED on $ip"
 }
 
 # Set LED mode (0=off, 1=solid, 2=flash, 3=pulse, 4=loop)
@@ -679,6 +780,10 @@ Options:
   --scan              Force rescan for miners (ignore cache)
   --list              List discovered miners and exit
   --force             Bypass quiet hours check
+  --block HASH        Record the block this celebration is for
+  --stop              Stop a running celebration and restore the LEDs.
+                      With --block, withdraws only that block and stops
+                      only if it was the last one still celebrating.
   -h, --help          Show this help message
 
 Examples:
@@ -709,6 +814,7 @@ main() {
         MINER_CACHE_FILE="/tmp/spiralpool-cgminers.cache"
         LOCK_FILE="/tmp/spiralpool-celebrate.lock"
         DEADLINE_FILE="/tmp/spiralpool-celebrate.deadline"
+        BLOCKS_FILE="/tmp/spiralpool-celebrate.blocks"
     fi
 
     local duration="$CELEBRATION_DURATION"
@@ -717,6 +823,8 @@ main() {
     local force_celebrate=false
     local list_only=false
     local test_mode=false
+    local block_hash=""
+    local stop_mode=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -751,6 +859,15 @@ main() {
                 list_only=true
                 shift
                 ;;
+            --block)
+                [[ -z "${2:-}" ]] && { log_error "--block requires a block hash"; exit 1; }
+                block_hash="$2"
+                shift 2
+                ;;
+            --stop)
+                stop_mode=true
+                shift
+                ;;
             -h|--help)
                 usage
                 exit 0
@@ -762,6 +879,16 @@ main() {
                 ;;
         esac
     done
+
+    # --stop signals the incumbent and touches no miner itself, so it runs
+    # before miner discovery, before the quiet-hours gate, and without taking
+    # the lock. It must also not fire the EXIT trap: this process never owned
+    # the LEDs, and cleanup() would try to release a lock belonging to another.
+    if [[ "$stop_mode" == "true" ]]; then
+        stop_celebration "$block_hash"
+        trap - EXIT
+        exit 0
+    fi
 
     # Quiet hours check — skip celebration if quiet hours are active
     # (unless --force or --test was passed)
@@ -825,6 +952,10 @@ main() {
             else
                 log "Celebration already running (PID $old_pid) — deadline unchanged"
             fi
+            # Join this block to the running celebration either way: the
+            # deadline may not move, but the celebration now stands for this
+            # block too and must not end when an earlier one is withdrawn.
+            record_block "$block_hash"
             # Do not run cleanup: the incumbent owns the LEDs and the lock
             trap - EXIT
             exit 0
@@ -837,6 +968,8 @@ main() {
     # Write our PID as the lock and publish our deadline
     echo $$ > "$LOCK_FILE"
     echo "$(( $(date +%s) + duration ))" > "$DEADLINE_FILE"
+    rm -f "$BLOCKS_FILE"
+    record_block "$block_hash"
 
     run_celebration "$duration" "${miners[@]}"
 

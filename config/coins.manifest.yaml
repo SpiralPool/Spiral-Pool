@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v2.7.1 - SINGLE COIN MANIFEST
+# SPIRAL POOL v3.0.0 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
@@ -62,6 +62,11 @@ coins:
   - symbol: BTC
     name: Bitcoin
     algorithm: sha256d
+
+    storage:
+      chain_gb: 780  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "blockchair api /bitcoin/stats blockchain_size"
     role: parent  # Can provide PoW for aux chains
 
     network:
@@ -103,6 +108,11 @@ coins:
   - symbol: BCH
     name: Bitcoin Cash
     algorithm: sha256d
+
+    storage:
+      chain_gb: 220  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "blockchair api /bitcoin-cash/stats blockchain_size"
     role: standalone
 
     network:
@@ -139,6 +149,11 @@ coins:
   - symbol: DGB
     name: DigiByte
     algorithm: sha256d
+
+    storage:
+      chain_gb: 40  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "wiki.digibyte.org run-full-node"
     role: standalone
 
     network:
@@ -174,6 +189,11 @@ coins:
   - symbol: BC2
     name: Bitcoin II
     algorithm: sha256d
+
+    storage:
+      chain_gb: 10  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: standalone
 
     network:
@@ -211,6 +231,11 @@ coins:
   - symbol: BCH2
     name: Bitcoin Cash II
     algorithm: sha256d
+
+    storage:
+      chain_gb: 15  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: standalone
 
     network:
@@ -251,6 +276,11 @@ coins:
   - symbol: NMC
     name: Namecoin
     algorithm: sha256d
+
+    storage:
+      chain_gb: 15  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: aux
 
     network:
@@ -294,6 +324,11 @@ coins:
   - symbol: SYS
     name: Syscoin
     algorithm: sha256d
+
+    storage:
+      chain_gb: 25  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: aux
 
     network:
@@ -336,6 +371,11 @@ coins:
   - symbol: XMY
     name: Myriad
     algorithm: sha256d
+
+    storage:
+      chain_gb: 8  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: aux
 
     network:
@@ -378,6 +418,17 @@ coins:
   - symbol: FBTC
     name: Fractal Bitcoin
     algorithm: sha256d
+
+    storage:
+      chain_gb: 3100  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      # Derived, not published: Fractal's docs recommend provisioning 2 TB, but
+      # that is a recommendation the chain has outgrown. 2,139,820 blocks at a
+      # mean 1.45 MB (mempool.fractalbitcoin.io sizes-weights, full history) is
+      # ~3.1 TB. Cross-check: 30s blocks at that size give ~1.5 TB/year, which
+      # matches the "~2TB per year" the same docs state. Height x 30s implies
+      # 743 days against 742 observed, so the inputs are sound.
+      source: "derived: mempool.fractalbitcoin.io tip height x mean block size"
     role: aux
 
     network:
@@ -427,6 +478,11 @@ coins:
   - symbol: XEC
     name: eCash
     algorithm: sha256d
+
+    storage:
+      chain_gb: 160  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "blockchair api /ecash/stats blockchain_size"
     role: standalone
 
     network:
@@ -468,6 +524,11 @@ coins:
   - symbol: LTC
     name: Litecoin
     algorithm: scrypt
+
+    storage:
+      chain_gb: 240  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "blockchair api /litecoin/stats blockchain_size"
     role: parent  # Can provide PoW for aux chains
 
     network:
@@ -508,6 +569,11 @@ coins:
   - symbol: DOGE
     name: Dogecoin
     algorithm: scrypt
+
+    storage:
+      chain_gb: 190  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "blockchair api /dogecoin/stats blockchain_size"
     role: aux
 
     network:
@@ -550,6 +616,11 @@ coins:
   - symbol: DGB-SCRYPT
     name: DigiByte (Scrypt)
     algorithm: scrypt
+
+    storage:
+      chain_gb: 40  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: "2026-09-21"
+      source: "shares the DGB chain"
     role: standalone
 
     # Uses same node as DGB SHA256d
@@ -587,6 +658,11 @@ coins:
   - symbol: PEP
     name: PepeCoin
     algorithm: scrypt
+
+    storage:
+      chain_gb: 5  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: aux
 
     network:
@@ -629,6 +705,11 @@ coins:
   - symbol: BTCS
     name: Bitcoin Silver
     algorithm: sha256d
+
+    storage:
+      chain_gb: 8  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: standalone
 
     network:
@@ -667,6 +748,11 @@ coins:
   - symbol: CAT
     name: Catcoin
     algorithm: scrypt
+
+    storage:
+      chain_gb: 5  # full (unpruned) node; prune=5000 caps this at ~5 GB
+      measured: null   # NOT measured - no public size statistic for this chain
+      source: "estimate"
     role: standalone
 
     network:

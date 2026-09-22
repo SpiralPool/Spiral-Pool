@@ -481,6 +481,35 @@ AUX_EXTRACT_AWK
     done <<< "$aux_raw"
 }
 
+# Ask the daemon to confirm a freshly generated address is valid on its chain and
+# owned by the named wallet, before the address is written to any config.
+# Args: $1 = cli path, $2 = conf path, $3 = wallet name, $4 = address, $5 = symbol, $6 = indent
+verify_generated_address() {
+    local cli_path="$1" conf_path="$2" wallet_name="$3" address="$4" symbol="$5" indent="$6"
+    local valid_info is_valid addr_info is_mine
+
+    valid_info=$(timeout 10 "$cli_path" -conf="$conf_path" validateaddress "$address" 2>&1) || true
+    is_valid=$(echo "$valid_info" | grep -o '"isvalid":[^,}]*' | grep -o 'true\|false' | head -1)
+    if [ "$is_valid" != "true" ]; then
+        echo "${indent}✗ The $symbol daemon did not confirm $address as valid: $valid_info"
+        return 1
+    fi
+
+    addr_info=$(timeout 10 "$cli_path" -conf="$conf_path" -rpcwallet="$wallet_name" getaddressinfo "$address" 2>&1) || true
+    is_mine=$(echo "$addr_info" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
+    if [ -z "$is_mine" ]; then
+        # Older daemons report ismine from validateaddress instead
+        is_mine=$(echo "$valid_info" | grep -o '"ismine":[^,}]*' | grep -o 'true\|false' | head -1)
+    fi
+    if [ "$is_mine" != "true" ]; then
+        echo "${indent}✗ The $symbol daemon did not confirm $address belongs to wallet '$wallet_name'"
+        return 1
+    fi
+
+    echo "${indent}✓ Address verified by the $symbol daemon (valid, owned by '$wallet_name')"
+    return 0
+}
+
 # Ensure wallet and address for an aux chain
 # Args: $1 = aux chain symbol, $2 = config file
 ensure_auxchain_wallet_and_address() {
@@ -590,6 +619,11 @@ ensure_auxchain_wallet_and_address() {
 
     if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9:]{20,100}$ ]]; then
         echo "    ✓ Generated aux chain address: $new_address"
+
+        if ! verify_generated_address "$cli_path" "$conf_path" "$wallet_name" "$new_address" "$symbol" "    "; then
+            echo "    ✗ Address not written to config. Set the aux chain address manually in: $config_file"
+            return 1
+        fi
 
         if update_auxchain_field "$config_file" "$symbol" "address" "$new_address"; then
             echo "    ✓ Updated config with new aux chain address for $symbol"
@@ -1072,6 +1106,11 @@ ensure_wallet_and_address() {
 
     if [ -n "$new_address" ] && [[ "$new_address" =~ ^[a-zA-Z0-9:]{20,100}$ ]]; then
         echo "  ✓ Generated address: $new_address"
+
+        if ! verify_generated_address "$cli_path" "$conf_path" "$wallet_name" "$new_address" "$symbol" "  "; then
+            echo "  ✗ Address not written to config. Set the address manually in: $config_file"
+            return 1
+        fi
 
         # Update the config file based on mode
         if [ "$mode" = "v2" ]; then

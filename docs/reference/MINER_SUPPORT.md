@@ -2,9 +2,9 @@
 
 > **⚠️ IMPORTANT — READ BEFORE CONNECTING YOUR MINER**
 >
-> Spiral Pool is a **single-operator solo mining pool**. One wallet address per coin is configured by the pool operator at install time. **All block rewards go directly to the operator's wallet address, regardless of which miner found the block.** Miners connecting to a Spiral Pool instance receive no direct payment from the pool software.
+> Spiral Pool is a **single-operator solo mining pool**, and the operator owns every wallet its miners pay. **Every block reward goes to the operator's configured wallet.** Where the operator has enabled worker-name payout (`spiralctl mining payout worker`, off by default) to route their own rigs to their own addresses, a miner connecting to a coin's own port with a valid address for that coin as its worker name (`ADDRESS.worker`) is paid at that address instead. Otherwise, on the multi-coin smart port, and for every merge-mined auxiliary chain, rewards go to the operator's wallet and you receive no direct payment from the pool software.
 >
-> If you are connecting your miner to someone else's Spiral Pool, confirm with that operator what compensation arrangement, if any, they have in place. The pool software itself has no mechanism to split rewards or pay you directly.
+> If you are connecting your miner to someone else's Spiral Pool, confirm with that operator which wallet your hashrate pays and what compensation arrangement, if any, they have in place. The pool software itself has no mechanism to split rewards.
 
 This document details the mining hardware supported by Spiral Dash, Spiral Sentinel, and the `spiralctl scan` utility, including API protocols, auto-detection capabilities, and known limitations.
 
@@ -234,6 +234,36 @@ These devices use proprietary web APIs as their primary interface. CGMiner TCP o
 - To enable CGMiner: Telnet to port 8100 (default password: `innot1t2` or `t1t2t3a5`), then edit the config to add `--api-listen --api-network --api-allow W:0/0` and reboot.
 - For Innosilicon A9 Zmaster: SSH as root (password: `blacksheepwall`), edit `/etc/systemd/system/multi-user.target.wants/cgminer.service`.
 - Full HTTP REST API integration is not yet implemented (would provide complete monitoring without CGMiner enablement).
+
+---
+
+## Remote Control and Automation
+
+Sentinel runs the schedules set on the dashboard's Automation page (`/automation`) and restarts miners. What each firmware family supports:
+
+| Family (type keys) | Restart | Sleep / wake | Power | Login |
+|--------------------|---------|--------------|-------|-------|
+| Bitaxe / AxeOS (`axeos`, `bitaxe`, `nmaxe`, `nerdaxe`, `qaxe`, `qaxeplus`, `hammer`, `luckyminer`, `jingleminer`, `zyber`) | HTTP `POST /api/system/restart` | `POST /api/system/pause` / `resume` (ESP-Miner 2.14.0 and later) | – | none |
+| NerdQAxe (`nerdqaxe`, `nerdoctaxe`) | HTTP `POST /api/system/restart` | – (its shutdown cannot be woken remotely) | low / normal: the eco or default frequency and voltage from `GET /api/system/asic`, written with `PATCH /api/system`, then a restart. Refused when OTP is enabled on the device. `normal` replaces any custom frequency and voltage with the firmware defaults. `low` needs firmware that reports an eco preset: a NerdQAxe++ on v1.1.0 reports `ecoFrequency` 0 and refuses it. Confirmed on that unit: `normal` applied, `low` refused without changes | none |
+| Avalon Nano 3S, Avalon Q, Avalon Mini 3 (`avalon`, `canaan`, with the model set on the Automation page) | cgminer `ascset 0,reboot,0`, confirmed on a Nano 3S | none: the firmware has no standby command (a Nano 3S on MM319 refuses `softoff`/`softon` and lists no alternative in `ascset 0,help`) | low / normal / high: `ascset 0,workmode,set,0-2`, confirmed on a Nano 3S | none |
+| Other Avalons | `ascset 0,reboot,0` | – | – (power profiles stay on the dashboard's Avalon scheduler) | none |
+| Antminer, stock firmware (`antminer`, `antminer_scrypt`) | `/cgi-bin/reboot.cgi` | `set_miner_conf.cgi` with `miner-mode` 1 / 0 | low (`miner-mode` 3) / normal (0) | HTTP digest, default root/root |
+| Braiins OS (`braiins`) | REST `PUT /api/v1/actions/reboot` | `actions/pause` / `resume` | power target in watts: `PUT /api/v1/performance/power-target` | username/password |
+| LuxOS (`luxos`) | `rebootdevice` in a logon session | `curtail sleep` / `wakeup` | power target in watts: `profileset <N>W` | session only |
+| Vnish (`vnish`) | `POST /api/v1/system/reboot` | `mining/pause` / `resume` | power target in watts: selects the autotune preset of that name | password, default admin |
+| Whatsminer M60/M66 (`whatsminer`), API v3 on TCP 4433 | `set.system.reboot` | `set.miner.service stop` / `start` | low / normal / high: `set.miner.power_mode` | account super, default password super; the API must be enabled in WhatsMinerTool |
+| Elphapex (`elphapex`) | `/cgi-bin/reboot.cgi` | – | – | HTTP digest, default root/root |
+| Goldshell (`goldshell`) | `/mcb/restart` (existing method) | – | – | none |
+
+- **Mostly not yet run on hardware.** Every command above comes from vendor API documentation or several independent public descriptions, and is tested against mock devices built from them. Two families have since been commanded on real hardware: an Avalon Nano 3S accepted `power low`, `normal`, `high` and `restart`, and a NerdQAxe++ on firmware v1.1.0 accepted `power normal` and refused `power low`, which that firmware has no preset for. Every other family in this table is still untested against a real miner. Please report any that fail.
+- **Testing one miner:** `sudo spiralctl miner control <IP> info` shows what the pool can do with that miner and whether a login is stored. `sleep`, `wake`, `restart` and `power low|normal|high|<watts>` send that command immediately, through the same code and stored login Sentinel uses, and print the miner's answer. `OK` means the miner accepted the command, not that it took effect, so confirm on the miner itself. `restart` covers Avalon, Antminer, Braiins OS, LuxOS, Vnish, Whatsminer and Elphapex; Bitaxe, NerdQAxe and Goldshell restarts stay in Sentinel. A miner missing from Sentinel's list needs `--type`, and an Avalon whose model is not set on the Automation page needs `--model nano3s`, `avalon_q` or `mini3`.
+- **Before a stock Antminer's mode changes,** Sentinel reads the miner's configuration and writes it back with only the mode changed. It refuses if the configuration has no pools, so the write cannot erase them.
+- **Credentials** are stored per miner on the Automation page. They are write-only, and are kept in `/spiralpool/data/device_credentials.json` with mode 0600. Without them, Sentinel uses the firmware's default login.
+- **Not supported yet:**
+  - Elphapex sleep and power modes, where public descriptions of the API conflict.
+  - Goldshell sleep and power modes, which are unconfirmed.
+  - Whatsminer API v2.
+  - The Avalon Mini 3's heater and night modes.
 
 ---
 
