@@ -7,16 +7,20 @@
 # Spiral Pool Post-APT-Update Service Restart
 #
 # Called by systemd after apt-daily-upgrade.service completes.
-# Checks if critical system packages (Python, OpenSSL, glibc, etc.) were
-# updated, and gracefully restarts pool services so they pick up the new
-# libraries. Without this, services would run with stale security patches
-# until the next reboot.
+# Checks whether a pool service is still running a shared library that an
+# upgrade has since replaced (OpenSSL, glibc, Python extension modules, etc.),
+# and gracefully restarts that service so it picks up the new library. Without
+# this, services would run with stale security patches until the next reboot.
 #
 # This script does NOT restart blockchain daemons — those take minutes to
 # reload their chain indexes and are handled by the 4 AM auto-reboot instead.
 #
 # Design:
-#   - Only restarts if relevant packages were actually upgraded TODAY
+#   - Only restarts a service whose processes still have a replaced library
+#     mapped (the same test needrestart uses). Packages a service never loads
+#     (-dev headers, libevent add-ons, another venv's Python modules) no longer
+#     trigger a restart. Pure-Python modules are not mapped, so an upgrade of
+#     one alone is picked up at the next reboot instead.
 #   - Debounces to prevent multiple restarts within 5 minutes
 #   - Verifies each service comes back online after restart
 #   - Logs everything to /spiralpool/logs/apt-restart.log
@@ -27,9 +31,6 @@ INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 LOG_FILE="${INSTALL_DIR}/logs/apt-restart.log"
 DEBOUNCE_FILE="/run/spiralpool/.spiralpool-apt-restart-debounce"
 DEBOUNCE_SECONDS=300  # Don't restart more than once per 5 minutes
-
-# Packages that affect running pool services (Python apps + Go binary via libc)
-CRITICAL_PATTERNS="python3|libssl|openssl|libcrypto|libc6|libstdc|libgcc|libffi|libsqlite|libreadline|libncurses|zlib"
 
 # =============================================================================
 # Logging
@@ -65,23 +66,44 @@ if [[ -f "$DEBOUNCE_FILE" ]]; then
 fi
 
 # =============================================================================
-# Check if critical packages were upgraded today
+# Find services still running replaced libraries
 # =============================================================================
 
-TODAY=$(date +%Y-%m-%d)
-RECENT_UPGRADES=$(grep "^${TODAY}" /var/log/dpkg.log 2>/dev/null | grep " upgrade " | grep -iE "$CRITICAL_PATTERNS" || true)
+# Print the shared libraries a service's processes still have mapped from files
+# an upgrade has since replaced. Every process in the service's cgroup is
+# checked, not just the main PID — spiraldash's gunicorn worker is a child.
+stale_libs() {
+    local svc="$1" cg pids pid
+    cg=$(systemctl show -p ControlGroup --value "$svc" 2>/dev/null)
+    if [[ -n "$cg" && -r "/sys/fs/cgroup${cg}/cgroup.procs" ]]; then
+        pids=$(cat "/sys/fs/cgroup${cg}/cgroup.procs" 2>/dev/null)
+    else
+        pids=$(systemctl show -p MainPID --value "$svc" 2>/dev/null)
+    fi
+    for pid in $pids; do
+        [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+        awk '$7 == "(deleted)" && $6 ~ /\.so(\.[0-9]+)*$/ {print $6}' "/proc/${pid}/maps" 2>/dev/null
+    done | sort -u
+}
 
-if [[ -z "$RECENT_UPGRADES" ]]; then
-    # No critical packages upgraded today — nothing to do
+SERVICES=("spiralsentinel" "spiraldash" "spiralstratum")
+declare -A STALE=()
+for svc in "${SERVICES[@]}"; do
+    systemctl is-active --quiet "$svc" 2>/dev/null || continue
+    libs=$(stale_libs "$svc")
+    [[ -n "$libs" ]] && STALE[$svc]=$(echo "$libs" | xargs -n1 basename | sort -u | tr '\n' ',' | sed 's/,$//')
+done
+
+if [[ ${#STALE[@]} -eq 0 ]]; then
+    # No running service has a replaced library loaded — nothing to do
     exit 0
 fi
 
-# Extract just the package names for logging
-UPDATED_PKGS=$(echo "$RECENT_UPGRADES" | awk '{print $4}' | sort -u | tr '\n' ', ' | sed 's/,$//')
-
 log "================================================================"
-log "Critical system packages updated — restarting pool services"
-log "Updated packages: ${UPDATED_PKGS}"
+log "Replaced libraries still loaded — restarting affected pool services"
+for svc in "${SERVICES[@]}"; do
+    [[ -n "${STALE[$svc]:-}" ]] && log "  ${svc}: ${STALE[$svc]}"
+done
 
 # Write debounce timestamp
 date +%s > "$DEBOUNCE_FILE" 2>/dev/null
@@ -101,7 +123,6 @@ date +%s > "$DEBOUNCE_FILE" 2>/dev/null
 #   - blockchain daemons — too slow to restart, handled by 4 AM reboot
 #   - spiralpool-ha-watcher — shell script, no library dependencies
 
-SERVICES=("spiralsentinel" "spiraldash" "spiralstratum")
 RESTARTED=()
 FAILED=()
 SKIPPED=()
@@ -124,6 +145,9 @@ if [[ -f "${INSTALL_DIR}/config/ha-enabled" ]]; then
 fi
 
 for svc in "${SERVICES[@]}"; do
+    # Not running any replaced library — leave it alone
+    [[ -n "${STALE[$svc]:-}" ]] || continue
+
     if ! systemctl is-enabled --quiet "$svc" 2>/dev/null; then
         SKIPPED+=("$svc")
         continue
@@ -143,7 +167,7 @@ for svc in "${SERVICES[@]}"; do
     fi
 
     log "  Restarting $svc..."
-    if systemctl restart "$svc" 2>/dev/null; then
+    if restart_err=$(systemctl restart "$svc" 2>&1); then
         # Wait for service to stabilize
         sleep 5
 
@@ -163,6 +187,7 @@ for svc in "${SERVICES[@]}"; do
         fi
     else
         log "  FAIL $svc restart command failed — systemd Restart=always will retry"
+        [[ -n "$restart_err" ]] && log "    systemctl: ${restart_err//$'\n'/ }"
         FAILED+=("$svc")
     fi
 done
