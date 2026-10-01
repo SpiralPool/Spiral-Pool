@@ -1773,7 +1773,7 @@ _btc_disk_wallet_scan() {
         # that warning while performing the substitution itself. Classification
         # is unaffected: the BDB magic sits at offset 12 and survives, and the
         # SQLite header is ASCII with no NULs.
-        _magic=$(head -c 15 "$_w" 2>/dev/null | tr -d ' ' || true)
+        _magic=$(head -c 15 "$_w" 2>/dev/null | tr -d '\0' || true)
         if [[ -z "$_magic" ]]; then
             _unclassified=$((_unclassified + 1))
             log_warn "Cannot read ${_w} (empty or unreadable) — cannot classify it."
