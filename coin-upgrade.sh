@@ -1269,7 +1269,10 @@ rollback_coin() {
 # leading whitespace, an optional network-section prefix (main.opt=), the dash
 # and "no" forms, and whitespace around "=". Returns 1 only when it needed to edit
 # and could not back up, so the caller can stop before the binary is touched.
+# Sets REMOVED_OPTIONS_EDITED=true when it changed the file.
+REMOVED_OPTIONS_EDITED=false
 migrate_removed_options() {
+    REMOVED_OPTIONS_EDITED=false
     local coin="$1" opts="${COIN_REMOVED_OPTIONS[$1]:-}" conf="${COIN_CONF[$1]:-}"
     [[ -n "$opts" && -n "$conf" && -f "$conf" ]] || return 0
     local opt pattern="" hits
@@ -1291,6 +1294,7 @@ migrate_removed_options() {
     chmod 600 "$_bak" 2>/dev/null || true
 
     sed -i -E "s/(${pattern})/# removed: ${coin} ${COIN_TARGET[$coin]} rejects this option. \\1/" "$conf"
+    REMOVED_OPTIONS_EDITED=true
     chown "${POOL_USER}:${POOL_USER}" "$conf" 2>/dev/null || true
     log_success "${coin} ${COIN_TARGET[$coin]} no longer accepts: ${opts}"
     log_info "  commented out in ${conf} (backup: ${_bak}):"
@@ -1470,9 +1474,42 @@ upgrade_coin() {
         # warning below tells operators to rerun with --reindex after a failed
         # start, and that is exactly when the binary is already at target.
         if [[ "$coin" != "BTC" && "$do_reindex" != "true" ]]; then
-            log_info "${coin} is already at ${target_ver} — nothing to do"
+            # The binary can reach the target without this script -- copied by
+            # hand, or by another tool -- leaving a config that still sets an
+            # option the target rejects, so the daemon will not start. Repair
+            # the config here as well, and restart the daemon if it changed.
+            migrate_removed_options "$coin" || return 1
+            if [[ "$REMOVED_OPTIONS_EDITED" != "true" ]]; then
+                log_info "${coin} is already at ${target_ver} — nothing to do"
+                return 0
+            fi
+            log_step "Restart ${coin} with the repaired config"
+            sudo systemctl reset-failed "$svc" 2>/dev/null || true
+            local _restarts_before
+            _restarts_before=$(systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo "")
+            if ! sudo systemctl restart "$svc" || ! _daemon_stays_up "$svc" "$_restarts_before"; then
+                log_error "${coin} still does not stay running after the config repair."
+                log_error "Last log lines from ${svc}:"
+                sudo journalctl -u "$svc" -n 15 --no-pager 2>/dev/null | sed 's/^/    /' || true
+                return 1
+            fi
+            _mark_started "$svc"
+            log_success "${svc} restarted with the repaired config"
+            wait_for_daemon "$coin"
             return 0
         fi
+    fi
+
+    # Newer than the target -- installed by hand, or by a later Spiral Pool --
+    # is not "behind". Installing the target over it would be a DOWNGRADE, and a
+    # daemon cannot always read data a newer version has written (chainstate,
+    # block index and wallet formats only move forward), so this refuses.
+    if _ver_gt "$installed_ver" "$target_ver"; then
+        log_warn "${coin} ${installed_ver} is NEWER than this release's target ${target_ver}."
+        log_warn "Not downgrading: an older daemon may not read the data a newer one wrote."
+        log_warn "Nothing was changed. Upgrade Spiral Pool to a release that targets"
+        log_warn "${installed_ver} or later:  sudo /spiralpool/upgrade.sh"
+        return 0
     fi
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -2489,6 +2526,9 @@ show_version_table() {
             # — precisely how a BTC node sat on an RDTS-enforcing Knots build
             # while every status surface read healthy.
             status_str="${GREEN}✓ current${NC}"
+        elif _ver_gt "$installed_ver" "${COIN_TARGET[$coin]}"; then
+            # --coin will not downgrade it, so it is not an available upgrade.
+            status_str="${CYAN}newer than target — kept${NC}"
         else
             has_upgrade=true
             case "$risk" in
@@ -2554,6 +2594,9 @@ list_upgrades() {
         # A plain compare would list a correctly-upgraded node as pending, and
         # upgrade.sh keys its BTC chain-split notice off this output.
         _ver_matches "$installed_ver" "${COIN_TARGET[$coin]}" && continue  # already at target
+        # Newer than the target is not pending: --coin refuses to downgrade it,
+        # and listing it would have Sentinel call it "behind".
+        _ver_gt "$installed_ver" "${COIN_TARGET[$coin]}" && continue
         echo "$coin $installed_ver ${COIN_TARGET[$coin]} $risk"
     done
 }
@@ -2945,6 +2988,7 @@ interactive_mode() {
         # fires the chain-split notice at an operator who has nothing wrong.
         [[ "$_iv" == "not_installed" ]] && continue
         _ver_matches "$_iv" "${COIN_TARGET[$coin]}" && continue
+        _ver_gt "$_iv" "${COIN_TARGET[$coin]}" && continue   # never offer a downgrade
         upgradeable+=("$coin")
     done
 
