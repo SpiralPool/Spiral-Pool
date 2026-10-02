@@ -219,17 +219,58 @@ def test_a_new_upstream_release_is_reported_even_when_nothing_is_behind(monkeypa
 
 
 def test_upstream_news_is_not_dressed_as_an_upgrade_required(monkeypatch):
-    """Nothing is behind, so nothing is at risk and nothing needs doing.
+    """Not behind the target, so not the red "can follow the wrong chain" alert.
 
-    Wording this as the red consensus alert would be false, and would train the
-    operator to ignore the alert that is not.
+    That verdict is about a daemon below a target Spiral Pool has reviewed.
+    Upstream news has not been reviewed, so it gets its own wording.
     """
     embed = sentinel.create_coin_upgrade_embed(
         [], [{"coin": "LTC", "target": "0.21.5.8", "upstream": "0.22.0"}])
     body = str(embed)
     assert "UPGRADE REQUIRED" not in body
-    assert "coin-upgrade.sh --coin" not in body, (
-        "an untested upstream release must not be offered as an install command")
+
+
+def test_upstream_news_never_claims_there_is_nothing_to_do(monkeypatch):
+    """The alert that went out for DigiByte 9.26.6.
+
+    It said "nothing is behind and there is nothing to do right now" about a
+    consensus release every mining node had to install before block 24,490,000.
+    The check compares version numbers and never reads release notes, so it has
+    no grounds to call any release routine.
+    """
+    embed = sentinel.create_coin_upgrade_embed(
+        [], [{"coin": "DGB", "target": "9.26.5", "upstream": "9.26.6"}])
+    desc = embed["description"]
+    assert "nothing to do" not in desc.lower()
+    assert "consensus" in desc, "it must say the release may be a required consensus upgrade"
+    assert embed["color"] != sentinel.COLORS.get("blue"), "blue reads as informational"
+
+
+def test_upstream_news_gives_the_commands_in_order(monkeypatch):
+    """--coin installs only the target, so upgrade.sh has to come first.
+
+    The operator needs the commands that actually get the release onto the node:
+    a Spiral Pool upgrade that moves the target, then the daemon upgrade, with
+    the real ticker rather than a placeholder.
+    """
+    embed = sentinel.create_coin_upgrade_embed(
+        [], [{"coin": "DGB", "target": "9.26.5", "upstream": "9.26.6"}])
+    desc = embed["description"]
+    pool = desc.find("sudo /spiralpool/upgrade.sh")
+    coin = desc.find("sudo /spiralpool/scripts/coin-upgrade.sh --coin DGB")
+    assert pool != -1 and coin != -1, "both commands must be given"
+    assert pool < coin, "the Spiral Pool upgrade must come before the daemon upgrade"
+
+
+def test_pending_upgrades_name_the_real_ticker(monkeypatch):
+    """A <TICKER> placeholder is a command that fails when pasted."""
+    embed = sentinel.create_coin_upgrade_embed([
+        {"coin": "DGB", "installed": "9.26.5", "target": "9.26.6", "risk": "MAJOR"},
+        {"coin": "LTC", "installed": "0.21.5.6", "target": "0.21.5.8", "risk": "MAJOR"},
+    ])
+    desc = embed["description"]
+    assert "<TICKER>" not in desc
+    assert "coin-upgrade.sh --coin DGB" in desc and "coin-upgrade.sh --coin LTC" in desc
 
 
 def test_upstream_and_pending_are_both_reported(monkeypatch):

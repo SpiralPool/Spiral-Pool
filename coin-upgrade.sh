@@ -3,11 +3,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V3.0.0-SPIRAL_COVENANT
+#                   V3.0.1-SPIRAL_COVENANT
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
-# EXCEPTION: the 9.26.x → v9.26.5 DigiByte upgrade offers to switch the node to a
+# EXCEPTION: the 9.26.x → v9.26.6 DigiByte upgrade offers to switch the node to a
 # pruned node (v9.26.4+ makes DigiDollar work while pruned). If accepted it edits
 # digibyte.conf in place (sets prune=5000, removes txindex) after backing it up —
 # no chain data is deleted and no resync is required. Declining leaves it full.
@@ -94,7 +94,7 @@ declare -A COIN_TARGET=(
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="31.1.0"
     [BTCS]="31.1.3"         # Bitcoin Silver — binary release (tag version31.1.3)
-    [DGB]="9.26.5"
+    [DGB]="9.26.6"
     [LTC]="0.21.5.8"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
@@ -106,7 +106,7 @@ declare -A COIN_TARGET=(
     [SYS]="5.1.2"
     [XMY]="0.18.1.0"
     [FBTC]="0.4.0"
-    [XEC]="0.33.12"   # ecash-node (Bitcoin ABC)
+    [XEC]="0.34.0"    # ecash-node (Bitcoin ABC)
 )
 
 # Where each coin publishes its releases, for the "is anything newer out?" check.
@@ -194,10 +194,13 @@ declare -A COIN_RISK=(
                     # 31 cannot load legacy (BDB) wallets, so the upgrade stops first
                     # if one is on disk. 31.1.0 broke fresh syncs (fixed in 31.1.1); a
                     # node stuck on 31.1.0 needs blocks/, chainstate/ and indexes/ wiped.
-    [DGB]="MINOR"   # 9.26.5 — fixes the DigiDollar oracle startup scan (9.26.4 re-ran the BIP9
-                    # state machine per block, hanging init for 15+ min). Nodes still on 9.26.3
-                    # also cross 9.26.4's narrowly-scoped consensus rule, so this stays MINOR.
-                    # In-place binary swap, no reindex. Optional pruning (one-time offer).
+    [DGB]="MAJOR"   # CONSENSUS, DEADLINE. 9.26.6 carries Thaw Day, new DigiDollar block
+                    # rules activating at mainnet height 24,490,000 (expected ~1 Nov 2026).
+                    # Upstream: every full-node and mining operator must upgrade before
+                    # it, DigiDollar user or not; older nodes can disagree about valid
+                    # blocks after that height, and downgrading afterwards is not a repair.
+                    # In-place binary swap, no reindex. The pruned-node DigiDollar history
+                    # floor (23,627,520) is unchanged. Optional pruning (one-time offer).
     [LTC]="MAJOR"   # CONSENSUS. 0.21.5.8 carries 0.21.5.7's soft-forking rule, active at
                     # mainnet height 3,172,640: an MWEB block whose kernel signals extra
                     # data with an empty extra-data payload is rejected. That height has
@@ -231,6 +234,10 @@ declare -A COIN_RISK=(
                     # Avalanche Pre-Consensus; ABC states nodes MUST be on 0.32.x before
                     # activation) and the 15 May 2026 upgrade in 0.33.0. A node on
                     # 0.31.12 cannot be following eCash mainnet. Expect a long catch-up.
+                    # And a third, with a DEADLINE: 0.34.x is required before the
+                    # 15 Nov 2026 12:00 UTC upgrade (MTP 1794744000), which moves
+                    # replay protection to the next upgrade. ABC: "To stay in sync with
+                    # the network, node operators must update to version 0.34.x" first.
 )
 
 # systemd service unit names
@@ -2397,10 +2404,37 @@ show_version_table() {
 
     echo ""
     if [[ "$has_upgrade" == "false" ]]; then
-        echo -e "  ${GREEN}All coin daemons are at their target versions.${NC}"
+        echo -e "  ${GREEN}All coin daemons are at this release's target versions.${NC}"
         echo ""
     fi
+    show_upstream_notice
     warn_stale_reindex_dropins
+}
+
+# The table compares against COIN_TARGET, which is fixed when this Spiral Pool
+# release ships, so "✓ current" means "at that target", not "at the newest
+# release". Printed alone it told a DigiByte operator nothing was needed while
+# 9.26.6 -- a consensus upgrade with an activation height -- was already out.
+show_upstream_notice() {
+    _collect_upstream
+    local unreachable="${UPSTREAM_UNREACHABLE[*]:-}"
+    if [[ ${#UPSTREAM_ROWS[@]} -gt 0 ]]; then
+        echo -e "  ${YELLOW}${BOLD}Newer upstream releases than this Spiral Pool version targets:${NC}"
+        local row
+        for row in "${UPSTREAM_ROWS[@]}"; do
+            # shellcheck disable=SC2086
+            set -- $row
+            printf "    %-6s  %s → %s\n" "$1" "$2" "$3"
+        done
+        echo ""
+        echo -e "  ${YELLOW}Spiral Pool has not reviewed these. Read their release notes: a consensus${NC}"
+        echo -e "  ${YELLOW}upgrade has an activation deadline whether or not it is targeted yet.${NC}"
+        echo -e "  --coin installs only the target. To move the target, upgrade Spiral Pool first:"
+        echo -e "    ${CYAN}sudo /spiralpool/upgrade.sh${NC}"
+        echo ""
+    fi
+    [[ -n "$unreachable" ]] && _print_unreachable "$unreachable"
+    return 0
 }
 
 # Machine-readable upgrade list for external callers (upgrade.sh).
@@ -2741,7 +2775,7 @@ interactive_mode() {
     done
 
     if [[ ${#upgradeable[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}Nothing to upgrade — all daemons are current.${NC}\n"
+        echo -e "  ${GREEN}Nothing to upgrade — every daemon is at this release's target.${NC}\n"
         return 0
     fi
 
@@ -2802,7 +2836,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V3.0.0-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V3.0.1-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

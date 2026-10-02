@@ -17,7 +17,7 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Spiral Pool - Multi-Coin Solo Mining Pool"
-LABEL version="3.0.0"
+LABEL version="3.0.1"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,7 +25,7 @@ ENV TZ=UTC
 
 # Build arguments for configuration
 ARG GO_VERSION=1.26.8
-ARG DIGIBYTE_VERSION=9.26.5
+ARG DIGIBYTE_VERSION=9.26.6
 ARG POSTGRES_VERSION=18
 
 # Environment variables for runtime
@@ -133,7 +133,7 @@ RUN rm -rf ${INSTALL_DIR}/config/config.yaml || true
 # bug report arrives from a deployment you did not build yourself.
 # GIT_COMMIT is a build arg because the build context may be a zip extract with
 # no .git directory; pass it with --build-arg GIT_COMMIT=$(git rev-parse --short HEAD).
-ARG VERSION=3.0.0
+ARG VERSION=3.0.1
 ARG GIT_COMMIT=unknown
 
 # Build with ZMQ support

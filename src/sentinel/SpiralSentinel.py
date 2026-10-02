@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v3.0.0 - SPIRAL COVENANT EDITION                           ║
+║  Spiral Sentinel v3.0.1 - SPIRAL COVENANT EDITION                           ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 __codename__ = "SPIRAL_COVENANT"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -4613,13 +4613,18 @@ def create_coin_upgrade_embed(pending, upstream=None, unreachable=None):
     major = [p for p in rows if p["risk"] == "MAJOR"]
 
     if not rows:
-        # Nothing to install; the only news is that upstream has moved on.
-        head = ("```\nNEWER COIN RELEASES AVAILABLE\n```\n"
-                "A newer stable release exists for the daemons below. This version of "
-                "Spiral Pool installs the version shown as targeted, so nothing is "
-                "behind and there is nothing to do right now.\n\n")
-        color = COLORS.get("blue", COLORS["yellow"])
-        title = "\u26d3\ufe0f Newer Coin Releases Available"
+        # Upstream has moved past the target. Whether that matters is in the
+        # release notes, which this check never reads -- so it must not say
+        # "nothing to do". DigiByte 9.26.6 arrived this way: a consensus release
+        # with an activation height, announced in blue as routine.
+        head = ("```\nNEW COIN DAEMON RELEASE\n```\n"
+                "Upstream has published a newer stable release than this version of "
+                "Spiral Pool installs. Spiral Pool has not reviewed it, so this alert "
+                "cannot tell whether it is routine or a **required consensus upgrade**. "
+                "Read its release notes: a consensus upgrade has an activation deadline "
+                "whether or not Spiral Pool targets it yet.\n\n")
+        color = COLORS["yellow"]
+        title = "\u26d3\ufe0f New Coin Daemon Release"
     elif major:
         head = ("```diff\n- COIN DAEMON UPGRADE REQUIRED\n```\n"
                 "A daemon below its target version can follow the wrong chain or "
@@ -4640,27 +4645,42 @@ def create_coin_upgrade_embed(pending, upstream=None, unreachable=None):
 
     desc = head + "\n".join(lines)
     if rows:
+        # The real tickers, not a <TICKER> placeholder: this is the line an
+        # operator copies, and it should run as pasted.
         desc += (
             "\n\n**Review what each upgrade needs, then apply it:**\n"
             "```\nsudo /spiralpool/scripts/coin-upgrade.sh --check\n"
-            "sudo /spiralpool/scripts/coin-upgrade.sh --coin <TICKER>\n```"
+            + "".join(f"sudo /spiralpool/scripts/coin-upgrade.sh --coin {p['coin']}\n"
+                      for p in rows)
+            + "```"
         )
         if major:
             desc += ("\nMAJOR entries may require `--reindex`; `--check` states which.")
 
     if upstream:
-        # Deliberately no coin-upgrade.sh command here. This release installs the
-        # targeted version; pointing --coin at an untested release would skip the
-        # pinned checksum and the risk note that make an upgrade safe, and for
-        # Namecoin the newest release ships no binaries at all. The only action
-        # is upgrading Spiral Pool, once a release that moves the target exists.
+        # coin-upgrade.sh --coin installs only the target, so it cannot reach an
+        # untested release on its own -- and should not: the target carries the
+        # risk note and, for some coins, the pinned checksum that make an upgrade
+        # safe, and for Namecoin the newest release ships no binaries at all. The
+        # path is a Spiral Pool release that moves the target, then --coin. Give
+        # both commands in that order, and say what it means when the first one
+        # finds nothing.
+        up = sorted(upstream, key=lambda u: u["coin"])
         if rows:
-            desc += "\n\n**Also released upstream, newer than this version installs:**\n\n"
+            desc += ("\n\n**Also released upstream, newer than this version installs "
+                     "(not yet reviewed):**\n\n")
         desc += "\n".join(
-            f"\U0001F535 **{u['coin']}**  targets `{u['target']}`  -  upstream `{u['upstream']}`"
-            for u in sorted(upstream, key=lambda u: u["coin"]))
-        desc += ("\n\nThese are *not* installed by `coin-upgrade.sh`, which stays on the "
-                 "tested target. A future Spiral Pool release is what moves it.")
+            f"\U0001F7E1 **{u['coin']}**  targets `{u['target']}`  -  upstream `{u['upstream']}`"
+            for u in up)
+        desc += (
+            "\n\n**To install a newer release, upgrade Spiral Pool, then the daemon:**\n"
+            "```\nsudo /spiralpool/upgrade.sh\n"
+            + "".join(f"sudo /spiralpool/scripts/coin-upgrade.sh --coin {u['coin']}\n"
+                      for u in up)
+            + "```\n"
+            "If `upgrade.sh` finds no newer Spiral Pool, no release targets this daemon "
+            "yet and `coin-upgrade.sh` will not install it."
+        )
 
     if unreachable:
         # Named explicitly, because the alternative is an operator reading the
@@ -7126,7 +7146,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V3.0.0-SPIRAL_COVENANT"
+                "sentinel_version": "V3.0.1-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -7145,7 +7165,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V3.0.0-SPIRAL_COVENANT"
+                "sentinel_version": "V3.0.1-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -18720,7 +18740,7 @@ class MonitorState:
             "coin_sync_behind": ("🔄", "Coin Sync Behind", "Coin daemon is behind on blocks"),
             "coin_change": ("🔀", "Coin Change", "Active mining coin changed"),
             "coin_config_change": ("⚙️", "Config Change", "Coin configuration changed"),
-            "coin_upgrade_available": ("⛓️", "Coin Daemon Upgrade", "A coin daemon is behind its target version"),
+            "coin_upgrade_available": ("⛓️", "Coin Daemon Upgrade", "A coin daemon is behind its target, or upstream released a newer one"),
             "coin_version_check_failing": ("📡", "Version Check Failing", "The upstream release check cannot reach a feed"),
             "block_payout_mismatch": ("🚨", "Block Paid Elsewhere", "A found block's coinbase paid an unexpected address"),
             "mempool_congestion": ("🚦", "Mempool Congestion", "Transaction mempool is congested"),

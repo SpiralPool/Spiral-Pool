@@ -221,9 +221,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/DigiByte-Core/digibyte"
             GBT_RULES='["segwit"]'
             # Auto-install info
-            DAEMON_VERSION="9.26.5"
-            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.5/digibyte-9.26.5-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="digibyte-9.26.5"
+            DAEMON_VERSION="9.26.6"
+            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.6/digibyte-9.26.6-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="digibyte-9.26.6"
             ;;
         dgb-scrypt)
             COIN_SYMBOL=DGB_SCRYPT; COIN_NAME="DigiByte (Scrypt)"; COIN_ALGO=scrypt
@@ -238,9 +238,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/DigiByte-Core/digibyte"
             GBT_RULES='["segwit"]'
             # Auto-install info (same as dgb — same daemon)
-            DAEMON_VERSION="9.26.5"
-            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.5/digibyte-9.26.5-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="digibyte-9.26.5"
+            DAEMON_VERSION="9.26.6"
+            DOWNLOAD_URL="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.6/digibyte-9.26.6-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="digibyte-9.26.6"
             ;;
         btc)
             COIN_SYMBOL=BTC; COIN_NAME="Bitcoin Core"; COIN_ALGO=sha256d
@@ -404,9 +404,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/Bitcoin-ABC/bitcoin-abc"
             GBT_RULES='[]'  # XEC: no SegWit (CashAddr is an address format, not a script type)
             # Auto-install info
-            DAEMON_VERSION="0.33.12"
-            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.33.12/bitcoin-abc-0.33.12-x86_64-linux-gnu.tar.gz"
-            TARBALL_DIR="bitcoin-abc-0.33.12"
+            DAEMON_VERSION="0.34.0"
+            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.34.0/bitcoin-abc-0.34.0-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="bitcoin-abc-0.34.0"
             ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt

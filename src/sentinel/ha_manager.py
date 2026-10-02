@@ -33,7 +33,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 logger = logging.getLogger(__name__)
 

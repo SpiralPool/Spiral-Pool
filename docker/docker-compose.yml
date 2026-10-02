@@ -788,7 +788,7 @@ services:
       # since the build context may be a zip extract with no .git directory:
       #   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose --profile dgb build
       args:
-        VERSION: ${POOL_VERSION:-3.0.0}
+        VERSION: ${POOL_VERSION:-3.0.1}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: spiralpool-stratum
     restart: unless-stopped

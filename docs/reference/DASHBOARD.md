@@ -581,4 +581,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Spiral Covenant 3.0.0*
+*Spiral Dash &mdash; Spiral Covenant 3.0.1*

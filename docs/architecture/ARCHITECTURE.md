@@ -1094,4 +1094,4 @@ Source: `internal/config/v2.go` (production), `internal/config/config.go` (V1 le
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.0*
+*Spiral Pool — Spiral Covenant 3.0.1*

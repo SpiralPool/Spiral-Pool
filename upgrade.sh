@@ -5070,7 +5070,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.0 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.1 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -6011,16 +6011,28 @@ show_summary() {
                 printf "  %-6s  %s → %s  %b%s%b\n" \
                     "$coin" "$installed" "$target" "$risk_color" "$risk" "${NC}"
             done <<< "$upgrade_lines"
-            # DigiByte v9.26.5 fixes the DigiDollar oracle startup scan that stalled node
-            # init for 15+ minutes; nodes still on 9.26.3 also cross v9.26.4's narrowly-
-            # scoped consensus rule. Call it out so operators know it is an in-place
-            # binary swap (no reindex) that also offers to enable pruning.
+            # DigiByte v9.26.6 is a consensus upgrade with a deadline: Thaw Day's new
+            # DigiDollar block rules activate at mainnet height 24,490,000. A pool still
+            # on an older build after that height keeps looking healthy while it can
+            # disagree with upgraded nodes about valid blocks, so say so plainly. Also
+            # say it is an in-place binary swap (no reindex) that offers pruning.
             if grep -q '^DGB ' <<< "$upgrade_lines"; then
                 echo
-                echo -e "${CYAN}  ℹ  DigiByte (DGB) v9.26.5 fixes a DigiDollar oracle startup stall and${NC}"
-                echo -e "${CYAN}     enables optional pruning. In-place binary swap — no reindex.${NC}"
-                echo -e "     coin-upgrade.sh will offer to switch DGB to a pruned node (prune=5000,"
-                echo -e "     ~5 GB, prunes in place). Wallets, configs, and other coins are untouched."
+                echo -e "${RED}  ⚠  DigiByte (DGB) v9.26.6 — REQUIRED before mainnet block 24,490,000${NC}"
+                echo -e "     Thaw Day: new DigiDollar block rules activate at that height (~1 Nov 2026)."
+                echo -e "     Every mining node must upgrade, whether or not it uses DigiDollar. A node"
+                echo -e "     left on an older version can disagree with the network about valid blocks."
+                echo -e "     In-place binary swap — no reindex. coin-upgrade.sh also offers to switch a"
+                echo -e "     full node to a pruned one (prune=5000); declining keeps it full."
+                echo -e "     Wallets, configs, and other coins are untouched."
+            fi
+            # eCash 0.34.0: same shape. Bitcoin ABC's 15 Nov 2026 network upgrade
+            # requires 0.34.x, and a node left on 0.33.x stops following the network.
+            if grep -q '^XEC ' <<< "$upgrade_lines"; then
+                echo
+                echo -e "${RED}  ⚠  eCash (XEC) v0.34.0 — REQUIRED before 15 Nov 2026 12:00 UTC${NC}"
+                echo -e "     Bitcoin ABC's network upgrade activates then. A node still on 0.33.x"
+                echo -e "     falls out of sync with the network. In-place binary swap — no reindex."
             fi
             # Bitcoin: this is not a routine version bump. Spiral Pool shipped
             # Bitcoin Knots, and knots20260508+ builds enforce BIP-110 (RDTS),
@@ -6122,7 +6134,10 @@ PYEOF
         coin_lines+="**${coin}** — ${installed} → ${target} (${risk_label})\n"
     done <<< "$upgrade_lines"
     if grep -q '^DGB ' <<< "$upgrade_lines"; then
-        coin_lines+="\nℹ **DigiByte v9.26.5** fixes a DigiDollar oracle startup stall that held node init for 15+ minutes, and enables optional pruning. In-place binary swap (no reindex); coin-upgrade.sh offers to switch DGB to a pruned node and preserves wallets/configs.\n"
+        coin_lines+="\n🔴 **DigiByte v9.26.6 is REQUIRED before mainnet block 24,490,000** (~1 Nov 2026). Thaw Day's new DigiDollar block rules activate at that height, and every mining node must upgrade whether or not it uses DigiDollar: a node left on an older version can disagree with the network about valid blocks. In-place binary swap (no reindex); coin-upgrade.sh also offers to switch a full node to a pruned one and preserves wallets/configs.\n"
+    fi
+    if grep -q '^XEC ' <<< "$upgrade_lines"; then
+        coin_lines+="\n🔴 **eCash v0.34.0 is REQUIRED before 15 Nov 2026 12:00 UTC.** Bitcoin ABC's network upgrade activates then, and a node still on 0.33.x falls out of sync with the network. In-place binary swap (no reindex).\n"
     fi
     if grep -q '^BTC ' <<< "$upgrade_lines"; then
         coin_lines+="\n🔴 **Bitcoin: ACT ON THIS ONE.** Spiral Pool previously shipped Bitcoin Knots. Knots builds dated knots20260508 or later enforce BIP-110 (RDTS) and follow a minority chain that split away from Bitcoin on 8 August 2026 at block 961,632. That chain has produced a handful of blocks and its coins are not traded anywhere. A node on it looks completely healthy — shares validate, hashrate reads normal — but any block you find is worth nothing. This stack upgrade does NOT fix it — coin daemons are never touched here. Run coin-upgrade.sh to replace Knots with Bitcoin Core 31.1; it then verifies your node is on the majority chain and repairs it if not. Until that passes the pool refuses to mine BTC, so no electricity is wasted meanwhile.\n"
@@ -6144,7 +6159,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v3.0.0 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v3.0.1 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

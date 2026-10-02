@@ -53,9 +53,11 @@ LIB="$TMP/lib.sh"
     echo 'UPSTREAM_CACHE_TTL=86400'
     for f in _norm4 _ver_matches _ver_gt _is_stable_version _tag_to_version \
              _upstream_gh _upstream_idx _upstream_latest _coin_present_for_upstream \
-             _collect_upstream list_upstream check_upstream _print_unreachable; do
+             _collect_upstream list_upstream check_upstream _print_unreachable \
+             show_upstream_notice; do
         sed -n "/^${f}() {/,/^}/p" "$CU"
     done
+    echo "YELLOW=''; BOLD=''"
     echo 'UPSTREAM_ROWS=(); UPSTREAM_UNREACHABLE=()'
     echo 'get_installed_version() { echo "0.0.1"; }'
     # HTTP_FIXTURE, not "page" or "body": bash is dynamically scoped, and the
@@ -328,6 +330,32 @@ fi
 
 unset SPIRALPOOL_INSTALLED_COINS
 get_installed_version() { echo "0.0.1"; }
+
+# --check prints the version table and, under it, this notice. The table alone
+# compares against the static target, so it showed DigiByte 9.26.5 as
+# "✓ current" and said "Nothing to upgrade" while 9.26.6 -- a consensus release
+# with an activation height -- was already out.
+log_test "--check names a newer upstream release and how to reach it"
+fresh
+SPIRALPOOL_INSTALLED_COINS="DGB"
+HTTP_FIXTURE="$(gh_json v9.26.7)"
+out="$(show_upstream_notice)"
+if grep -q "DGB .*${COIN_TARGET[DGB]} → 9\.26\.7" <<< "$out"; then
+    pass "the newer release is listed against the target"
+else
+    fail "the newer release is listed against the target" "$out"
+fi
+if grep -q 'consensus' <<< "$out" && grep -q 'sudo /spiralpool/upgrade.sh' <<< "$out"; then
+    pass "it warns it may be a consensus upgrade and gives the command"
+else
+    fail "it warns it may be a consensus upgrade and gives the command" "$out"
+fi
+
+fresh
+HTTP_FIXTURE="$(gh_json "v${COIN_TARGET[DGB]}")"
+out="$(show_upstream_notice)"
+eq "$out" "" "nothing newer upstream adds nothing to --check"
+unset SPIRALPOOL_INSTALLED_COINS
 
 echo ""
 echo "==========================================================="

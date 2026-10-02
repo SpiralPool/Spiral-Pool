@@ -760,4 +760,4 @@ After installing on a cloud VPS, verify:
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.0*
+*Spiral Pool — Spiral Covenant 3.0.1*

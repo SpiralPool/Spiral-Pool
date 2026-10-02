@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# test-dgb-926-upgrade.sh — Deploy-readiness test for the DigiByte Core v9.26.5
+# test-dgb-926-upgrade.sh — Deploy-readiness test for the DigiByte Core v9.26.6
 # upgrade and the pruning-SUPPORT changes.
 #
 # Background: v9.26.3 REQUIRED a full node (txindex for DigiDollar) and could not
@@ -16,8 +16,8 @@
 #   bash tests/test-dgb-926-upgrade.sh
 #
 # What it checks:
-#   Part 1  static — every file pins 9.26.5 and the pruning-SUPPORT edits exist
-#   Part 2  download + gzip integrity + the binary reports v9.26.5
+#   Part 1  static — every file pins 9.26.6 and the pruning-SUPPORT edits exist
+#   Part 2  download + gzip integrity + the binary reports v9.26.6
 #   Part 3  boots regtest with the full-node config, mines, confirms
 #           getblocktemplate works, boots a PRUNED config, and proves prune+txindex
 #           is still mutually exclusive (which is why v9.26.4 drops txindex)
@@ -27,10 +27,10 @@
 # ══════════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-DGB_VERSION="9.26.5"
-# sha256 of digibyte-9.26.5-x86_64-linux-gnu.tar.gz — verified against the GitHub
+DGB_VERSION="9.26.6"
+# sha256 of digibyte-9.26.6-x86_64-linux-gnu.tar.gz — verified against the GitHub
 # release asset digest. HARD check on x86_64.
-DGB_SHA256_X86="37f6bf6a682f99b5966c2bd3f0cfe3013b60b7b55268958663231ebbf9e56773"
+DGB_SHA256_X86="cdbd6ed7efdb006b91b76389db79d2a3db2593f05e56dd789f394a1b4366c211"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Locate the repo root by walking UP from the script's own directory looking for
@@ -82,31 +82,31 @@ if [[ -z "$REPO_ROOT" ]]; then
   info "(bash tests/test-dgb-926-upgrade.sh) so it can find install.sh, etc."
 else
 IN="$REPO_ROOT/install.sh"
-want "$IN" 'DIGIBYTE_VERSION="9\.26\.5"'                     'install.sh pins DGB 9.26.5'
+want "$IN" 'DIGIBYTE_VERSION="9\.26\.6"'                     'install.sh pins DGB 9.26.6'
 want "$IN" 'DigiByte \(DGB\) supports pruning as of DigiByte Core v9\.26\.4' \
                                                             'install.sh prune prompt says DGB supports pruning'
 want "$IN" 'runs DigiDollar on a pruned node too'           'install.sh DGB config honors the prune toggle'
 want_absent "$IN" 'is excluded from pruning'                'install.sh no longer excludes DGB from pruning'
 
 CU="$REPO_ROOT/coin-upgrade.sh"
-want "$CU" '\[DGB\]="9\.26\.5"'            'coin-upgrade.sh COIN_TARGET[DGB]=9.26.5'
-want "$CU" '\[DGB\]="MINOR"'               'coin-upgrade.sh COIN_RISK[DGB]=MINOR'
+want "$CU" '\[DGB\]="9\.26\.6"'            'coin-upgrade.sh COIN_TARGET[DGB]=9.26.6'
+want "$CU" '\[DGB\]="MAJOR"'               'coin-upgrade.sh COIN_RISK[DGB]=MAJOR (Thaw Day consensus)'
 want "$CU" 'dgb_enable_pruning_config'     'coin-upgrade.sh has the pruning-enable function'
 want "$CU" 'dgb_is_pruned'                 'coin-upgrade.sh has the pruned detector'
 want "$CU" 'Enable pruning for DigiByte'   'coin-upgrade.sh offers the one-time pruning switch'
 want_absent "$CU" 'dgb_apply_config_migration' 'coin-upgrade.sh no longer force-removes pruning'
 
-want "$REPO_ROOT/upgrade.sh" 'DigiByte \(DGB\) v9\.26\.5 fixes a DigiDollar oracle startup stall and' \
-                                                            'upgrade.sh shows the v9.26.5 oracle-fix notice'
+want "$REPO_ROOT/upgrade.sh" 'DigiByte \(DGB\) v9\.26\.6 — REQUIRED before mainnet block 24,490,000' \
+                                                            'upgrade.sh shows the v9.26.6 Thaw Day deadline'
 want "$REPO_ROOT/scripts/linux/pool-mode.sh" 'get_existing_prune "\$SPIRALPOOL_DIR/dgb/digibyte.conf"' \
                                                             'pool-mode.sh lets DGB honor the prune toggle'
 want_absent "$REPO_ROOT/scripts/linux/pool-mode.sh" 'DGB is always a full node' \
                                                             'pool-mode.sh no longer forces DGB full'
 want_absent "$REPO_ROOT/scripts/spiralctl.sh" 'Pruning is not supported for DigiByte' \
                                                             'spiralctl no longer blocks DGB pruning'
-want "$REPO_ROOT/docker/Dockerfile"          'DIGIBYTE_VERSION=9\.26\.5' 'docker/Dockerfile pins 9.26.5'
-want "$REPO_ROOT/docker/Dockerfile.digibyte" 'DIGIBYTE_VERSION=9\.26\.5' 'docker/Dockerfile.digibyte pins 9.26.5'
-want "$REPO_ROOT/scripts/linux/regtest.sh"   'releases/download/v9\.26\.5/' 'regtest.sh pins 9.26.5'
+want "$REPO_ROOT/docker/Dockerfile"          'DIGIBYTE_VERSION=9\.26\.6' 'docker/Dockerfile pins 9.26.6'
+want "$REPO_ROOT/docker/Dockerfile.digibyte" 'DIGIBYTE_VERSION=9\.26\.6' 'docker/Dockerfile.digibyte pins 9.26.6'
+want "$REPO_ROOT/scripts/linux/regtest.sh"   'releases/download/v9\.26\.6/' 'regtest.sh pins 9.26.6'
 fi
 
 # ── PART 2: binary download + integrity + version ─────────────────────────────

@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v3.0.0 (Spiral Covenant)
+# Upgrading to Spiral Pool v3.0.1 (Spiral Covenant)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x) and v3.0.0 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0) and v3.0.1 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -62,22 +62,29 @@ The pool will not mine BTC until the chain verifies, so you are not burning elec
 
 ---
 
-## DigiByte (DGB) node upgrade — v9.26.5
+## DigiByte (DGB) node upgrade — v9.26.6, required before block 24,490,000
 
 **Coin daemon upgrades are separate from the pool stack upgrade.** `upgrade.sh` upgrades the Spiral Pool software only; it never touches coin daemons (they can require a resync). After it runs, it *flags* any coin node that is behind and tells you to run `coin-upgrade.sh`.
 
-DigiByte Core **v9.26.5** is a patch release on top of v9.26.4. It:
+DigiByte Core **v9.26.6 is a consensus upgrade with a deadline.** It carries Thaw Day: new DigiDollar block rules that activate at mainnet block **24,490,000**, expected around 1 November 2026. The block height starts the change; the date is only an estimate. Upstream's instruction is that every full-node and mining operator must upgrade before that block, **including pools that never use DigiDollar**. After activation, a node still on v9.26.5 or older can disagree with the network about which blocks are valid, and downgrading is not a repair.
 
-1. **Fixes a DigiDollar oracle startup stall.** v9.26.4 re-evaluated the DigiDollar activation gate once per scanned block at startup — allocating a throwaway versionbits cache and re-running the BIP9 threshold state machine roughly 172,800 times. The node sat in `Starting network threads…` with RPC returning `error -28` and one CPU core pegged for 15 minutes or considerably longer on slower hardware, serving no block templates the entire time. v9.26.5 reuses the node's shared memoized versionbits cache and the scan finishes in about 3 seconds. **This is the reason to upgrade from v9.26.4.**
-2. **Carries forward v9.26.4's pruning support and consensus rule** unchanged — see below. Nodes still on v9.26.3 also pick up that rule (redemption collateral gated on the activation floor, mainnet height 23,627,520) in this upgrade.
+Upgrading is an **in-place binary swap — no reindex and no config changes**, for full and pruned nodes alike:
 
-v9.26.5 itself changes **no consensus rules** on mainnet or testnet, so there is no coordination deadline. Upgrading is an **in-place binary swap — no reindex and no config changes**, for full and pruned nodes alike. Run `sudo /spiralpool/scripts/coin-upgrade.sh` (or `spiralctl coin-upgrade`).
+```bash
+sudo /spiralpool/scripts/coin-upgrade.sh --coin DGB
+```
 
-> **Recognising the v9.26.4 stall.** If a DGB node is stuck after a restart, `digibyte-cli getblockchaininfo` returns `error -28  "Starting network threads…"` and `debug.log` shows `Oracle: Scanning last 172800 blocks for oracle prices` with no completion line. `top -H` shows one thread at 100% CPU while `/proc/<pid>/io` `read_bytes` stays flat — the scan is CPU-bound on the in-memory block index and never touches disk. It does eventually finish; upgrading to v9.26.5 is the fix.
+Check the schedule on the running node with `digibyte-cli getdigidollardeploymentinfo`.
+
+**Pruned nodes:** DigiDollar's retention floor is unchanged at block 23,627,520. The history it requires can exceed a small prune target such as `prune=5000`, and upstream does not warn on every overrun, so leave disk headroom.
+
+v9.26.6 also carries the earlier 9.26.x fixes: v9.26.5's fix for the DigiDollar oracle startup stall, and v9.26.4's pruning support and consensus rule (redemption collateral gated on the activation floor, mainnet height 23,627,520), which nodes still on v9.26.3 pick up in this upgrade.
+
+> **Recognising the v9.26.4 stall.** If a DGB node is stuck after a restart, `digibyte-cli getblockchaininfo` returns `error -28  "Starting network threads…"` and `debug.log` shows `Oracle: Scanning last 172800 blocks for oracle prices` with no completion line. `top -H` shows one thread at 100% CPU while `/proc/<pid>/io` `read_bytes` stays flat — the scan is CPU-bound on the in-memory block index and never touches disk. It does eventually finish; upgrading to v9.26.5 or later is the fix.
 
 ### Pruning is supported again
 
-v9.26.3 required a full, txindexed node; v9.26.4 lifts that. Because every DGB node is currently full, `coin-upgrade.sh` makes a **one-time offer** during the upgrade:
+v9.26.3 required a full, txindexed node; v9.26.4 lifts that. While a DGB node is still full, `coin-upgrade.sh` offers to switch it during the upgrade:
 
 - **Keep it full** — decline the prompt. Nothing changes beyond the binary swap.
 - **Switch to pruned** — accept, and it edits `digibyte.conf` in place (sets `prune=5000` ≈ 5 GB, removes `txindex`) after backing it up, then starts the node, which **prunes in place with no resync**. Reverting to full later requires a resync.
@@ -93,6 +100,19 @@ v9.26.3 required a full, txindexed node; v9.26.4 lifts that. Because every DGB n
 New installs: `install.sh` configures DGB from the pool-wide pruning choice (pruned → `prune=5000`, no `txindex`; full → `txindex=1`, `prune=0`), and `spiralctl coin prune DGB` can enable pruning at any time.
 
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
+
+---
+
+## What's new in v3.0.1
+
+See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
+
+- **DigiByte Core 9.26.5 → 9.26.6, required before mainnet block 24,490,000.** See the DigiByte node-upgrade section above. After upgrading Spiral Pool, run `sudo /spiralpool/scripts/coin-upgrade.sh --coin DGB`.
+- **eCash (Bitcoin ABC) 0.33.12 → 0.34.0, required before 15 Nov 2026 12:00 UTC.** Bitcoin ABC's network upgrade activates then, and a node still on 0.33.x falls out of sync with the network. In-place binary swap, no reindex: `sudo /spiralpool/scripts/coin-upgrade.sh --coin XEC`.
+- **Sentinel's new-release alert no longer says there is nothing to do.** It called DigiByte 9.26.6 routine while it was a required consensus upgrade. It now says the release has not been reviewed and may be required, and gives the commands to install it.
+- **`coin-upgrade.sh --check` lists newer upstream releases under its table.** "✓ current" means "at this release's target", and printed alone it hid 9.26.6.
+
+No database migrations, no config format changes. Drop-in upgrade from v3.0.0 for the pool stack; the DGB and XEC **node** upgrades are separate, required steps.
 
 ---
 
@@ -290,7 +310,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v3.0.0 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v3.0.1 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -529,13 +549,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `3.0.0`. If Sentinel is running:
+The version line should show `3.0.1`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v3.0.0` followed by `Spiral Covenant` in the startup log.
+Look for `Spiral Pool v3.0.1` followed by `Spiral Covenant` in the startup log.
 
 ---
 
@@ -615,4 +635,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.1 — Built on what came before. Growing toward phi.*

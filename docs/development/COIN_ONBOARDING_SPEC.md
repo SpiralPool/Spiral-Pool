@@ -328,4 +328,4 @@ DGB-SCRYPT (DigiByte, Scrypt)
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.0 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.1 — Built on what came before. Growing toward phi.*

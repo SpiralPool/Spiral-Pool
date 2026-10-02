@@ -835,7 +835,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "3.0.0"}
+{"alive": true, "uptime_s": 3600, "version": "3.0.1"}
 ```
 
 ### `GET /cooldowns`
@@ -853,4 +853,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Covenant 3.0.0*
+*Spiral Sentinel &mdash; Spiral Covenant 3.0.1*

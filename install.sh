@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 3.0.0                                                         ║
+# ║   Version: 3.0.1                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="3.0.0"
+    VERSION="3.0.1"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -44,7 +44,7 @@ INSTALL_DIR="/spiralpool"
 # blockchain data / wallets / configs on a failed re-run (e.g. adding a coin).
 INSTALL_DIR_PREEXISTED=false
 [[ -d "$INSTALL_DIR" ]] && INSTALL_DIR_PREEXISTED=true
-DIGIBYTE_VERSION="9.26.5"
+DIGIBYTE_VERSION="9.26.6"
 BITCOINII_VERSION="31.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="31.1.3"
@@ -60,7 +60,7 @@ BCHN_VERSION="29.1.0"
 LITECOIN_VERSION="0.21.5.8"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.4.0"
-ECASH_VERSION="0.33.12"
+ECASH_VERSION="0.34.0"
 GO_VERSION="1.26.8"
 POSTGRES_VERSION="18"
 
@@ -16849,7 +16849,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.0 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.1 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -21015,7 +21015,7 @@ EOF
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.33.12 (SHA-256d)
+# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.34.0 (SHA-256d)
 # ═══════════════════════════════════════════════════════════════════════════════
 # eCash uses the Bitcoin ABC client. The binary is named bitcoind/bitcoin-cli
 # (same as BTC/FBTC) but lives in its own directory with its own service unit
@@ -23649,7 +23649,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="3.0.0"
+    local BUILD_VERSION="3.0.1"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -32976,11 +32976,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V3.0.0-SPIRAL_COVENANT: Create backup command
+    # V3.0.1-SPIRAL_COVENANT: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V3.0.0-SPIRAL_COVENANT
+# Spiral Pool Backup Utility - V3.0.1-SPIRAL_COVENANT
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -33025,7 +33025,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -33404,7 +33404,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "3.0.0",
+    "version": "3.0.1",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33685,7 +33685,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33738,11 +33738,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V3.0.0-SPIRAL_COVENANT: Create restore command
+    # V3.0.1-SPIRAL_COVENANT: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V3.0.0-SPIRAL_COVENANT
+# Spiral Pool Restore Utility - V3.0.1-SPIRAL_COVENANT
 # Restores backups created by spiralpool-backup
 #
 
@@ -33789,7 +33789,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -34132,7 +34132,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -40543,7 +40543,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V3.0.0 - SPIRAL COVENANT${NC}"
+    echo -e "                                     ${DIM}V3.0.1 - SPIRAL COVENANT${NC}"
     echo ""
 }
 
