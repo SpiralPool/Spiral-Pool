@@ -6026,6 +6026,15 @@ show_summary() {
                 echo -e "     full node to a pruned one (prune=5000); declining keeps it full."
                 echo -e "     Wallets, configs, and other coins are untouched."
             fi
+            # BCHN 29.2.0 has no deadline, but it removed -excessiveblocksize and
+            # will not start while it is set. coin-upgrade.sh handles the config;
+            # say so, so the edit is not a surprise.
+            if grep -q '^BCH ' <<< "$upgrade_lines"; then
+                echo
+                echo -e "${CYAN}  ℹ  Bitcoin Cash (BCH) v29.2.0 removed the excessiveblocksize option.${NC}"
+                echo -e "     coin-upgrade.sh comments it out of bitcoin.conf (with a backup) before"
+                echo -e "     starting the new daemon. 32 MB was already the default. No reindex."
+            fi
             # eCash 0.34.0: same shape. Bitcoin ABC's 15 Nov 2026 network upgrade
             # requires 0.34.x, and a node left on 0.33.x stops following the network.
             if grep -q '^XEC ' <<< "$upgrade_lines"; then
@@ -6135,6 +6144,9 @@ PYEOF
     done <<< "$upgrade_lines"
     if grep -q '^DGB ' <<< "$upgrade_lines"; then
         coin_lines+="\n🔴 **DigiByte v9.26.6 is REQUIRED before mainnet block 24,490,000** (~1 Nov 2026). Thaw Day's new DigiDollar block rules activate at that height, and every mining node must upgrade whether or not it uses DigiDollar: a node left on an older version can disagree with the network about valid blocks. In-place binary swap (no reindex); coin-upgrade.sh also offers to switch a full node to a pruned one and preserves wallets/configs.\n"
+    fi
+    if grep -q '^BCH ' <<< "$upgrade_lines"; then
+        coin_lines+="\nℹ **Bitcoin Cash Node v29.2.0** removed the excessiveblocksize option and will not start while it is set. coin-upgrade.sh comments it out of bitcoin.conf (with a backup) before starting the new daemon; 32 MB was already the default. No reindex.\n"
     fi
     if grep -q '^XEC ' <<< "$upgrade_lines"; then
         coin_lines+="\n🔴 **eCash v0.34.0 is REQUIRED before 15 Nov 2026 12:00 UTC.** Bitcoin ABC's network upgrade activates then, and a node still on 0.33.x falls out of sync with the network. In-place binary swap (no reindex).\n"

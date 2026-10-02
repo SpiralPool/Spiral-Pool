@@ -14,7 +14,7 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Cash Node for Spiral Pool"
-ARG BCHN_VERSION=29.1.0
+ARG BCHN_VERSION=29.2.0
 
 # Interpolated: this label read 29.0.0 while the image shipped 29.1.0.
 LABEL version="${BCHN_VERSION}"
@@ -22,13 +22,13 @@ LABEL version="${BCHN_VERSION}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# SHA256 of the pinned release asset (33,320,761 bytes).
+# SHA256 of the pinned release asset (33,409,630 bytes; matches GitHub's asset digest).
 # BCHN publishes no plain-URL SHA256SUMS, so this was computed from the
 # downloaded artifact. It is a change-detector — a substituted asset fails the
 # build — not an independent authenticity attestation like BTC's Guix
 # cross-check. Verify against the release's detached signature if you need one.
 # If you bump the version above you MUST bump this too — the build fails closed.
-ARG SHA256=2d52f6c3091351095839415bfd9ad6ee5cdd34aa6c726f2078ae28aa9015acc4
+ARG SHA256=23bbe9ff749136a9b832a2a59023ce76a5391322c1ea2f4f24b5b91f035081bc
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -69,6 +69,12 @@ if [ -f /home/bitcoincash/.bitcoin/bitcoin.conf ] && [ -s /home/bitcoincash/.bit
 elif [ -f /config/bitcoincash.conf.template ]; then\n\
     envsubst < /config/bitcoincash.conf.template > /home/bitcoincash/.bitcoin/bitcoin.conf\n\
     chmod 600 /home/bitcoincash/.bitcoin/bitcoin.conf\n\
+fi\n\
+\n\
+# BCHN 29.2.0 removed -excessiveblocksize and will not start while it is set.\n\
+# Configs written before Spiral Pool 3.0.1 set it, and the volume keeps them.\n\
+if [ -f /home/bitcoincash/.bitcoin/bitcoin.conf ]; then\n\
+    sed -i -E "s/^[[:space:]]*([a-z0-9]+[.])?-?(no)?excessiveblocksize[[:space:]]*=/# removed: BCHN 29.2.0 rejects this option. &/" /home/bitcoincash/.bitcoin/bitcoin.conf\n\
 fi\n\
 \n\
 # Ensure proper ownership of data directory\n\

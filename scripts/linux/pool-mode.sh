@@ -3795,46 +3795,19 @@ EOF
     esac
 }
 
-# Query GitHub releases/latest API and return the version tag (v-prefix stripped).
-# Returns empty string on failure (network unavailable, rate-limited, no releases, etc.).
-_github_latest_version() {
-    local repo="$1"  # e.g. "DigiByte-Core/digibyte"
-    curl -sL --connect-timeout 10 --max-time 15 \
-        "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
-        | grep -oP '"tag_name":\s*"v?\K[^"]+' | head -1
-}
-
-# Determine the target version for a coin.
-# Primary source: GitHub releases/latest (always current, no hardcoding needed).
-# Fallback: coin-upgrade.sh COIN_TARGET array (used when offline or rate-limited).
-# BTC deliberately has no GitHub repo entry below: its version comes only from
-# coin-upgrade.sh's pinned COIN_TARGET[BTC]. Do not add a resolver for it — see
-# the BTC download case for why a "latest version" lookup is unsafe for Bitcoin.
+# Determine the target version for a coin: coin-upgrade.sh's COIN_TARGET, the
+# version this Spiral Pool release has reviewed, and nothing else.
+#
+# This used to ask GitHub releases/latest first, for eleven coins, and fall back
+# to the pin. install_node_if_needed acts on the answer for an installed daemon
+# too, so a mode switch silently upgraded nodes to whatever was newest, with no
+# review and no checksum. Bitcoin Cash Node 29.2.0 shows the cost: it removed
+# -excessiveblocksize, which every Spiral Pool BCH config set, and refuses to
+# start while it is there -- a mode switch would have left BCH down. Releases
+# reach the pin through a Spiral Pool release; coin-upgrade.sh --check and
+# Sentinel report newer ones in the meantime.
 _coin_upgrade_target() {
     local coin="$1"
-    local _gh_repo=""
-    case "$coin" in
-        DGB)  _gh_repo="DigiByte-Core/digibyte" ;;
-        BCH)  _gh_repo="bitcoin-cash-node/bitcoin-cash-node" ;;
-        BCH2) _gh_repo="BitcoincashII/bitcoincashII-core" ;;
-        BC2)  _gh_repo="Bitcoin-II/BitcoinII-Core" ;;
-        LTC)  _gh_repo="litecoin-project/litecoin" ;;
-        DOGE) _gh_repo="dogecoin/dogecoin" ;;
-        PEP)  _gh_repo="pepecoinppc/pepecoin" ;;
-        CAT)  _gh_repo="CatcoinCore/catcoincore" ;;
-        # NMC: nc31.0 on GitHub has no Linux binary assets — pin to 28.0 via coin-upgrade.sh
-        SYS)  _gh_repo="syscoin/syscoin" ;;
-        XMY)  _gh_repo="myriadteam/myriadcoin" ;;
-        FBTC) _gh_repo="fractal-bitcoin/fractald-release" ;;
-        # BTC: intentionally absent — pinned Bitcoin Core version only, never resolved
-    esac
-
-    if [[ -n "$_gh_repo" ]]; then
-        local _gh_ver; _gh_ver=$(_github_latest_version "$_gh_repo")
-        [[ -n "$_gh_ver" ]] && echo "$_gh_ver" && return 0
-    fi
-
-    # Fallback: coin-upgrade.sh COIN_TARGET (used when offline or rate-limited)
     local _upgrade_sh
     _upgrade_sh="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/coin-upgrade.sh"
     [[ ! -f "$_upgrade_sh" ]] && _upgrade_sh="${SPIRALPOOL_DIR}/scripts/coin-upgrade.sh"
@@ -3988,6 +3961,12 @@ install_node_if_needed() {
             tar -xzf "$BCH_FILENAME"
             cp "bitcoin-cash-node-${BCH_VERSION}/bin/bitcoind" /usr/local/bin/bitcoind-bch
             cp "bitcoin-cash-node-${BCH_VERSION}/bin/bitcoin-cli" /usr/local/bin/bitcoin-cli-bch
+            # BCHN 29.2.0 removed -excessiveblocksize and will not start while it is
+            # set; a config left from an earlier install still sets it.
+            if [[ -f "$SPIRALPOOL_DIR/bch/bitcoin.conf" ]]; then
+                sed -i -E 's/^[[:space:]]*([a-z0-9]+[.])?-?(no)?excessiveblocksize[[:space:]]*=/# removed: BCHN 29.2.0 rejects this option. &/' \
+                    "$SPIRALPOOL_DIR/bch/bitcoin.conf"
+            fi
             _write_version_cache BCH "$BCH_VERSION"
             echo -e "${GREEN}✓ Bitcoin Cash Node ${BCH_VERSION} installed${NC}"
             ;;

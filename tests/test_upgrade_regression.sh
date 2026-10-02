@@ -1213,7 +1213,7 @@ test_coin_upgrade_daemon_targets() {
         for arr in COIN_TARGET COIN_SHA256 COIN_DAEMON_CMD COIN_CLI_CMD; do
             sed -n "/^declare -A ${arr}=(/,/^)/p" "$cu"
         done
-        # -a: coin-upgrade.sh contains a NUL byte, so grep would call it binary
+        # -a: coin-upgrade.sh once held a NUL byte, which made grep call it binary
         grep -aE '^BC2_FORK_(HEIGHT|BLOCK_57750)=' "$cu"
         for f in _norm4 _ver_matches _verify_sha256 download_BC2 download_BTCS install_binaries _btc_disk_wallet_scan verify_bc2_fork_chain; do
             sed -n "/^${f}() {/,/^}/p" "$cu"
@@ -1238,7 +1238,7 @@ test_coin_upgrade_daemon_targets() {
         check FBTC "Bitcoin Core daemon version v0.4.0"       0.3.0
         check BC2  "BitcoinII daemon version v31.1.0"         29.1.0
         check BTCS "BitcoinSilver daemon version v31.1.3"     1.0.2
-        check XEC  "Bitcoin ABC version v0.33.12-908dfae7c725" 0.33.10
+        check XEC  "Bitcoin ABC version v0.34.0-a284f96d9fa3" 0.33.12
         check SYS  "Syscoin Core version v5.1.2"              5.1.0
     )
     local c

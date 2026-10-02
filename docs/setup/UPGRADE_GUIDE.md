@@ -110,9 +110,12 @@ See [CHANGELOG.md](../../CHANGELOG.md) for the full list. Key changes:
 - **DigiByte Core 9.26.5 → 9.26.6, required before mainnet block 24,490,000.** See the DigiByte node-upgrade section above. After upgrading Spiral Pool, run `sudo /spiralpool/scripts/coin-upgrade.sh --coin DGB`.
 - **eCash (Bitcoin ABC) 0.33.12 → 0.34.0, required before 15 Nov 2026 12:00 UTC.** Bitcoin ABC's network upgrade activates then, and a node still on 0.33.x falls out of sync with the network. In-place binary swap, no reindex: `sudo /spiralpool/scripts/coin-upgrade.sh --coin XEC`.
 - **Sentinel's new-release alert no longer says there is nothing to do.** It called DigiByte 9.26.6 routine while it was a required consensus upgrade. It now says the release has not been reviewed and may be required, and gives the commands to install it.
-- **`coin-upgrade.sh --check` lists newer upstream releases under its table.** "✓ current" means "at this release's target", and printed alone it hid 9.26.6.
+- **Bitcoin Cash Node 29.1.0 → 29.2.0.** No deadline. It removed the `excessiveblocksize` option, which every Spiral Pool BCH config set, and will not start while it is there. `sudo /spiralpool/scripts/coin-upgrade.sh --coin BCH` comments the line out of `bitcoin.conf` (backup under `/spiralpool/backups/coin-upgrades/bch-config/`) before starting the new daemon. 32 MB was already the default, so block handling does not change. Docker pools get the same edit from the BCH container at start. No reindex.
+- **A coin upgrade that starts and then dies is rolled back.** If the new daemon does not stay running for 30 seconds, `coin-upgrade.sh` prints its last log lines and restores the previous binary instead of leaving the coin down.
+- **`coin-upgrade.sh --check` lists newer upstream releases under its table.** "✓ current" means "at this release's target", and printed alone it hid 9.26.6. Only releases with a published Linux build are listed: a Bitcoin Core release candidate and Namecoin's source-only GitHub tags were being reported as releases.
+- **Enabling a coin or switching pool mode no longer upgrades installed daemons.** It used to install whatever GitHub listed as newest; it now installs the version this release targets, the same one `coin-upgrade.sh` installs.
 
-No database migrations, no config format changes. Drop-in upgrade from v3.0.0 for the pool stack; the DGB and XEC **node** upgrades are separate, required steps.
+No database migrations. One config change: `excessiveblocksize` is commented out of BCH configs during the BCH upgrade. Drop-in upgrade from v3.0.0 for the pool stack; the DGB and XEC **node** upgrades are separate, required steps.
 
 ---
 

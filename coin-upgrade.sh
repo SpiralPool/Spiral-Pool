@@ -90,7 +90,7 @@ fi
 # ── Target versions — keep in sync with install.sh lines 41-46 ────────────────
 declare -A COIN_TARGET=(
     [BTC]="31.1"            # Bitcoin Core — see download_BTC() for why not Knots
-    [BCH]="29.1.0"
+    [BCH]="29.2.0"
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="31.1.0"
     [BTCS]="31.1.3"         # Bitcoin Silver — binary release (tag version31.1.3)
@@ -116,27 +116,29 @@ declare -A COIN_TARGET=(
 # what the upgrade costs. This table is only used to ANSWER A QUESTION, never to
 # pick what gets installed. Nothing here changes what --coin downloads.
 #
-# Namecoin is the reason that separation is not academic: its newest release is
-# nc31.1, but namecoin-core ships no binaries for it (the release assets are
-# empty), which is why COIN_TARGET is 28.0. Pointing the installer at "latest"
-# would send it after a release that cannot be installed.
-# Two source types, because not every project publishes on GitHub:
-#   gh:<owner>/<repo>        GitHub releases API; tag_name is the version
-#   idx:<url>|<prefix>       an HTTP directory index; every "<prefix><version>/"
-#                            entry on the page is a candidate, newest wins
+# A version counts as RELEASED only once a Linux build of it is published, under
+# every source type below. A version number alone says nothing about whether
+# there is anything to install, and both ways of getting that wrong were live:
+#   - Namecoin tags every release on GitHub with no binaries at all (nc31.1 and
+#     every tag before it). Its builds exist only on namecoin.org, where 28.0 is
+#     the newest. Reading GitHub announced a 31.1 nobody can install.
+#   - bitcoincore.org creates bitcoin-core-32.0/ at the first release candidate
+#     and holds only test.rcN/ in it until the release ships. Reading the folder
+#     name announced 32.0 while it was still an RC.
+# "Linux" rather than an exact file name, because each project names its builds
+# its own way: x86_64-linux-gnu, linux64, Linux-CLI, Catcoin-Linux.zip.
 #
-# BTC deliberately uses the index: bitcoincore.org is where its binaries actually
-# come from, so that page is the installable truth. Its GitHub tags agree today,
-# but a tag exists the moment it is cut, while a release is only installable once
-# the binaries are uploaded -- and this whole feature exists to avoid pointing an
-# operator at something they cannot install.
+# Three source types, matching how each project actually publishes binaries:
+#   gh:<owner>/<repo>    GitHub releases; the newest final (not draft, not
+#                        prerelease) release with a Linux asset
+#   idx:<url>|<prefix>   an HTTP directory index of "<prefix><version>/" folders;
+#                        the newest folder that lists a Linux file
+#   dl:<url>|<prefix>    a download page linking files directly; the newest
+#                        "<prefix><version>/<file>" link whose file is a Linux build
 #
-# Namecoin is the case that proves the distinction matters and cannot be solved
-# by scraping: namecoin.org serves 403 on its index (no listing) and 404 for
-# namecoin-core-30.2/ and -31.1/, while 28.0 answers 403 -- i.e. it exists. So
-# GitHub says 31.1, and the newest INSTALLABLE build really is 28.0, which is
-# what COIN_TARGET says. NMC stays on gh: so the alert still reports that a newer
-# source release exists; it is advisory and carries no install command anyway.
+# Point each coin at wherever its Linux binaries come from, which is also where
+# download_<COIN> fetches them: GitHub for most, bitcoincore.org for Bitcoin,
+# namecoin.org for Namecoin.
 declare -A COIN_UPSTREAM=(
     [BTC]="idx:https://bitcoincore.org/bin/|bitcoin-core-"   # binaries live here, not GitHub
     [BCH]="gh:bitcoin-cash-node/bitcoin-cash-node"
@@ -148,7 +150,7 @@ declare -A COIN_UPSTREAM=(
     [DOGE]="gh:dogecoin/dogecoin"
     [PEP]="gh:pepecoinppc/pepecoin"
     [CAT]="gh:CatcoinCore/catcoincore"
-    [NMC]="gh:namecoin/namecoin-core"                   # tags read "nc31.1"; see above
+    [NMC]="dl:https://www.namecoin.org/download/|namecoin-core-"   # GitHub tags carry no binaries
     [SYS]="gh:syscoin/syscoin"
     [XMY]="gh:myriadteam/myriadcoin"
     [FBTC]="gh:fractal-bitcoin/fractald-release"
@@ -174,9 +176,12 @@ declare -A COIN_RISK=(
                     # Blocks found there are unlikely to have value. Knots and Core
                     # share datadir format, so this is a binary swap — but the chain
                     # the node is following is re-verified afterwards.
-    [BCH]="PATCH"   # 29.1.0 — RPC/perf work plus post-2026-upgrade checkpoints.
-                    # 29.0.0 already carries the 15 May 2026 consensus rules, so a
-                    # node on it is still valid; no reindex.
+    [BCH]="PATCH"   # 29.2.0 — Schnorr signing by default, RPC/perf work, new
+                    # checkpoints; no consensus change. It REMOVED -excessiveblocksize
+                    # and refuses to start while the config sets it, which every
+                    # Spiral Pool BCH config did -- see COIN_REMOVED_OPTIONS. 29.0.0
+                    # already carries the 15 May 2026 consensus rules, so a node on
+                    # it is still valid; no reindex.
     [BCH2]="NONE"   # 27.0.2 — current, and it is the chain-split fix: v27.0.0 crashed
                     # at block 58595 on a CashToken deserialization bug and produced a
                     # shadow chain. A node still on 27.0.0/27.0.1 needs -reindex or a
@@ -238,6 +243,17 @@ declare -A COIN_RISK=(
                     # 15 Nov 2026 12:00 UTC upgrade (MTP 1794744000), which moves
                     # replay protection to the next upgrade. ABC: "To stay in sync with
                     # the network, node operators must update to version 0.34.x" first.
+)
+
+# Config options the TARGET version no longer accepts. A daemon that finds one
+# refuses to start, so a binary swap alone leaves the coin down: BCHN 29.2.0 did
+# exactly this to -excessiveblocksize, which every Spiral Pool BCH config set.
+# migrate_removed_options comments these out (after a backup) before the new
+# binary starts. Only list an option that is also safe to drop on the PREVIOUS
+# version -- a rollback starts the old binary against the migrated config.
+# excessiveblocksize qualifies: Spiral Pool set it to 32000000, BCHN's default.
+declare -A COIN_REMOVED_OPTIONS=(
+    [BCH]="excessiveblocksize"
 )
 
 # systemd service unit names
@@ -1248,6 +1264,75 @@ rollback_coin() {
     fi
 }
 
+# Comment out every option in COIN_REMOVED_OPTIONS[coin] that the coin's config
+# still sets, backing the file up first. Matches what the daemon would read: any
+# leading whitespace, an optional network-section prefix (main.opt=), the dash
+# and "no" forms, and whitespace around "=". Returns 1 only when it needed to edit
+# and could not back up, so the caller can stop before the binary is touched.
+migrate_removed_options() {
+    local coin="$1" opts="${COIN_REMOVED_OPTIONS[$1]:-}" conf="${COIN_CONF[$1]:-}"
+    [[ -n "$opts" && -n "$conf" && -f "$conf" ]] || return 0
+    local opt pattern="" hits
+    for opt in $opts; do
+        pattern+="${pattern:+|}${opt}"
+    done
+    pattern="^[[:space:]]*([a-z0-9]+\.)?-?(no)?(${pattern})[[:space:]]*="
+    hits=$(grep -nE "$pattern" "$conf" 2>/dev/null || true)
+    [[ -n "$hits" ]] || return 0
+
+    local _bakdir="${BACKUP_ROOT}/$(tr '[:upper:]' '[:lower:]' <<< "$coin")-config"
+    local _bak="${_bakdir}/$(basename "$conf").pre-${COIN_TARGET[$coin]}.$(date '+%Y%m%d-%H%M%S').bak"
+    if ! { mkdir -p "$_bakdir" && cp "$conf" "$_bak"; } 2>/dev/null; then
+        log_error "Could not back up ${conf} to ${_bak}"
+        log_error "Refusing to edit the config without a backup. ${coin} was NOT upgraded."
+        return 1
+    fi
+    chown "${POOL_USER}:${POOL_USER}" "$_bak" 2>/dev/null || true
+    chmod 600 "$_bak" 2>/dev/null || true
+
+    sed -i -E "s/(${pattern})/# removed: ${coin} ${COIN_TARGET[$coin]} rejects this option. \\1/" "$conf"
+    chown "${POOL_USER}:${POOL_USER}" "$conf" 2>/dev/null || true
+    log_success "${coin} ${COIN_TARGET[$coin]} no longer accepts: ${opts}"
+    log_info "  commented out in ${conf} (backup: ${_bak}):"
+    printf '%s\n' "$hits" | sed 's/^/    line /'
+    return 0
+}
+
+# A daemon that rejects its config, or a missing library, exits seconds after
+# `systemctl start` has already returned 0 -- so a successful start proves
+# nothing, and wait_for_daemon only warns and carries on. With Restart=always
+# the unit then loops while the upgrade reports success. Watch the unit for a
+# while instead: it must stay active without systemd restarting it.
+# <svc> <NRestarts read just before the start>
+_daemon_stays_up() {
+    local svc="$1" before="$2" i state restarts
+    for i in 1 2 3 4 5 6; do
+        sleep 5
+        state=$(systemctl show -p ActiveState --value "$svc" 2>/dev/null || echo "")
+        restarts=$(systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo "")
+        [[ "$state" == "active" ]] || return 1
+        # Older systemd has no NRestarts; ActiveState alone still catches a crash
+        # that systemd has not yet restarted.
+        [[ -z "$restarts" || -z "$before" || "$restarts" == "$before" ]] || return 1
+    done
+    return 0
+}
+
+# The new binary started and then died. Put the old one back rather than leave
+# the coin down: this is the generic guard for whatever a future release breaks
+# that COIN_REMOVED_OPTIONS does not know about yet.
+_rollback_dead_start() {
+    local coin="$1" svc="$2" backup_path="$3"
+    log_error "${coin}: the new binary started but did not stay running."
+    log_error "Last log lines from ${svc}:"
+    sudo journalctl -u "$svc" -n 15 --no-pager 2>/dev/null | sed 's/^/    /' || true
+    sudo systemctl stop "$svc" 2>/dev/null || true
+    rollback_coin "$coin" "$backup_path" || true
+    log_error "${coin} was rolled back to the previous binary. Nothing else was changed"
+    log_error "beyond what is logged above. Report the log lines with the version."
+    disable_maintenance
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DIGIBYTE PRUNING (v9.26.4+)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1481,6 +1566,13 @@ upgrade_coin() {
     backup_path=$(backup_coin "$coin")
     log_success "Backup: ${backup_path}"
 
+    # Before anything is stopped: an option the new version rejects would keep
+    # it from starting. The old daemon only reads its config at start, so this
+    # edit is inert until the new binary comes up.
+    if ! migrate_removed_options "$coin"; then
+        return 1
+    fi
+
     # ── Step 2: Maintenance mode ──────────────────────────────────────────────
     log_step "Step 2/5 — Enable maintenance mode"
     enable_maintenance
@@ -1600,7 +1692,8 @@ DROPIN
         # Unguarded, a failed start aborts under errexit BEFORE the drop-in is
         # removed, leaving -reindex on the unit permanently. With Restart=always
         # that is an endless reindex loop. Capture the result and always clean up.
-        local _start_rc=0
+        local _start_rc=0 _restarts_before
+        _restarts_before=$(systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo "")
         sudo systemctl start "$svc" || _start_rc=$?
         if [[ $_start_rc -eq 0 ]]; then _mark_started "$svc"; fi
 
@@ -1618,6 +1711,10 @@ DROPIN
             log_error "start will be a normal one. Check: journalctl -u ${svc} -n 50"
             return 1
         fi
+        if ! _daemon_stays_up "$svc" "$_restarts_before"; then
+            _rollback_dead_start "$coin" "$svc" "$backup_path"
+            return 1
+        fi
 
         echo ""
         log_warn "Reindex in progress — this may take hours depending on chain size."
@@ -1632,9 +1729,15 @@ DROPIN
         # this point, so get_installed_version reads the new version off disk
         # and --check reports the coin "current" while the daemon is down and
         # the chain was never verified. Report it instead.
+        local _restarts_before
+        _restarts_before=$(systemctl show -p NRestarts --value "$svc" 2>/dev/null || echo "")
         if sudo systemctl start "$svc"; then
             _mark_started "$svc"
             log_success "${svc} started"
+            if ! _daemon_stays_up "$svc" "$_restarts_before"; then
+                _rollback_dead_start "$coin" "$svc" "$backup_path"
+                return 1
+            fi
             wait_for_daemon "$coin"
         else
             log_error "${coin}: the new binary installed, but ${svc} failed to start."
@@ -2472,8 +2575,10 @@ list_upgrades() {
 # Sentinel calls --list-upstream from its monitor loop and that loop is blocked
 # until this returns, so the worst case has to stay bounded: this runs once per
 # INSTALLED coin on a cold cache, and wget's default of two tries would double
-# the whole thing. Eight seconds x fifteen coins is the ceiling, and a pool runs
-# a handful. A request that does not answer in eight seconds is one this feature
+# the whole thing. Eight seconds per request is the ceiling: one request per
+# coin, except Bitcoin's index, which may look inside up to three version
+# folders -- eighteen requests and 144s for all fifteen, and a pool runs a
+# handful. A request that does not answer in eight seconds is one this feature
 # is content to skip -- it reports nothing rather than blocking on a dead feed.
 _http_get() {
     local url="$1"
@@ -2488,8 +2593,8 @@ _http_get() {
 
 # Newest STABLE release version for a coin, or nothing.
 #
-# Stability is enforced twice. GitHub's /releases/latest already skips drafts and
-# anything flagged prerelease; on top of that the tag must normalise to a plain
+# Stability is enforced twice. GitHub drafts and anything flagged prerelease are
+# skipped by flag; on top of that the tag must normalise to a plain
 # dotted number. Release candidates are tagged v29.2.0rc1, v0.21.5-rc1, 31.0rc2
 # — none of which survive that, and neither would a tag this code has not seen
 # before. Silence is the safe answer here: a wrong "new release" claim sends an
@@ -2517,48 +2622,116 @@ _tag_to_version() {
     printf '%s' "$1" | sed -E 's/^[A-Za-z]+//'
 }
 
-# GitHub releases API. /releases/latest already skips drafts and prereleases;
-# _is_stable_version is the second, independent filter, because that one depends
-# on a maintainer having ticked a box.
+# GitHub releases API: the most recently PUBLISHED final release that ships a
+# Linux build.
+#
+# The list endpoint rather than /releases/latest, because "latest" is a single
+# release: when it has no Linux build (Namecoin ships none on GitHub; a fresh
+# release may not have its assets uploaded yet) there is nothing to fall back
+# to. Drafts and prereleases are skipped by flag, and _is_stable_version is the
+# second, independent filter, because the flag depends on a maintainer having
+# ticked a box -- Fractal publishes v0.3.0rc2 as a final release.
+#
+# Newest by publish date, NOT by version number. Fractal Bitcoin renumbered
+# downward: its v1.0.3-v1.0.6 date from mid-2024, before the 0.1.x series, and
+# 0.4.0 is its current release. Ranking by version announced a two-year-old
+# 1.0.6 as newer. The cost of date order is a backport published after a newer
+# major (a 31.2 after a 32.0), which reports the backport; that still differs
+# from an old target, and it never reports something that is not a release.
+#
+# python3 reads the JSON: grep cannot tie an asset list to the release it
+# belongs to. Every Spiral Pool host has python3 (Sentinel runs on it); without
+# it this answers nothing, which callers report as "could not check".
 _upstream_gh() {
     local repo="$1" body tag ver
-    body=$(_http_get "https://api.github.com/repos/${repo}/releases/latest") || return 1
+    body=$(_http_get "https://api.github.com/repos/${repo}/releases?per_page=30") || return 1
     [[ -z "$body" ]] && return 1
-    tag=$(printf '%s' "$body" | grep -oP '"tag_name"[[:space:]]*:[[:space:]]*"\K[^"]+' | head -1)
-    [[ -z "$tag" ]] && return 1
-    ver=$(_tag_to_version "$tag")
-    _is_stable_version "$ver" || return 1
-    printf '%s' "$ver"
+    command -v python3 >/dev/null 2>&1 || return 1
+    while read -r tag; do
+        tag="${tag%$'\r'}"       # Python on Windows ends lines with CRLF
+        [[ -z "$tag" ]] && continue
+        ver=$(_tag_to_version "$tag")
+        if _is_stable_version "$ver"; then
+            printf '%s' "$ver"
+            return 0
+        fi
+    done < <(printf '%s' "$body" | python3 -c '
+import json, re, sys
+try:
+    releases = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+ok = []
+for r in releases if isinstance(releases, list) else []:
+    if not isinstance(r, dict) or r.get("draft") or r.get("prerelease"):
+        continue
+    if any(re.search("linux", str(a.get("name", "")), re.I)
+           for a in r.get("assets") or [] if isinstance(a, dict)):
+        ok.append((str(r.get("published_at") or ""), str(r.get("tag_name") or "")))
+for _, tag in sorted(ok, reverse=True):
+    print(tag)
+' 2>/dev/null)
+    return 1
 }
 
-# An HTTP directory index, for projects that do not publish on GitHub. Every
-# "<prefix><version>/" entry on the page is a candidate and the newest wins --
-# these pages list every historical release, and they are not in order.
+# An HTTP directory index of "<prefix><version>/" folders, for projects that do
+# not publish on GitHub: the newest folder that actually holds a Linux build.
+#
+# Folder names are not enough. bitcoincore.org creates bitcoin-core-32.0/ at the
+# first release candidate and keeps only test.rcN/ inside until the release
+# ships, so the newest folder can be an unreleased version. Each candidate's own
+# listing is fetched, newest first, until one links a Linux file. Bounded at
+# three, so a run of RC-only folders cannot stall the Sentinel loop.
 _upstream_idx() {
     local url="${1%%|*}" prefix="${1##*|}"
     # A source with no "|" leaves prefix == url; there is nothing to match
     # and the answer is silence, not a guess.
     [[ "$prefix" == "$url" ]] && return 1
-    local page best="" ver entry
+    local page ver dir tries=0
+    page=$(_http_get "$url") || return 1
+    [[ -z "$page" ]] && return 1
+    while read -r ver; do
+        _is_stable_version "$ver" || continue
+        tries=$((tries + 1))
+        [[ $tries -le 3 ]] || break
+        dir=$(_http_get "${url}${prefix}${ver}/") || continue
+        # A file link (no "/" or "?" in it, so not a subfolder or a sort link)
+        # whose name says Linux.
+        if grep -qE 'href="[^"/?][^"/]*[Ll]inux[^"/]*"' <<< "$dir"; then
+            printf '%s' "$ver"
+            return 0
+        fi
+    # The trailing "/" in the match is load-bearing. Without it the match is
+    # greedy up to the first non-digit, so a folder named bitcoin-core-32.0rc1/
+    # yields "32.0" -- a release candidate laundered into a stable-looking
+    # version. Trimmed with parameter expansion, not sed: a prefix containing
+    # "/" would be read as a sed delimiter. Sorted newest first.
+    done < <(printf '%s' "$page" | grep -oE "${prefix}[0-9]+(\.[0-9]+)+/" | sort -u \
+             | while read -r e; do e="${e#"$prefix"}"; printf '%s\n' "${e%/}"; done \
+             | sort -t. -k1,1nr -k2,2nr -k3,3nr -k4,4nr)
+    return 1
+}
+
+# A download page that links each build directly, as namecoin.org does: the
+# newest "<prefix><version>/<file>" link whose file is a Linux build. Namecoin
+# needs this because its GitHub releases carry no binaries and its file server
+# refuses directory listings; the download page is the one place that names
+# what can actually be installed.
+_upstream_dl() {
+    local url="${1%%|*}" prefix="${1##*|}"
+    [[ "$prefix" == "$url" ]] && return 1
+    local page entry ver best=""
     page=$(_http_get "$url") || return 1
     [[ -z "$page" ]] && return 1
     while read -r entry; do
         [[ -z "$entry" ]] && continue
-        # Trim with parameter expansion, not sed: a prefix containing "/"
-        # would be read as a sed delimiter and blow the expression up.
         ver="${entry#"$prefix"}"
-        ver="${ver%/}"
+        ver="${ver%%/*}"
         _is_stable_version "$ver" || continue
         if [[ -z "$best" ]] || _ver_gt "$ver" "$best"; then
             best="$ver"
         fi
-    # The trailing "/" is load-bearing. Without it the match is greedy up to the
-    # first non-digit, so a directory named bitcoin-core-32.0rc1/ yields "32.0"
-    # -- a release candidate laundered into a stable-looking version number, and
-    # announced as a new release. Requiring the slash means an RC directory does
-    # not match at all. A project that lists releases without a trailing slash is
-    # missed instead, which is the failure worth having.
-    done < <(printf '%s' "$page" | grep -oE "${prefix}[0-9]+(\.[0-9]+)+/" | sort -u)
+    done < <(printf '%s' "$page" | grep -oE "${prefix}[0-9]+(\.[0-9]+)+/[^\"/]*[Ll]inux[^\"/]*\"" | sort -u)
     [[ -z "$best" ]] && return 1
     printf '%s' "$best"
 }
@@ -2599,6 +2772,7 @@ _upstream_latest() {
     case "$src" in
         gh:*)  ver=$(_upstream_gh  "${src#gh:}")  || return 1 ;;
         idx:*) ver=$(_upstream_idx "${src#idx:}") || return 1 ;;
+        dl:*)  ver=$(_upstream_dl  "${src#dl:}")  || return 1 ;;
         *)     ver=$(_upstream_gh  "$src")        || return 1 ;;   # bare = GitHub
     esac
     [[ -z "$ver" ]] && return 1

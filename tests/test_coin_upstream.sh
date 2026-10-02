@@ -52,7 +52,7 @@ LIB="$TMP/lib.sh"
     echo "VERSION_CACHE_DIR=\"$TMP/cache\""
     echo 'UPSTREAM_CACHE_TTL=86400'
     for f in _norm4 _ver_matches _ver_gt _is_stable_version _tag_to_version \
-             _upstream_gh _upstream_idx _upstream_latest _coin_present_for_upstream \
+             _upstream_gh _upstream_idx _upstream_dl _upstream_latest _coin_present_for_upstream \
              _collect_upstream list_upstream check_upstream _print_unreachable \
              show_upstream_notice; do
         sed -n "/^${f}() {/,/^}/p" "$CU"
@@ -63,15 +63,50 @@ LIB="$TMP/lib.sh"
     # HTTP_FIXTURE, not "page" or "body": bash is dynamically scoped, and the
     # functions under test declare local page / local body, which would shadow a
     # fixture of that name and hand the stub an empty string instead.
-    echo 'HTTP_FIXTURE=""; HTTP_FAIL=0'
-    echo '_http_get() { [[ "$HTTP_FAIL" == "1" ]] && return 1; printf "%s" "$HTTP_FIXTURE"; }'
+    # HTTP_BY_URL answers specific URLs (an index source fetches the index, then
+    # each version folder); anything else gets HTTP_FIXTURE.
+    echo 'HTTP_FIXTURE=""; HTTP_FAIL=0; declare -A HTTP_BY_URL=()'
+    echo '_http_get() { [[ "$HTTP_FAIL" == "1" ]] && return 1; if [[ -v HTTP_BY_URL["$1"] ]]; then printf "%s" "${HTTP_BY_URL[$1]}"; else printf "%s" "$HTTP_FIXTURE"; fi; }'
 } > "$LIB"
+
+# The GitHub source parses JSON with python3, as it does on every Spiral Pool
+# host. On Windows "python3" can be the Microsoft Store stub; say so rather than
+# report every GitHub assertion as a product failure.
+if ! python3 -c 'pass' >/dev/null 2>&1; then
+    echo "python3 is required (the GitHub release source parses JSON with it)." >&2
+    exit 1
+fi
 
 # shellcheck disable=SC1090
 source "$LIB"
 
-fresh() { rm -rf "$TMP/cache"; HTTP_FAIL=0; }
-gh_json() { printf '{"tag_name": "%s", "prerelease": false}' "$1"; }
+fresh() { rm -rf "$TMP/cache"; HTTP_FAIL=0; HTTP_BY_URL=(); }
+# One GitHub release object: <tag> [published_at] [asset name] [prerelease] [draft]
+gh_rel() {
+    local assets="[]"
+    [[ -n "${3-x}" ]] && assets="[{\"name\": \"${3:-coin-x86_64-linux-gnu.tar.gz}\"}]"
+    printf '{"tag_name": "%s", "published_at": "%s", "prerelease": %s, "draft": %s, "assets": %s}' \
+        "$1" "${2:-2026-01-01T00:00:00Z}" "${4:-false}" "${5:-false}" "$assets"
+}
+# The releases list as /releases returns it: a JSON array.
+gh_list() { local IFS=,; printf '[%s]' "$*"; }
+gh_json() { gh_list "$(gh_rel "$1")"; }
+# A bitcoincore.org-style index: the top page lists every version folder, and
+# each released folder lists its Linux build. Folders named after "rc:" hold only
+# test.rcN/, the way bitcoincore.org stages a release candidate.
+idx_site() {
+    local base="$1" v; shift
+    HTTP_FIXTURE=""
+    for v in "$@"; do
+        if [[ "$v" == rc:* ]]; then
+            v="${v#rc:}"
+            HTTP_BY_URL["${base}bitcoin-core-${v}/"]='<a href="../">../</a> <a href="test.rc2/">test.rc2/</a>'
+        else
+            HTTP_BY_URL["${base}bitcoin-core-${v}/"]="<a href=\"SHA256SUMS\">SHA256SUMS</a> <a href=\"bitcoin-${v}-x86_64-linux-gnu.tar.gz\">x</a>"
+        fi
+        HTTP_FIXTURE+="<a href=\"bitcoin-core-${v}/\">bitcoin-core-${v}/</a> "
+    done
+}
 
 log_test "a stable release is a plain dotted number of two to four parts"
 for good in 31.1 31.1.0 0.21.5.8 9.26.5; do
@@ -99,17 +134,69 @@ done
 fresh; HTTP_FIXTURE="$(gh_json v31.1)"
 eq "$(_upstream_gh x/y)" "31.1" "accepts the stable tag v31.1"
 
+log_test "GitHub: only a final release with a Linux build counts"
+# Namecoin tags every release on GitHub with no binaries at all. Reading the tag
+# announced an nc31.1 nobody could install.
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v31.1 2026-07-13T00:00:00Z "")")"
+if got=$(_upstream_gh x/y); then fail "a source-only release is not a release" "returned [$got]"; else pass "a source-only release is not a release"; fi
+
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v31.1 2026-07-13T00:00:00Z "")" "$(gh_rel v28.0 2024-12-11T00:00:00Z)")"
+eq "$(_upstream_gh x/y)" "28.0" "it falls back to the newest release that has a Linux build"
+
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v2.0 2026-02-01T00:00:00Z coin-win64.zip)" "$(gh_rel v1.9 2026-01-01T00:00:00Z)")"
+eq "$(_upstream_gh x/y)" "1.9" "a release with only non-Linux builds is skipped"
+
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v2.0 2026-02-01T00:00:00Z "" )" "$(gh_rel v2.0 2026-02-01T00:00:00Z coin-linux64.tar.gz)")"
+eq "$(_upstream_gh x/y)" "2.0" "linux64-style asset names count (BCH2)"
+
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v2.0 2026-02-01T00:00:00Z coin-x86_64-linux-gnu.tar.gz true)" "$(gh_rel v1.9 2026-01-01T00:00:00Z)")"
+eq "$(_upstream_gh x/y)" "1.9" "a release flagged prerelease is skipped"
+
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v2.0 2026-02-01T00:00:00Z coin-x86_64-linux-gnu.tar.gz false true)" "$(gh_rel v1.9 2026-01-01T00:00:00Z)")"
+eq "$(_upstream_gh x/y)" "1.9" "a draft is skipped"
+
+# Fractal Bitcoin renumbered downward: v1.0.6 is from 2024, 0.4.0 from 2026.
+# Ranking by version number announced the two-year-old 1.0.6 as newer.
+fresh; HTTP_FIXTURE="$(gh_list "$(gh_rel v1.0.6 2024-07-25T00:00:00Z)" "$(gh_rel v0.4.0 2026-08-10T00:00:00Z)" "$(gh_rel v0.3.0rc2 2026-08-20T00:00:00Z)")"
+eq "$(_upstream_gh x/y)" "0.4.0" "the most recently published final release wins, not the highest number"
+
+fresh; HTTP_FIXTURE='{"message": "API rate limit exceeded"}'
+if got=$(_upstream_gh x/y); then fail "a rate-limit reply is not a release" "returned [$got]"; else pass "a rate-limit reply is not a release"; fi
+
 log_test "a project that does not publish on GitHub is still checked"
-fresh; HTTP_FIXTURE="bitcoin-core-29.1/ bitcoin-core-31.1/ bitcoin-core-30.3/"
+fresh; idx_site "https://x" 29.1 31.1 30.3
 eq "$(_upstream_idx 'https://x|bitcoin-core-')" "31.1" "picks the newest entry, not the last listed"
 
-fresh; HTTP_FIXTURE="bitcoin-core-9.99/ bitcoin-core-10.0/"
+fresh; idx_site "https://x" 9.99 10.0
 eq "$(_upstream_idx 'https://x|bitcoin-core-')" "10.0" "10.0 beats 9.99 (integer, not string, compare)"
+
+# bitcoincore.org creates bitcoin-core-32.0/ at the first release candidate and
+# holds only test.rcN/ in it. Reading folder names announced 32.0 as released.
+fresh; idx_site "https://x" 31.1 rc:32.0
+eq "$(_upstream_idx 'https://x|bitcoin-core-')" "31.1" "a version folder holding only a release candidate is not a release"
+
+fresh; idx_site "https://x" rc:32.0
+if got=$(_upstream_idx 'https://x|bitcoin-core-'); then fail "only an RC-staging folder reports nothing" "returned [$got]"; else pass "only an RC-staging folder reports nothing"; fi
 
 # The one that bit: a greedy match stops at the first non-digit, so an RC
 # directory laundered itself into a stable-looking version number.
-fresh; HTTP_FIXTURE="bitcoin-core-31.1/ bitcoin-core-32.0rc1/ bitcoin-core-32.0-rc2/"
+fresh; idx_site "https://x" 31.1
+HTTP_FIXTURE+=" bitcoin-core-32.0rc1/ bitcoin-core-32.0-rc2/"
 eq "$(_upstream_idx 'https://x|bitcoin-core-')" "31.1" "an RC directory is not truncated into a stable version"
+
+log_test "a download page (Namecoin) counts only versions it links a Linux build for"
+NMC_PAGE='<a href="https://www.namecoin.org/files/namecoin-core/namecoin-core-28.0/namecoin-28.0-x86_64-linux-gnu.tar.gz">
+<a href="https://www.namecoin.org/files/namecoin-core/namecoin-core-28.0/namecoin-28.0-win64.zip">
+<a href="https://www.namecoin.org/files/namecoin-core/namecoin-core-22.0/namecoin-nc22.0-powerpc64le-linux-gnu.tar.gz">
+<a href="https://www.namecoin.org/files/namecoin-core/namecoin-core-31.1/namecoin-31.1-win64.zip">
+<a href="https://www.namecoin.org/files/namecoin-core/namecoin-core-0.13.99-name-tab-beta1-notreproduced/namecoin-0.13.99-x86_64-linux-gnu.tar.gz">'
+fresh; HTTP_FIXTURE="$NMC_PAGE"
+eq "$(_upstream_dl 'https://www.namecoin.org/download/|namecoin-core-')" "28.0" "the newest version with a Linux build, ignoring a Windows-only one and a beta folder"
+eq "$(_upstream_latest NMC)" "28.0" "NMC resolves through namecoin.org, not GitHub"
+fresh; HTTP_FIXTURE="$(gh_json nc31.1)"
+if got=$(_upstream_latest NMC); then fail "a GitHub tag cannot make NMC report a release" "returned [$got]"; else pass "a GitHub tag cannot make NMC report a release"; fi
+fresh; HTTP_FIXTURE="namecoin-core-31.1/ no file links"
+if got=$(_upstream_dl 'https://www.namecoin.org/download/|namecoin-core-'); then fail "a folder name with no build is not a release" "returned [$got]"; else pass "a folder name with no build is not a release"; fi
 
 fresh; HTTP_FIXTURE="bitcoin-core-32.0rc1/"
 if got=$(_upstream_idx 'https://x|bitcoin-core-'); then fail "a page of only RCs reports nothing" "returned [$got]"; else pass "a page of only RCs reports nothing"; fi
@@ -146,7 +233,7 @@ eq "$(_upstream_latest LTC)" "0.21.5.8" "an unwritable cache still returns the a
 VERSION_CACHE_DIR="$OLD_CACHE"
 
 log_test "each coin is asked in the way its project publishes"
-fresh; HTTP_FIXTURE="bitcoin-core-31.1/"
+fresh; idx_site "https://bitcoincore.org/bin/" 31.1
 eq "$(_upstream_latest BTC)" "31.1" "BTC resolves through the non-GitHub index"
 fresh; HTTP_FIXTURE="$(gh_json v0.21.5.8)"
 eq "$(_upstream_latest LTC)" "0.21.5.8" "LTC resolves through the GitHub API"

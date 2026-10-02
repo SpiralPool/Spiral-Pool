@@ -97,7 +97,8 @@ addnode=bch.bitjson.com
 # ═══════════════════════════════════════════════════════════════════════════════
 # Block size limit for mining (BCH has larger blocks)
 blockmaxsize=32000000
-excessiveblocksize=32000000
+# No excessiveblocksize: BCHN 29.2.0 removed it (ABLA sets the limit) and
+# refuses to start with it present. 32 MB was already the default.
 
 # Accept large blocks from peers
 # NOTE: no `excessiveacceptdepth`. That is a Bitcoin Unlimited option and

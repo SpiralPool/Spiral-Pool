@@ -56,7 +56,7 @@ SYSCOIN_VERSION="5.1.2"
 # how LTC.ver came to be seeded "0.21.4" while the installer fetched 0.21.5.4
 # and coin-upgrade.sh called 0.21.5.6 current. Three different versions for one
 # coin, in one file. Keeping them here makes that drift impossible.
-BCHN_VERSION="29.1.0"
+BCHN_VERSION="29.2.0"
 LITECOIN_VERSION="0.21.5.8"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.4.0"
@@ -6820,7 +6820,8 @@ logtimestamps=1
 
 # Mining (BCH larger blocks)
 blockmaxsize=32000000
-excessiveblocksize=32000000
+# No excessiveblocksize: BCHN 29.2.0 removed it (ABLA sets the limit) and
+# refuses to start with it present. 32 MB was already the default.
 # No excessiveacceptdepth: that is a Bitcoin Unlimited option, absent from
 # BCHN, and an unknown key is fatal there.
 
@@ -18146,7 +18147,8 @@ shrinkdebugfile=1
 # === BCH-SPECIFIC SETTINGS ===
 # Enable 32MB blocks (BCH protocol)
 blockmaxsize=32000000
-excessiveblocksize=32000000
+# No excessiveblocksize: BCHN 29.2.0 removed it (ABLA sets the limit) and
+# refuses to start with it present. 32 MB was already the default.
 
 # === ASSUME VALID (skip signature verification for known good blocks) ===
 # This dramatically speeds up initial sync (BCHN latest)

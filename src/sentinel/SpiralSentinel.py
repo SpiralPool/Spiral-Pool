@@ -4528,10 +4528,10 @@ def get_upstream_coin_releases():
     without naming them a partial failure is indistinguishable from good news.
     """
     # Larger budget than --list: this one reaches release feeds, once per
-    # installed coin on a cold cache, at up to 8s each. The monitor loop is
-    # blocked meanwhile, so the ceiling matters -- 8s x 15 coins is 120s, and
-    # this leaves headroom above it rather than being killed mid-sweep and
-    # discarding the answers already collected.
+    # installed coin on a cold cache (Bitcoin's index up to four times), at up
+    # to 8s each. The monitor loop is blocked meanwhile, so the ceiling matters
+    # -- 18 requests x 8s is 144s, and this leaves headroom above it rather than
+    # being killed mid-sweep and discarding the answers already collected.
     out = _run_coin_upgrade("--list-upstream", timeout=180)
     if out is None:
         return None, []
