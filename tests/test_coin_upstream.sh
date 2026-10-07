@@ -425,9 +425,9 @@ get_installed_version() { echo "0.0.1"; }
 log_test "--check names a newer upstream release and how to reach it"
 fresh
 SPIRALPOOL_INSTALLED_COINS="DGB"
-HTTP_FIXTURE="$(gh_json v9.26.7)"
+HTTP_FIXTURE="$(gh_json v9.26.8)"
 out="$(show_upstream_notice)"
-if grep -q "DGB .*${COIN_TARGET[DGB]} → 9\.26\.7" <<< "$out"; then
+if grep -q "DGB .*${COIN_TARGET[DGB]} → 9\.26\.8" <<< "$out"; then
     pass "the newer release is listed against the target"
 else
     fail "the newer release is listed against the target" "$out"

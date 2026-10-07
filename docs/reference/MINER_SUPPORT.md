@@ -128,7 +128,7 @@ Endpoints used: `/summary`, `/hashrate`, `/fanspeed`, `/capabilities`
 
 ## Custom Firmware (Full Support with Manual Setup)
 
-These require the firmware password to be configured in Spiral Dash settings.
+BraiinsOS and Vnish need the firmware login when it is not the default: set it per miner on the **Automation** page. The dashboard and Sentinel use it for monitoring and control. LuxOS needs no login.
 
 ### BraiinsOS / BOS+ (REST API, Port 80)
 
@@ -136,11 +136,13 @@ These require the firmware password to be configured in Spiral Dash settings.
 
 | Device | Type Key | Default Power | Default Credentials | Notes |
 |--------|----------|---------------|---------------------|-------|
-| Any Antminer running BraiinsOS | `braiins` | 3250W | root / (empty) | Bearer token auth |
+| Any Antminer running BraiinsOS | `braiins` | 3250W | root / (empty) | Session token, sent as `Authorization: <token>` (no `Bearer` prefix) |
 
-API: `/api/v1/auth/login`, `/api/v1/miner/stats`, `/api/v1/cooling/state`, `/api/v1/miner/details`
+API: `/api/v1/auth/login`, `/api/v1/miner/stats`, `/api/v1/cooling/state`, `/api/v1/miner/details`, `/api/v1/pools/`
 
-**Supported features**: Hashrate (GH/s), power consumption (watts), chip temperature, fan RPMs, accepted/rejected/stale shares, uptime, found blocks.
+**Credentials**: set the BraiinsOS login on the **Automation** page. The dashboard and Sentinel use it for monitoring as well as control; without it they try the firmware default (root, empty password).
+
+**Supported features**: Hashrate (GH/s, measured `real_hashrate`; the rated `nominal_hashrate` only when no measurement is reported), power consumption (watts), chip temperature, fan speed and RPMs, accepted/rejected/stale shares, best share, uptime, found blocks, active pool URL and worker.
 
 **Limitations**:
 - No auto-scan: BraiinsOS requires authentication for all API endpoints. The network scanner cannot probe without credentials.
@@ -156,16 +158,18 @@ API: `/api/v1/auth/login`, `/api/v1/miner/stats`, `/api/v1/cooling/state`, `/api
 | Any Antminer running Vnish | `vnish` | 3250W | (password) admin | Dual-API approach |
 
 Vnish exposes two APIs:
-1. **Web REST API (port 80)**: `/api/v1/unlock`, `/api/v1/summary`, `/api/v1/metrics`, `/api/v1/info`
+1. **Web REST API (port 80)**: `/api/v1/unlock`, `/api/v1/summary`, `/api/v1/info`, `/api/v1/model`
 2. **CGMiner-compatible RPC (port 4028)**: Traditional `summary`, `stats`, `pools` commands
 
-Spiral Dash uses both: CGMiner RPC for hashrate/temps/fans (more reliable), Web API for power/model/status.
+Spiral Dash uses both: CGMiner RPC for hashrate/temps/fans (more reliable), Web API for power/model/pool, and for hashrate and temperatures when port 4028 does not answer.
 
-**Supported features**: Hashrate, temperatures, fan speeds, power consumption, accepted/rejected shares, uptime.
+Field paths follow Vnish's own OpenAPI document (`http://<miner>/docs/`, checked for 1.2.6 and 1.3.4): power is `miner.power_consumption` (W) — `miner.power_usage` is deprecated and documented as the same as `power_efficiency` (J/TH), so it is read only on firmware without `power_consumption`; web hashrate is `miner.hr_realtime` in the unit `/api/v1/model` reports as `hr_measure` (GH/s, or MH/s on scrypt models).
+
+**Supported features**: Hashrate, temperatures, fan speeds, power consumption, accepted/rejected shares, best share, active pool, uptime.
 
 **Limitations**:
-- No auto-scan: Vnish requires password authentication. Must be manually added.
-- Auth token format: Vnish uses a plain token in the `Authorization` header (not `Bearer`) for data endpoints. Only `system/*` POST commands use `Bearer` prefix.
+- No auto-scan: Vnish must be added manually.
+- Auth: `POST /api/v1/unlock {"pw"}` returns a token; a wrong password answers 403. Protected endpoints (`system/*`, `mining/*`, `settings`, `autotune/presets`) take `Authorization: Bearer <token>`, as Vnish's OpenAPI document declares; firmware that rejects that form gets the bare token once and is remembered. `/summary`, `/info` and `/model` need no login, so monitoring keeps working with a wrong or missing password.
 - Built-in API docs available at `http://<miner>/docs/`.
 
 ### LuxOS Firmware (CGMiner-compatible TCP, Port 4028)

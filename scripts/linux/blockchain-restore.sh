@@ -38,7 +38,7 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================================
 
-SCRIPT_VERSION="3.0.1"
+SCRIPT_VERSION="3.0.2"
 SCRIPT_NAME="$(basename "$0")"
 
 POOL_USER="${POOL_USER:-spiraluser}"

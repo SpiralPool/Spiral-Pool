@@ -3,11 +3,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V3.0.1-SPIRAL_COVENANT
+#                   V3.0.2-SPIRAL_COVENANT
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
-# EXCEPTION: the 9.26.x → v9.26.6 DigiByte upgrade offers to switch the node to a
+# EXCEPTION: the 9.26.x → v9.26.7 DigiByte upgrade offers to switch the node to a
 # pruned node (v9.26.4+ makes DigiDollar work while pruned). If accepted it edits
 # digibyte.conf in place (sets prune=5000, removes txindex) after backing it up —
 # no chain data is deleted and no resync is required. Declining leaves it full.
@@ -94,7 +94,7 @@ declare -A COIN_TARGET=(
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="31.1.0"
     [BTCS]="31.1.3"         # Bitcoin Silver — binary release (tag version31.1.3)
-    [DGB]="9.26.6"
+    [DGB]="9.26.7"
     [LTC]="0.21.5.8"
     [DOGE]="1.14.9"
     [PEP]="1.1.0"
@@ -199,8 +199,11 @@ declare -A COIN_RISK=(
                     # 31 cannot load legacy (BDB) wallets, so the upgrade stops first
                     # if one is on disk. 31.1.0 broke fresh syncs (fixed in 31.1.1); a
                     # node stuck on 31.1.0 needs blocks/, chainstate/ and indexes/ wiped.
-    [DGB]="MAJOR"   # CONSENSUS, DEADLINE. 9.26.6 carries Thaw Day, new DigiDollar block
-                    # rules activating at mainnet height 24,490,000 (expected ~1 Nov 2026).
+    [DGB]="MAJOR"   # CONSENSUS, DEADLINE. 9.26.6 brought Thaw Day, new DigiDollar block
+                    # rules activating at mainnet height 24,490,000 (expected ~1 Nov 2026);
+                    # 9.26.7 is a maintenance release on top (no activation, no reindex),
+                    # so MAJOR stays for nodes still below 9.26.6. upgrade.sh tells a
+                    # 9.26.6 node the move to 9.26.7 is optional.
                     # Upstream: every full-node and mining operator must upgrade before
                     # it, DigiDollar user or not; older nodes can disagree about valid
                     # blocks after that height, and downgrading afterwards is not a repair.
@@ -3054,7 +3057,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V3.0.1-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V3.0.2-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

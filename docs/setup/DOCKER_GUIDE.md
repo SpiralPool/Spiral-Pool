@@ -847,7 +847,7 @@ Docker upgrades a coin by rebuilding its image, not by replacing a binary in pla
 
 ```bash
 # 1. Edit the version pin in the coin's Dockerfile, e.g. docker/Dockerfile.digibyte
-#    ARG DIGIBYTE_VERSION=9.26.6
+#    ARG DIGIBYTE_VERSION=9.26.7
 # 2. Rebuild just that image and recreate just that container.
 #    Volumes, chainstate and every other service are untouched.
 docker compose build digibyte

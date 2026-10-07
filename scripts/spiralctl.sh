@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-3.0.1}"
+VERSION="${VERSION:-3.0.2}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 

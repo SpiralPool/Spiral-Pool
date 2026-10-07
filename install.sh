@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 3.0.1                                                         ║
+# ║   Version: 3.0.2                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="3.0.1"
+    VERSION="3.0.2"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -44,7 +44,7 @@ INSTALL_DIR="/spiralpool"
 # blockchain data / wallets / configs on a failed re-run (e.g. adding a coin).
 INSTALL_DIR_PREEXISTED=false
 [[ -d "$INSTALL_DIR" ]] && INSTALL_DIR_PREEXISTED=true
-DIGIBYTE_VERSION="9.26.6"
+DIGIBYTE_VERSION="9.26.7"
 BITCOINII_VERSION="31.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="31.1.3"
@@ -16025,7 +16025,7 @@ Match User ${POOL_USER}
     sudo apt-get install -y -qq \
         apt-utils \
         curl wget git build-essential ca-certificates gnupg openssl \
-        lsb-release software-properties-common ufw htop jq unzip \
+        lsb-release ufw htop jq unzip \
         python3 python3-pip python3-venv python3-dev python3-requests libffi-dev bc \
         libpq-dev libzmq3-dev libminiupnpc-dev libnatpmp1 libevent-dev libsqlite3-0 pkg-config \
         iproute2 iputils-arping iputils-ping \
@@ -16036,6 +16036,13 @@ Match User ${POOL_USER}
         xz-utils \
         tmux \
         at || { log_error "Failed to install prerequisite packages"; return 1; }
+
+    # software-properties-common (add-apt-repository) is optional: Debian 13 Trixie
+    # no longer ships it (Debian bug #1110699). Only the Ubuntu etcd path uses
+    # add-apt-repository, and that call already tolerates its absence.
+    wait_for_apt_lock
+    sudo apt-get install -y -qq software-properties-common > /dev/null 2>&1 \
+        || log "software-properties-common not available on this distribution — skipping (not required)"
 
     # Ubuntu 24.04 ships libminiupnpc.so.21 — BCH2 binaries compiled on 22.04 need .so.17.
     # Create a compatibility symlink if the older version isn't present.
@@ -16850,7 +16857,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.1 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.2 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -23651,7 +23658,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="3.0.1"
+    local BUILD_VERSION="3.0.2"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -32978,11 +32985,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V3.0.1-SPIRAL_COVENANT: Create backup command
+    # V3.0.2-SPIRAL_COVENANT: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V3.0.1-SPIRAL_COVENANT
+# Spiral Pool Backup Utility - V3.0.2-SPIRAL_COVENANT
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -33027,7 +33034,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -33406,7 +33413,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "3.0.1",
+    "version": "3.0.2",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33687,7 +33694,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33740,11 +33747,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V3.0.1-SPIRAL_COVENANT: Create restore command
+    # V3.0.2-SPIRAL_COVENANT: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V3.0.1-SPIRAL_COVENANT
+# Spiral Pool Restore Utility - V3.0.2-SPIRAL_COVENANT
 # Restores backups created by spiralpool-backup
 #
 
@@ -33791,7 +33798,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -34134,7 +34141,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.1-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -40545,7 +40552,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V3.0.1 - SPIRAL COVENANT${NC}"
+    echo -e "                                     ${DIM}V3.0.2 - SPIRAL COVENANT${NC}"
     echo ""
 }
 

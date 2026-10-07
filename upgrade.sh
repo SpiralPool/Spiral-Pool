@@ -5070,7 +5070,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.1 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.2 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -5876,6 +5876,19 @@ verify_upgrade() {
     fi
 }
 
+# True when the DGB line of a coin-upgrade.sh --list ("COIN VER TARGET RISK")
+# shows a node older than 9.26.6, the release that carries Thaw Day's consensus
+# rules, or a version that cannot be read. Such a node must upgrade before mainnet
+# block 24,490,000; a node already on 9.26.6 is only missing the 9.26.7
+# maintenance release, which adds no activation and needs no reindex.
+_dgb_before_thaw_day() {
+    local inst
+    inst=$(awk '$1=="DGB"{print $2; exit}' <<< "$1")
+    inst="${inst#v}"
+    [[ "$inst" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 0
+    [[ "$inst" != "9.26.6" && "$(printf '%s\n%s\n' "$inst" "9.26.6" | sort -V | head -1)" == "$inst" ]]
+}
+
 show_summary() {
     echo
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -6016,14 +6029,24 @@ show_summary() {
             # on an older build after that height keeps looking healthy while it can
             # disagree with upgraded nodes about valid blocks, so say so plainly. Also
             # say it is an in-place binary swap (no reindex) that offers pruning.
+            # The target is now v9.26.7, a maintenance release on top of those rules:
+            # a node already on 9.26.6 is told it is optional, not required.
             if grep -q '^DGB ' <<< "$upgrade_lines"; then
                 echo
-                echo -e "${RED}  ⚠  DigiByte (DGB) v9.26.6 — REQUIRED before mainnet block 24,490,000${NC}"
-                echo -e "     Thaw Day: new DigiDollar block rules activate at that height (~1 Nov 2026)."
-                echo -e "     Every mining node must upgrade, whether or not it uses DigiDollar. A node"
-                echo -e "     left on an older version can disagree with the network about valid blocks."
-                echo -e "     In-place binary swap — no reindex. coin-upgrade.sh also offers to switch a"
-                echo -e "     full node to a pruned one (prune=5000); declining keeps it full."
+                if _dgb_before_thaw_day "$upgrade_lines"; then
+                    echo -e "${RED}  ⚠  DigiByte (DGB) v9.26.7 — REQUIRED before mainnet block 24,490,000${NC}"
+                    echo -e "     Thaw Day: new DigiDollar block rules activate at that height (~1 Nov 2026)."
+                    echo -e "     They arrived in v9.26.6; v9.26.7 carries them. Every mining node must"
+                    echo -e "     upgrade, whether or not it uses DigiDollar. A node left on an older version"
+                    echo -e "     can disagree with the network about valid blocks."
+                    echo -e "     In-place binary swap — no reindex. coin-upgrade.sh also offers to switch a"
+                    echo -e "     full node to a pruned one (prune=5000); declining keeps it full."
+                else
+                    echo -e "${CYAN}  ℹ  DigiByte (DGB) v9.26.7 — maintenance release, recommended${NC}"
+                    echo -e "     This node already runs v9.26.6, which has the Thaw Day rules (block"
+                    echo -e "     24,490,000). v9.26.7 adds no activation: it fixes getblockchaininfo"
+                    echo -e "     difficulty and a false shutdown error. In-place binary swap — no reindex."
+                fi
                 echo -e "     Wallets, configs, and other coins are untouched."
             fi
             # BCHN 29.2.0 has no deadline, but it removed -excessiveblocksize and
@@ -6143,7 +6166,11 @@ PYEOF
         coin_lines+="**${coin}** — ${installed} → ${target} (${risk_label})\n"
     done <<< "$upgrade_lines"
     if grep -q '^DGB ' <<< "$upgrade_lines"; then
-        coin_lines+="\n🔴 **DigiByte v9.26.6 is REQUIRED before mainnet block 24,490,000** (~1 Nov 2026). Thaw Day's new DigiDollar block rules activate at that height, and every mining node must upgrade whether or not it uses DigiDollar: a node left on an older version can disagree with the network about valid blocks. In-place binary swap (no reindex); coin-upgrade.sh also offers to switch a full node to a pruned one and preserves wallets/configs.\n"
+        if _dgb_before_thaw_day "$upgrade_lines"; then
+            coin_lines+="\n🔴 **DigiByte v9.26.7 is REQUIRED before mainnet block 24,490,000** (~1 Nov 2026). Thaw Day's new DigiDollar block rules (introduced in v9.26.6) activate at that height, and every mining node must upgrade whether or not it uses DigiDollar: a node left on an older version can disagree with the network about valid blocks. In-place binary swap (no reindex); coin-upgrade.sh also offers to switch a full node to a pruned one and preserves wallets/configs.\n"
+        else
+            coin_lines+="\nℹ **DigiByte v9.26.7** is a maintenance release: this node's v9.26.6 already has the Thaw Day rules (block 24,490,000). No new activation, no reindex; it fixes getblockchaininfo difficulty and a false shutdown error.\n"
+        fi
     fi
     if grep -q '^BCH ' <<< "$upgrade_lines"; then
         coin_lines+="\nℹ **Bitcoin Cash Node v29.2.0** removed the excessiveblocksize option and will not start while it is set. coin-upgrade.sh comments it out of bitcoin.conf (with a backup) before starting the new daemon; 32 MB was already the default. No reindex.\n"
@@ -6171,7 +6198,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v3.0.1 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v3.0.2 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

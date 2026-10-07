@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "3.0.1"
+__version__ = "3.0.2"
 
 import os
 import json
@@ -7144,72 +7144,156 @@ def braiins_api_call(ip, endpoint, method="GET", data=None, username="root", pas
         timeout: Request timeout in seconds
 
     Returns:
-        dict: API response or {"error": "message"}
+        dict: API response or {"error": "message"}. GET /pools/ returns a list on
+        current firmware (see _braiins_pool_groups). A bare JSON value (action
+        endpoints answer true/false) is wrapped as {"success": True, "result": value}.
     """
     # SECURITY: Validate IP to prevent SSRF attacks
     if not validate_miner_ip(ip):
         return {"error": "Invalid or blocked IP address (SSRF protection)"}
 
     base_url = f"http://{ip}/api/v1"
+    if method not in ("GET", "POST", "PUT", "DELETE"):
+        return {"error": f"Unsupported method: {method}"}
 
-    # Check for cached valid token
-    now = time.time()
-    with _braiins_sessions_lock:
-        session = _braiins_sessions.get(ip, {})
-        token = session.get("token")
-        expires = session.get("expires", 0)
+    # Two attempts: a cached token goes stale when the miner reboots, so a 401 on a
+    # cached token drops it, logs in again and retries once.
+    for attempt in range(2):
+        now = time.time()
+        with _braiins_sessions_lock:
+            session = _braiins_sessions.get(ip, {})
+            token = session.get("token")
+            expires = session.get("expires", 0)
+        cached = bool(token) and now < expires
 
-    # Token expired or not present - authenticate
-    if not token or now >= expires:
-        try:
-            auth_response = requests.post(
-                f"{base_url}/auth/login",
-                json={"username": username, "password": password},
-                timeout=timeout
-            )
-            if auth_response.status_code == 200:
-                auth_data = auth_response.json()
-                token = auth_data.get("token")
-                # Token expires after 3600 seconds of inactivity, we'll refresh at 3000
+        if not cached:
+            try:
+                auth_response = requests.post(
+                    f"{base_url}/auth/login",
+                    json={"username": username, "password": password},
+                    timeout=timeout
+                )
+                if auth_response.status_code != 200:
+                    return {"error": f"Authentication failed: {auth_response.status_code}"}
+                try:
+                    auth_data = auth_response.json()
+                except ValueError:
+                    auth_data = {}
+                if not isinstance(auth_data, dict):
+                    auth_data = {}
+                # Older firmware returns the token in the `authorization` response header.
+                token = auth_data.get("token") or auth_response.headers.get("authorization")
+                if not token:
+                    return {"error": "Authentication failed: login returned no token"}
+                # The token expires after timeout_s (default 3600) of inactivity; refresh early.
+                ttl = auth_data.get("timeout_s") or 3600
+                ttl = ttl if isinstance(ttl, (int, float)) and ttl > 120 else 3600
                 with _braiins_sessions_lock:
-                    _braiins_sessions[ip] = {
-                        "token": token,
-                        "expires": now + 3000
-                    }
-            else:
-                return {"error": f"Authentication failed: {auth_response.status_code}"}
+                    _braiins_sessions[ip] = {"token": token, "expires": now + ttl - 60}
+            except requests.exceptions.RequestException as e:
+                return {"error": f"Auth request failed: {str(e)}"}
+
+        # BraiinsOS expects the raw token, not "Bearer <token>"
+        # (a Bearer prefix is rejected with 401 on current firmware).
+        headers = {"Authorization": token}
+
+        try:
+            response = requests.request(method, f"{base_url}{endpoint}", headers=headers,
+                                        json=data if method in ("POST", "PUT") else None, timeout=timeout)
         except requests.exceptions.RequestException as e:
-            return {"error": f"Auth request failed: {str(e)}"}
+            return {"error": str(e)}
 
-    # Make the actual API call
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-
-    try:
-        if method == "GET":
-            response = requests.get(f"{base_url}{endpoint}", headers=headers, timeout=timeout)
-        elif method == "POST":
-            response = requests.post(f"{base_url}{endpoint}", headers=headers, json=data, timeout=timeout)
-        elif method == "PUT":
-            response = requests.put(f"{base_url}{endpoint}", headers=headers, json=data, timeout=timeout)
-        elif method == "DELETE":
-            response = requests.delete(f"{base_url}{endpoint}", headers=headers, timeout=timeout)
-        else:
-            return {"error": f"Unsupported method: {method}"}
-
-        if response.status_code == 204:
-            return {"success": True}  # No content response (e.g., reboot)
-        elif response.status_code == 200:
-            return response.json()
-        elif response.status_code == 401:
-            # Token expired, clear cache and retry once
+        if response.status_code == 401:
             with _braiins_sessions_lock:
                 _braiins_sessions.pop(ip, None)
-            return {"error": "Authentication expired, please retry"}
-        else:
-            return {"error": f"API returned {response.status_code}: {response.text[:200]}"}
+            if cached and attempt == 0:
+                continue  # stale cached token: log in again and retry
+            return {"error": "Authentication rejected (401) - check BraiinsOS credentials"}
+        if response.status_code == 204:
+            return {"success": True}  # No content response (e.g., reboot)
+        if response.status_code in (200, 201):  # 201: POST /pools/ (create pool group)
+            try:
+                body = response.json()
+            except ValueError:
+                return {"error": f"Invalid JSON from {endpoint}"}
+            # Action endpoints (pause, resume, ...) answer a bare boolean.
+            return body if isinstance(body, (dict, list)) else {"success": True, "result": body}
+        return {"error": f"API returned {response.status_code}: {response.text[:200]}"}
 
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+    return {"error": "Authentication rejected (401) - check BraiinsOS credentials"}
+
+
+def _braiins_pool_groups(pools):
+    """Return the pool groups from a BraiinsOS /pools/ response.
+
+    Current firmware returns a bare list of pool groups; older versions wrap it
+    as {"pool_groups": [...]}. Error dicts from braiins_api_call yield [].
+    """
+    if isinstance(pools, list):
+        groups = pools
+    elif isinstance(pools, dict) and not pools.get("error"):
+        groups = pools.get("pool_groups", [])
+    else:
+        return []
+    return [g for g in groups if isinstance(g, dict)] if isinstance(groups, list) else []
+
+
+def _miner_login(ip, device_type, default_username, default_password, device=None):
+    """(username, password) for a miner's firmware API.
+
+    The Automation page is the only place the UI stores a miner login
+    (device_credentials.json), so it comes first; then a username/password set on
+    the device entry in the dashboard config; then the firmware default.
+    """
+    try:
+        stored = miner_automation.read_json(_automation_path(miner_automation.CREDENTIALS_FILE)) or {}
+    except ValueError:
+        stored = {}
+    creds = stored.get(ip) if isinstance(stored, dict) else None
+    if isinstance(creds, dict) and isinstance(creds.get("password"), str) and creds["password"]:
+        return creds.get("username") or default_username, creds["password"]
+    if device is None:
+        device = next((d for d in (load_config().get("devices") or {}).get(device_type, [])
+                       if isinstance(d, dict) and d.get("ip") == ip), None)
+    if isinstance(device, dict):
+        return device.get("username") or default_username, device.get("password") or default_password
+    return default_username, default_password
+
+
+def _braiins_credentials(ip, device=None):
+    """(username, password) for a BraiinsOS miner; firmware default root / empty password."""
+    return _miner_login(ip, "braiins", "root", "", device)
+
+
+def _vnish_password(ip, device=None):
+    """Web password for a Vnish miner (Vnish has no username); firmware default "admin"."""
+    return _miner_login(ip, "vnish", "", "admin", device)[1]
+
+
+def _braiins_active_pool(groups):
+    """Return the pool BraiinsOS reports as active, else the first configured pool."""
+    pools = [p for g in groups for p in (g.get("pools") or []) if isinstance(p, dict)]
+    return next((p for p in pools if p.get("active")), pools[0] if pools else None)
+
+
+def _braiins_get(obj, *path):
+    """Walk nested BraiinsOS JSON; a missing key or JSON null yields None."""
+    for key in path:
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(key)
+    return obj
+
+
+def _braiins_hashrate_ghs(miner_stats):
+    """Hashrate in GH/s from WorkSolverStats: measured (real_hashrate) when the
+    firmware reports it, even when it is 0; the rated nominal_hashrate only when
+    no measurement is present."""
+    for window in ("last_5m", "last_1m", "last_15m", "last_30s"):
+        value = _braiins_get(miner_stats, "real_hashrate", window, "gigahash_per_second")
+        if value is not None:
+            return _safe_num(value)
+    return _safe_num(_braiins_get(miner_stats, "nominal_hashrate", "gigahash_per_second") or 0)
 
 
 def fetch_braiins(ip, username="root", password="", timeout=10):
@@ -7224,7 +7308,7 @@ def fetch_braiins(ip, username="root", password="", timeout=10):
     - /cooling/state: Highest temperature (degree_c), fan RPMs
     - /pools/: Pool configuration
 
-    Auth: POST /api/v1/auth/login → Bearer token
+    Auth: POST /api/v1/auth/login → token, sent as "Authorization: <token>"
     Reference: https://developer.braiins-os.com/latest/openapi.html
     """
     # SECURITY: Validate IP to prevent SSRF attacks
@@ -7253,34 +7337,35 @@ def fetch_braiins(ip, username="root", password="", timeout=10):
         if stats.get("error") and cooling.get("error"):
             raise Exception(stats.get("error") or cooling.get("error"))
 
-        # Extract hashrate from stats
-        # BOS+ API v1: miner_stats.nominal_hashrate.gigahash_per_second (already GH/s)
+        # The spec marks most nested objects nullable, so every lookup goes through
+        # _braiins_get (a JSON null must not raise on the next .get()).
         hashrate_ths = 0
         power_watts = 0
         accepted = 0
         rejected = 0
+        best_diff = "0"
+        spec_efficiency = 0
 
         if not stats.get("error"):
-            miner_stats = stats.get("miner_stats", {})
-            # Hashrate in gigahash_per_second (GH/s), convert to TH/s
-            nominal = miner_stats.get("nominal_hashrate", {})
-            hashrate_ghs = _safe_num(nominal.get("gigahash_per_second", 0))
-            if not hashrate_ghs:
-                # Fallback to real_hashrate.last_5m
-                real = miner_stats.get("real_hashrate", {})
-                last5m = real.get("last_5m", {})
-                hashrate_ghs = _safe_num(last5m.get("gigahash_per_second", 0))
+            # Hashrate (GH/s): measured real_hashrate first; nominal is the rated
+            # figure and stays put when the miner is paused or a board is down.
+            hashrate_ghs = _braiins_hashrate_ghs(_braiins_get(stats, "miner_stats"))
             hashrate_ths = hashrate_ghs / 1000 if hashrate_ghs else 0
 
             # Power: power_stats.approximated_consumption.watt
-            power_stats = stats.get("power_stats", {})
-            consumption = power_stats.get("approximated_consumption", {})
-            power_watts = _safe_num(consumption.get("watt", 0))
+            power_watts = _safe_num(_braiins_get(stats, "power_stats", "approximated_consumption", "watt") or 0)
+            spec_efficiency = _safe_num(_braiins_get(stats, "power_stats", "efficiency", "joule_per_terahash") or 0)
 
             # Pool stats
-            pool_stats = stats.get("pool_stats", {})
-            accepted = _safe_num(pool_stats.get("accepted_shares", 0))
-            rejected = _safe_num(pool_stats.get("rejected_shares", 0)) + _safe_num(pool_stats.get("stale_shares", 0))
+            accepted = _safe_num(_braiins_get(stats, "pool_stats", "accepted_shares") or 0)
+            rejected = (_safe_num(_braiins_get(stats, "pool_stats", "rejected_shares") or 0)
+                        + _safe_num(_braiins_get(stats, "pool_stats", "stale_shares") or 0))
+
+            # Best share: best_share_str (best_share is deprecated and can overflow)
+            best = (_braiins_get(stats, "miner_stats", "best_share_str")
+                    or _braiins_get(stats, "miner_stats", "best_share"))
+            if best:
+                best_diff = str(best)
 
         # Extract temperatures and fan speeds from cooling
         chip_temp = 0
@@ -7289,29 +7374,23 @@ def fetch_braiins(ip, username="root", password="", timeout=10):
 
         if not cooling.get("error"):
             # BOS+ API v1: highest_temperature.temperature.degree_c
-            highest = cooling.get("highest_temperature", {})
-            temp_obj = highest.get("temperature", {})
-            degree_c = _safe_num(temp_obj.get("degree_c", 0))
+            degree_c = _safe_num(_braiins_get(cooling, "highest_temperature", "temperature", "degree_c") or 0)
             if degree_c and degree_c > 0:
                 chip_temp = degree_c
                 board_temp = degree_c  # Only highest temp available in this endpoint
 
-            # Fans: fans[].rpm
-            fans = cooling.get("fans", [])
-            fan_speeds = [_safe_num(f.get("rpm", 0)) for f in fans if f.get("rpm")]
-            if fan_speeds:
-                avg_rpm = sum(fan_speeds) / len(fan_speeds)
+            # Fans: target_speed_ratio is the PWM duty (0.0-1.0); RPM is the fallback
+            fans = [f for f in (cooling.get("fans") or []) if isinstance(f, dict)]
+            ratios = [_safe_num(f["target_speed_ratio"]) for f in fans if f.get("target_speed_ratio") is not None]
+            fan_rpms = [_safe_num(f.get("rpm") or 0) for f in fans if f.get("rpm")]
+            if ratios:
+                fan_speed = min(100, max(0, round(sum(ratios) / len(ratios) * 100)))
+            elif fan_rpms:
+                avg_rpm = sum(fan_rpms) / len(fan_rpms)
                 fan_speed = min(100, int(avg_rpm / 60))  # Rough percentage
 
-        # Extract pool URL
-        pool_url = ""
-        if not pools.get("error"):
-            pool_groups = pools.get("pool_groups", [])
-            if pool_groups:
-                first_group = pool_groups[0]
-                pool_list = first_group.get("pools", [])
-                if pool_list:
-                    pool_url = pool_list[0].get("url", "")
+        # Pool URL: the active pool when one is flagged, else the first configured one
+        pool_url = (_braiins_active_pool(_braiins_pool_groups(pools)) or {}).get("url", "")
 
         # Get model from details
         # BOS+ API v1: miner_identity.name, bos_version.current, bosminer_uptime_s
@@ -7319,11 +7398,12 @@ def fetch_braiins(ip, username="root", password="", timeout=10):
         version = ""
         uptime = 0
         if not details.get("error"):
-            identity = details.get("miner_identity", {})
-            model = identity.get("name", "") or identity.get("miner_model", "") or details.get("hostname", "BraiinsOS")
-            bos_ver = details.get("bos_version", {})
-            version = bos_ver.get("current", "") or bos_ver.get("major", "")
-            uptime = _safe_num(details.get("bosminer_uptime_s", 0)) or _safe_num(details.get("system_uptime_s", 0))
+            model = (_braiins_get(details, "miner_identity", "name")
+                     or _braiins_get(details, "miner_identity", "miner_model")
+                     or details.get("hostname") or "BraiinsOS")
+            version = (_braiins_get(details, "bos_version", "current")
+                       or _braiins_get(details, "bos_version", "major") or "")
+            uptime = _safe_num(details.get("bosminer_uptime_s") or 0) or _safe_num(details.get("system_uptime_s") or 0)
 
         return {
             "online": True,
@@ -7337,13 +7417,13 @@ def fetch_braiins(ip, username="root", password="", timeout=10):
             "uptime": uptime,
             "accepted": accepted,
             "rejected": rejected,
-            "best_diff": "0",  # BraiinsOS doesn't track this the same way
+            "best_diff": best_diff,
             "pool_url": pool_url,
             "model": model,
             "version": version,
             "fan_speed": fan_speed,
-            "voltage": power_stats.get("input_voltage", {}).get("volt", 0) if isinstance(power_stats, dict) else 0,
-            "efficiency": power_watts / hashrate_ths if hashrate_ths > 0 else 0  # J/TH
+            "voltage": 0,  # Not exposed by the BraiinsOS public REST API
+            "efficiency": spec_efficiency or (power_watts / hashrate_ths if hashrate_ths > 0 else 0)  # J/TH
         }
 
     except Exception as e:
@@ -7367,13 +7447,40 @@ _vnish_sessions = {}  # {ip: {"token": str, "expires": timestamp}}
 _vnish_sessions_lock = threading.Lock()
 
 
-def vnish_api_call(ip, endpoint, method="GET", data=None, password="admin", timeout=10):
-    """Make authenticated API call to Vnish firmware miner.
+# Vnish's public read endpoints (security [{}] or none in its OpenAPI document).
+_VNISH_PUBLIC = ("/api/v1/summary", "/api/v1/info", "/api/v1/model", "/api/v1/metrics")
 
-    Vnish uses token-based authentication on port 80 (standard HTTP).
-    Auth: POST /api/v1/unlock → plain token (not Bearer for data endpoints).
+
+def _vnish_unlock(base_url, password, timeout):
+    """(token, error). POST /api/v1/unlock {"pw"} -> {"token"}; 403 = wrong password."""
+    try:
+        resp = requests.post(f"{base_url}/api/v1/unlock", json={"pw": password}, timeout=timeout)
+    except requests.exceptions.RequestException as e:
+        return None, f"Vnish auth error: {str(e)}"
+    if resp.status_code == 403:
+        return None, "Vnish rejected the password (403) - set it on the Automation page"
+    if resp.status_code == 429:
+        return None, "Vnish unlock rate-limited (429)"
+    if resp.status_code != 200:
+        return None, f"Vnish auth failed: {resp.status_code}"
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    token = body.get("token") if isinstance(body, dict) else None
+    return (token, None) if token else (None, "Vnish unlock returned no token")
+
+
+def vnish_api_call(ip, endpoint, method="GET", data=None, password="admin", timeout=10):
+    """Make an API call to a Vnish firmware miner (web API on port 80).
+
+    Per Vnish's OpenAPI document (api-doc.json served by the firmware, xminer-api,
+    checked for 1.2.6 and 1.3.4): POST /api/v1/unlock {"pw"} returns {"token"};
+    protected endpoints declare bearerAuth (`Authorization: Bearer <token>`).
+    Firmware that rejects the Bearer form gets the bare token once, as earlier
+    clients sent it. /summary, /info, /model and /metrics need no auth, so they
+    are still read when the unlock fails.
     Also has CGMiner-compatible RPC on port 4028.
-    Reference: pyasic vnish backend | https://vnish.group/
 
     Args:
         ip: Miner IP address
@@ -7384,66 +7491,76 @@ def vnish_api_call(ip, endpoint, method="GET", data=None, password="admin", time
         timeout: Request timeout
 
     Returns:
-        dict: API response or {"error": "message"}
+        dict: API response or {"error": "message"}. A JSON array or bare value
+        (e.g. /autotune/presets) is returned as is / wrapped as {"result": value}.
     """
     if not validate_miner_ip(ip):
         return {"error": "Invalid or blocked IP address (SSRF protection)"}
+    if method not in ("GET", "POST"):
+        return {"error": f"Unsupported method: {method}"}
 
     base_url = f"http://{ip}"
+    public = method == "GET" and endpoint in _VNISH_PUBLIC
 
-    # Check for cached valid token
-    now = time.time()
     with _vnish_sessions_lock:
-        session = _vnish_sessions.get(ip, {})
-        token = session.get("token")
-        expires = session.get("expires", 0)
+        session = dict(_vnish_sessions.get(ip, {}))
+    token = session.get("token") if time.time() < session.get("expires", 0) else None
+    cached = bool(token)
+    bearer = session.get("bearer", True)
+    auth_error = None
+    if not token:
+        token, auth_error = _vnish_unlock(base_url, password, timeout)
+        if token:
+            with _vnish_sessions_lock:
+                _vnish_sessions[ip] = {"token": token, "expires": time.time() + 3000, "bearer": bearer}
+        elif not public:
+            return {"error": auth_error}
 
-    # Token expired or not present - authenticate
-    if not token or now >= expires:
+    # Up to three tries: a stale cached token is replaced once (the miner
+    # rebooted), then the bare-token form is tried once for older firmware.
+    response = None
+    for _ in range(3):
+        headers = {"Authorization": f"Bearer {token}" if bearer else token} if token else {}
         try:
-            auth_response = requests.post(
-                f"{base_url}/api/v1/unlock",
-                json={"pw": password},
-                timeout=timeout
-            )
-            if auth_response.status_code == 200:
-                auth_data = auth_response.json()
-                token = auth_data.get("token", "")
-                with _vnish_sessions_lock:
-                    _vnish_sessions[ip] = {
-                        "token": token,
-                        "expires": now + 3000  # Refresh before expiry
-                    }
-            else:
-                return {"error": f"Vnish auth failed: {auth_response.status_code}"}
+            response = requests.request(method, f"{base_url}{endpoint}", headers=headers,
+                                        json=data if method == "POST" else None, timeout=timeout)
         except requests.exceptions.RequestException as e:
-            return {"error": f"Vnish auth error: {str(e)}"}
-
-    # Vnish uses plain token for GET data endpoints, Bearer only for system/* POST commands
-    if method == "POST" and endpoint.startswith("/api/v1/system"):
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-    else:
-        headers = {"Authorization": token} if token else {}
-
-    try:
-        if method == "GET":
-            response = requests.get(f"{base_url}{endpoint}", headers=headers, timeout=timeout)
-        elif method == "POST":
-            response = requests.post(f"{base_url}{endpoint}", headers=headers, json=data, timeout=timeout)
-        else:
-            return {"error": f"Unsupported method: {method}"}
-
-        if response.status_code == 200:
-            return response.json()
-        elif response.status_code == 401:
+            return {"error": str(e)}
+        if response.status_code != 401 or not token:
+            break
+        if cached:
+            cached = False
             with _vnish_sessions_lock:
                 _vnish_sessions.pop(ip, None)
-            return {"error": "Vnish auth expired"}
+            token, auth_error = _vnish_unlock(base_url, password, timeout)
+            if not token:
+                if not public:
+                    return {"error": auth_error}
+                continue  # public endpoint: read it without auth
+            with _vnish_sessions_lock:
+                _vnish_sessions[ip] = {"token": token, "expires": time.time() + 3000, "bearer": bearer}
+        elif bearer:
+            bearer = False
         else:
-            return {"error": f"Vnish API returned {response.status_code}"}
+            break
 
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+    if response.status_code == 200:
+        if headers and not bearer:
+            with _vnish_sessions_lock:
+                if ip in _vnish_sessions:
+                    _vnish_sessions[ip]["bearer"] = False  # remember this firmware's form
+        try:
+            body = response.json()
+        except ValueError:
+            return {"success": True} if not response.content else {"error": f"Invalid JSON from {endpoint}"}
+        if isinstance(body, (dict, list)):
+            return body
+        return {"success": True, "result": body}
+    if response.status_code == 401:
+        with _vnish_sessions_lock:
+            _vnish_sessions.pop(ip, None)
+        return {"error": "Vnish rejected the token (401)"}
+    return {"error": f"Vnish API returned {response.status_code}"}
 
 
 def fetch_vnish(ip, password="admin", timeout=10):
@@ -7462,21 +7579,22 @@ def fetch_vnish(ip, password="admin", timeout=10):
     try:
         # Get summary data from web API (port 80)
         summary = vnish_api_call(ip, "/api/v1/summary", password=password, timeout=timeout)
-        if summary.get("error"):
-            raise Exception(summary.get("error"))
+        if not isinstance(summary, dict) or summary.get("error"):
+            raise Exception(summary.get("error") if isinstance(summary, dict) else "Unexpected /summary response")
 
-        # Get info for model/version
+        # Get info for firmware version
         info = vnish_api_call(ip, "/api/v1/info", password=password, timeout=timeout)
+        info = info if isinstance(info, dict) else {}
 
-        # Extract power from summary.miner.power_usage (verified field path)
-        miner_data = summary.get("miner", {})
-        power_watts = _safe_num(miner_data.get("power_usage", 0))
-
-        # Fallback: try metrics endpoint for power
-        if not power_watts:
-            metrics = vnish_api_call(ip, "/api/v1/metrics", password=password, timeout=timeout)
-            if not metrics.get("error"):
-                power_watts = _safe_num(metrics.get("power_consumption", 0)) or _safe_num(metrics.get("power", 0))
+        # Field paths below follow Vnish's OpenAPI document (MinerSummary).
+        miner_data = summary.get("miner") if isinstance(summary.get("miner"), dict) else {}
+        # Power: miner.power_consumption (W). miner.power_usage is deprecated and
+        # documented as "Same as power_efficiency" (J/TH), so it is read only when
+        # power_consumption is absent (older firmware, where it held watts).
+        if miner_data.get("power_consumption") is not None:
+            power_watts = _safe_num(miner_data.get("power_consumption") or 0)
+        else:
+            power_watts = _safe_num(miner_data.get("power_usage") or 0)
 
         # Extract hashrate from CGMiner RPC (port 4028) — more reliable than web API
         hashrate_ths = 0
@@ -7515,27 +7633,41 @@ def fetch_vnish(ip, password="admin", timeout=10):
         except Exception:
             pass
 
-        # Fallback: web API hr_nominal if CGMiner didn't work
+        # Fallback: web API hashrate if CGMiner didn't work. miner.hr_realtime
+        # (measured) before hr_average and the rated hr_nominal, in the unit
+        # /api/v1/model reports as hr_measure ("GH/s" or "MH/s"; GH/s if absent).
         if not hashrate_ths:
-            hr = summary.get("hr_nominal", 0)
+            hr = next((miner_data[k] for k in ("hr_realtime", "hr_average", "hr_nominal")
+                       if isinstance(miner_data.get(k), (int, float))), 0)
             if hr:
-                hashrate_ths = _safe_num(hr)
+                model_info = vnish_api_call(ip, "/api/v1/model", password=password, timeout=timeout)
+                measure = model_info.get("hr_measure") if isinstance(model_info, dict) else None
+                hashrate_ths = _safe_num(hr) / (1_000_000 if measure == "MH/s" else 1000)
 
-        # Extract model/version from info endpoint
-        model = "Vnish"
+        # Temperatures from the web API when CGMiner gave none (TempRange {min, max})
+        if not chip_temp and isinstance(miner_data.get("chip_temp"), dict):
+            chip_temp = _safe_num(miner_data["chip_temp"].get("max") or 0)
+        if not board_temp and isinstance(miner_data.get("pcb_temp"), dict):
+            board_temp = _safe_num(miner_data["pcb_temp"].get("max") or 0)
+
+        # Model from summary.miner.miner_type; firmware version from /info fw_version
+        model = miner_data.get("miner_type") or "Vnish"
         version = ""
         if not info.get("error"):
-            model = info.get("build_name", "Vnish")
-            version = info.get("build_uuid", "")[:8] if info.get("build_uuid") else ""
-        # Also try miner_type from summary
-        if model == "Vnish" and miner_data.get("miner_type"):
-            model = miner_data["miner_type"]
+            version = info.get("fw_version") or (info.get("build_uuid") or "")[:8]
 
-        # Fan speed as percentage for display
+        # Fan speed: cooling.fan_duty is the PWM duty in percent; RPM / 60 is the fallback
+        cooling = miner_data.get("cooling") if isinstance(miner_data.get("cooling"), dict) else {}
         fan_speed = 0
-        if fan_speeds:
+        if isinstance(cooling.get("fan_duty"), (int, float)):
+            fan_speed = min(100, max(0, int(cooling["fan_duty"])))
+        elif fan_speeds:
             avg_rpm = sum(fan_speeds) / len(fan_speeds)
             fan_speed = min(100, int(avg_rpm / 60))
+
+        # Active pool (PoolStats: status "active")
+        pools = [p for p in (miner_data.get("pools") or []) if isinstance(p, dict)]
+        pool = next((p for p in pools if p.get("status") == "active"), pools[0] if pools else {})
 
         return {
             "online": True,
@@ -7546,7 +7678,8 @@ def fetch_vnish(ip, password="admin", timeout=10):
             "uptime": uptime,
             "accepted": accepted,
             "rejected": rejected,
-            "best_diff": "0",
+            "best_diff": str(miner_data.get("best_share") or 0),
+            "pool_url": pool.get("url", ""),
             "model": model,
             "version": version,
             "fan_speed": fan_speed,
@@ -9468,8 +9601,7 @@ def fetch_all_miners():
     # Fetch BraiinsOS devices (S9, S17, S19, S21 with Braiins firmware)
     for device in devices.get("braiins", []):
         ip = device["ip"]
-        username = device.get("username", "root")
-        password = device.get("password", "")
+        username, password = _braiins_credentials(ip, device)
         data = fetch_braiins(ip, username=username, password=password)
 
         name = device.get("name")
@@ -9490,7 +9622,7 @@ def fetch_all_miners():
     # Fetch Vnish firmware devices (Antminers with Vnish custom firmware)
     for device in devices.get("vnish", []):
         ip = device["ip"]
-        password = device.get("password", "admin")
+        password = _vnish_password(ip, device)
         data = fetch_vnish(ip, password=password)
 
         name = device.get("name")
@@ -10443,18 +10575,27 @@ def update_config():
     # GET /api/config returns every device password as ***REDACTED***. Saving the
     # devices back must not store that placeholder as the password: keep the
     # stored password for the same device type and IP, or drop the field.
+    # The Settings page rebuilds each device from its form (name, IP, port) and
+    # sends no username or password at all; a missing field also keeps the stored
+    # value, so saving Settings never wipes a miner's login.
     if isinstance(new_config.get("devices"), dict):
         old_devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
         for dtype, devices in new_config["devices"].items():
             if not isinstance(devices, list):
                 continue
-            stored = {d.get("ip"): d.get("password") for d in old_devices.get(dtype, []) if isinstance(d, dict)}
+            stored = {d.get("ip"): d for d in old_devices.get(dtype, []) if isinstance(d, dict)}
             for device in devices:
-                if isinstance(device, dict) and device.get("password") == "***REDACTED***":
-                    if stored.get(device.get("ip")):
-                        device["password"] = stored[device.get("ip")]
+                if not isinstance(device, dict):
+                    continue
+                previous = stored.get(device.get("ip"), {})
+                if device.get("password") == "***REDACTED***":
+                    if previous.get("password"):
+                        device["password"] = previous["password"]
                     else:
                         device.pop("password")
+                for key in ("username", "password"):
+                    if key not in device and previous.get(key):
+                        device[key] = previous[key]
 
     # Merge new config (only allowed keys)
     allowed_keys = {"dashboard_title", "pool_mode", "multi_coin_enabled", "coins", "devices",
@@ -11480,10 +11621,11 @@ def test_device():
         result = fetch_axeos(ip, timeout=3)
     # BraiinsOS devices
     elif device_type == "braiins":
-        result = fetch_braiins(ip, timeout=3)
+        username, password = _braiins_credentials(ip)
+        result = fetch_braiins(ip, username=username, password=password, timeout=3)
     # Vnish firmware devices
     elif device_type == "vnish":
-        result = fetch_vnish(ip, timeout=3)
+        result = fetch_vnish(ip, password=_vnish_password(ip), timeout=3)
     # LuxOS firmware devices
     elif device_type == "luxos":
         result = fetch_luxos(ip, port, timeout=3)
@@ -12192,28 +12334,14 @@ def restart_device():
             return jsonify({"success": False, "error": "Goldshell restart failed - no working endpoint found"})
         # BraiinsOS uses REST API for reboot
         elif device_type == "braiins" or "braiins" in device_type.lower() or "bos" in device_type.lower():
-            # Get credentials from config if available
-            config = load_config()
-            device_config = None
-            for dev in config.get("devices", {}).get("braiins", []):
-                if dev.get("ip") == ip:
-                    device_config = dev
-                    break
-            username = device_config.get("username", "root") if device_config else "root"
-            password = device_config.get("password", "") if device_config else ""
+            username, password = _braiins_credentials(ip)
             result = braiins_api_call(ip, "/actions/reboot", method="PUT", username=username, password=password, timeout=10)
             if result.get("error"):
                 return jsonify({"success": False, "error": result.get("error")})
             return jsonify({"success": True, "message": f"Reboot command sent to {name}"})
         # Vnish uses REST API for reboot
         elif device_type == "vnish" or "vnish" in device_type.lower():
-            config = load_config()
-            device_config = None
-            for dev in config.get("devices", {}).get("vnish", []):
-                if dev.get("ip") == ip:
-                    device_config = dev
-                    break
-            password = device_config.get("password", "admin") if device_config else "admin"
+            password = _vnish_password(ip)
             result = vnish_api_call(ip, "/api/v1/system/reboot", method="POST", password=password, timeout=10)
             if result.get("error"):
                 return jsonify({"success": False, "error": result.get("error")})
@@ -16247,7 +16375,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v3.0.1"},
+        "footer": {"text": f"Spiral Pool v3.0.2"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -17052,7 +17180,7 @@ def vnish_set_fan():
     fan_speed = data.get("fan_speed", 0)
     auto_fan = data.get("auto_fan", False)
     temp_target = data.get("temp_target", 75)
-    password = data.get("password", "admin")
+    password = data.get("password") or _vnish_password(ip)
 
     if not ip:
         return jsonify({"success": False, "error": "IP required"})
@@ -17100,7 +17228,7 @@ def vnish_set_overclock():
     preset = data.get("preset", "")
     frequency = data.get("frequency", None)
     voltage = data.get("voltage", None)
-    password = data.get("password", "admin")
+    password = data.get("password") or _vnish_password(ip)
 
     if not ip:
         return jsonify({"success": False, "error": "IP required"})
@@ -17152,7 +17280,7 @@ def vnish_get_presets():
     """Get available autotune presets from Vnish miner."""
     data = request.json or {}
     ip = data.get("ip", "")
-    password = data.get("password", "admin")
+    password = data.get("password") or _vnish_password(ip)
 
     if not ip:
         return jsonify({"success": False, "error": "IP required"})
@@ -17161,7 +17289,8 @@ def vnish_get_presets():
 
     result = vnish_api_call(ip, "/api/v1/autotune/presets", method="GET", password=password)
 
-    if result.get("error"):
+    # The presets come back as a JSON array (or {"presets": [...]} on some firmware)
+    if isinstance(result, dict) and result.get("error"):
         return jsonify({"success": False, "error": result.get("error")})
 
     return jsonify({"success": True, "presets": result})
@@ -18836,15 +18965,7 @@ def batch_update_pool():
 
             elif miner_type == "braiins":
                 # BraiinsOS miners use REST API for pool configuration
-                # Get credentials from config
-                all_devices = load_config().get("devices", {})
-                device_config = None
-                for dev in all_devices.get("braiins", []):
-                    if dev.get("ip") == ip:
-                        device_config = dev
-                        break
-                username = device_config.get("username", "root") if device_config else "root"
-                bos_password = device_config.get("password", "") if device_config else ""
+                username, bos_password = _braiins_credentials(ip)
 
                 # BraiinsOS pool format: stratum+tcp://host:port
                 # Normalize pool_url to just hostname
@@ -18858,10 +18979,11 @@ def batch_update_pool():
                     braiins_host = braiins_host.rsplit(':', 1)[0]
                 full_pool_url = f"stratum+tcp://{braiins_host}:{pool_port}"
 
-                # Create pool group with the new pool
+                # Pool group with the new pool (PoolGroupConfiguration in the
+                # BraiinsOS OpenAPI spec: the strategy goes in load_balance_strategy)
                 pool_config = {
                     "name": "SpiralPool",
-                    "quota": 1,
+                    "load_balance_strategy": {"quota": {"value": 1}},
                     "pools": [{
                         "url": full_pool_url,
                         "user": worker,
@@ -18869,11 +18991,16 @@ def batch_update_pool():
                     }]
                 }
 
-                # First try to get existing pools to find the right UID to update
+                # First get the existing pools to find the right UID to update
                 existing_pools = braiins_api_call(ip, "/pools/", username=username, password=bos_password, timeout=10)
-                if not existing_pools.get("error") and existing_pools.get("pool_groups"):
+                existing_groups = _braiins_pool_groups(existing_pools)
+                if isinstance(existing_pools, dict) and existing_pools.get("error"):
+                    # Never create a group blind: the miner's current top-priority
+                    # group would stay in front of it and keep mining.
+                    result = {"error": f"Could not read the current pools: {existing_pools['error']}"}
+                elif existing_groups:
                     # Update first pool group
-                    first_group = existing_pools["pool_groups"][0]
+                    first_group = existing_groups[0]
                     uid = first_group.get("uid", "")
                     if uid:
                         result = braiins_api_call(ip, f"/pools/{uid}", method="PUT", data=pool_config, username=username, password=bos_password, timeout=10)

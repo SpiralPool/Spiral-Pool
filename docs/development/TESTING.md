@@ -2,7 +2,7 @@
 
 **Version**: 1.1
 **Updated**: 2026-09-21
-**Total Test Files**: 285 Go (`*_test.go`) + 27 Python (`tests/test_*.py`)
+**Total Test Files**: 285 Go (`*_test.go`) + 29 Python (`tests/test_*.py`)
 **Total Test Functions**: 3,889 Go `Test*` functions (4,107 including `Fuzz*` and `Benchmark*`)
 
 ---

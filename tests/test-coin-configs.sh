@@ -409,7 +409,7 @@ download_extract() {
 
 test_dgb() {
     local coin="dgb"
-    local url="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.6/digibyte-9.26.6-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/DigiByte-Core/digibyte/releases/download/v9.26.7/digibyte-9.26.7-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiraldgb"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=14022

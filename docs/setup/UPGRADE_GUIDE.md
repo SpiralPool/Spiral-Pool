@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v3.0.1 (Spiral Covenant)
+# Upgrading to Spiral Pool v3.0.2 (Spiral Covenant)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0) and v3.0.1 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1) and v3.0.2 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -62,11 +62,13 @@ The pool will not mine BTC until the chain verifies, so you are not burning elec
 
 ---
 
-## DigiByte (DGB) node upgrade — v9.26.6, required before block 24,490,000
+## DigiByte (DGB) node upgrade — v9.26.7 (Thaw Day rules from v9.26.6 required before block 24,490,000)
 
 **Coin daemon upgrades are separate from the pool stack upgrade.** `upgrade.sh` upgrades the Spiral Pool software only; it never touches coin daemons (they can require a resync). After it runs, it *flags* any coin node that is behind and tells you to run `coin-upgrade.sh`.
 
-DigiByte Core **v9.26.6 is a consensus upgrade with a deadline.** It carries Thaw Day: new DigiDollar block rules that activate at mainnet block **24,490,000**, expected around 1 November 2026. The block height starts the change; the date is only an estimate. Upstream's instruction is that every full-node and mining operator must upgrade before that block, **including pools that never use DigiDollar**. After activation, a node still on v9.26.5 or older can disagree with the network about which blocks are valid, and downgrading is not a repair.
+The target is now **DigiByte Core v9.26.7**, a maintenance release on top of v9.26.6. **If your node is below v9.26.6, this is a consensus upgrade with a deadline:** v9.26.6 brought Thaw Day, new DigiDollar block rules that activate at mainnet block **24,490,000**, expected around 1 November 2026. The block height starts the change; the date is only an estimate. Upstream's instruction is that every full-node and mining operator must upgrade before that block, **including pools that never use DigiDollar**. After activation, a node still on v9.26.5 or older can disagree with the network about which blocks are valid, and downgrading is not a repair.
+
+**If your node is already on v9.26.6,** it has the Thaw Day rules and v9.26.7 is optional: it adds no activation and needs no reindex. It makes `getblockchaininfo`'s `difficulty` the tip block's own algorithm (it walked back through retired Groestl history before), fixes a false fatal error at shutdown from pending DigiDollar stats-index updates, and lists unused DigiDollar addresses in `listdigidollaraddresses include_empty`. `upgrade.sh` says which case your node is in.
 
 Upgrading is an **in-place binary swap — no reindex and no config changes**, for full and pruned nodes alike:
 
@@ -78,7 +80,7 @@ Check the schedule on the running node with `digibyte-cli getdigidollardeploymen
 
 **Pruned nodes:** DigiDollar's retention floor is unchanged at block 23,627,520. The history it requires can exceed a small prune target such as `prune=5000`, and upstream does not warn on every overrun, so leave disk headroom.
 
-v9.26.6 also carries the earlier 9.26.x fixes: v9.26.5's fix for the DigiDollar oracle startup stall, and v9.26.4's pruning support and consensus rule (redemption collateral gated on the activation floor, mainnet height 23,627,520), which nodes still on v9.26.3 pick up in this upgrade.
+v9.26.7 also carries the earlier 9.26.x fixes: v9.26.5's fix for the DigiDollar oracle startup stall, and v9.26.4's pruning support and consensus rule (redemption collateral gated on the activation floor, mainnet height 23,627,520), which nodes still on v9.26.3 pick up in this upgrade.
 
 > **Recognising the v9.26.4 stall.** If a DGB node is stuck after a restart, `digibyte-cli getblockchaininfo` returns `error -28  "Starting network threads…"` and `debug.log` shows `Oracle: Scanning last 172800 blocks for oracle prices` with no completion line. `top -H` shows one thread at 100% CPU while `/proc/<pid>/io` `read_bytes` stays flat — the scan is CPU-bound on the in-memory block index and never touches disk. It does eventually finish; upgrading to v9.26.5 or later is the fix.
 
@@ -102,6 +104,18 @@ New installs: `install.sh` configures DGB from the pool-wide pruning choice (pru
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
 
 ---
+
+## What's new in v3.0.2
+
+Bug-fix release. No database migrations, no config changes. One coin daemon moves: **DigiByte Core 9.26.6 → 9.26.7** (maintenance, no reindex; see the DigiByte section above). See [CHANGELOG.md](../../CHANGELOG.md) for details.
+
+- **BraiinsOS miners report data again** (issue #20). Current BraiinsOS firmware rejects `Authorization: Bearer <token>` with 401 and returns `/api/v1/pools/` as a list; the dashboard, Sentinel and miner control now send the raw token and accept both pool-response formats.
+- **BraiinsOS login:** set it on the **Automation** page. Monitoring now uses it too (before, only control commands did), and saving Settings no longer erases a login stored on a device entry.
+- **BraiinsOS hashrate is now the measured value** (`real_hashrate`), not the rated `nominal_hashrate`, so a stalled miner shows its real drop. Expect the BraiinsOS figure to move like other miners' instead of staying flat.
+- Further BraiinsOS fixes: recovery after a miner reboot, null-safe parsing, spec-correct pool configuration, best share, fan speed, and pool URL/worker in Sentinel.
+- **Vnish:** checked against Vnish's own API document. Power is now read from `power_consumption` (watts); the field used before, `power_usage`, is documented as efficiency (J/TH). The Automation-page login is used everywhere, the fan/frequency/voltage controls no longer assume the default password, and protected calls send the documented `Bearer` token (older firmware gets the bare token once). Monitoring keeps working with a wrong or missing password, since Vnish's read endpoints need no login.
+- **DigiByte Core v9.26.7** is the new DGB target. A node already on v9.26.6 is told it is optional; a node below v9.26.6 is still told the Thaw Day upgrade is required before block 24,490,000.
+- **Debian 13 (Trixie) native installs no longer fail on prerequisites** (issue #21). `software-properties-common` is no longer a hard prerequisite; it is installed only where the distribution provides it.
 
 ## What's new in v3.0.1
 
@@ -315,7 +329,7 @@ A weekly `VACUUM ANALYZE` timer (`spiralpool-pg-maintenance.timer`) is now insta
 
 ## Go code changes — compatibility analysis (v1.0.0 → v1.1.0)
 
-The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v3.0.1 changes are also fully backward-compatible — no new database migrations, no config format changes.
+The v1.0.0 → v1.1.0 changes are listed below. **None require a reinstall, OS change, config change, or manual migration.** The v1.1.x → v3.0.2 changes are also fully backward-compatible — no new database migrations, no config format changes.
 
 | Component | Change | Impact on existing installs |
 |-----------|--------|-----------------------------|
@@ -554,13 +568,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `3.0.1`. If Sentinel is running:
+The version line should show `3.0.2`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v3.0.1` followed by `Spiral Covenant` in the startup log.
+Look for `Spiral Pool v3.0.2` followed by `Spiral Covenant` in the startup log.
 
 ---
 
@@ -640,4 +654,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.1 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.2 — Built on what came before. Growing toward phi.*

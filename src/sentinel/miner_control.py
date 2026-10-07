@@ -210,7 +210,8 @@ def _braiins_headers(device):
     token = login.get("token") if isinstance(login, dict) else None
     if not token:
         raise ControlError("login returned no token")
-    return {"Authorization": f"Bearer {token}"}
+    # Raw token, no "Bearer " prefix: BraiinsOS rejects the prefixed form with 401.
+    return {"Authorization": token}
 
 
 def _braiins_action(device, action):
@@ -255,23 +256,35 @@ def _vnish_token(device):
     return token
 
 
+def _vnish_send(device, token, method, path, body=None):
+    """Vnish's OpenAPI document declares bearerAuth on every protected endpoint, so
+    the token goes as "Bearer <token>"; firmware that answers 401 to that form
+    gets the bare token once, the form earlier clients sent outside system/*."""
+    try:
+        return _http(device, method, path, body=body, headers={"Authorization": f"Bearer {token}"})
+    except ControlError as exc:
+        if "HTTP 401" not in str(exc):
+            raise
+    return _http(device, method, path, body=body, headers={"Authorization": token})
+
+
 def _vnish_restart(device):
-    _http(device, "POST", "/api/v1/system/reboot", headers={"Authorization": f"Bearer {_vnish_token(device)}"})
+    _vnish_send(device, _vnish_token(device), "POST", "/api/v1/system/reboot")
 
 
 def _vnish_mining(device, action):
-    _http(device, "POST", f"/api/v1/mining/{action}", headers={"Authorization": _vnish_token(device)})
+    _vnish_send(device, _vnish_token(device), "POST", f"/api/v1/mining/{action}")
 
 
 def _vnish_power(device, level, watts):
-    headers = {"Authorization": _vnish_token(device)}
-    presets = _json_object(_http(device, "GET", "/api/v1/autotune/presets", headers=headers), "presets")
+    token = _vnish_token(device)
+    presets = _json_object(_vnish_send(device, token, "GET", "/api/v1/autotune/presets"), "presets")
     if isinstance(presets, dict):
         presets = presets.get("presets", [])
     names = sorted({str(p.get("name")) for p in presets if isinstance(p, dict) and p.get("name") is not None})
     if str(watts) not in names:
         raise ControlError(f"no {watts} W preset on this miner; presets: {', '.join(names) or 'none'}")
-    _http(device, "POST", "/api/v1/settings", body={"miner": {"overclock": {"preset": str(watts)}}}, headers=headers)
+    _vnish_send(device, token, "POST", "/api/v1/settings", body={"miner": {"overclock": {"preset": str(watts)}}})
 
 
 # ── Whatsminer (API v3) ──────────────────────────────────────────────────────

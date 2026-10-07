@@ -76,9 +76,53 @@ Pencreus — https://github.com/Pencreus
     introducing MultiPortSessionProvider. That mechanism was correct; v2.7.1
     fixes a path where it was never attached. Two defects, one symptom.
 
+W3dgraf — https://github.com/W3dgraf
+  - v3.0.2 (issue #20): BraiinsOS 26.09.1-plus on an Antminer S19K Pro could not
+    be read. The report separated two independent defects and isolated each one:
+    the HTTP 401 on `Authorization: Bearer <token>` against a 200 on the raw
+    token, and the `/api/v1/pools/` list response that crashed the dictionary
+    parser. It proposed the fix for both, including a fallback for the older
+    dictionary format, and verified it on hardware: fetch_braiins() came back
+    online with hashrate, power, temperatures, shares and pool URL filled in.
+  - v3.0.2 (issue #21): native install on Debian 13 (Trixie) stopped because
+    software-properties-common is not in the Trixie repositories. The report
+    confirmed this with apt-cache, cited Debian bug #1110699, and showed the
+    package is not needed on the Debian path: with an equivs dummy package in
+    its place, the full installation completed without any change to install.sh.
+
 ---
 
 ## Provenance Notes by Release
+
+v3.0.2 (Spiral Covenant) — bug-fix release
+  - All code in this release is original to this repository. No upstream work
+    was ported.
+  - Both defects were located from field reports by W3dgraf, credited above.
+    The BraiinsOS fix follows the approach proposed in issue #20, applied to
+    every BraiinsOS call site: dashboard, Sentinel monitoring, and Sentinel
+    miner control, which the report did not cover. The pool-list parsing fix
+    also covers the dashboard's pool-configuration path, which had the same
+    dictionary assumption.
+  - The remaining BraiinsOS fixes were found in-house, by auditing every
+    BraiinsOS code path against the Braiins OS Public REST API spec (v1.8.0)
+    while proving the issue #20 fix: Automation-page logins ignored by
+    monitoring, Settings saves erasing device logins, stale tokens after a
+    miner reboot, null-object crashes, nominal-instead-of-measured hashrate,
+    blind pool-group creation on a failed read, the off-spec pool payload, the
+    201 and bare-boolean responses, the `power_stats` NameError, and the
+    missing Sentinel pool URL/worker. No external reporter.
+  - The Vnish fixes were found in-house the same way, against Vnish's own
+    OpenAPI document (api-doc.json as served by the firmware, for 1.2.6 and
+    1.3.4, read from the copies kept in 256foundation/asic-rs under meta/vnish/).
+    pyasic's and asic-rs's Vnish clients were read for comparison only. Nothing
+    from either project, and no part of the document, is included in this
+    repository. No external reporter.
+  - The DigiByte Core 9.26.7 move follows the upstream release
+    (DigiByte-Core/digibyte v9.26.7); its digests were checked against GitHub's
+    asset digests, the release SHA256SUMS and a local sha256sum of the tarball.
+  - The reports were reviewed for personal information before being acted on.
+    By the reporter's own statement, and as checked, they include no IP
+    addresses, wallet addresses, passwords or API tokens.
 
 v2.7.1 (Spiral Citadel) — reporting and celebration release
   - All code in this release is original to this repository. No upstream work

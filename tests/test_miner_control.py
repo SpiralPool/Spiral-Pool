@@ -330,7 +330,7 @@ def test_braiins_logs_in_and_sends_the_token(http_device):
     assert dev.requests[0]["json"] == {"username": "root", "password": "pw"}
     puts = [r for r in dev.requests if r["method"] == "PUT"]
     assert [r["path"] for r in puts] == ["/api/v1/actions/pause", "/api/v1/performance/power-target"]
-    assert all(r["headers"]["authorization"] == "Bearer tok123" for r in puts)
+    assert all(r["headers"]["authorization"] == "tok123" for r in puts)
     assert puts[1]["json"] == {"watt": 900}
 
 
@@ -341,7 +341,8 @@ def test_vnish_pause_and_preset_must_exist(http_device):
                        ("POST", "/api/v1/settings"): (200, {})})
     device = {"ip": "192.168.1.51", "type": "vnish", "http_port": dev.port, "password": "admin"}
     mc.sleep(device)
-    assert dev.requests[1]["headers"]["authorization"] == "vtok"
+    # Vnish's OpenAPI document declares bearerAuth for mining/*
+    assert dev.requests[1]["headers"]["authorization"] == "Bearer vtok"
 
     with pytest.raises(mc.ControlError, match="presets: 2800, 3200"):
         mc.set_power(device, watts=3000)
