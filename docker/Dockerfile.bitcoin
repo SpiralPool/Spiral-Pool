@@ -31,7 +31,7 @@
 # NOTE: Only x86_64 (amd64) is supported.
 FROM --platform=linux/amd64 debian:bookworm-slim
 
-ARG VERSION=31.1
+ARG VERSION=32.1
 ARG ARCH=x86_64-linux-gnu
 
 # SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz.
@@ -39,7 +39,7 @@ ARG ARCH=x86_64-linux-gnu
 # Cross-verified against Guix attestations from signers achow101 and fanquake
 # in https://github.com/bitcoin-core/guix.sigs — all three agree.
 # If you bump VERSION you MUST bump this too; the build fails closed otherwise.
-ARG SHA256=b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e
+ARG SHA256=61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Bitcoin Core Node for Spiral Pool"
