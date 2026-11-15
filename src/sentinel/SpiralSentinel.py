@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v3.0.2 - SPIRAL COVENANT EDITION                           ║
+║  Spiral Sentinel v3.0.3 - SPIRAL COVENANT EDITION                           ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "3.0.2"
+__version__ = "3.0.3"
 __codename__ = "SPIRAL_COVENANT"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -7146,7 +7146,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V3.0.2-SPIRAL_COVENANT"
+                "sentinel_version": "V3.0.3-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -7165,7 +7165,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V3.0.2-SPIRAL_COVENANT"
+                "sentinel_version": "V3.0.3-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -13997,6 +13997,100 @@ def is_in_startup_suppression():
 # Path to the celebration script (Linux only)
 CELEBRATION_SCRIPT = str(INSTALL_DIR / "scripts" / "block-celebrate.sh")
 
+# Durable record block-celebrate.sh keeps on disk while it has miners lit, and
+# removes once every one of them has confirmed its LED restore. Its presence
+# with no running celebration means a power cut (or a miner rebooting at the
+# wrong moment) left LEDs showing a celebration that is over. Must match the
+# script's CELEBRATE_STATE_FILE default.
+CELEBRATION_STATE_FILE = str(INSTALL_DIR / "data" / "celebrate.state")
+CELEBRATION_RECOVERY_INTERVAL = 300  # seconds between recovery passes
+_last_celebration_recovery = None    # time.monotonic() of the last pass, None = never
+
+
+def recover_block_celebration():
+    """Switch off LEDs a cut-off celebration left lit (v3.0.3).
+
+    An Avalon Nano 3 re-displays its last LED effect when it boots. If the host
+    lost power mid-celebration, or a miner was itself rebooting when the final
+    restore was due, nothing was left to turn it off and it kept celebrating
+    for hours. block-celebrate.sh now keeps a durable record of lit miners;
+    `--recover` returns them to idle and never resumes a celebration.
+
+    Cheap to call every cycle: it does nothing unless the record exists, and
+    runs the script at most once per CELEBRATION_RECOVERY_INTERVAL (the first
+    call always runs, so a reboot is handled at startup). The script itself
+    leaves a record alone while its owning celebration is still running.
+
+    Returns True if a recovery pass was started.
+    """
+    global _last_celebration_recovery
+    import platform
+    if platform.system() != "Linux":
+        return False
+    if not os.path.exists(CELEBRATION_STATE_FILE):
+        return False
+    now = time.monotonic()
+    if (_last_celebration_recovery is not None
+            and now - _last_celebration_recovery < CELEBRATION_RECOVERY_INTERVAL):
+        return False
+    if not os.path.exists(CELEBRATION_SCRIPT):
+        return False
+    _last_celebration_recovery = now
+    try:
+        import subprocess
+        subprocess.Popen(
+            [CELEBRATION_SCRIPT, "--recover"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        logger.info("Block celebration: record of lit miners found - running LED recovery")
+        return True
+    except Exception as e:
+        # LED housekeeping must never break monitoring.
+        logger.debug(f"Could not run celebration recovery: {e}")
+        return False
+
+
+def _parse_api_timestamp(value):
+    """Pool API timestamp (ISO-8601, Go's variable fraction, 'Z') -> epoch seconds, or None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            return float(value) if value > 0 else None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text[-1:] in ("Z", "z"):
+            text = text[:-1] + "+00:00"
+        frac = re.search(r"\.(\d+)", text)
+        if frac:
+            text = text[:frac.start()] + "." + (frac.group(1) + "000000")[:6] + text[frac.end():]
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
+def celebration_seconds_remaining(duration_seconds, found_at, now=None):
+    """Seconds left in a block's celebration window, measured from when it was found.
+
+    Returns None when found_at is missing or unparseable (the caller then uses
+    the full duration, as before). A found_at in the future - pool and Sentinel
+    clocks disagreeing - counts as just found rather than extending the window.
+    """
+    found_ts = _parse_api_timestamp(found_at)
+    if found_ts is None:
+        return None
+    if now is None:
+        now = time.time()
+    elapsed = max(0.0, now - found_ts)
+    return max(0, int(duration_seconds - elapsed))
+
+
 
 def stop_block_celebration(block_hash):
     """Withdraw a block from the running LED celebration.
@@ -14028,7 +14122,7 @@ def stop_block_celebration(block_hash):
         # Never let LED housekeeping break orphan alerting.
         logger.debug(f"Could not stop block celebration: {e}")
 
-def trigger_block_celebration(miner_details=None, block_hash=None):
+def trigger_block_celebration(miner_details=None, block_hash=None, found_at=None):
     """
     Trigger LED celebration on Avalon miners when a block is found.
 
@@ -14046,6 +14140,11 @@ def trigger_block_celebration(miner_details=None, block_hash=None):
         block_hash: The block being celebrated. Recorded by the script so that
             the block orphaning later can withdraw it -- and so a celebration
             standing for several blocks is only ended by the last of them.
+        found_at: When the block was found (pool API "created"). Given for
+            blocks discovered at startup: the celebration runs only for what is
+            left of the block's window, and not at all if it has already ended.
+            Before v3.0.3 a restart started a fresh full-length celebration for
+            a block found hours earlier.
     """
     import subprocess
     import platform
@@ -14080,6 +14179,16 @@ def trigger_block_celebration(miner_details=None, block_hash=None):
                             break
         except Exception:
             pass  # Fall back to default
+
+        if found_at:
+            remaining = celebration_seconds_remaining(duration_seconds, found_at)
+            if remaining is not None:
+                if remaining <= 0:
+                    logger.info("Block celebration: skipped - this block's celebration window had already ended when it was detected")
+                    return
+                if remaining < duration_seconds:
+                    logger.info(f"Block celebration: {remaining // 60}m left of this block's {duration_seconds // 60}m window")
+                    duration_seconds = remaining
 
         # Run celebration in background (non-blocking)
         # The script handles its own discovery and cleanup
@@ -21047,6 +21156,13 @@ def monitor_loop(state):
     except Exception as _e:
         logger.debug(f"Wallet validation check error (non-critical): {_e}")
 
+    # LED recovery first: after a power cut the miners come back showing the
+    # celebration that was running, and nothing else will switch them off.
+    try:
+        recover_block_celebration()
+    except Exception as _e:
+        logger.debug(f"Celebration LED recovery error (non-critical): {_e}")
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # BLOCK RECOVERY — Detect blocks found while Sentinel was offline
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -21083,7 +21199,7 @@ def monitor_loop(state):
                     network_hashrate=net_phs_startup,
                     difficulty=net.get("difficulty") if net else None,
                 ), state)
-                trigger_block_celebration(miner_details, block_hash=block.get("hash"))
+                trigger_block_celebration(miner_details, block_hash=block.get("hash"), found_at=block.get("created"))
                 logger.info(f"BLOCK RECOVERED #{state.pool_blocks_found} by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
             state.save()  # Persist seen hashes immediately
         else:
@@ -21127,7 +21243,7 @@ def monitor_loop(state):
                     network_hashrate=_sp_net.get("network_phs") if _sp_net else None,
                     difficulty=_sp_net.get("difficulty") if _sp_net else None,
                 ), state)
-                trigger_block_celebration(miner_details, block_hash=block.get("hash"))
+                trigger_block_celebration(miner_details, block_hash=block.get("hash"), found_at=block.get("created"))
                 logger.info(f"SMART PORT BLOCK RECOVERED #{state.pool_blocks_found} ({sp_coin}) by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
             if sp_startup_blocks:
                 state.save()
@@ -21172,7 +21288,7 @@ def monitor_loop(state):
                         network_hashrate=_aux_net.get("network_phs") if _aux_net else None,
                         difficulty=_aux_net.get("difficulty") if _aux_net else None,
                     ), state)
-                    trigger_block_celebration(miner_details, block_hash=block.get("hash"))
+                    trigger_block_celebration(miner_details, block_hash=block.get("hash"), found_at=block.get("created"))
                     logger.info(f"AUX BLOCK RECOVERED #{state.pool_blocks_found} ({aux_coin}) by {sanitize_log_input(worker)} (height {block['height']}) — locked in!")
                 if aux_blocks:
                     state.save()
@@ -21218,6 +21334,12 @@ def monitor_loop(state):
                     logger.info(f"Block alert retry: {_retried} alert(s) sent successfully")
             except Exception as _retry_err:
                 logger.debug(f"Block alert retry error (non-critical): {_retry_err}")
+
+            # LEDs a cut-off celebration left lit (a miner that was rebooting when
+            # its restore was due). No-op unless this host's script left a record;
+            # rate-limited to one pass per 5 minutes. Runs on HA BACKUP nodes too:
+            # the record is per-host, written only by a celebration run here.
+            recover_block_celebration()
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # HA BACKUP NODE OPTIMIZATION - Skip all polling on non-MASTER nodes

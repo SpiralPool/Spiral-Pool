@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 3.0.2                                                         ║
+# ║   Version: 3.0.3                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="3.0.2"
+    VERSION="3.0.3"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -49,7 +49,7 @@ BITCOINII_VERSION="31.1.0"
 BITCOINCASHII_VERSION="27.0.2"
 BTCS_VERSION="31.1.3"
 NAMECOIN_VERSION="28.0"
-SYSCOIN_VERSION="5.1.2"
+SYSCOIN_VERSION="5.1.3"
 # BCHN_VERSION and LITECOIN_VERSION are GLOBAL, not local to their install
 # functions. The version cache written at the end of main() has to reference
 # them, and when they were local it hardcoded the numbers instead -- which is
@@ -60,7 +60,7 @@ BCHN_VERSION="29.2.0"
 LITECOIN_VERSION="0.21.5.8"
 MYRIAD_VERSION="0.18.1.0"
 FBTC_VERSION="0.4.0"
-ECASH_VERSION="0.34.0"
+ECASH_VERSION="0.34.3"
 GO_VERSION="1.26.8"
 POSTGRES_VERSION="18"
 
@@ -16857,7 +16857,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.2 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.3 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -17364,15 +17364,16 @@ CLIWRAPPER
 #      exact mechanism by which an operator silently drifts onto an enforcing
 #      build — the enforcing and non-enforcing releases differ by one digit in a
 #      datestamp, and sort order does not know the difference.
-BITCOIN_CORE_VERSION="31.1"
+BITCOIN_CORE_VERSION="32.1"
 
-# SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz.
+# SHA256 of bitcoin-32.1-x86_64-linux-gnu.tar.gz.
 #
-# Provenance: https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
-# Cross-verified byte-for-byte against two independent Guix attestations in
-# https://github.com/bitcoin-core/guix.sigs (signers achow101 and fanquake).
-# All three sources agree. Verification below is mandatory, never best-effort.
-BITCOIN_CORE_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+# Provenance: https://bitcoincore.org/bin/bitcoin-core-32.1/SHA256SUMS (whose
+# .asc verifies with good signatures from achow101, fanquake and willcl-ark).
+# Cross-verified byte-for-byte against the Guix attestations in
+# https://github.com/bitcoin-core/guix.sigs (32.1/: achow101, fanquake, hebasto,
+# willcl-ark). All sources agree. Verification below is mandatory, never best-effort.
+BITCOIN_CORE_SHA256="61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"
 
 install_bitcoin() {
     if [[ "$ENABLE_BTC" != "true" ]]; then
@@ -17796,7 +17797,7 @@ debuglogfile=debug.log
 # === ASSUME VALID (skip signature verification for known good blocks) ===
 # This dramatically speeds up initial sync
 # Block height 912683 (Bitcoin Core v28+)
-# assumevalid is deliberately NOT set. Bitcoin Core 31.1 ships its own
+# assumevalid is deliberately NOT set. Bitcoin Core 31.1 and later ship their own
 # defaultAssumeValid at a higher height than the value previously pinned
 # here, so overriding it only ADDS full script verification during initial
 # sync. Leave it to the daemon.
@@ -21024,7 +21025,7 @@ EOF
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.34.0 (SHA-256d)
+# ECASH (XEC) NODE INSTALLATION — Bitcoin ABC v0.34.3 (SHA-256d)
 # ═══════════════════════════════════════════════════════════════════════════════
 # eCash uses the Bitcoin ABC client. The binary is named bitcoind/bitcoin-cli
 # (same as BTC/FBTC) but lives in its own directory with its own service unit
@@ -23658,7 +23659,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="3.0.2"
+    local BUILD_VERSION="3.0.3"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -32985,11 +32986,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V3.0.2-SPIRAL_COVENANT: Create backup command
+    # V3.0.3-SPIRAL_COVENANT: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V3.0.2-SPIRAL_COVENANT
+# Spiral Pool Backup Utility - V3.0.3-SPIRAL_COVENANT
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -33034,7 +33035,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -33413,7 +33414,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "3.0.2",
+    "version": "3.0.3",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33694,7 +33695,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33747,11 +33748,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V3.0.2-SPIRAL_COVENANT: Create restore command
+    # V3.0.3-SPIRAL_COVENANT: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V3.0.2-SPIRAL_COVENANT
+# Spiral Pool Restore Utility - V3.0.3-SPIRAL_COVENANT
 # Restores backups created by spiralpool-backup
 #
 
@@ -33798,7 +33799,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -34141,7 +34142,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.2-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -40552,7 +40553,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V3.0.2 - SPIRAL COVENANT${NC}"
+    echo -e "                                     ${DIM}V3.0.3 - SPIRAL COVENANT${NC}"
     echo ""
 }
 
@@ -41505,7 +41506,7 @@ main() {
         sudo mkdir -p "$_vc_dir"
         [[ "$ENABLE_DGB" == "true" || "$ENABLE_DGB_SCRYPT" == "true" ]] && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB.ver"        > /dev/null
         [[ "$ENABLE_DGB_SCRYPT" == "true" ]]                            && echo "$DIGIBYTE_VERSION"    | sudo tee "$_vc_dir/DGB-SCRYPT.ver"  > /dev/null
-        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_CORE_VERSION:-31.1}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
+        [[ "$ENABLE_BTC" == "true" ]]   && echo "${BITCOIN_CORE_VERSION:-32.1}" | sudo tee "$_vc_dir/BTC.ver"  > /dev/null
         [[ "$ENABLE_BCH" == "true" ]]   && echo "$BCHN_VERSION"          | sudo tee "$_vc_dir/BCH.ver"  > /dev/null
         [[ "$ENABLE_BCH2" == "true" ]]  && echo "$BITCOINCASHII_VERSION"   | sudo tee "$_vc_dir/BCH2.ver" > /dev/null
         [[ "$ENABLE_BC2" == "true" ]]   && echo "$BITCOINII_VERSION"        | sudo tee "$_vc_dir/BC2.ver"  > /dev/null

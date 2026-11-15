@@ -512,7 +512,7 @@ test_btc() {
     local coin="btc"
     # Bitcoin Core, matching the pin in coin-upgrade.sh / install.sh. Never Knots:
     # knots20260508 and later enforce BIP-110 (RDTS) and follow the minority chain.
-    local url="https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-${ARCH_SUFFIX}.tar.gz"
+    local url="https://bitcoincore.org/bin/bitcoin-core-32.1/bitcoin-32.1-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralbtc"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8332
@@ -860,7 +860,7 @@ EOF
 
 test_sys() {
     local coin="sys"
-    local url="https://github.com/syscoin/syscoin/releases/download/v5.1.2/syscoin-5.1.2-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/syscoin/syscoin/releases/download/v5.1.3/syscoin-5.1.3-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralsys"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=8370
@@ -1087,7 +1087,7 @@ EOF
 
 test_xec() {
     local coin="xec"
-    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.34.0/bitcoin-abc-0.34.0-${ARCH_SUFFIX}.tar.gz"
+    local url="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.34.3/bitcoin-abc-0.34.3-${ARCH_SUFFIX}.tar.gz"
     local rpc_user="spiralxec"
     local rpc_pass=$(gen_rpc_pass)
     local rpc_port=9004

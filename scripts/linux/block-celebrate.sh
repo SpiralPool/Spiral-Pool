@@ -22,21 +22,108 @@ set -euo pipefail
 CELEBRATION_DURATION="${CELEBRATION_DURATION:-7200}"  # 2 hour default (matches config.yaml)
 CGMINER_PORT=4028
 NC_TIMEOUT=2
-MINER_CACHE_FILE="/run/spiralpool/cgminers.cache"
+# Runtime directory (tmpfs: cleared on every boot). Overridable for tests.
+RUN_DIR="${CELEBRATE_RUN_DIR:-/run/spiralpool}"
+MINER_CACHE_FILE="$RUN_DIR/cgminers.cache"
 MINER_CACHE_TTL=3600  # 1 hour cache for miner discovery
-LOCK_FILE="/run/spiralpool/celebrate.lock"
-DEADLINE_FILE="/run/spiralpool/celebrate.deadline"
+LOCK_FILE="$RUN_DIR/celebrate.lock"
+DEADLINE_FILE="$RUN_DIR/celebrate.deadline"
 # The block hashes this celebration is for, one per line. A celebration is
 # started by a block and extended by later ones, so stopping it correctly means
 # knowing which blocks it still stands for: an orphaned block withdraws its own
 # entry, and the LEDs only go dark once no block is left celebrating.
-BLOCKS_FILE="/run/spiralpool/celebrate.blocks"
+BLOCKS_FILE="$RUN_DIR/celebrate.blocks"
 MINER_DB_FILE="/spiralpool/data/miners.json"
 CELEBRATE_LOG="/spiralpool/logs/celebrate.log"
+
+#-------------------------------------------------------------------------------
+# Power-cycle recovery (v3.0.3)
+#-------------------------------------------------------------------------------
+# An Avalon keeps the last LED effect it was sent and shows it again after it
+# boots. Everything above lives in /run (tmpfs) and in this process, so a power
+# cut took the celebration's whole memory with it: nobody was left to send the
+# final "LED off", and the miners came back up still strobing and kept at it
+# for hours. A miner that was itself rebooting at the moment the single restore
+# write was due ended the same way.
+#
+# STATE_FILE is the durable half: written to disk BEFORE the first LED write,
+# removed only once every miner has confirmed its restore. Whatever finds it
+# without a live owner returns those miners to idle (see recover_stale_celebration).
+# A celebration is never resumed from it after the host restarts — the record
+# exists to switch the lights off, not to keep them on.
+STATE_FILE="${CELEBRATE_STATE_FILE:-/spiralpool/data/celebrate.state}"
+# Identifies this boot. A record written under a different boot id belongs to a
+# process that cannot still be running, whatever PID it names.
+BOOT_ID_FILE="${CELEBRATE_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+# Hard ceiling on one process's celebration, extensions included. The deadline
+# is the normal stop; this guarantees no corrupted deadline, clock step or bug
+# can keep a celebration going indefinitely. A block that lands after it ends
+# simply starts a new celebration.
+CELEBRATION_MAX_SECONDS="${CELEBRATION_MAX_SECONDS:-86400}"
+# How long the end of a celebration keeps retrying a miner that did not take its
+# restore (it is usually mid-reboot), and how often.
+RESTORE_RETRY_WINDOW="${RESTORE_RETRY_WINDOW:-300}"
+RESTORE_RETRY_INTERVAL="${RESTORE_RETRY_INTERVAL:-15}"
+# Recovery passes before a miner that never answers is dropped from the record.
+# Sentinel runs one every 5 minutes while a record exists, so 288 is ~24 hours.
+RECOVERY_MAX_ATTEMPTS="${RECOVERY_MAX_ATTEMPTS:-288}"
+[[ "$CELEBRATION_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]] || CELEBRATION_MAX_SECONDS=86400
+[[ "$RESTORE_RETRY_WINDOW" =~ ^[0-9]+$ ]]          || RESTORE_RETRY_WINDOW=300
+[[ "$RESTORE_RETRY_INTERVAL" =~ ^[1-9][0-9]*$ ]]   || RESTORE_RETRY_INTERVAL=15
+[[ "$RECOVERY_MAX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]    || RECOVERY_MAX_ATTEMPTS=288
 
 # Track child PIDs for cleanup on termination
 declare -a CHILD_PIDS=()
 declare -A SAVED_STATES=()  # ip -> led state, for cleanup on signal
+# Set once this process has written STATE_FILE; only the writer finalizes it.
+STATE_OWNED=0
+# Per-run directory where each miner's subshell marks a confirmed restore.
+RESULT_DIR=""
+# Outcome of the last restore_idle_led call: 1 = done (accepted, or nothing to
+# do), 0 = the miner did not take it. A variable, not a return code, because
+# callers run under `set -e` and a refused restore must never abort them.
+LED_RESTORE_OK=0
+
+#-------------------------------------------------------------------------------
+# Clocks and process identity
+#-------------------------------------------------------------------------------
+_wall_now() { date +%s; }
+
+# Seconds since boot. Immune to wall-clock steps (NTP correcting a host that
+# booted without an RTC, an operator setting the date), which is what every
+# in-run comparison uses. Falls back to the wall clock where /proc is absent.
+_mono_now() {
+    local up=""
+    if read -r up _ 2>/dev/null < /proc/uptime && [[ "${up%%.*}" =~ ^[0-9]+$ ]]; then
+        echo "${up%%.*}"
+    else
+        date +%s
+    fi
+}
+
+_boot_id() {
+    local id=""
+    id=$(tr -d '[:space:]' 2>/dev/null < "$BOOT_ID_FILE") || id=""
+    [[ "$id" =~ ^[A-Za-z0-9-]+$ ]] || id="unknown"
+    echo "$id"
+}
+
+# Is <pid> a live block-celebrate process? kill -0 alone is not enough: a lock
+# left by a process that never ran its cleanup (power cut, SIGKILL) names a PID
+# the kernel will eventually hand to something else, and --stop would then send
+# TERM to an unrelated process, and a new block would "extend" a celebration
+# that is not running. Where /proc is readable the command line must name this
+# script; where it is not (hidepid, non-Linux) kill -0 is all there is.
+_is_celebrate_pid() {
+    local pid="${1:-}" cmd=""
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    if [[ -r "/proc/$pid/cmdline" ]]; then
+        cmd=$(tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline") || cmd=""
+        [[ -z "$cmd" || "$cmd" == *celebrate* ]] || return 1
+    fi
+    return 0
+}
 
 # Record a block as one this celebration stands for. Idempotent: the same block
 # reaches this script from the stratum, from Sentinel and sometimes by hand.
@@ -66,7 +153,7 @@ stop_celebration() {
         return 0
     fi
     pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
-    if ! [[ "$pid" =~ ^[0-9]+$ ]] || ! kill -0 "$pid" 2>/dev/null; then
+    if ! _is_celebrate_pid "$pid"; then
         log "No celebration is running (removing stale lock)"
         rm -f "$LOCK_FILE" "$DEADLINE_FILE" "$BLOCKS_FILE"
         return 0
@@ -98,6 +185,187 @@ stop_celebration() {
     return 0
 }
 
+#-------------------------------------------------------------------------------
+# Durable celebration record (STATE_FILE)
+#-------------------------------------------------------------------------------
+# Format, one key=value per line:
+#   format=1
+#   id=<boot>-<pid>-<mono>    unique per write; recovery only removes what it read
+#   boot=<boot id>            the boot it was written under
+#   pid=<pid>                 owning process; empty once no process owns it
+#   started=<epoch>           informational
+#   idle=<off|restore>        informational
+#   attempts=<n>              recovery passes made so far
+#   miner=<ip> <saved|->      one per lit miner, with its pre-celebration LED state
+#   end=1                     written last: a record without it is torn
+# Written to a temp file and renamed, so a reader sees the old record or the new
+# one, never half of either. A file that fails to parse is treated as corrupt.
+
+# write_state <pid> <attempts> ["<ip> <saved|->" ...]
+write_state() {
+    local pid="$1" attempts="$2" dir tmp entry boot
+    shift 2
+    dir=$(dirname "$STATE_FILE")
+    [[ -d "$dir" && -w "$dir" ]] || return 1
+    tmp="${STATE_FILE}.tmp.$$"
+    boot=$(_boot_id)
+    {
+        echo "format=1"
+        echo "id=${boot}-${pid:-none}-$(_mono_now)-${RANDOM}"
+        echo "boot=${boot}"
+        echo "pid=${pid}"
+        echo "started=$(_wall_now)"
+        echo "idle=${LED_IDLE_STATE}"
+        echo "attempts=${attempts}"
+        for entry in "$@"; do echo "miner=${entry}"; done
+        echo "end=1"
+    } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    # Flush before the rename so a power cut cannot leave an empty file behind
+    # the new name (GNU sync accepts a file argument; harmless if it does not).
+    sync "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$STATE_FILE" 2>/dev/null || { rm -f "$tmp"; return 1; }
+}
+
+# read_state — parse STATE_FILE into the STATE_* globals.
+# Returns 0 well-formed, 1 missing, 2 malformed/torn.
+read_state() {
+    STATE_ID=""; STATE_BOOT=""; STATE_PID=""; STATE_ATTEMPTS=0
+    STATE_MINERS=(); STATE_SAVED=()
+    [[ -f "$STATE_FILE" ]] || return 1
+    local line key val ip saved have_format=0 have_end=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        [[ "$line" == *=* ]] || return 2
+        key="${line%%=*}"; val="${line#*=}"
+        case "$key" in
+            format)   [[ "$val" == "1" ]] && have_format=1 ;;
+            id)       STATE_ID="$val" ;;
+            boot)     STATE_BOOT="$val" ;;
+            pid)      STATE_PID="$val" ;;
+            attempts) [[ "$val" =~ ^[0-9]+$ ]] || return 2; STATE_ATTEMPTS="$val" ;;
+            miner)
+                [[ "$val" == *" "* ]] || return 2
+                ip="${val%% *}"; saved="${val#* }"
+                [[ "$ip" =~ ^[A-Za-z0-9._:-]+$ ]] || return 2
+                [[ "$saved" == "-" || "$saved" =~ ^[0-9]+(-[0-9]+){5}$ ]] || return 2
+                STATE_MINERS+=("$ip"); STATE_SAVED+=("$saved")
+                ;;
+            end)      have_end=1 ;;
+            *)        ;;  # unknown keys are ignored (forward compatibility)
+        esac
+    done 2>/dev/null < "$STATE_FILE"
+    (( have_format && have_end )) || return 2
+    [[ -z "$STATE_PID" || "$STATE_PID" =~ ^[0-9]+$ ]] || return 2
+    [[ -n "$STATE_BOOT" ]] || return 2
+    return 0
+}
+
+# classify_state — decide what a recorded celebration is. Sets CELEBRATION_VERDICT:
+#   none      nothing recorded
+#   owned     its owner is alive on this boot; the owner will restore, hands off
+#   rebooted  written under another boot: its owner died with the power
+#   orphaned  same boot, but the owner is gone without confirming every restore
+#   corrupt   torn, truncated or malformed
+# Deliberately clock-free: whether a celebration's deadline has passed never
+# decides anything here, because after a power cut the wall clock is the one
+# input that cannot be trusted (a host without an RTC boots in the past).
+classify_state() {
+    local rc=0 boot_now
+    read_state || rc=$?
+    if (( rc == 1 )); then CELEBRATION_VERDICT=none; return 0; fi
+    if (( rc != 0 )); then CELEBRATION_VERDICT=corrupt; return 0; fi
+    boot_now=$(_boot_id)
+    if [[ "$STATE_BOOT" != "unknown" && "$boot_now" != "unknown" && "$STATE_BOOT" != "$boot_now" ]]; then
+        CELEBRATION_VERDICT=rebooted; return 0
+    fi
+    # $$ excluded: a record naming this very PID is a previous holder of a
+    # recycled PID, since this process has not written one yet when it asks.
+    if [[ -n "$STATE_PID" && "$STATE_PID" != "$$" ]] && _is_celebrate_pid "$STATE_PID"; then
+        CELEBRATION_VERDICT=owned; return 0
+    fi
+    CELEBRATION_VERDICT=orphaned
+}
+
+_state_id_now() {
+    local line
+    line=$(grep -m1 '^id=' "$STATE_FILE" 2>/dev/null) || line=""
+    echo "${line#id=}"
+}
+
+# recover_stale_celebration — return to idle every miner a dead celebration left
+# lit, then clear its record. A miner that does not answer stays on the record
+# for the next pass. Never resumes a celebration.
+recover_stale_celebration() {
+    local i ip saved attempts id_before id_now
+    local -a ips=() saveds=() pending=()
+
+    classify_state
+    case "$CELEBRATION_VERDICT" in
+        none)  return 0 ;;
+        owned) log "Celebration record belongs to running PID $STATE_PID — nothing to recover"; return 0 ;;
+    esac
+    id_before="$STATE_ID"
+
+    if [[ "$CELEBRATION_VERDICT" == "corrupt" ]]; then
+        # Which miners were lit is unknown, so fall back to this host's own
+        # inventory. Safe with led_idle_state=off: off is their idle state anyway.
+        # With "restore" there is no saved state to put back, and restore_idle_led
+        # leaves them alone rather than guess.
+        log_error "Celebration record $STATE_FILE is unreadable — returning this host's configured miners to idle"
+        while IFS= read -r ip; do
+            [[ -n "$ip" ]] && { ips+=("$ip"); saveds+=("-"); }
+        done < <(load_configured_miners 2>/dev/null || true)
+    else
+        log "Recovering a celebration left by PID ${STATE_PID:-none} (${CELEBRATION_VERDICT}) — returning ${#STATE_MINERS[@]} miner(s) to idle"
+        ips=(${STATE_MINERS[@]+"${STATE_MINERS[@]}"})
+        saveds=(${STATE_SAVED[@]+"${STATE_SAVED[@]}"})
+    fi
+
+    for i in "${!ips[@]}"; do
+        saved="${saveds[$i]}"
+        [[ "$saved" == "-" ]] && saved=""
+        restore_idle_led "${ips[$i]}" "$saved"
+        [[ "$LED_RESTORE_OK" == "1" ]] || pending+=("${ips[$i]} ${saveds[$i]}")
+    done
+
+    # A fresh celebration may have started and written its own record while
+    # this pass ran. Only the record that was read may be removed or rewritten.
+    id_now=$(_state_id_now)
+    if [[ -f "$STATE_FILE" && "$id_now" != "$id_before" ]]; then
+        log "Celebration record was replaced during recovery — leaving the new one alone"
+        return 0
+    fi
+
+    if (( ${#pending[@]} == 0 )); then
+        rm -f "$STATE_FILE"
+        log_success "Recovery complete — no miner is left in celebration colours"
+        return 0
+    fi
+
+    attempts=$(( STATE_ATTEMPTS + 1 ))
+    if (( attempts >= RECOVERY_MAX_ATTEMPTS )); then
+        log_error "Giving up after ${attempts} recovery passes: ${pending[*]%% *} never answered. Clear by hand with: ascset|0,ledset,0-0-0-0-0-0"
+        rm -f "$STATE_FILE"
+        return 0
+    fi
+    write_state "" "$attempts" "${pending[@]}" || true
+    log "${#pending[@]} miner(s) did not answer (likely still booting) — will retry (pass ${attempts}/${RECOVERY_MAX_ATTEMPTS})"
+}
+
+# finalize_state <"ip saved" ...> — the owner's last word on its record: gone if
+# every miner confirmed its restore, otherwise handed over (owner-less) to
+# recovery with just the miners still lit.
+finalize_state() {
+    (( STATE_OWNED )) || return 0
+    STATE_OWNED=0
+    if (( $# == 0 )); then
+        rm -f "$STATE_FILE"
+        return 0
+    fi
+    write_state "" 0 "$@" || true
+    log_error "$# miner(s) did not confirm their LED restore — left on ${STATE_FILE} for the next recovery pass"
+}
+
 # Cleanup handler: restore LEDs and release lock on termination
 cleanup() {
     log "Caught signal — stopping celebration and restoring LEDs..."
@@ -113,9 +381,19 @@ cleanup() {
     # discarded the whole of this loop's output — including a refused restore,
     # which is exactly the case an operator needs to see and the one path where
     # nobody is watching the miners at the time.
+    # A miner whose own subshell already confirmed its restore is skipped; any
+    # other gets one more attempt, and one that still refuses stays on the
+    # durable record for recovery rather than being forgotten.
+    local -a pending=()
     for ip in "${!SAVED_STATES[@]}"; do
+        if [[ -n "$RESULT_DIR" && -e "$RESULT_DIR/ok.$ip" ]]; then
+            continue
+        fi
         restore_idle_led "$ip" "${SAVED_STATES[$ip]}" || true
+        [[ "$LED_RESTORE_OK" == "1" ]] || pending+=("$ip ${SAVED_STATES[$ip]:--}")
     done
+    [[ -n "$RESULT_DIR" ]] && rm -rf "$RESULT_DIR"
+    finalize_state ${pending[@]+"${pending[@]}"}
     # Release lock — only if it is ours. main() exits early on several paths
     # (quiet hours, --list, --help, no miners); those must not evict a
     # celebration that another process is legitimately running.
@@ -333,15 +611,18 @@ _report_led_restore() {
 
 restore_idle_led() {
     local ip="$1" saved="$2"
+    LED_RESTORE_OK=0
 
     if [[ "$LED_IDLE_STATE" != "restore" ]]; then
         set_led "$ip" 0 0 0 0 0 0
         _report_led_restore "$ip" "LED off on $ip"
+        LED_RESTORE_OK="${LED_LAST_ACCEPTED:-0}"
         return 0
     fi
 
     if [[ -z "$saved" ]]; then
         log "No saved LED state for $ip — leaving LED as-is"
+        LED_RESTORE_OK=1   # nothing to put back is not a failure to retry
         return 0
     fi
 
@@ -349,6 +630,24 @@ restore_idle_led() {
     IFS='-' read -r mode brightness speed r g b <<< "$saved"
     set_led "$ip" "$mode" "$brightness" "$speed" "$r" "$g" "$b"
     _report_led_restore "$ip" "Restored LED on $ip"
+    LED_RESTORE_OK="${LED_LAST_ACCEPTED:-0}"
+}
+
+# The end of a celebration is the one LED write that has to land, and it falls
+# due exactly when a miner that power-cycled may still be booting. One attempt
+# plus a log line is what left LEDs lit for hours. Keep trying for a bounded
+# window instead; a miner still silent after it stays on the durable record and
+# the next recovery pass finishes the job. Returns 0 once the restore landed.
+restore_idle_led_retry() {
+    local ip="$1" saved="$2" start
+    start=$(_mono_now)
+    while :; do
+        restore_idle_led "$ip" "$saved"
+        [[ "$LED_RESTORE_OK" == "1" ]] && return 0
+        (( $(_mono_now) - start + RESTORE_RETRY_INTERVAL <= RESTORE_RETRY_WINDOW )) || return 1
+        log "$ip did not take its LED restore (rebooting?) — retrying in ${RESTORE_RETRY_INTERVAL}s"
+        sleep "$RESTORE_RETRY_INTERVAL"
+    done
 }
 
 # Set LED mode (0=off, 1=solid, 2=flash, 3=pulse, 4=loop)
@@ -538,15 +837,44 @@ fast_pulse() {
     sleep "$duration"
 }
 
-# Read the shared celebration deadline, falling back to this run's own end time.
-# A second block landing mid-celebration extends the deadline instead of killing
-# and restarting the run, which is what used to leave LEDs on a stale colour.
+# The shared celebration deadline. A second block landing mid-celebration
+# extends it instead of killing and restarting the run, which is what used to
+# leave LEDs on a stale colour.
+#
+# Format: "<wall epoch> <monotonic seconds> <boot id>". Every comparison uses the
+# monotonic value, so a wall-clock step can neither stretch a celebration nor
+# cut it short; the wall value is for humans. A bare epoch (the format written
+# by 3.0.2 and earlier) is still understood. Written via rename, so a reader
+# never sees a half-written deadline.
+write_deadline() {
+    local mono="$1" now_m tmp
+    now_m=$(_mono_now)
+    tmp="${DEADLINE_FILE}.tmp.$$"
+    if echo "$(( $(_wall_now) + mono - now_m )) ${mono} $(_boot_id)" > "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$DEADLINE_FILE" 2>/dev/null || rm -f "$tmp"
+    fi
+}
+
+# read_deadline <fallback> — the effective deadline on the monotonic clock.
+# Anything unreadable, from another boot, or further away than
+# CELEBRATION_MAX_SECONDS is not a deadline this run will honour; it falls back
+# to its own end time instead.
 read_deadline() {
-    local fallback="$1"
-    local d
-    d=$(cat "$DEADLINE_FILE" 2>/dev/null || echo "")
-    if [[ "$d" =~ ^[0-9]+$ ]]; then
-        echo "$d"
+    local fallback="$1" wall="" mono="" boot="" extra="" now_m rem
+    now_m=$(_mono_now)
+    if read -r wall mono boot extra 2>/dev/null < "$DEADLINE_FILE"; then
+        if [[ "$wall" =~ ^[0-9]+$ && "$mono" =~ ^[0-9]+$ && -z "$extra" && "$boot" == "$(_boot_id)" ]]; then
+            :   # this boot's monotonic deadline
+        elif [[ "$wall" =~ ^[0-9]+$ && -z "$mono" ]]; then
+            rem=$(( wall - $(_wall_now) ))
+            (( rem < 0 )) && rem=0
+            mono=$(( now_m + rem ))
+        else
+            mono=""
+        fi
+    fi
+    if [[ "$mono" =~ ^[0-9]+$ ]] && (( mono - now_m <= CELEBRATION_MAX_SECONDS )); then
+        echo "$mono"
     else
         echo "$fallback"
     fi
@@ -560,10 +888,21 @@ celebrate_miner() {
 
     log "Starting celebration on $ip for ${duration}s..."
 
-    local end_time=$(( $(date +%s) + duration ))
+    local start_m end_m now_m
+    start_m=$(_mono_now)
+    end_m=$(( start_m + duration ))
     local phase=0
 
-    while (( $(date +%s) < $(read_deadline "$end_time") )); do
+    # The deadline is checked between effect phases, so a run ends within one
+    # phase of it: normally under 20s, up to about a minute while a miner is
+    # unreachable and every write waits out its timeout.
+    while :; do
+        now_m=$(_mono_now)
+        (( now_m < $(read_deadline "$end_m") )) || break
+        if (( now_m - start_m >= CELEBRATION_MAX_SECONDS )); then
+            log_error "Celebration on $ip reached the ${CELEBRATION_MAX_SECONDS}s ceiling — ending it"
+            break
+        fi
         # Stop early if quiet hours have started (check every cycle)
         if is_quiet_hours 2>/dev/null; then
             log "Quiet hours started — stopping celebration on $ip"
@@ -696,7 +1035,10 @@ celebrate_miner() {
         phase=$((phase + 1))
     done
 
-    restore_idle_led "$ip" "$original_state"
+    if restore_idle_led_retry "$ip" "$original_state"; then
+        [[ -n "$RESULT_DIR" ]] && : > "$RESULT_DIR/ok.$ip"
+    fi
+    return 0
 }
 
 #===============================================================================
@@ -744,6 +1086,19 @@ run_celebration() {
         return 1
     fi
 
+    # Record what is about to be lit BEFORE the first LED write, so a power cut
+    # at any point from here on leaves something for recovery to act on.
+    local -a entries=()
+    for ip in "${active_miners[@]}"; do
+        entries+=("$ip ${original_states[$ip]:--}")
+    done
+    if write_state "$$" 0 "${entries[@]}"; then
+        STATE_OWNED=1
+    else
+        log_error "Could not write ${STATE_FILE} — if power is lost mid-celebration the LEDs will need clearing by hand"
+    fi
+    RESULT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/spiralpool-celebrate.XXXXXX" 2>/dev/null) || RESULT_DIR=""
+
     # Run celebrations in parallel — track PIDs for cleanup on signal
     CHILD_PIDS=()
     for ip in "${active_miners[@]}"; do
@@ -756,9 +1111,20 @@ run_celebration() {
     # (e.g., miner goes offline mid-celebration, nc times out)
     wait || true
 
+    # Only claim the LEDs are restored if every miner confirmed it.
+    local unconfirmed=0
+    if [[ -n "$RESULT_DIR" ]]; then
+        for ip in "${active_miners[@]}"; do
+            [[ -e "$RESULT_DIR/ok.$ip" ]] || unconfirmed=$(( unconfirmed + 1 ))
+        done
+    fi
     log_success ""
     log_success "${GOLD}=============================================${NC}"
-    log_success "${GOLD}   CELEBRATION COMPLETE - LEDs RESTORED${NC}"
+    if (( unconfirmed == 0 )); then
+        log_success "${GOLD}   CELEBRATION COMPLETE - LEDs RESTORED${NC}"
+    else
+        log_error "   CELEBRATION COMPLETE - ${unconfirmed} miner(s) did NOT confirm the LED restore"
+    fi
     log_success "${GOLD}=============================================${NC}"
     log_success ""
 }
@@ -784,6 +1150,11 @@ Options:
   --stop              Stop a running celebration and restore the LEDs.
                       With --block, withdraws only that block and stops
                       only if it was the last one still celebrating.
+  --recover           Return to idle any miner left lit by a celebration that
+                      was cut off (power cut, kill, miner rebooting at the end)
+                      and clear its record. Never resumes a celebration.
+                      Sentinel runs this at startup and every 5 minutes while
+                      a record exists.
   -h, --help          Show this help message
 
 Examples:
@@ -793,7 +1164,11 @@ Examples:
   $(basename "$0") --duration 600           # 10 minute celebration
 
 Environment Variables:
-  CELEBRATION_DURATION   Default duration in seconds (default: 7200)
+  CELEBRATION_DURATION     Default duration in seconds (default: 7200)
+  CELEBRATION_MAX_SECONDS  Hard ceiling for one celebration, extensions
+                           included (default: 86400 = 24 hours)
+  CELEBRATE_STATE_FILE     Durable celebration record
+                           (default: /spiralpool/data/celebrate.state)
 
 EOF
 }
@@ -807,10 +1182,12 @@ main() {
         exec 2>>"$CELEBRATE_LOG"
     fi
 
-    mkdir -p /run/spiralpool 2>/dev/null || true
+    mkdir -p "$RUN_DIR" 2>/dev/null || true
     # Fallback: if /run/spiralpool couldn't be created (ProtectSystem=strict without
-    # RuntimeDirectory), use /tmp for lock and cache files
-    if [[ ! -d /run/spiralpool ]]; then
+    # RuntimeDirectory), use /tmp for lock and cache files. /tmp may survive a
+    # reboot, which is why a lock is only trusted if its PID is a live
+    # block-celebrate process (_is_celebrate_pid), never on its existence alone.
+    if [[ ! -d "$RUN_DIR" ]]; then
         MINER_CACHE_FILE="/tmp/spiralpool-cgminers.cache"
         LOCK_FILE="/tmp/spiralpool-celebrate.lock"
         DEADLINE_FILE="/tmp/spiralpool-celebrate.deadline"
@@ -825,6 +1202,7 @@ main() {
     local test_mode=false
     local block_hash=""
     local stop_mode=false
+    local recover_mode=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -868,6 +1246,10 @@ main() {
                 stop_mode=true
                 shift
                 ;;
+            --recover)
+                recover_mode=true
+                shift
+                ;;
             -h|--help)
                 usage
                 exit 0
@@ -885,9 +1267,26 @@ main() {
     # the lock. It must also not fire the EXIT trap: this process never owned
     # the LEDs, and cleanup() would try to release a lock belonging to another.
     if [[ "$stop_mode" == "true" ]]; then
-        stop_celebration "$block_hash"
         trap - EXIT
+        stop_celebration "$block_hash"
+        # If no live process owned the celebration, nothing above touched the
+        # LEDs — a dead owner may have left them lit. Recovery leaves a live
+        # owner (still running its own cleanup) alone.
+        recover_stale_celebration || true
         exit 0
+    fi
+
+    # --recover: lights off for anything a dead celebration left lit. Ignores
+    # quiet hours on purpose — switching LEDs off is never what they suppress.
+    if [[ "$recover_mode" == "true" ]]; then
+        trap - EXIT
+        recover_stale_celebration || true
+        exit 0
+    fi
+
+    if (( duration > CELEBRATION_MAX_SECONDS )); then
+        log "Duration ${duration}s exceeds the ${CELEBRATION_MAX_SECONDS}s ceiling — clamping"
+        duration="$CELEBRATION_MAX_SECONDS"
     fi
 
     # Quiet hours check — skip celebration if quiet hours are active
@@ -938,16 +1337,24 @@ main() {
     # hand, so a single block reaches it several times. Killing and restarting
     # meant the new run re-read the LED after only a 2s wait and could capture a
     # mid-celebration colour as the "original" to restore hours later.
-    if [[ -f "$LOCK_FILE" ]]; then
-        local old_pid
-        old_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-        if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
-            local now new_deadline current_deadline
-            now=$(date +%s)
-            new_deadline=$(( now + duration ))
+    #
+    # The lock is created with noclobber, so taking it is atomic: two launches
+    # for the same block (stratum and Sentinel, often within a second) can no
+    # longer both see "no lock" and both start driving the LEDs.
+    local attempt old_pid lock_taken=false
+    for attempt in 1 2 3; do
+        if ( set -o noclobber; echo "$$" > "$LOCK_FILE" ) 2>/dev/null; then
+            lock_taken=true
+            break
+        fi
+        old_pid=$(cat "$LOCK_FILE" 2>/dev/null || true)
+        if _is_celebrate_pid "$old_pid"; then
+            local now_m new_deadline current_deadline
+            now_m=$(_mono_now)
+            new_deadline=$(( now_m + duration ))
             current_deadline=$(read_deadline 0)
             if (( new_deadline > current_deadline )); then
-                echo "$new_deadline" > "$DEADLINE_FILE"
+                write_deadline "$new_deadline"
                 log "Celebration already running (PID $old_pid) — extended by $(( duration / 60 ))m"
             else
                 log "Celebration already running (PID $old_pid) — deadline unchanged"
@@ -960,21 +1367,31 @@ main() {
             trap - EXIT
             exit 0
         fi
-        # Stale lock from a process that died without cleanup
+        # Stale lock from a process that died without cleanup (or a PID the
+        # kernel has since given to something else)
         log "Removing stale lock (PID ${old_pid:-unknown} not running)"
         rm -f "$LOCK_FILE" "$DEADLINE_FILE"
+    done
+    if [[ "$lock_taken" != "true" ]]; then
+        log_error "Could not take the celebration lock ${LOCK_FILE} — giving up"
+        trap - EXIT
+        exit 1
     fi
 
-    # Write our PID as the lock and publish our deadline
-    echo $$ > "$LOCK_FILE"
-    echo "$(( $(date +%s) + duration ))" > "$DEADLINE_FILE"
+    # Publish our deadline, then deal with anything a dead celebration left
+    # behind before reading any LED: with led_idle_state=restore this run is
+    # about to capture each miner's "original" state, and a miner still lit
+    # from the dead run would hand it a celebration colour to restore later.
+    write_deadline "$(( $(_mono_now) + duration ))"
     rm -f "$BLOCKS_FILE"
     record_block "$block_hash"
+    recover_stale_celebration || true
 
     run_celebration "$duration" "${miners[@]}"
 
-    # Release lock on normal exit
-    rm -f "$LOCK_FILE" "$DEADLINE_FILE"
+    # Lock, deadline, block list and the durable record are released by
+    # cleanup() on EXIT, after the final LED restore — never before it, or a new
+    # celebration could start while this one is still switching LEDs off.
 }
 
 # Run if executed directly

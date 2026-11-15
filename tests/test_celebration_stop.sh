@@ -43,18 +43,24 @@ LIB="$TMP/lib.sh"
     echo "BLOCKS_FILE=\"$TMP/celebrate.blocks\""
     echo 'log() { :; }'
     echo 'log_error() { :; }'
+    sed -n '/^_is_celebrate_pid() {/,/^}/p' "$BC"
     sed -n '/^record_block() {/,/^}/p' "$BC"
     sed -n '/^stop_celebration() {/,/^}/p' "$BC"
 } > "$LIB"
 # shellcheck disable=SC1090
 source "$LIB"
 
-# A stand-in for a running celebration: a real process holding the lock.
+# A stand-in for a running celebration: a real process holding the lock. Its
+# command line names the script, as a real one does — since 3.0.3 a lock whose
+# PID belongs to anything else is treated as stale (the PID was recycled).
 start_fake() {
     rm -f "$TMP/celebrate.blocks"
-    sleep 120 &
+    # exec -a: one process whose argv[0] names the script, so TERM ends it
+    # outright (a bash wrapper would leave its sleep holding stdout open).
+    bash -c 'exec -a fake-block-celebrate sleep 120' &
     FAKE_PID=$!
     echo "$FAKE_PID" > "$TMP/celebrate.lock"
+    sleep 0.2
 }
 still_running() { kill -0 "$FAKE_PID" 2>/dev/null; }
 stop_fake() { kill "$FAKE_PID" 2>/dev/null || true; wait "$FAKE_PID" 2>/dev/null || true; }
@@ -106,6 +112,20 @@ log_test "an unconditional stop always stops it"
 stop_celebration "" >/dev/null 2>&1
 sleep 0.3
 if still_running; then fail "an operator stop works with no block named"; stop_fake; else pass "an operator stop works with no block named"; fi
+
+log_test "a lock whose PID now belongs to an unrelated process is stale, and that process is left alone"
+# The lock outlives its owner whenever cleanup never ran (power cut, SIGKILL),
+# and the kernel recycles PIDs. kill -0 alone said "running", so --stop sent
+# TERM to whatever process had inherited the number.
+sleep 120 &
+BYSTANDER=$!
+sleep 0.2
+echo "$BYSTANDER" > "$TMP/celebrate.lock"
+stop_celebration "" >/dev/null 2>&1
+sleep 0.3
+if kill -0 "$BYSTANDER" 2>/dev/null; then pass "an unrelated process holding a recycled PID is not signalled"; else fail "an unrelated process holding a recycled PID is not signalled"; fi
+if [[ ! -f "$TMP/celebrate.lock" ]]; then pass "the recycled-PID lock is cleared as stale"; else fail "the recycled-PID lock is cleared as stale"; fi
+kill "$BYSTANDER" 2>/dev/null || true; wait "$BYSTANDER" 2>/dev/null || true
 
 echo ""
 echo "==========================================================="

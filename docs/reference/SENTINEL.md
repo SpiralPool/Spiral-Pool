@@ -103,6 +103,18 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `sentinel_health_enabled` | bool | `true` | Expose `/health` and `/cooldowns` endpoints on loopback |
 | `sentinel_health_port` | int | `9191` | Port for the health endpoint (loopback only) |
 
+#### Block celebration LEDs and power cycles
+
+An Avalon Nano 3 re-displays its last LED effect when it boots, so a celebration cut off by a power cut, or a miner that is rebooting when the final restore is due, would otherwise leave it celebrating for hours. Since v3.0.3:
+
+- `block-celebrate.sh` records the miners it lights in `/spiralpool/data/celebrate.state` before the first LED write, and deletes the record once every miner has confirmed its restore. A miner that does not answer at the end is retried for up to 5 minutes.
+- Sentinel runs `block-celebrate.sh --recover` at startup and then at most every 5 minutes while that record exists. Recovery returns the recorded miners to their idle state (`led_idle_state`) and clears the record; a miner that is still unreachable stays on it and is retried, for up to 288 passes (about 24 hours). A record whose owning celebration is still running is left alone.
+- **A celebration is never resumed after the host restarts.** The record is used only to turn the lights off. A torn or unreadable record is treated as corrupt: with `led_idle_state: off` the miners in `/spiralpool/data/miners.json` are switched off.
+- Blocks found while Sentinel was down are celebrated only for what is left of their window (found time + `duration_hours`), and not at all if it has passed. The block alert itself is unchanged.
+- One celebration, extensions included, is capped at 24 hours (`CELEBRATION_MAX_SECONDS`). Timing uses the monotonic clock, so a wall-clock change cannot stretch or shorten one.
+
+To clear LEDs by hand: `sudo -u spiraluser /spiralpool/scripts/block-celebrate.sh --recover`, or `--stop` to end a running celebration.
+
 ### Temperature & Thresholds
 
 | Key | Type | Default | Description |
@@ -835,7 +847,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "3.0.2"}
+{"alive": true, "uptime_s": 3600, "version": "3.0.3"}
 ```
 
 ### `GET /cooldowns`
@@ -853,4 +865,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Covenant 3.0.2*
+*Spiral Sentinel &mdash; Spiral Covenant 3.0.3*

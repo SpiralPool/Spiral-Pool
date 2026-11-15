@@ -548,4 +548,4 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for full details with
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.2*
+*Spiral Pool — Spiral Covenant 3.0.3*

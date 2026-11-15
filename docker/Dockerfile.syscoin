@@ -15,7 +15,7 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="Syscoin Core Node for Spiral Pool"
-ARG SYSCOIN_VERSION=5.1.2
+ARG SYSCOIN_VERSION=5.1.3
 
 # Interpolated: this label read 5.0.5 while the image shipped 5.1.0.
 LABEL version="${SYSCOIN_VERSION}"
@@ -23,12 +23,13 @@ LABEL version="${SYSCOIN_VERSION}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# SHA256 of the pinned release asset (87,076,037 bytes).
-# Matches SHA256SUMS.asc on the v5.1.2 GitHub release — computed and published
-# digests agree. Despite the .asc name that file is a plain checksum list with
-# no PGP signature, so this is a change-detector, not an authenticity attestation.
+# SHA256 of the pinned release asset syscoin-5.1.3-x86_64-linux-gnu.tar.gz
+# (87,666,129 bytes). Three sources agree: the SHA256SUMS asset on the v5.1.3
+# GitHub release, GitHub's own asset digest, and a hash of an independent
+# download. SHA256SUMS is a plain list with no PGP signature (Syscoin publishes
+# none), so this is a change-detector, not an authenticity attestation.
 # If you bump the version above you MUST bump this too — the build fails closed.
-ARG SHA256=cc4fb10d9c0794fc80c673db1636a7bc36892e3954facb94446db35070149e48
+ARG SHA256=336ebb62f9079b1949eb669d87ea61db3d49a7f548378a539a1454302ce98313
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

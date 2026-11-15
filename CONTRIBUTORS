@@ -48,6 +48,17 @@ Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
       COINGECKO_IDS ("ecash"), normalize_coin (ECASH/BITCOIN-ABC → XEC)
     - config/coins.manifest.yaml: XEC entry (sha256d, ports, CashAddr flag)
 
+Beniram Khuraijam (bkhuraijam) — https://github.com/bkhuraijam/Spiral-Pool
+  - Credited by the author name and login recorded in the commit itself. The
+    entry above lists earlier work ported from the same fork under the name it
+    was credited with at the time.
+  - v3.0.3: commit 60edb09 ("fix(dockerfile): add libatomic1 to bitcoin and
+    bitcoincash to prevent startup crash"), 2026-11-12
+    https://github.com/bkhuraijam/Spiral-Pool/commit/60edb09609402973379542b4a1f72aef0b34bb1e
+    - docker/Dockerfile.bitcoincash: install libatomic1, which BCHN 29.2.0's
+      bitcoind needs at load time (libatomic.so.1 is in its NEEDED list)
+    - docker/Dockerfile.bitcoin: Bitcoin Core 31.1 -> 32.1 with the new SHA256
+
 MESKONE0722 — https://github.com/MESKONE0722/Spiral-Pool
   - BCH2 (Bitcoin Cash II) coin implementation and Docker support
   - BTCS (Bitcoin Silver) coin implementation and Docker support
@@ -93,6 +104,26 @@ W3dgraf — https://github.com/W3dgraf
 ---
 
 ## Provenance Notes by Release
+
+v3.0.3 (Spiral Covenant) — bug-fix and daemon-update release
+  - Ported: commit 60edb09 by Beniram Khuraijam (bkhuraijam), credited above.
+    Its two changes were applied as written: libatomic1 in the Bitcoin Cash
+    image, and Bitcoin Core 32.1 with SHA256 61545c17...b044963 in the Bitcoin
+    image. The checksum was re-verified independently before use (against
+    bitcoincore.org's SHA256SUMS and four Guix attestations). Three adjustments
+    were made around it, none changing what the commit does:
+    - The commit left the Dockerfile.bitcoin comment describing the 31.1
+      tarball; it now describes 32.1 and its provenance.
+    - The commit message says libatomic1 is added to "bitcoin and bitcoincash";
+      the diff adds it to bitcoincash only. That is correct as it stands:
+      bitcoind 32.1 does not link libatomic (checked with readelf), so nothing
+      was added to the Bitcoin image.
+    - The same Bitcoin Core bump was carried to the native install paths the
+      commit did not touch (install.sh, coin-upgrade.sh, pool-mode.sh,
+      regtest.sh), so Docker and native installs stay on one version.
+  - All other code in this release is original to this repository: the Avalon
+    Nano 3 power-cycle celebration fix, the Syscoin 5.1.3 and Bitcoin ABC 0.34.3
+    updates, and the version bump.
 
 v3.0.2 (Spiral Covenant) — bug-fix release
   - All code in this release is original to this repository. No upstream work

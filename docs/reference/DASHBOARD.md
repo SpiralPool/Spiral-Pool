@@ -285,7 +285,7 @@ Progressive Web App manifest (`static/manifest.json`) enables "Add to Home Scree
 
 ### Avalon Power Scheduling
 
-- RGB LED celebration on block find, run by `/spiralpool/scripts/block-celebrate.sh` (duration from `config.yaml`, default 2 hours); `POST /api/test/block-celebration` triggers the same script against the configured Avalons. Between celebrations the LED follows the Sentinel config key `led_idle_state`: `off` (default) leaves it dark, `restore` puts back whatever it showed before.
+- RGB LED celebration on block find, run by `/spiralpool/scripts/block-celebrate.sh` (duration from `config.yaml`, default 2 hours); `POST /api/test/block-celebration` triggers the same script against the configured Avalons. Between celebrations the LED follows the Sentinel config key `led_idle_state`: `off` (default) leaves it dark, `restore` puts back whatever it showed before. A celebration cut off by a power cut or a rebooting miner is cleaned up by `block-celebrate.sh --recover` (run by Sentinel), never resumed; see [SENTINEL.md](SENTINEL.md#block-celebration-leds-and-power-cycles).
 - RGB LED celebration on block find, run by `scripts/block-celebrate.sh` (duration from `config.yaml`, default 2 hours); `POST /api/test/block-celebration` triggers the same script against the configured Avalons
 - Quiet hours suppression
 
@@ -581,4 +581,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Spiral Covenant 3.0.2*
+*Spiral Dash &mdash; Spiral Covenant 3.0.3*

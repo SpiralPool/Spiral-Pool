@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "3.0.2"
+__version__ = "3.0.3"
 
 import os
 import json
@@ -16375,7 +16375,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v3.0.2"},
+        "footer": {"text": f"Spiral Pool v3.0.3"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

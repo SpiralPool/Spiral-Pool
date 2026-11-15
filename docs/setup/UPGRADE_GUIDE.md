@@ -1,14 +1,14 @@
-# Upgrading to Spiral Pool v3.0.2 (Spiral Covenant)
+# Upgrading to Spiral Pool v3.0.3 (Spiral Covenant)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1) and v3.0.2 for the pool stack.** (The DigiByte **node** upgrade below is a separate step.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1, v3.0.2) and v3.0.3 for the pool stack.** (Coin **node** upgrades — BTC, DGB, SYS, XEC below — are separate steps run with `coin-upgrade.sh`.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
 ---
 
-## Bitcoin (BTC) node upgrade — Bitcoin Knots → Bitcoin Core 31.1
+## Bitcoin (BTC) node upgrade — Bitcoin Knots → Bitcoin Core 32.1
 
 **This is not a routine version bump. Do not skip it.**
 
@@ -32,7 +32,7 @@ The upgrade:
    bitcoin-cli -rpcwallet=<name> migratewallet
    ```
    Most operators are unaffected: Spiral Pool creates descriptor wallets, and if you supplied an external address (hardware or air-gapped wallet) there is no wallet on the server at all. Check with `getwalletinfo | grep descriptors` — `true` means nothing to do.
-2. **Replaces the binary** with Bitcoin Core 31.1, downloaded from bitcoincore.org and verified against a SHA256 committed in this repository. A mismatch aborts.
+2. **Replaces the binary** with Bitcoin Core 32.1, downloaded from bitcoincore.org and verified against a SHA256 committed in this repository. A mismatch aborts.
 3. **Repairs the chain.** A binary swap alone is *not* sufficient. The enforcing daemon marked the majority chain's block 961,632 as rejected, and that marker persists on disk — Bitcoin Core reads the same block index, honours it, and will sit on the minority chain looking perfectly healthy. The upgrade clears it with `reconsiderblock` and waits for the reorg.
 4. **Verifies the result**, and reports what it found. Be aware of the cases where it returns success without having confirmed the hash, because they are legitimate but easy to misread: the daemon was unreachable, the node has not yet synced past height 961,632, or the reorg was accepted and the node is still downloading. Each says so explicitly rather than claiming verification. The check is also skipped entirely under `--reindex`, since the node is rebuilding for hours. In all of those cases the stratum chain gate is what actually protects you — it re-runs this check at every startup and refuses to serve work until the hash matches.
 
@@ -104,6 +104,19 @@ New installs: `install.sh` configures DGB from the pool-wide pruning choice (pru
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
 
 ---
+
+## What's new in v3.0.3
+
+Bug-fix and daemon-update release. **No database migrations, no `config.yaml` changes.** See [CHANGELOG.md](../../CHANGELOG.md) for details.
+
+- **Avalon Nano 3 LEDs no longer keep celebrating after a power cycle.** An Avalon re-displays its last LED effect when it boots, and a celebration's state lived only in `/run` and in the running script, which ended with a single "LED off" write. A power cut mid-celebration, or a miner that was rebooting when that write was due, left the miners strobing for hours. `block-celebrate.sh` now keeps a durable record of lit miners (`/spiralpool/data/celebrate.state`), retries the final restore for up to 5 minutes, and `block-celebrate.sh --recover` (run by Sentinel at startup and every 5 minutes while a record exists) switches off anything a cut-off celebration left lit. **A celebration is never resumed after the host restarts** — the record is only used to turn the lights off. A single celebration is now capped at 24 hours (`CELEBRATION_MAX_SECONDS`), and timing uses the monotonic clock, so a wall-clock change cannot stretch one.
+- **Blocks found while Sentinel was down** are now celebrated only for what is left of their window (found time + duration), and not at all if it has already passed. Before, a restart started a fresh full-length celebration for a block found hours earlier. The Discord/Telegram block alert is unchanged.
+- **Bitcoin Core 31.1 → 32.1** (contributed by Beniram Khuraijam, [`60edb09`](https://github.com/bkhuraijam/Spiral-Pool/commit/60edb09609402973379542b4a1f72aef0b34bb1e)). No consensus change, no reindex; the pool's RPC calls and every `bitcoin.conf` option Spiral Pool writes are unchanged. 32.0 was tagged upstream but never released. `sudo /spiralpool/scripts/coin-upgrade.sh --coin BTC`.
+- **Syscoin 5.1.2 → 5.1.3.** Fixes masternode-transaction conflicts that could stop the node building block templates; upstream asks mining pools to upgrade promptly. No activation height, no reindex. `sudo /spiralpool/scripts/coin-upgrade.sh --coin SYS`.
+- **eCash (Bitcoin ABC) 0.34.0 → 0.34.3.** Bug-fix releases on 0.34.0 (including a `walletnotify` command-injection fix); no consensus change, no reindex. A node still on 0.33.x must upgrade for the 15 Nov 2026 network upgrade. `sudo /spiralpool/scripts/coin-upgrade.sh --coin XEC`.
+- **Docker: the Bitcoin Cash image installs `libatomic1`** (contributed by Beniram Khuraijam, same commit). BCHN 29.2.0's `bitcoind` links `libatomic.so.1` and cannot start without it. Native installs already have it (it comes with `build-essential`).
+
+Docker pools pick up the new daemon versions by rebuilding with the profile they run, e.g. `docker compose --profile multi build` then `docker compose --profile multi up -d` (affected images: `bitcoin`, `bitcoincash`, `syscoin`, `ecash`); native pools use `coin-upgrade.sh` as above. Other daemons are unchanged — each is already at its newest stable Linux release, and Namecoin stays at 28.0 because namecoin.org publishes no newer Linux binaries.
 
 ## What's new in v3.0.2
 
@@ -568,13 +581,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `3.0.2`. If Sentinel is running:
+The version line should show `3.0.3`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v3.0.2` followed by `Spiral Covenant` in the startup log.
+Look for `Spiral Pool v3.0.3` followed by `Spiral Covenant` in the startup log.
 
 ---
 
@@ -654,4 +667,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.2 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.0.3 — Built on what came before. Growing toward phi.*

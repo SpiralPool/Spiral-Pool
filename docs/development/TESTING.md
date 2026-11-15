@@ -2,7 +2,7 @@
 
 **Version**: 1.1
 **Updated**: 2026-09-21
-**Total Test Files**: 285 Go (`*_test.go`) + 29 Python (`tests/test_*.py`)
+**Total Test Files**: 285 Go (`*_test.go`) + 30 Python (`tests/test_*.py`)
 **Total Test Functions**: 3,889 Go `Test*` functions (4,107 including `Fuzz*` and `Benchmark*`)
 
 ---
@@ -571,6 +571,25 @@ python -m pytest tests/test_safe_num.py -v
 | Arithmetic | 8 | Division, comparison, `int()`, `sum()`, `max()`, truthiness all work on output |
 | Real API patterns | 13 | `or`-fallback chains, `dict.get()`, full Innosilicon simulation, normal API passthrough |
 | List comprehension | 1 | Mixed string/int/zero filtering — exact pattern from vnish/whatsminer/innosilicon loops |
+
+---
+
+## Block Celebration (Avalon LEDs)
+
+| Test | Covers |
+|------|--------|
+| `tests/test_celebration_power_cycle.sh` | The real `block-celebrate.sh` against a simulated Avalon on a simulated clock: power cycles mid-celebration and at the restore, host power cuts, restarts before/after the deadline, missing/corrupt/torn records, stale locks, concurrent launches, wall-clock steps, the 24 h ceiling, `led_idle_state=restore` (79 assertions) |
+| `tests/test_celebration_stop.sh` | Withdrawing an orphaned block, and stale or recycled-PID locks |
+| `tests/test_celebration_led.sh` | Restore reporting, CGMiner dialect probing, and the LED effect sequences |
+| `tests/test_celebration_recovery.py` | Sentinel's recovery hook and the remaining-window trim for blocks found while it was down |
+
+```bash
+bash tests/test_celebration_power_cycle.sh
+# Point it at another copy of the script, e.g. to show which cases an older release fails:
+CELEBRATE_SCRIPT_UNDER_TEST=/path/to/block-celebrate.sh SIM_TIMEOUT=130 bash tests/test_celebration_power_cycle.sh
+```
+
+`SIM_TIMEOUT` bounds each simulated run; it is needed for scripts that read the real clock, which the harness cannot speed up.
 
 ---
 

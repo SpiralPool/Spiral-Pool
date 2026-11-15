@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 #
 # coin-upgrade.sh — Spiral Pool Coin Daemon Upgrade Utility
-#                   V3.0.2-SPIRAL_COVENANT
+#                   V3.0.3-SPIRAL_COVENANT
 #
 # Upgrades coin node binaries in-place. Touches ONLY the binary for every coin,
 # wallets/blockchain data/pool settings are NEVER deleted.
@@ -89,7 +89,7 @@ fi
 
 # ── Target versions — keep in sync with install.sh lines 41-46 ────────────────
 declare -A COIN_TARGET=(
-    [BTC]="31.1"            # Bitcoin Core — see download_BTC() for why not Knots
+    [BTC]="32.1"            # Bitcoin Core — see download_BTC() for why not Knots
     [BCH]="29.2.0"
     [BCH2]="27.0.2"         # Bitcoin Cash II — binary release
     [BC2]="31.1.0"
@@ -103,10 +103,10 @@ declare -A COIN_TARGET=(
                         # binaries (nc28.0/nc31.0/nc31.1 all have empty asset lists);
                         # namecoin.org publishes binaries only up to 28.0. Latest
                         # source release is nc31.1 (2026-07-13).
-    [SYS]="5.1.2"
+    [SYS]="5.1.3"
     [XMY]="0.18.1.0"
     [FBTC]="0.4.0"
-    [XEC]="0.34.0"    # ecash-node (Bitcoin ABC)
+    [XEC]="0.34.3"    # ecash-node (Bitcoin ABC)
 )
 
 # Where each coin publishes its releases, for the "is anything newer out?" check.
@@ -170,12 +170,18 @@ UPSTREAM_CACHE_TTL="${UPSTREAM_CACHE_TTL:-86400}"
 # MINOR  = may need reindex; check release notes
 # MAJOR  = reindex almost certainly required; use --reindex
 declare -A COIN_RISK=(
-    [BTC]="MAJOR"   # Bitcoin Knots → Bitcoin Core 31.1. Knots builds carrying the
+    [BTC]="MAJOR"   # Bitcoin Knots → Bitcoin Core 32.1. Knots builds carrying the
                     # knots20260508 datestamp enforce BIP-110 (RDTS) and follow the
                     # minority chain that split at block 961,632 on 2026-08-08.
                     # Blocks found there are unlikely to have value. Knots and Core
                     # share datadir format, so this is a binary swap — but the chain
                     # the node is following is re-verified afterwards.
+                    # From Core 31.1 (Spiral Pool 3.0.0–3.0.2) to 32.1 it is a plain
+                    # binary swap: no consensus change, no reindex, no RPC change the
+                    # pool uses. 32.0 was tagged but never released. A txindex rebuilt
+                    # under 32 cannot be read by 31; nothing else blocks a rollback.
+                    # Bitcoin Core 32.1 bump contributed by Beniram Khuraijam
+                    # (bkhuraijam/Spiral-Pool@60edb09).
     [BCH]="PATCH"   # 29.2.0 — Schnorr signing by default, RPC/perf work, new
                     # checkpoints; no consensus change. It REMOVED -excessiveblocksize
                     # and refuses to start while the config sets it, which every
@@ -230,6 +236,10 @@ declare -A COIN_RISK=(
                     # release tarball, so Core and geth upgrade as a matched pair.
                     # 5.1.2 is a non-mandatory patch on 5.1.0/5.1.1 (network-message
                     # validation, managed sysgeth startup); no consensus change.
+                    # 5.1.3 fixes masternode-transaction conflicts that could stop a
+                    # node building block templates (bad-protx-hash) — upstream:
+                    # "Mining-pool operators should upgrade promptly." No activation
+                    # height, datadir unchanged, peers now need protocol 70017.
     [XMY]="NONE"    # 0.18.1.0 — current (project dormant since 2020)
     [FBTC]="MAJOR"  # CONSENSUS, ALREADY ACTIVE. 0.4.0 (final release) is a consensus-
                     # tightening hard fork at height 2,100,000 that applies an extra
@@ -246,6 +256,9 @@ declare -A COIN_RISK=(
                     # 15 Nov 2026 12:00 UTC upgrade (MTP 1794744000), which moves
                     # replay protection to the next upgrade. ABC: "To stay in sync with
                     # the network, node operators must update to version 0.34.x" first.
+                    # 0.34.1–0.34.3 are bug-fix releases on 0.34.0 with no consensus
+                    # change (0.34.1 fixes a walletnotify command-injection; 0.34.3
+                    # raises the minimum P2P protocol version). Binary swap, no reindex.
 )
 
 # Config options the TARGET version no longer accepts. A daemon that finds one
@@ -545,19 +558,20 @@ _wget() {
     wget -q --show-progress --tries=3 --timeout=60 "$@"
 }
 
-# Bitcoin Core 31.1 release checksum, x86_64-linux-gnu tarball.
+# Bitcoin Core 32.1 release checksum, x86_64-linux-gnu tarball.
 #
-# Provenance: https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
-# Cross-verified byte-for-byte against two independent Guix attestations in
-# https://github.com/bitcoin-core/guix.sigs (signers achow101 and fanquake).
-# All three sources agree.
+# Provenance: https://bitcoincore.org/bin/bitcoin-core-32.1/SHA256SUMS (whose
+# .asc verifies with good signatures from achow101, fanquake and willcl-ark).
+# Cross-verified byte-for-byte against the Guix attestations in
+# https://github.com/bitcoin-core/guix.sigs (32.1/: achow101, fanquake, hebasto,
+# willcl-ark). All sources agree.
 #
 # This is Bitcoin Core, not Bitcoin Knots. Knots builds whose version carries the
 # knots20260508 datestamp enforce BIP-110 (RDTS) and follow the minority chain
 # that split from Bitcoin at block 961,632 on 2026-08-08. Do not reintroduce a
 # Knots download here, and do not resolve this version dynamically — a
 # latest-resolver is exactly how an operator drifts onto an enforcing build.
-BITCOIN_CORE_SHA256="b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+BITCOIN_CORE_SHA256="61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"
 
 # Release asset checksums for coins that publish no signed checksum file. Each is
 # the SHA256 GitHub records for the release asset, matched against an independent
@@ -3057,7 +3071,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL — COIN DAEMON UPGRADE UTILITY            ${NC}${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}${DIM}                       V3.0.2-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${DIM}                       V3.0.3-SPIRAL_COVENANT                 ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${YELLOW}⚠  Manual operation — never run via automation${NC}              ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${DIM}Only the daemon binary is replaced. Config, wallets,${NC}        ${CYAN}║${NC}"

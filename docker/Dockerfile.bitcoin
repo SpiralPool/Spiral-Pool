@@ -3,6 +3,8 @@
 #
 # Upgrade approach based on work by bkhuraijam:
 # https://github.com/bkhuraijam/Spiral-Pool/commit/35fc61f585e30dc2562a4ca31cb773ff65d1c9cb
+# Bitcoin Core 31.1 -> 32.1 bump contributed by Beniram Khuraijam (bkhuraijam):
+# https://github.com/bkhuraijam/Spiral-Pool/commit/60edb09609402973379542b4a1f72aef0b34bb1e
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║                                                                            ║
@@ -34,10 +36,14 @@ FROM --platform=linux/amd64 debian:bookworm-slim
 ARG VERSION=32.1
 ARG ARCH=x86_64-linux-gnu
 
-# SHA256 of bitcoin-31.1-x86_64-linux-gnu.tar.gz.
-# Source: https://bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
-# Cross-verified against Guix attestations from signers achow101 and fanquake
-# in https://github.com/bitcoin-core/guix.sigs — all three agree.
+# SHA256 of bitcoin-32.1-x86_64-linux-gnu.tar.gz.
+# Source: https://bitcoincore.org/bin/bitcoin-core-32.1/SHA256SUMS (its .asc
+# carries good signatures from achow101, fanquake and willcl-ark), cross-verified
+# against the Guix attestations of achow101, fanquake, hebasto and willcl-ark in
+# https://github.com/bitcoin-core/guix.sigs (32.1/) — all agree.
+# 32.0 was tagged but never released ("Due to last-minute issues, 32.0 ... was
+# never fully announced or released"); 32.1 is the first 32.x release.
+# bitcoind 32.1 links only libc/libm/libpthread (no libatomic), as 31.1 did.
 # If you bump VERSION you MUST bump this too; the build fails closed otherwise.
 ARG SHA256=61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963
 

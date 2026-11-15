@@ -18,7 +18,7 @@ FROM ubuntu:26.04
 
 LABEL maintainer="Spiral Miner"
 LABEL description="eCash (XEC) Node for Spiral Pool"
-ARG ECASH_VERSION=0.34.0
+ARG ECASH_VERSION=0.34.3
 
 # Interpolated: this label read 0.31.12 while the image shipped 0.33.10.
 LABEL version="${ECASH_VERSION}"
@@ -26,15 +26,14 @@ LABEL version="${ECASH_VERSION}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# SHA256 of the pinned release asset (64,521,253 bytes).
-# Computed from the artifact and cross-checked by fetching the SAME file from two
-# independent hosts — github.com/Bitcoin-ABC and download.bitcoinabc.org — which
-# are byte-identical. The digest also matches fabien-sha256sums.0.34.0.asc (a
-# release asset), but that file's PGP signature was not checked. That makes this
-# a change-detector, not an independent authenticity attestation like the Guix
-# cross-check on the BTC image.
+# SHA256 of the pinned release asset bitcoin-abc-0.34.3-x86_64-linux-gnu.tar.gz
+# (64,911,397 bytes). Agrees across GitHub's asset digest, the same file fetched
+# from download.bitcoinabc.org, and fabien-sha256sums.0.34.3.asc, whose PGP
+# signature verified as "Good signature from Fabien <fabcien@gmail.com>"
+# (key F7D2C66D608F03E15B5E1EA6CAF74C33DBE2797F, matching
+# contrib/signing/keys.txt in the Bitcoin ABC repo).
 # If you bump the version above you MUST bump this too — the build fails closed.
-ARG SHA256=2bd8d98fd67d9957fdc001e4426dccb4a6b37d3ee8aa0e01ae94fb0d26f9dafa
+ARG SHA256=68f88481012bfef62c9621a56b86b0cbe319826793287fac3d5f4bbfbfb074a3
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

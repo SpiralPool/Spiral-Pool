@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
+#
+# libatomic1 runtime dependency contributed by Beniram Khuraijam (bkhuraijam):
+# https://github.com/bkhuraijam/Spiral-Pool/commit/60edb09609402973379542b4a1f72aef0b34bb1e
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║                                                                            ║
@@ -31,6 +34,10 @@ ENV TZ=UTC
 ARG SHA256=23bbe9ff749136a9b832a2a59023ce76a5391322c1ea2f4f24b5b91f035081bc
 
 # Install dependencies
+# libatomic1: BCHN 29.2.0's bitcoind (and bitcoin-wallet) declare
+# libatomic.so.1 as NEEDED (readelf -d). Nothing else here depends on it, so
+# the image cannot rely on it arriving transitively; if it is absent the
+# dynamic loader refuses to start the daemon. Installed explicitly.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \

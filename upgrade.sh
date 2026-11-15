@@ -5070,7 +5070,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.2 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.0.3 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -5889,6 +5889,18 @@ _dgb_before_thaw_day() {
     [[ "$inst" != "9.26.6" && "$(printf '%s\n%s\n' "$inst" "9.26.6" | sort -V | head -1)" == "$inst" ]]
 }
 
+# True when the XEC node in <upgrade_lines> is below 0.34.0 (or its version is
+# unknown), i.e. it lacks the 15 Nov 2026 network-upgrade rules. A node already
+# on 0.34.x has them; 0.34.3 is a maintenance release on top.
+_xec_before_034() {
+    local inst
+    inst=$(awk '$1=="XEC"{print $2; exit}' <<< "$1")
+    inst="${inst#v}"
+    inst="${inst%%-*}"
+    [[ "$inst" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 0
+    [[ "$inst" != "0.34.0" && "$(printf '%s\n%s\n' "$inst" "0.34.0" | sort -V | head -1)" == "$inst" ]]
+}
+
 show_summary() {
     echo
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -6058,13 +6070,21 @@ show_summary() {
                 echo -e "     coin-upgrade.sh comments it out of bitcoin.conf (with a backup) before"
                 echo -e "     starting the new daemon. 32 MB was already the default. No reindex."
             fi
-            # eCash 0.34.0: same shape. Bitcoin ABC's 15 Nov 2026 network upgrade
-            # requires 0.34.x, and a node left on 0.33.x stops following the network.
+            # eCash: Bitcoin ABC's 15 Nov 2026 network upgrade requires 0.34.x, and a
+            # node left on 0.33.x stops following the network. The target is now
+            # 0.34.3, a bug-fix release on 0.34.0: a node already on 0.34.x is told
+            # it is recommended, not required.
             if grep -q '^XEC ' <<< "$upgrade_lines"; then
                 echo
-                echo -e "${RED}  ⚠  eCash (XEC) v0.34.0 — REQUIRED before 15 Nov 2026 12:00 UTC${NC}"
-                echo -e "     Bitcoin ABC's network upgrade activates then. A node still on 0.33.x"
-                echo -e "     falls out of sync with the network. In-place binary swap — no reindex."
+                if _xec_before_034 "$upgrade_lines"; then
+                    echo -e "${RED}  ⚠  eCash (XEC) v0.34.3 — REQUIRED: the 15 Nov 2026 12:00 UTC upgrade needs 0.34.x${NC}"
+                    echo -e "     Bitcoin ABC's network upgrade activates then. A node still on 0.33.x"
+                    echo -e "     falls out of sync with the network. In-place binary swap — no reindex."
+                else
+                    echo -e "${CYAN}  ℹ  eCash (XEC) v0.34.3 — bug-fix release, recommended${NC}"
+                    echo -e "     This node already runs 0.34.x, which has the 15 Nov 2026 rules. 0.34.3"
+                    echo -e "     adds no activation. In-place binary swap — no reindex."
+                fi
             fi
             # Bitcoin: this is not a routine version bump. Spiral Pool shipped
             # Bitcoin Knots, and knots20260508+ builds enforce BIP-110 (RDTS),
@@ -6176,7 +6196,11 @@ PYEOF
         coin_lines+="\nℹ **Bitcoin Cash Node v29.2.0** removed the excessiveblocksize option and will not start while it is set. coin-upgrade.sh comments it out of bitcoin.conf (with a backup) before starting the new daemon; 32 MB was already the default. No reindex.\n"
     fi
     if grep -q '^XEC ' <<< "$upgrade_lines"; then
-        coin_lines+="\n🔴 **eCash v0.34.0 is REQUIRED before 15 Nov 2026 12:00 UTC.** Bitcoin ABC's network upgrade activates then, and a node still on 0.33.x falls out of sync with the network. In-place binary swap (no reindex).\n"
+        if _xec_before_034 "$upgrade_lines"; then
+            coin_lines+="\n🔴 **eCash 0.34.x is REQUIRED for the 15 Nov 2026 12:00 UTC network upgrade** (target: v0.34.3). A node still on 0.33.x falls out of sync with the network. In-place binary swap (no reindex).\n"
+        else
+            coin_lines+="\nℹ **eCash v0.34.3** is a bug-fix release: this node's 0.34.x already has the 15 Nov 2026 rules. No activation, no reindex.\n"
+        fi
     fi
     if grep -q '^BTC ' <<< "$upgrade_lines"; then
         coin_lines+="\n🔴 **Bitcoin: ACT ON THIS ONE.** Spiral Pool previously shipped Bitcoin Knots. Knots builds dated knots20260508 or later enforce BIP-110 (RDTS) and follow a minority chain that split away from Bitcoin on 8 August 2026 at block 961,632. That chain has produced a handful of blocks and its coins are not traded anywhere. A node on it looks completely healthy — shares validate, hashrate reads normal — but any block you find is worth nothing. This stack upgrade does NOT fix it — coin daemons are never touched here. Run coin-upgrade.sh to replace Knots with Bitcoin Core 31.1; it then verifies your node is on the majority chain and repairs it if not. Until that passes the pool refuses to mine BTC, so no electricity is wasted meanwhile.\n"
@@ -6198,7 +6222,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v3.0.2 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v3.0.3 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF

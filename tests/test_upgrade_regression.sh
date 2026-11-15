@@ -1238,8 +1238,8 @@ test_coin_upgrade_daemon_targets() {
         check FBTC "Bitcoin Core daemon version v0.4.0"       0.3.0
         check BC2  "BitcoinII daemon version v31.1.0"         29.1.0
         check BTCS "BitcoinSilver daemon version v31.1.3"     1.0.2
-        check XEC  "Bitcoin ABC version v0.34.0-a284f96d9fa3" 0.33.12
-        check SYS  "Syscoin Core version v5.1.2"              5.1.0
+        check XEC  "Bitcoin ABC version v0.34.3-5621f13e073c" 0.34.0
+        check SYS  "Syscoin Core version v5.1.3"              5.1.2
     )
     local c
     for c in LTC FBTC BC2 BTCS XEC SYS; do

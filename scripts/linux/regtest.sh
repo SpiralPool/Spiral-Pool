@@ -258,9 +258,9 @@ setup_coin() {
             # enforce BIP-110/RDTS and follow the minority chain. Regtest is a local
             # throwaway chain so this cannot mine the wrong chain, but keeping the
             # dev daemon aligned with production avoids surprising behaviour drift.)
-            DAEMON_VERSION="31.1"
-            DOWNLOAD_URL="https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-${ARCH_SUFFIX}.tar.gz"
-            TARBALL_DIR="bitcoin-31.1"
+            DAEMON_VERSION="32.1"
+            DOWNLOAD_URL="https://bitcoincore.org/bin/bitcoin-core-32.1/bitcoin-32.1-${ARCH_SUFFIX}.tar.gz"
+            TARBALL_DIR="bitcoin-32.1"
             ;;
         bch)
             COIN_SYMBOL=BCH; COIN_NAME="Bitcoin Cash"; COIN_ALGO=sha256d
@@ -404,9 +404,9 @@ setup_coin() {
             GITHUB_URL="https://github.com/Bitcoin-ABC/bitcoin-abc"
             GBT_RULES='[]'  # XEC: no SegWit (CashAddr is an address format, not a script type)
             # Auto-install info
-            DAEMON_VERSION="0.34.0"
-            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.34.0/bitcoin-abc-0.34.0-x86_64-linux-gnu.tar.gz"
-            TARBALL_DIR="bitcoin-abc-0.34.0"
+            DAEMON_VERSION="0.34.3"
+            DOWNLOAD_URL="https://github.com/Bitcoin-ABC/bitcoin-abc/releases/download/v0.34.3/bitcoin-abc-0.34.3-x86_64-linux-gnu.tar.gz"
+            TARBALL_DIR="bitcoin-abc-0.34.3"
             ;;
         doge)
             COIN_SYMBOL=DOGE; COIN_NAME="Dogecoin"; COIN_ALGO=scrypt
