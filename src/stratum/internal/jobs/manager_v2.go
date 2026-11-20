@@ -151,6 +151,22 @@ func NewManagerV2(cfg *config.PoolConfig, stratumCfg *config.StratumConfig, node
 // FIX JOB-H1: Added RPC health tracking, template staleness circuit breaker,
 // and height monotonicity / reorg detection — matching V1 Manager safety checks.
 func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
+	_, err := m.refreshJob(ctx, force, false)
+	return err
+}
+
+// refreshIfNewBlock fetches a template and broadcasts a job only when the
+// template builds on a different block than the current job. Used while
+// waiting for the daemon to catch up after a block notification: an
+// unchanged template must not go out as yet another job.
+func (m *ManagerV2) refreshIfNewBlock(ctx context.Context) (bool, error) {
+	return m.refreshJob(ctx, false, true)
+}
+
+// refreshJob is RefreshJob; with onlyIfNewBlock it stops before generating a
+// job when the template's previous block is unchanged. Reports whether a job
+// was broadcast.
+func (m *ManagerV2) refreshJob(ctx context.Context, force, onlyIfNewBlock bool) (bool, error) {
 	// Use NodeManager to get block template (with automatic failover)
 	template, err := m.nodeManager.GetBlockTemplate(ctx)
 	if err != nil {
@@ -176,7 +192,7 @@ func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
 			}
 		}
 
-		return fmt.Errorf("RPC failure (consecutive: %d): %w", failures, err)
+		return false, fmt.Errorf("RPC failure (consecutive: %d): %w", failures, err)
 	}
 
 	// FIX JOB-H1: RPC success — reset failure tracking (mirrors V1 lines 477-489)
@@ -229,7 +245,7 @@ func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
 				)
 			}
 		}
-		return fmt.Errorf("stale template: age %v exceeds maximum %v", now.Sub(templateTime), m.maxTemplateAge)
+		return false, fmt.Errorf("stale template: age %v exceeds maximum %v", now.Sub(templateTime), m.maxTemplateAge)
 	}
 
 	// Template is fresh — reset staleness tracking
@@ -260,6 +276,9 @@ func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
 	prevHeight := m.lastHeight
 	m.stateMu.RUnlock()
 	cleanJobs := isNewBlock || force
+	if onlyIfNewBlock && !isNewBlock {
+		return false, nil
+	}
 
 	// FIX JOB-H1: Height monotonicity + reorg detection (mirrors V1 lines 565-581)
 	if prevHeight > 0 && template.Height < prevHeight {
@@ -280,7 +299,7 @@ func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
 	// CRITICAL FIX: Pass context for proper shutdown propagation
 	job, err := m.generateJob(ctx, template, cleanJobs)
 	if err != nil {
-		return fmt.Errorf("generate job: %w", err)
+		return false, fmt.Errorf("generate job: %w", err)
 	}
 
 	// Update state (thread-safe write)
@@ -316,7 +335,7 @@ func (m *ManagerV2) RefreshJob(ctx context.Context, force bool) error {
 		"primaryNode", primaryID,
 	)
 
-	return nil
+	return true, nil
 }
 
 // Start starts the V2 job manager with NodeManager integration.
@@ -467,76 +486,8 @@ func (m *ManagerV2) OnBlockNotification(ctx context.Context) {
 }
 
 // OnBlockNotificationWithHash handles ZMQ block notifications using NodeManager.
-// This is a copy of Manager.OnBlockNotificationWithHash but calls m.RefreshJob
-// which resolves to ManagerV2.RefreshJob (uses NodeManager with failover).
+// Same handling as Manager's, with this manager's refresh, which resolves to the
+// NodeManager-backed template fetch (with failover).
 func (m *ManagerV2) OnBlockNotificationWithHash(ctx context.Context, newTipHash string) {
-	// IMMEDIATE HEIGHT EPOCH ADVANCE: Cancel any in-flight block submission contexts.
-	m.stateMu.RLock()
-	currentHeight := m.lastHeight
-	m.stateMu.RUnlock()
-
-	if newTipHash != "" {
-		m.heightEpoch.AdvanceWithTip(currentHeight+1, newTipHash)
-	} else {
-		m.heightEpoch.Advance(currentHeight + 1)
-	}
-
-	// NOTE: We intentionally do NOT invalidate existing jobs here. The old
-	// "immediate invalidation" approach marked all jobs stale the moment ZMQ
-	// fired, before a replacement template was fetched. When GetBlockTemplate
-	// was slow (1-3+ seconds on a busy daemon), every share submitted during
-	// that window was rejected as stale — causing massive stale-share bursts
-	// on multi-port miners and orphaned blocks when block-level solutions
-	// were discarded. Instead, we let RefreshJob → BroadcastJob(cleanJobs:true)
-	// handle invalidation naturally once the new template is ready. This
-	// matches how direct (single-coin) miners already work: their s.jobs map
-	// isn't cleared until BroadcastJob runs. The narrow risk — a share solving
-	// a block against the now-outdated prevBlockHash — is handled by the daemon
-	// rejecting the submission, which is far less costly than rejecting ALL
-	// shares for the entire GBT fetch duration.
-
-	// Capture current block hash to detect when template actually updates
-	m.stateMu.RLock()
-	oldHash := m.lastBlockHash
-	m.stateMu.RUnlock()
-
-	// Retry up to 20 times with exponential backoff waiting for fresh template
-	for i := 0; i < 20; i++ {
-		// m.RefreshJob resolves to ManagerV2.RefreshJob (uses NodeManager)
-		if err := m.RefreshJob(ctx, i == 0); err != nil {
-			m.logger.Errorw("Failed to refresh job", "error", err, "attempt", i+1)
-		}
-
-		m.stateMu.RLock()
-		newHash := m.lastBlockHash
-		m.stateMu.RUnlock()
-
-		if newHash != oldHash {
-			m.logger.Infow("Template updated after ZMQ", "attempts", i+1)
-
-			if newTipHash != "" && newHash != newTipHash {
-				m.logger.Warnw("V48: Cross-RPC inconsistency — ZMQ tip hash differs from template prevBlockHash",
-					"zmqTipHash", newTipHash,
-					"templatePrevHash", newHash,
-				)
-			}
-			return
-		}
-
-		var delay time.Duration
-		if i < 10 {
-			delay = 25 * time.Millisecond
-		} else {
-			delay = 150 * time.Millisecond
-		}
-		time.Sleep(delay)
-	}
-
-	// Template never updated — force refresh anyway to prevent miner starvation
-	m.logger.Warnw("Template unchanged after ZMQ - node slow")
-	if err := m.RefreshJob(ctx, true); err != nil {
-		m.logger.Errorw("Failed to force job refresh after slow template", "error", err)
-	} else {
-		m.logger.Infow("Forced job refresh despite unchanged template - miner won't starve")
-	}
+	m.handleBlockNotification(ctx, newTipHash, m.refreshIfNewBlock)
 }

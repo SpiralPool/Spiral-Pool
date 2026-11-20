@@ -4660,7 +4660,9 @@ func (p *Pool) pollingLoop() {
 				// Trigger job refresh with 10 second timeout - faster is better for block notifications
 				// CRITICAL: 30 seconds was too long and could cause stale work
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				p.jobManager.OnBlockNotification(ctx)
+				// Pass the hash: if ZMQ or a rebroadcast already moved the template
+				// to this block, the handler sees it and sends nothing.
+				p.jobManager.OnBlockNotificationWithHash(ctx, bcInfo.BestBlockHash)
 				cancel()
 			}
 

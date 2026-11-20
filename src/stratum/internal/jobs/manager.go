@@ -99,6 +99,11 @@ type Manager struct {
 	lastBlockHash string
 	lastHeight    uint64
 
+	// New-block notification handling: one at a time, latest pending tip queued
+	// (see handleBlockNotification).
+	blockNotifyMu   sync.Mutex
+	pendingBlockTip atomic.Pointer[string]
+
 	// RPC health tracking (for dependency failure detection)
 	rpcFailures       atomic.Int32 // Consecutive RPC failures
 	lastSuccessfulRPC atomic.Int64 // Unix timestamp of last successful RPC
@@ -491,6 +496,22 @@ func (m *Manager) refreshLoop(ctx context.Context) {
 // RefreshJob fetches a new block template and generates a job.
 // Includes RPC health tracking and template freshness validation.
 func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
+	_, err := m.refreshJob(ctx, force, false)
+	return err
+}
+
+// refreshIfNewBlock fetches a template and broadcasts a job only when the
+// template builds on a different block than the current job. Used while
+// waiting for the daemon to catch up after a block notification: an
+// unchanged template must not go out as yet another job.
+func (m *Manager) refreshIfNewBlock(ctx context.Context) (bool, error) {
+	return m.refreshJob(ctx, false, true)
+}
+
+// refreshJob is RefreshJob; with onlyIfNewBlock it stops before generating a
+// job when the template's previous block is unchanged. Reports whether a job
+// was broadcast.
+func (m *Manager) refreshJob(ctx context.Context, force, onlyIfNewBlock bool) (bool, error) {
 	template, err := m.daemonClient.GetBlockTemplate(ctx)
 	if err != nil {
 		// Track RPC failure
@@ -516,7 +537,7 @@ func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
 			}
 		}
 
-		return fmt.Errorf("RPC failure (consecutive: %d): %w", failures, err)
+		return false, fmt.Errorf("RPC failure (consecutive: %d): %w", failures, err)
 	}
 
 	// RPC success - reset failure tracking
@@ -574,7 +595,7 @@ func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
 				)
 			}
 		}
-		return fmt.Errorf("stale template: age %v exceeds maximum %v", now.Sub(templateTime), m.maxTemplateAge)
+		return false, fmt.Errorf("stale template: age %v exceeds maximum %v", now.Sub(templateTime), m.maxTemplateAge)
 	}
 
 	// Template is fresh - reset staleness tracking
@@ -606,6 +627,9 @@ func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
 	prevHeight := m.lastHeight
 	m.stateMu.RUnlock()
 	cleanJobs := isNewBlock || force
+	if onlyIfNewBlock && !isNewBlock {
+		return false, nil
+	}
 
 	// HEIGHT MONOTONICITY CHECK: Detect chain reorganizations.
 	// On 15s blockchains (DGB), reorgs happen more frequently than on BTC (600s).
@@ -629,7 +653,7 @@ func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
 	// CRITICAL FIX: Pass context for proper shutdown propagation in aux block refresh
 	job, err := m.generateJob(ctx, template, cleanJobs)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Update state (thread-safe write)
@@ -661,7 +685,7 @@ func (m *Manager) RefreshJob(ctx context.Context, force bool) error {
 		"templateAge", now.Sub(templateTime).Round(time.Second),
 	)
 
-	return nil
+	return true, nil
 }
 
 // IsCritical returns true if RPC health is in critical failure state.
@@ -1749,81 +1773,105 @@ func (m *Manager) OnBlockNotification(ctx context.Context) {
 // OnBlockNotificationWithHash handles a new block notification with the new tip hash.
 // FIX D-6: When ZMQ provides the block hash, use AdvanceWithTip for immediate same-height detection.
 func (m *Manager) OnBlockNotificationWithHash(ctx context.Context, newTipHash string) {
-	// IMMEDIATE HEIGHT EPOCH ADVANCE: Cancel any in-flight block submission contexts.
+	m.handleBlockNotification(ctx, newTipHash, m.refreshIfNewBlock)
+}
+
+// handleBlockNotification is the new-block handler shared by Manager and
+// ManagerV2 (which passes its own NodeManager-backed refresh).
+//
+// One notification is handled at a time. ZMQ and the RPC poller can both report
+// the same block (the poller keeps running until ZMQ is promoted), and each used
+// to run its own wait loop. Since every poll in that loop broadcast a job, two
+// loops sent miners ~40 identical jobs in a few seconds, and each finished with
+// a "forced" clean job on the unchanged template, which threw away valid
+// in-flight shares as stale. A notification that arrives while another is being
+// handled is queued (only the latest is kept) and handled right after.
+func (m *Manager) handleBlockNotification(ctx context.Context, newTipHash string,
+	refreshIfNewBlock func(context.Context) (bool, error)) {
+	tip := newTipHash
+	m.pendingBlockTip.Store(&tip)
+	for {
+		if !m.blockNotifyMu.TryLock() {
+			return // the running handler picks up the pending notification
+		}
+		for ctx.Err() == nil {
+			p := m.pendingBlockTip.Swap(nil)
+			if p == nil {
+				break
+			}
+			m.waitForNewTemplate(ctx, *p, refreshIfNewBlock)
+		}
+		m.blockNotifyMu.Unlock()
+		// A notification queued between the last Swap and Unlock found the lock
+		// still held and returned; take it now rather than lose it.
+		if ctx.Err() != nil || m.pendingBlockTip.Load() == nil {
+			return
+		}
+	}
+}
+
+// waitForNewTemplate polls the daemon until its template builds on a new block,
+// then broadcasts that job (clean). Polls that return the unchanged template
+// send nothing — miners keep the work they have. If the daemon never catches
+// up, miners also keep their current work; the next notification, poll or
+// rebroadcast delivers the new block.
+func (m *Manager) waitForNewTemplate(ctx context.Context, newTipHash string,
+	refreshIfNewBlock func(context.Context) (bool, error)) {
 	m.stateMu.RLock()
-	currentHeight := m.lastHeight
+	oldHash := m.lastBlockHash
+	oldHeight := m.lastHeight
 	m.stateMu.RUnlock()
 
+	// Already building on the announced block: another refresh (RPC poller,
+	// rebroadcast tick, the other notification source) got there first.
+	if sameBlockHash(oldHash, newTipHash) {
+		m.logger.Debugw("Block notification: already on the announced tip", "tipHash", newTipHash)
+		return
+	}
+	// A newer notification is already queued, so this block is superseded
+	// (blocks are announced in chain order). Handle that one instead.
+	if m.pendingBlockTip.Load() != nil {
+		m.logger.Debugw("Block notification: superseded by a newer one", "tipHash", newTipHash)
+		return
+	}
+
+	// IMMEDIATE HEIGHT EPOCH ADVANCE: Cancel any in-flight block submission contexts.
 	// FIX D-6: If we have the new tip hash from ZMQ, use AdvanceWithTip for
 	// immediate same-height reorg detection. Otherwise fall back to legacy Advance.
 	if newTipHash != "" {
-		// ZMQ provided the hash - use it for same-height reorg detection
-		m.heightEpoch.AdvanceWithTip(currentHeight+1, newTipHash)
+		m.heightEpoch.AdvanceWithTip(oldHeight+1, newTipHash)
 	} else {
-		// Legacy path - optimistically advance height only
-		m.heightEpoch.Advance(currentHeight + 1)
+		m.heightEpoch.Advance(oldHeight + 1)
 	}
 
 	// NOTE: We intentionally do NOT invalidate existing jobs here. The old
 	// "immediate invalidation" approach marked all jobs stale the moment ZMQ
 	// fired, before a replacement template was fetched. When GetBlockTemplate
 	// was slow (1-3+ seconds on a busy daemon), every share submitted during
-	// that window was rejected as stale — causing massive stale-share bursts
-	// on multi-port miners and orphaned blocks when block-level solutions
-	// were discarded. Instead, we let RefreshJob → BroadcastJob(cleanJobs:true)
-	// handle invalidation naturally once the new template is ready. This
-	// matches how direct (single-coin) miners already work: their s.jobs map
-	// isn't cleared until BroadcastJob runs. The narrow risk — a share solving
-	// a block against the now-outdated prevBlockHash — is handled by the daemon
-	// rejecting the submission, which is far less costly than rejecting ALL
-	// shares for the entire GBT fetch duration.
+	// that window was rejected as stale. The clean job broadcast once the new
+	// template is ready handles invalidation.
 
-	// Capture current block hash to detect when template actually updates
-	m.stateMu.RLock()
-	oldHash := m.lastBlockHash
-	oldHeight := m.lastHeight
-	m.stateMu.RUnlock()
-
-	// Retry up to 20 times with exponential backoff waiting for fresh template
-	// Fast retries initially (50ms) for quick response, slower later (300ms) to reduce
-	// daemon load during high-activity periods on fast-block coins like DGB
+	// Poll up to 20 times: 25ms apart for the first 10 (fast-block coins like
+	// DGB), then 150ms to go easy on a struggling daemon (~1.75s in total).
 	for i := 0; i < 20; i++ {
-		// Only force cleanJobs on the first attempt. Subsequent retries poll for the
-		// updated template without burning intermediate job IDs.
-		if err := m.RefreshJob(ctx, i == 0); err != nil {
+		broadcast, err := refreshIfNewBlock(ctx)
+		if err != nil {
 			m.logger.Errorw("Failed to refresh job", "error", err, "attempt", i+1)
 		}
 
-		// Check if template actually updated (new prevBlockHash)
 		m.stateMu.RLock()
 		newHash := m.lastBlockHash
 		newHeight := m.lastHeight
 		m.stateMu.RUnlock()
 
-		if newHash != oldHash {
+		if broadcast {
 			m.logger.Infow("Template updated after ZMQ", "attempts", i+1)
 
 			// V48 FIX: Cross-RPC consistency check, on HEIGHT rather than hash.
-			//
-			// The original form compared the ZMQ tip hash against the template's
-			// previousBlockHash and warned on any difference. That is a false
-			// positive on a fast chain: DigiByte produces a block every ~15s
-			// across five algorithms, so the tip routinely advances between the
-			// ZMQ notification and the getblocktemplate response. The template is
-			// then built on a *newer* block than the one ZMQ announced — healthy,
-			// but reported as split-brain. In the field this fired dozens of times
-			// per hour and buried the "Template unchanged after ZMQ" warning that
-			// actually matters.
-			//
-			// Note the hashes are not comparable at a glance either: a DGB block's
-			// identity hash is SHA256d regardless of the algorithm that mined it,
-			// so only the ~1-in-5 SHA256d blocks carry the leading zeros an
-			// operator expects to see.
-			//
+			// On a fast chain the tip routinely advances between the notification
+			// and the getblocktemplate response, so a hash mismatch is normal.
 			// What genuinely indicates desync is the template failing to move
-			// forward: the chain says there is a new block, yet the height we are
-			// building on did not advance. That covers both a stuck/split RPC
-			// backend and a same-height reorg.
+			// forward: a new block, yet the height we build on did not advance.
 			if newHeight <= oldHeight {
 				m.logger.Warnw("⚠️ V48: Template did not advance after new-block notification",
 					"oldHeight", oldHeight,
@@ -1833,34 +1881,62 @@ func (m *Manager) OnBlockNotificationWithHash(ctx context.Context, newTipHash st
 					"note", "same-height reorg, or daemon proxy split-brain / ZMQ-RPC desync — verify daemon topology",
 				)
 			}
-
 			return
 		}
 
-		// Exponential backoff: very fast initially, slower when daemon is struggling
-		// Attempts 1-10: 25ms (250ms total) - aggressive polling for fast-block coins
-		// Attempts 11-20: 150ms (1500ms total) - back off for overloaded daemon
-		var delay time.Duration
-		if i < 10 {
-			delay = 25 * time.Millisecond
-		} else {
+		// Another refresh moved to the new block while we polled; its job is out.
+		if newHash != oldHash {
+			m.logger.Debugw("Block notification: template already updated by another refresh", "attempts", i+1)
+			return
+		}
+		// A newer block was announced while we waited. Seen in the field on DGB:
+		// two blocks 4 ms apart, the RPC poller moved the template straight to
+		// the second, and the wait for the first (already behind the template)
+		// polled for 1.75 s and warned "node slow" for nothing.
+		if m.pendingBlockTip.Load() != nil {
+			m.logger.Debugw("Block notification: superseded by a newer one", "attempts", i+1)
+			return
+		}
+
+		delay := 25 * time.Millisecond
+		if i >= 10 {
 			delay = 150 * time.Millisecond
 		}
-		time.Sleep(delay)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
 	}
 
-	// Template never updated - node is slow or stuck
-	m.logger.Warnw("Template unchanged after ZMQ - node slow")
+	// The daemon never showed the new block. Miners keep their current job: the
+	// old "forced" clean job here carried the same template and only discarded
+	// valid in-flight shares as stale.
+	m.logger.Warnw("Template unchanged after ZMQ - node slow; miners keep current work until the next refresh",
+		"zmqTipHash", newTipHash,
+		"templatePrevHash", oldHash,
+	)
+}
 
-	// V49 FIX: Force a job refresh anyway to prevent miner starvation.
-	// BCH and some other daemons can be slow to update templates after ZMQ.
-	// A stale job is better than no job - the miner will keep hashing and
-	// submit shares once the template eventually updates on the next poll.
-	if err := m.RefreshJob(ctx, true); err != nil {
-		m.logger.Errorw("Failed to force job refresh after slow template", "error", err)
-	} else {
-		m.logger.Infow("Forced job refresh despite unchanged template - miner won't starve")
+// sameBlockHash reports whether two block hashes are the same block, accepting
+// either byte order (ZMQ and RPC have differed between daemons).
+func sameBlockHash(a, b string) bool {
+	if a == "" || b == "" {
+		return false
 	}
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	n := len(a)
+	if n != len(b) || n%2 != 0 {
+		return false
+	}
+	for i := 0; i < n; i += 2 {
+		if !strings.EqualFold(a[i:i+2], b[n-i-2:n-i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // encodeHeight encodes a block height for the coinbase scriptsig (BIP34).
