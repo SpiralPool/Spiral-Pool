@@ -14,10 +14,6 @@
 </p>
 
 <p align="center">
-  <strong>Written By: Fibonacci#1618</strong>
-</p>
-
-<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/SpiralPool/Spiral-Pool/releases"><img src="https://img.shields.io/github/v/tag/SpiralPool/Spiral-Pool?style=flat-square&label=release&color=brightgreen&v=2" alt="Release"></a>
   <a href="https://github.com/SpiralPool/Spiral-Pool/stargazers"><img src="https://img.shields.io/github/stars/SpiralPool/Spiral-Pool?style=flat-square&color=yellow&v=2" alt="Stars"></a>
@@ -265,7 +261,6 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 
 ## Community
 
-- [@SpiralMiner](https://x.com/SpiralMiner) &mdash; Release announcements and project updates
 - [GitHub Issues](https://github.com/SpiralPool/Spiral-Pool/issues) &mdash; Bug reports and feature requests
 - [GitHub Discussions](https://github.com/SpiralPool/Spiral-Pool/discussions) &mdash; Questions and community discussion
 
