@@ -926,6 +926,12 @@ generate_v2_config() {
     fi
 
     if [ "${ENABLE_DGB_SCRYPT:-false}" = "true" ]; then
+        local dgbs_merge=""
+        # v3.1.0: DGB-SCRYPT parents the Scrypt aux chains when LTC is not running
+        # (one parent per aux chain — LTC keeps them when both are enabled).
+        if [ "${ENABLE_LTC:-false}" != "true" ] && [ -n "$scrypt_merge_yaml" ]; then
+            dgbs_merge="$scrypt_merge_yaml"
+        fi
         local dgbs_v2_line=""
         [ "$v2_enabled" = "true" ] && dgbs_v2_line="
       port_v2: 3337"
@@ -961,7 +967,7 @@ generate_v2_config() {
       enabled: true
       interval: 600s
       minimum_payment: 0.01
-      scheme: \"SOLO\""
+      scheme: \"SOLO\"${dgbs_merge}"
         enabled_coins=$((enabled_coins + 1))
     fi
 

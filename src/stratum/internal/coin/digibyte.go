@@ -599,3 +599,39 @@ func convertBits(data []int, fromBits, toBits int, pad bool) ([]byte, error) {
 
 	return result, nil
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MERGE MINING PARENT (v3.1.0)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// DigiByte(SHA-256d) can parent SHA-256d AuxPoW chains (e.g. Namecoin), and
+// DigiByte-Scrypt (digibyte_scrypt.go) can parent Scrypt chains (Dogecoin,
+// PepeCoin). The aux chain validates the parent header's PoW hash against its
+// own target, the fabe6d6d commitment in the parent coinbase, and that the
+// parent's version>>16 is not its own chain ID — DGB's multi-algo version
+// (0x2000xxxx) never collides with DOGE (98), PEP (63) or NMC (1). DGB's own
+// consensus only constrains the coinbase scriptSig to BIP34 height + ≤100 bytes,
+// which the shared commitment builder respects.
+//
+// Before v3.1.0 DigiByteCoin did not implement ParentChainCoin, so auxpow.NewManager
+// rejected it and a "DGB + NMC" pool never mined at all.
+
+const (
+	DigiByteAuxMarker      = "\xfa\xbe\x6d\x6d"
+	DigiByteMaxAuxDataSize = 44
+)
+
+// CanBeParentFor returns true for SHA-256d aux chains.
+func (c *DigiByteCoin) CanBeParentFor(auxAlgorithm string) bool {
+	return auxAlgorithm == "sha256d"
+}
+
+// CoinbaseAuxMarker returns the standard merge-mining marker 0xfabe6d6d.
+func (c *DigiByteCoin) CoinbaseAuxMarker() []byte {
+	return []byte(DigiByteAuxMarker)
+}
+
+// MaxCoinbaseAuxSize returns the aux commitment size that fits the 100-byte scriptSig.
+func (c *DigiByteCoin) MaxCoinbaseAuxSize() int {
+	return DigiByteMaxAuxDataSize
+}

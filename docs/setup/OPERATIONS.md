@@ -506,8 +506,12 @@ spiralctl mining merge enable doge,pep   # LTC parent
 | BTC | FBTC | 8228 |
 | BTC | SYS | 16 |
 | BTC | XMY | 90 |
+| DGB | NMC, FBTC, SYS, XMY | as above |
 | LTC | DOGE | 98 |
 | LTC | PEP | 63 |
+| DGB-SCRYPT | DOGE, PEP | as above |
+
+Each aux chain is merge-mined under one parent at a time. If `config.yaml` puts the same aux chain under two parents (the first one in the file keeps it) or pairs chains of different algorithms, stratum switches that entry off at startup and logs `Merge-mining configuration problem — fix config.yaml`; the parent coin keeps mining.
 
 ### Key Service Ports
 
@@ -716,26 +720,36 @@ See [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md) for three-layer payme
 ## 7. Upgrading
 
 ```bash
-cd /spiralpool
-chmod +x upgrade.sh && sudo ./upgrade.sh
+sudo spiralctl upgrade                 # latest release from GitHub (3.1.0+)
+spiralctl upgrade check                # installed vs latest, no changes
+sudo spiralctl upgrade --from <dir>    # from a release copied to this machine (runs <dir>/upgrade.sh --local)
 ```
+
+Or run the script itself, which is what you must do to reach 3.1.0 from 3.0.x (`spiralctl upgrade` is new in 3.1.0):
+
+```bash
+cd <release folder> && sudo ./upgrade.sh --local --full   # from a copied release
+cd /spiralpool && chmod +x upgrade.sh && sudo ./upgrade.sh   # fetch the latest release from GitHub
+```
+
+From 3.1.0 on, the dashboard can upgrade too: **Management → Spiral Pool Upgrade → Upgrade**. It starts `upgrade.sh --auto` as its own systemd job (`spiralpool-upgrade`, log `/var/log/spiralpool/upgrade.log`) and follows it live across the dashboard restart. It refuses on an HA backup node — upgrade the master first.
 
 > **Windows SCP users:** Windows does not preserve Unix execute permissions when transferring files via SCP. The `chmod +x` above is required if upgrade.sh was copied from a Windows machine. Git clone and Linux-to-Linux SCP both preserve execute permissions automatically.
 
-Options: `--check`, `--force`, `--no-backup`, `--local`, `--rollback`, `--auto`, `--update-services`, `--stratum-only`, `--dashboard-only`, `--sentinel-only`, `--skip-start`, `--full`, `--fix-config`
+Interactive runs first offer a read-only dry run (`scripts/linux/upgrade-preflight.sh`): all-pass continues into the upgrade, a FAIL stops it before anything changes. `--preflight` forces it (also with `--auto`), `--no-preflight` skips the question.
+
+Options: `--check`, `--force`, `--no-backup`, `--preflight`, `--no-preflight`, `--local`, `--rollback`, `--auto`, `--update-services`, `--stratum-only`, `--dashboard-only`, `--sentinel-only`, `--skip-start`, `--full`, `--fix-config`
 
 **Preserved:** blockchain data, configs, wallets, database
 **Upgraded:** binaries, dashboard, sentinel, docs
 
-### Automated upgrades
+### Update notifications and automated upgrades
 
-If `auto_update_mode: auto` is set in `config.yaml`, Sentinel handles upgrades automatically:
-- Checks GitHub for new releases every 6 hours (no auth token needed — repo is public)
-- Runs `sudo /spiralpool/upgrade.sh --auto` unattended
-- Suppresses Discord alerts during upgrade (maintenance mode)
-- Sends a completion or failure notification via Discord
+- **Notifications (default).** Sentinel checks GitHub every 6 hours (no token needed — the repo is public). When a newer release appears it sends one notice, then reminders at 48 hours, 72 hours and 1 week after the release while the pool is still not updated.
+- **Unattended upgrades** are done by the update checker, which runs from the pool user's cron outside systemd: `spiralctl update configure` / `spiralctl update enable`. It runs the root-owned `/spiralpool/scripts/upgrade.sh --force --auto` and only upgrades the HA master (or a standalone node).
+- Sentinel's own `auto_update_mode: auto` starts upgrades through the same launcher as the dashboard when its service is allowed to; the shipped Sentinel unit forbids privilege escalation (`NoNewPrivileges=yes`), so in that case it falls back to notify mode and logs why.
 
-The Windows execute-permission issue does not affect automated upgrades — Sentinel calls the installed copy at `/spiralpool/upgrade.sh`, which has its permissions set by the installer.
+Since 3.1.0, every script the pool user may run through sudo lives in the root-owned `/spiralpool/scripts/` — see [SECURITY_MODEL.md](../architecture/SECURITY_MODEL.md#privileged-scripts).
 
 For a detailed breakdown of the upgrade flow, see [How upgrade.sh Works](#how-upgradesh-works) in the Installation section.
 
@@ -878,4 +892,4 @@ Consult legal counsel in your jurisdiction. **The Spiral Pool authors provide no
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.3*
+*Spiral Pool — Spiral Covenant 3.1.0*

@@ -191,20 +191,22 @@ def validate_manifest(path: Path, verbose: bool = False) -> tuple[bool, list[str
 
         # Check merge-mining algorithm boundaries
         mm = coin.get("merge_mining", {})
-        parent_chain = mm.get("parent_chain")
-        if parent_chain:
-            # Find parent coin
-            parent_coin = None
-            for pc in coins:
-                if pc.get("symbol") == parent_chain:
-                    parent_coin = pc
-                    break
-
+        # parent_chain (single, legacy) plus parent_chains (every allowed parent, v3.1.0)
+        parents = []
+        if mm.get("parent_chain"):
+            parents.append(mm["parent_chain"])
+        for pcs in mm.get("parent_chains") or []:
+            if pcs not in parents:
+                parents.append(pcs)
+        for parent_chain in parents:
+            parent_coin = next((pc for pc in coins if pc.get("symbol") == parent_chain), None)
             if not parent_coin:
-                errors.append(f"{prefix} ({symbol}): parent_chain '{parent_chain}' not found in manifest")
+                errors.append(f"{prefix} ({symbol}): parent chain '{parent_chain}' not found in manifest")
             elif parent_coin.get("algorithm") != algo:
                 errors.append(f"{prefix} ({symbol}): algorithm mismatch with parent - "
                             f"{symbol} is {algo}, parent {parent_chain} is {parent_coin.get('algorithm')}")
+            elif not (parent_coin.get("merge_mining") or {}).get("can_be_parent"):
+                errors.append(f"{prefix} ({symbol}): parent chain '{parent_chain}' is not marked can_be_parent")
 
     # Summary
     if verbose:

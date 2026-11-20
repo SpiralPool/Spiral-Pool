@@ -271,7 +271,7 @@ get_current_version() {
     if [[ -f "${VERSION_FILE}" ]]; then
         cat "${VERSION_FILE}" | tr -d '[:space:]'
     else
-        echo "3.0.3"
+        echo "3.1.0"
     fi
 }
 
@@ -413,7 +413,7 @@ notify_user() {
     local current="$1"
     local latest="$2"
 
-    local message="A new version of Spiral Pool is available!\n\nCurrent: v${current}\nLatest: v${latest}\n\nTo upgrade, run:\nsudo /spiralpool/upgrade.sh"
+    local message="A new version of Spiral Pool is available!\n\nCurrent: v${current}\nLatest: v${latest}\n\nTo upgrade, run:\nsudo spiralctl upgrade"
 
     # Console notification (for manual runs)
     echo ""
@@ -424,7 +424,7 @@ notify_user() {
     echo -e "  Latest version:  ${GREEN}${latest}${NC}"
     echo ""
     echo -e "  To upgrade, run:"
-    echo -e "    ${GREEN}sudo /spiralpool/upgrade.sh${NC}"
+    echo -e "    ${GREEN}sudo spiralctl upgrade${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -433,10 +433,10 @@ notify_user() {
     # richer embed formatting, so we skip here to avoid duplicate alerts.
     if ! pgrep -f "SpiralSentinel" > /dev/null 2>&1; then
         local discord_msg
-        printf -v discord_msg "Current: v%s\nLatest: v%s\n\nRun: sudo /spiralpool/upgrade.sh" "${current}" "${latest}"
+        printf -v discord_msg "Current: v%s\nLatest: v%s\n\nRun: sudo spiralctl upgrade" "${current}" "${latest}"
         send_discord_notification "$discord_msg"
         local tg_msg
-        printf -v tg_msg "<b>Spiral Pool Update Available</b>\n\nCurrent: v%s\nLatest: v%s\n\nRun: <code>sudo /spiralpool/upgrade.sh</code>" "${current}" "${latest}"
+        printf -v tg_msg "<b>Spiral Pool Update Available</b>\n\nCurrent: v%s\nLatest: v%s\n\nRun: <code>sudo spiralctl upgrade</code>" "${current}" "${latest}"
         send_telegram_notification "$tg_msg"
     else
         log "INFO" "Sentinel is running - skipping Discord/Telegram (Sentinel sends rich embeds)"
@@ -604,7 +604,7 @@ perform_auto_update() {
             rm -f "$cancel_file"
 
             local cancel_msg
-            printf -v cancel_msg "Auto-update CANCELLED by user.\n\nTo upgrade manually: sudo %s/upgrade.sh" "${INSTALL_DIR}"
+            printf -v cancel_msg "Auto-update CANCELLED by user.\n\nTo upgrade manually: sudo spiralctl upgrade"
             send_discord_notification "$cancel_msg"
             local tg_msg
             printf -v tg_msg "<b>Auto-Update Cancelled</b>\n\n%s" "$cancel_msg"
@@ -646,11 +646,13 @@ perform_auto_update() {
     # sudo required: this script runs as POOL_USER (spiraluser) via cron,
     # but upgrade.sh needs root for package installs and service restarts.
     # Sudoers entry created by install.sh in /etc/sudoers.d/spiralpool-dashboard.
-    if [[ -x "${INSTALL_DIR}/upgrade.sh" ]]; then
+    # Root-owned copy in scripts/ — the only upgrade.sh sudoers allows (v3.1.0).
+    local upgrade_script="${INSTALL_DIR}/scripts/upgrade.sh"
+    if [[ -x "$upgrade_script" ]]; then
         local upgrade_log="${INSTALL_DIR}/logs/auto-upgrade-$(date +%Y%m%d-%H%M%S).log"
 
         # Run upgrade and capture output
-        if sudo "${INSTALL_DIR}/upgrade.sh" --force --auto >> "$upgrade_log" 2>&1; then
+        if sudo -n "$upgrade_script" --force --auto >> "$upgrade_log" 2>&1; then
             local end_time=$(date +%s)
             local duration=$((end_time - start_time))
             local duration_min=$((duration / 60))
@@ -690,7 +692,7 @@ perform_auto_update() {
 
             # Notify about failed update
             local fail_msg
-            printf -v fail_msg "AUTOMATIC UPDATE FAILED!\n\nFrom: v%s to v%s\n\nPlease check the server and run manually:\nsudo %s/upgrade.sh\n\nLog: %s" "${current}" "${latest}" "${INSTALL_DIR}" "${upgrade_log}"
+            printf -v fail_msg "AUTOMATIC UPDATE FAILED!\n\nFrom: v%s to v%s\n\nPlease check the server and run manually:\nsudo spiralctl upgrade\n\nLog: %s" "${current}" "${latest}" "${upgrade_log}"
             send_discord_notification "$fail_msg"
             local tg_msg
             printf -v tg_msg "<b>Spiral Pool Auto-Update FAILED</b>\n\n%s" "$fail_msg"
@@ -699,7 +701,7 @@ perform_auto_update() {
             return 1
         fi
     else
-        log "ERROR" "Upgrade script not found or not executable at ${INSTALL_DIR}/upgrade.sh"
+        log "ERROR" "Upgrade script not found or not executable at $upgrade_script (run sudo spiralctl upgrade once to deploy it)"
 
         clear_alert_suppression
 
@@ -723,7 +725,7 @@ check_for_updates() {
     if [[ -z "$latest_version" ]]; then
         log "WARN" "Could not fetch latest version from GitHub"
         echo -e "${YELLOW}Could not reach GitHub to check for updates.${NC}"
-        echo "Check your internet connection, or upgrade manually with: sudo /spiralpool/upgrade.sh --local"
+        echo "Check your internet connection, or upgrade manually with: sudo spiralctl upgrade --from <release dir>"
         return 0
     fi
 

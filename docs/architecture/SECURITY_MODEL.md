@@ -120,10 +120,16 @@ Three-layer protection against double-payment in HA configurations:
 
 Source: `internal/payments/processor.go`, `internal/database/postgres.go`
 
+## Privileged Scripts
+
+The pool user runs the dashboard, Sentinel and stratum, so it is treated as untrusted with respect to root. Every command it may run through sudo (`/etc/sudoers.d/spiralpool-dashboard`) is either a fixed `systemctl`/`journalctl` invocation or a root-owned script in **`/spiralpool/scripts/`, which is owned by root** — `upgrade.sh`, `pool-upgrade-launch.sh`, `daemon-reindex.sh`, `apt-noninteractive.sh`, `enable-https.sh`, `pool-mode.sh` and friends. The same holds for the HA SSH user's one sudo right, `ha-key-exchange.sh` on an HA primary. Since v3.1.0 **every** file in `/spiralpool/scripts/` is root-owned and not group/world-writable — including scripts the pool user runs itself (`update-checker.sh`, `maintenance-mode.sh`, `ha-role-watcher.sh`) and scripts admins run as root (`coin-upgrade.sh`, `blockchain-export.sh`), which earlier versions gave to the pool user. `/spiralpool` itself and `/spiralpool/bin` belong to the pool user, so a root-owned file there could still be renamed away and replaced; before v3.1.0 sudoers pointed at `/spiralpool/upgrade.sh` and `/spiralpool/bin/daemon-reindex.sh`, which made any compromise of a pool service a route to root. `upgrade.sh` migrates existing sudoers files (validated with `visudo`).
+
+`pool-upgrade-launch.sh` takes no arguments, refuses to run unless it and the `upgrade.sh` beside it are root-owned and not group/world-writable, and logs to the root-owned `/var/log/spiralpool/` (a log in a pool-user-owned directory could be a symlink root writes through).
+
 ## Metrics Security
 
 Prometheus metrics endpoint (`/metrics` on port 9100) is protected by `SPIRAL_METRICS_TOKEN` when configured. Without a token, the endpoint is accessible without authentication.
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.3*
+*Spiral Pool — Spiral Covenant 3.1.0*

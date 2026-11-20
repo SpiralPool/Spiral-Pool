@@ -1,0 +1,45 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none';">
+    <meta name="theme-color" content="#00d4ff">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <title>Pool Topology - Spiral Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cyberpunk.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/explorer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/topology.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="explorer-page">
+    <div class="explorer-container topology-container">
+        <header class="explorer-header">
+            <a href="/" class="explorer-home">&larr; Dashboard</a>
+            <h1>Pool Topology</h1>
+            <p class="explorer-lede">How this pool is wired, live: miners on the left connect to this server, which works each coin from its nodes in failover order. Backup nodes are dashed; a red node is unreachable.</p>
+        </header>
+
+        <p id="topology-status" class="topology-status" role="status" aria-live="polite">Loading…</p>
+
+        <article class="explorer-card">
+            <div class="topology-toolbar">
+                <span id="topology-summary" class="topology-summary"></span>
+                <button id="topology-refresh" type="button" class="topology-button">Refresh</button>
+            </div>
+            <div class="topology-scroll">
+                <svg id="topology-svg" class="topology-svg" role="img" aria-label="Pool topology diagram"></svg>
+            </div>
+            <ul class="topology-legend">
+                <li><span class="topology-dot ok"></span> online / reachable</li>
+                <li><span class="topology-dot warn"></span> syncing / degraded</li>
+                <li><span class="topology-dot bad"></span> offline / unreachable</li>
+                <li><span class="topology-line-sample dashed"></span> backup (failover) node</li>
+            </ul>
+        </article>
+    </div>
+    <script src="{{ url_for('static', filename='js/topology.js') }}"></script>
+</body>
+</html>

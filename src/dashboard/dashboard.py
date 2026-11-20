@@ -19,7 +19,7 @@ ASIC Miner API Protocol References (protocol documentation, not derived code):
 See LICENSE file for full BSD-3-Clause license terms.
 """
 
-__version__ = "3.0.3"
+__version__ = "3.1.0"
 
 import os
 import json
@@ -59,6 +59,17 @@ try:
 except ImportError:  # running from the source tree
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sentinel"))
     import miner_automation
+
+try:
+    import miner_control  # control drivers shared with Sentinel (bulk miner actions)
+except ImportError:
+    _sentinel_src = str(Path(__file__).resolve().parent.parent / "sentinel")
+    if _sentinel_src not in sys.path:
+        sys.path.insert(0, _sentinel_src)
+    try:
+        import miner_control
+    except ImportError:  # older install without miner_control.py next to the dashboard
+        miner_control = None
 
 try:
     import bcrypt
@@ -2967,7 +2978,7 @@ MULTI_COIN_NODES = {
         "service_name": "namecoind",
         "stratum_ports": {"v1": 14335, "v2": 14336, "tls": 14337},
         "block_time": 600,  # 10 minutes (same as Bitcoin)
-        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "chain_id": 1},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "parent_chains": ["BTC", "DGB"], "chain_id": 1},
         "enabled": False
     },
     # Syscoin - UTXO platform with AuxPoW (merge-mined with Bitcoin)
@@ -2985,7 +2996,7 @@ MULTI_COIN_NODES = {
         "service_name": "syscoind",
         "stratum_ports": {"v1": 15335, "v2": 15336, "tls": 15337},
         "block_time": 60,  # 1 minute
-        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "chain_id": 16, "merge_only": True},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "parent_chains": ["BTC", "DGB"], "chain_id": 16, "merge_only": True},
         "enabled": False
     },
     # Myriad - Multi-algo coin with SHA256d AuxPoW (merge-mined with Bitcoin)
@@ -3002,7 +3013,7 @@ MULTI_COIN_NODES = {
         "service_name": "myriadcoind",
         "stratum_ports": {"v1": 17335, "v2": 17336, "tls": 17337},
         "block_time": 60,  # 1 minute
-        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "chain_id": 90},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "parent_chains": ["BTC", "DGB"], "chain_id": 90},
         "enabled": False
     },
     # Fractal Bitcoin - Bitcoin scaling solution with AuxPoW (merge-mined with Bitcoin)
@@ -3020,7 +3031,7 @@ MULTI_COIN_NODES = {
         "service_name": "fractald",
         "stratum_ports": {"v1": 18335, "v2": 18336, "tls": 18337},
         "block_time": 30,  # 30 seconds (NOT 600 like Bitcoin!)
-        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "chain_id": 8228},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "BTC", "parent_chains": ["BTC", "DGB"], "chain_id": 8228},
         "enabled": False
     },
     # eCash (Bitcoin ABC) - SHA-256d, CashAddr addressing
@@ -3071,7 +3082,7 @@ MULTI_COIN_NODES = {
         "service_name": "digibyted",
         "stratum_ports": {"v1": 3333, "v2": 3334, "tls": 3335},
         "block_time": 15,  # seconds
-        "merge_mining": None,  # Solo only
+        "merge_mining": {"role": "parent", "aux_chains": ["NMC", "SYS", "XMY", "FBTC"]},  # v3.1.0: merge-mining parent
         "enabled": False  # No default - must be explicitly configured
     },
     # DigiByte Scrypt - uses same blockchain/node as DGB but different mining algorithm
@@ -3088,7 +3099,7 @@ MULTI_COIN_NODES = {
         "service_name": "digibyted",  # Same as DGB
         "stratum_ports": {"v1": 3336, "v2": 3337, "tls": 3338},
         "block_time": 15,  # Same as DGB SHA256d
-        "merge_mining": None,  # Solo only
+        "merge_mining": {"role": "parent", "aux_chains": ["DOGE", "PEP"]},  # v3.1.0: merge-mining parent
         "enabled": False
     },
     "DOGE": {
@@ -3104,7 +3115,7 @@ MULTI_COIN_NODES = {
         "service_name": "dogecoind",
         "stratum_ports": {"v1": 8335, "v2": 8337, "tls": 8342},
         "block_time": 60,  # 1 minute
-        "merge_mining": {"role": "auxiliary", "parent_chain": "LTC", "chain_id": 98},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "LTC", "parent_chains": ["LTC", "DGB-SCRYPT"], "chain_id": 98},
         "enabled": False
     },
     "LTC": {
@@ -3137,7 +3148,7 @@ MULTI_COIN_NODES = {
         "service_name": "pepecoind",
         "stratum_ports": {"v1": 10335, "v2": 10336, "tls": 10337},
         "block_time": 60,  # 1 minute
-        "merge_mining": {"role": "auxiliary", "parent_chain": "LTC", "chain_id": 63},
+        "merge_mining": {"role": "auxiliary", "parent_chain": "LTC", "parent_chains": ["LTC", "DGB-SCRYPT"], "chain_id": 63},
         "enabled": False
     },
 }
@@ -4902,8 +4913,12 @@ def fetch_health_data():
         if mm_raw:
             mm = dict(mm_raw)  # shallow copy so we don't mutate the global
             if mm.get("role") == "auxiliary":
-                parent = mm.get("parent_chain", "")
-                if parent not in enabled_set:
+                # Any installed parent counts (DOGE under LTC or DGB-SCRYPT, NMC under BTC or DGB)
+                parents = mm.get("parent_chains") or [mm.get("parent_chain", "")]
+                installed_parents = [p for p in parents if p in enabled_set]
+                if installed_parents:
+                    mm["parent_chain"] = installed_parents[0]
+                else:
                     mm = None  # parent not installed — show as standalone
             elif mm.get("role") == "parent":
                 installed_aux = [c for c in mm.get("aux_chains", []) if c in enabled_set]
@@ -12161,6 +12176,165 @@ def automation_page():
     return render_template('automation.html')
 
 
+# ── Pool topology (v3.1.0) ────────────────────────────────────────────────────
+# One picture of how the pool is wired: HA peers and the VIP, this pool server,
+# each coin pool with its stratum ports and merge-mined aux chains, the coin
+# nodes behind it in failover order (with live reachability), and the miners
+# connected to each coin (matched by the stratum port in their pool URL).
+_topology_cache = {"at": 0.0, "data": None}
+
+
+@app.route('/topology')
+@admin_required
+def topology_page():
+    """Pool topology diagram"""
+    return render_template('topology.html')
+
+
+def _tcp_reachable(host, port, timeout=1.0):
+    import socket
+    try:
+        with socket.create_connection((str(host), int(port)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def _port_from_url(url):
+    m = re.search(r":(\d{2,5})(?:/|$)", str(url or ""))
+    return int(m.group(1)) if m else None
+
+
+def _topology_coins(cfg):
+    """[{symbol, pool_id, ports, aux_chains, nodes:[{id,host,port,priority}]}] from config.yaml."""
+    coins = []
+    for c in (cfg.get("coins") or []):
+        if not isinstance(c, dict) or not c.get("enabled", False):
+            continue
+        st = c.get("stratum") or {}
+        ports = [int(p) for p in (st.get("port"), st.get("port_v2"), st.get("port_tls"))
+                 if isinstance(p, int) and p > 0]
+        nodes = [n for n in (c.get("nodes") or []) if isinstance(n, dict)]
+        if not nodes and isinstance(c.get("daemon"), dict):
+            nodes = [dict(c["daemon"], id="primary", priority=0)]
+        nodes.sort(key=lambda n: (n.get("priority", 0) if isinstance(n.get("priority"), int) else 0))
+        mm = c.get("mergeMining") or {}
+        aux = [str(a.get("symbol", "")).upper() for a in (mm.get("auxChains") or [])
+               if isinstance(a, dict) and a.get("enabled", True) and a.get("symbol")] if mm.get("enabled", True) else []
+        coins.append({
+            "symbol": str(c.get("symbol", "")).upper(),
+            "pool_id": str(c.get("pool_id", "")),
+            "ports": ports,
+            "aux_chains": aux,
+            "nodes": [{"id": str(n.get("id") or f"node-{i}"), "host": str(n.get("host", "")),
+                       "port": n.get("port"), "priority": n.get("priority", i)} for i, n in enumerate(nodes)],
+        })
+    if not coins:  # V1 single-coin config
+        pool = cfg.get("pool") or {}
+        daemon = cfg.get("daemon") or {}
+        listen = (cfg.get("stratum") or {}).get("listen", "")
+        port = _port_from_url(listen)
+        sym = str(pool.get("coin", "")).upper()
+        if sym or daemon:
+            coins.append({"symbol": sym or "?", "pool_id": str(pool.get("id", "")),
+                          "ports": [port] if port else [], "aux_chains": [],
+                          "nodes": [{"id": "primary", "host": str(daemon.get("host", "")),
+                                     "port": daemon.get("port"), "priority": 0}] if daemon else []})
+    return coins
+
+
+@app.route('/api/topology', methods=['GET'])
+@admin_required
+def api_topology():
+    import socket as _socket
+
+    now = time.time()
+    if _topology_cache["data"] and now - _topology_cache["at"] < 15 and request.args.get("refresh") != "1":
+        return jsonify(_topology_cache["data"])
+
+    cfg = {}
+    try:
+        with _config_file_lock:
+            if os.path.exists(POOL_CONFIG_PATH):
+                with open(POOL_CONFIG_PATH) as f:
+                    cfg = yaml.safe_load(f) or {}
+    except Exception as e:
+        app.logger.warning(f"Topology: cannot read {POOL_CONFIG_PATH}: {e}")
+    coins = _topology_coins(cfg if isinstance(cfg, dict) else {})
+
+    # Node health: the dashboard's RPC health check covers each coin's primary node;
+    # every node (backups included) gets a TCP reachability probe, in parallel.
+    try:
+        health = fetch_all_nodes_health() or {}
+    except Exception:
+        health = {}
+    probes = [(ci, ni, n["host"], n["port"]) for ci, c in enumerate(coins) for ni, n in enumerate(c["nodes"])
+              if n["host"] and isinstance(n["port"], int)]
+    if probes:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(probes))) as ex:
+            reach = list(ex.map(lambda p: _tcp_reachable(p[2], p[3]), probes))
+        for (ci, ni, _h, _p), ok in zip(probes, reach):
+            coins[ci]["nodes"][ni]["reachable"] = ok
+    for c in coins:
+        h = health.get(c["symbol"]) if isinstance(health, dict) else None
+        if c["nodes"] and isinstance(h, dict):
+            c["nodes"][0].update({
+                "status": h.get("status"), "blocks": h.get("blocks"),
+                "sync_progress": h.get("sync_progress"), "connections": h.get("connections"),
+                "version": h.get("version") or h.get("client_name"),
+            })
+
+    # Miners, assigned to a coin by the stratum port in their pool URL.
+    port_to_coin = {p: c["symbol"] for c in coins for p in c["ports"]}
+    miners = []
+    for name, m in list((miner_cache.get("miners") or {}).items()):
+        if not isinstance(m, dict):
+            continue
+        port = _port_from_url(m.get("pool_url"))
+        miners.append({
+            "name": str(name), "ip": m.get("ip", ""), "type": m.get("type", ""),
+            "online": bool(m.get("online")), "hashrate_ths": m.get("hashrate_ths", 0) or 0,
+            "coin": port_to_coin.get(port), "port": port,
+        })
+
+    # HA cluster (keepalived VIP + peers). Never forward the cluster token or addresses.
+    ha = {"enabled": False}
+    try:
+        r = requests.get("http://127.0.0.1:5354/status", timeout=2)
+        if r.ok:
+            s = r.json()
+            if s.get("enabled"):
+                ha = {
+                    "enabled": True, "state": s.get("state"), "vip": s.get("vip"),
+                    "local_id": s.get("localId"), "master_id": s.get("masterId"),
+                    "local_role": s.get("localRole"), "failover_count": s.get("failoverCount", 0),
+                    "nodes": [{"id": n.get("id"), "host": n.get("host"), "role": n.get("role"),
+                               "priority": n.get("priority"), "healthy": bool(n.get("isHealthy")),
+                               "stratum_port": n.get("stratumPort"), "last_seen": n.get("lastSeen")}
+                              for n in (s.get("nodes") or []) if isinstance(n, dict)],
+                }
+    except Exception:
+        pass
+
+    try:
+        import subprocess
+        stratum_state = subprocess.run(["systemctl", "is-active", "spiralstratum"], capture_output=True,
+                                       text=True, timeout=5).stdout.strip() or "unknown"
+    except Exception:
+        stratum_state = "unknown"
+
+    data = {
+        "success": True,
+        "generated_at": int(now),
+        "pool": {"hostname": _socket.gethostname(), "version": _installed_version(), "stratum": stratum_state},
+        "coins": coins,
+        "miners": miners,
+        "ha": ha,
+    }
+    _topology_cache.update(at=now, data=data)
+    return jsonify(data)
+
+
 @app.route('/api/automation', methods=['GET'])
 @admin_required
 def automation_get():
@@ -12286,6 +12460,72 @@ def migrate_avalon_schedules_to_automation():
     return migrated
 
 
+def _restart_device_direct(ip, device_type, name=""):
+    """Restart one miner over its own API. (ok, message). Shared by the single-miner
+    restart button and bulk restart (v3.1.0) for types miner_control cannot restart."""
+    device_type = (device_type or "").lower()
+    name = name or ip
+    try:
+        # AxeOS-based miners (BitAxe, NMaxe, NerdQAxe, Hammer, Lucky Miner, Jingle, Zyber) use /api/system/restart
+        if (device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"]
+                or "axe" in device_type.lower()
+                or device_type.startswith("qaxe")
+                or device_type.startswith("lucky miner")
+                or device_type.startswith("jingle miner")
+                or device_type.startswith("zyber")):
+            response = requests.post(f"http://{ip}/api/system/restart", timeout=5)
+            if response.status_code == 200:
+                return True, f"Restart command sent to {name}"
+            else:
+                return False, f"Device returned status {response.status_code}"
+        # CGMiner-based devices use CGMiner API restart command
+        elif device_type in ["antminer", "antminer_scrypt", "whatsminer", "innosilicon", "futurebit", "gekkoscience", "ipollo", "ebang", "epic", "elphapex"]:
+            result = cgminer_command(ip, 4028, "restart", timeout=5)
+            if "error" not in result:
+                return True, f"Restart command sent to {name}"
+            else:
+                return False, result.get("error", "CGMiner restart failed")
+        # Goldshell uses HTTP API
+        elif device_type == "goldshell":
+            for endpoint in ["/mcb/restart", "/mcb/reboot", "/restart", "/reboot"]:
+                try:
+                    response = requests.post(f"http://{ip}{endpoint}", timeout=5)
+                    if response.status_code == 200:
+                        return True, f"Restart command sent to {name}"
+                except Exception:
+                    continue
+            return False, "Goldshell restart failed - no working endpoint found"
+        # BraiinsOS uses REST API for reboot
+        elif device_type == "braiins" or "braiins" in device_type.lower() or "bos" in device_type.lower():
+            username, password = _braiins_credentials(ip)
+            result = braiins_api_call(ip, "/actions/reboot", method="PUT", username=username, password=password, timeout=10)
+            if result.get("error"):
+                return False, result.get("error")
+            return True, f"Reboot command sent to {name}"
+        # Vnish uses REST API for reboot
+        elif device_type == "vnish" or "vnish" in device_type.lower():
+            password = _vnish_password(ip)
+            result = vnish_api_call(ip, "/api/v1/system/reboot", method="POST", password=password, timeout=10)
+            if result.get("error"):
+                return False, result.get("error")
+            return True, f"Reboot command sent to {name}"
+        # LuxOS uses CGMiner-compatible API
+        elif device_type == "luxos" or "luxos" in device_type.lower():
+            result = luxos_command(ip, 4028, "restart", timeout=5)
+            if "error" not in result:
+                return True, f"Restart command sent to {name}"
+            else:
+                return False, result.get("error", "LuxOS restart failed")
+        else:
+            return False, f"Restart not supported for {device_type}"
+    except requests.exceptions.Timeout:
+        # Timeout is expected as the device restarts
+        return True, f"Restart command sent to {name}"
+    except Exception as e:
+        app.logger.error(f"Device restart error for {name}: {e}")
+        return False, "Failed to restart device"
+
+
 @app.route('/api/device/restart', methods=['POST'])
 @admin_required
 def restart_device():
@@ -12302,65 +12542,8 @@ def restart_device():
     if not validate_miner_ip(ip):
         return jsonify({"success": False, "error": "Invalid IP address - only private network IPs allowed"})
 
-    try:
-        # AxeOS-based miners (BitAxe, NMaxe, NerdQAxe, Hammer, Lucky Miner, Jingle, Zyber) use /api/system/restart
-        if (device_type in ["axeos", "nmaxe", "nerdqaxe", "esp32miner", "qaxe", "qaxeplus", "bitaxe", "hammer", "luckyminer", "jingleminer", "zyber"]
-                or "axe" in device_type.lower()
-                or device_type.startswith("qaxe")
-                or device_type.startswith("lucky miner")
-                or device_type.startswith("jingle miner")
-                or device_type.startswith("zyber")):
-            response = requests.post(f"http://{ip}/api/system/restart", timeout=5)
-            if response.status_code == 200:
-                return jsonify({"success": True, "message": f"Restart command sent to {name}"})
-            else:
-                return jsonify({"success": False, "error": f"Device returned status {response.status_code}"})
-        # CGMiner-based devices use CGMiner API restart command
-        elif device_type in ["antminer", "antminer_scrypt", "whatsminer", "innosilicon", "futurebit", "gekkoscience", "ipollo", "ebang", "epic", "elphapex"]:
-            result = cgminer_command(ip, 4028, "restart", timeout=5)
-            if "error" not in result:
-                return jsonify({"success": True, "message": f"Restart command sent to {name}"})
-            else:
-                return jsonify({"success": False, "error": result.get("error", "CGMiner restart failed")})
-        # Goldshell uses HTTP API
-        elif device_type == "goldshell":
-            for endpoint in ["/mcb/restart", "/mcb/reboot", "/restart", "/reboot"]:
-                try:
-                    response = requests.post(f"http://{ip}{endpoint}", timeout=5)
-                    if response.status_code == 200:
-                        return jsonify({"success": True, "message": f"Restart command sent to {name}"})
-                except Exception:
-                    continue
-            return jsonify({"success": False, "error": "Goldshell restart failed - no working endpoint found"})
-        # BraiinsOS uses REST API for reboot
-        elif device_type == "braiins" or "braiins" in device_type.lower() or "bos" in device_type.lower():
-            username, password = _braiins_credentials(ip)
-            result = braiins_api_call(ip, "/actions/reboot", method="PUT", username=username, password=password, timeout=10)
-            if result.get("error"):
-                return jsonify({"success": False, "error": result.get("error")})
-            return jsonify({"success": True, "message": f"Reboot command sent to {name}"})
-        # Vnish uses REST API for reboot
-        elif device_type == "vnish" or "vnish" in device_type.lower():
-            password = _vnish_password(ip)
-            result = vnish_api_call(ip, "/api/v1/system/reboot", method="POST", password=password, timeout=10)
-            if result.get("error"):
-                return jsonify({"success": False, "error": result.get("error")})
-            return jsonify({"success": True, "message": f"Reboot command sent to {name}"})
-        # LuxOS uses CGMiner-compatible API
-        elif device_type == "luxos" or "luxos" in device_type.lower():
-            result = luxos_command(ip, 4028, "restart", timeout=5)
-            if "error" not in result:
-                return jsonify({"success": True, "message": f"Restart command sent to {name}"})
-            else:
-                return jsonify({"success": False, "error": result.get("error", "LuxOS restart failed")})
-        else:
-            return jsonify({"success": False, "error": f"Restart not supported for {device_type}"})
-    except requests.exceptions.Timeout:
-        # Timeout is expected as the device restarts
-        return jsonify({"success": True, "message": f"Restart command sent to {name}"})
-    except Exception as e:
-        app.logger.error(f"Device restart error for {name}: {e}")
-        return jsonify({"success": False, "error": "Failed to restart device"})
+    ok, message = _restart_device_direct(ip, device_type, name)
+    return jsonify({"success": True, "message": message} if ok else {"success": False, "error": message})
 
 
 @app.route('/api/device/frequency', methods=['POST'])
@@ -15042,42 +15225,87 @@ def reboot_system():
         return jsonify({"success": False, "error": "Internal error during reboot"})
 
 
+# ── Spiral Pool upgrade (v3.1.0) ─────────────────────────────────────────────
+# Check: upgrade.sh --check (JSON, no root needed). Apply: the root-owned
+# pool-upgrade-launch.sh, which starts upgrade.sh as its own transient systemd
+# unit — a child of the dashboard would inherit its ProtectSystem=strict sandbox
+# and be killed when upgrade.sh stops spiraldash. Status: that unit's state plus
+# its log, so the page can follow the upgrade across the dashboard restart.
+POOL_UPGRADE_UNIT = "spiralpool-upgrade"
+POOL_UPGRADE_LOG = "/var/log/spiralpool/upgrade.log"
+_pool_upgrade_check_cache = {"at": 0.0, "data": None}
+_ANSI_RE = re.compile(r'\x1B(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07)')
+
+
+def _spiral_install_dir():
+    return os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")
+
+
+def _upgrade_script_path():
+    """The root-owned copy if present (3.1.0+), else the legacy top-level copy."""
+    base = _spiral_install_dir()
+    for path in (os.path.join(base, "scripts", "upgrade.sh"), os.path.join(base, "upgrade.sh")):
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _installed_version():
+    try:
+        with open(os.path.join(_spiral_install_dir(), "VERSION")) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _pool_upgrade_unit_state():
+    import subprocess
+    try:
+        out = subprocess.run(["systemctl", "show", POOL_UPGRADE_UNIT, "--no-pager",
+                              "-p", "ActiveState", "-p", "Result", "-p", "ExecMainStatus"],
+                             capture_output=True, text=True, timeout=10).stdout
+        props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+        return {"state": props.get("ActiveState", "inactive") or "inactive",
+                "result": props.get("Result", ""),
+                "exit_status": props.get("ExecMainStatus", "")}
+    except Exception:
+        return {"state": "unknown", "result": "", "exit_status": ""}
+
+
 @app.route('/api/system/pool-upgrade/check', methods=['GET'])
 @api_key_or_login_required
 def check_pool_upgrade():
-    """Check if a Spiral Pool upgrade is available from GitHub"""
+    """Check GitHub for a newer Spiral Pool release (upgrade.sh --check, JSON)."""
     import subprocess
 
+    now = time.time()
+    cached = _pool_upgrade_check_cache["data"]
+    # GitHub allows 60 unauthenticated API calls/hour per IP — cache for 15 min.
+    if cached and request.args.get("refresh") != "1" and now - _pool_upgrade_check_cache["at"] < 900:
+        return jsonify(cached)
+
+    script = _upgrade_script_path()
+    if not script:
+        return jsonify({"success": False, "error": "upgrade.sh not found"})
     try:
-        result = subprocess.run(
-            ['sudo', f'{os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")}/upgrade.sh', '--check'],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        output = result.stdout.strip()
-        # upgrade.sh --check prints version info and exits
-        # Look for "Update available" or "already on latest" patterns
-        available = 'update available' in output.lower() or 'new version' in output.lower()
-        current_version = ""
-        latest_version = ""
-        for line in output.split('\n'):
-            ll = line.lower()
-            if 'current' in ll and 'version' in ll:
-                current_version = line.split(':')[-1].strip() if ':' in line else ""
-            elif 'latest' in ll or 'available' in ll:
-                latest_version = line.split(':')[-1].strip() if ':' in line else ""
-        return jsonify({
+        result = subprocess.run(["/bin/bash", script, "--check"],
+                                capture_output=True, text=True, timeout=45)
+        info = json.loads(result.stdout.strip() or "{}")
+        data = {
             "success": True,
-            "update_available": available,
-            "current_version": current_version,
-            "latest_version": latest_version,
-            "output": output
-        })
+            "update_available": bool(info.get("update_available")),
+            "current_version": str(info.get("current_version") or _installed_version()),
+            "latest_version": str(info.get("latest_version") or ""),
+            "release_url": str(info.get("release_url") or ""),
+            "release_published_at": str(info.get("release_published_at") or ""),
+            "checked_at": int(now),
+        }
+        _pool_upgrade_check_cache.update(at=now, data=data)
+        return jsonify(data)
     except subprocess.TimeoutExpired:
         return jsonify({"success": False, "error": "Version check timed out"})
-    except FileNotFoundError:
-        return jsonify({"success": False, "error": "upgrade.sh not found"})
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Could not read the version check result"})
     except Exception as e:
         app.logger.error(f"Pool upgrade check failed: {e}")
         return jsonify({"success": False, "error": "Failed to check for updates"})
@@ -15086,50 +15314,80 @@ def check_pool_upgrade():
 @app.route('/api/system/pool-upgrade/apply', methods=['POST'])
 @admin_required
 def apply_pool_upgrade():
-    """Trigger Spiral Pool upgrade from GitHub (runs upgrade.sh --auto)"""
+    """Start a Spiral Pool upgrade (latest GitHub release) via the root-owned launcher."""
     import subprocess
 
     client_ip = request.remote_addr or "unknown"
     if not check_rate_limit(client_ip, "pool_upgrade"):
         return jsonify({"success": False, "error": "Rate limit exceeded"}), 429
 
-    # upgrade.sh emits ANSI colour codes. Strip them before truncating so a
-    # slice can't cut an escape sequence in half and leak raw bytes to the UI.
-    ansi_re = re.compile(r'\x1B(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07)')
+    # Same rule as the update checker: never upgrade an HA backup underneath a
+    # serving master — upgrade the master first, then the backups.
+    if ha_status_cache.get("enabled") and ha_status_cache.get("local_role") not in ("MASTER", "STANDALONE"):
+        return jsonify({"success": False,
+                        "error": f"This node is HA {ha_status_cache.get('local_role', 'UNKNOWN')} — "
+                                 f"upgrade the master node first, or run 'sudo spiralctl upgrade' here"}), 409
 
-    def _tail(text):
-        return ansi_re.sub('', text or '')[-500:]
+    if _pool_upgrade_unit_state()["state"] in ("active", "activating", "deactivating"):
+        return jsonify({"success": False, "error": "An upgrade is already running"}), 409
 
+    launcher = os.path.join(_spiral_install_dir(), "scripts", "pool-upgrade-launch.sh")
+    if not os.path.isfile(launcher):
+        return jsonify({"success": False,
+                        "error": "Upgrade launcher not installed yet — run 'sudo spiralctl upgrade' "
+                                 "once from a shell; the button works from then on"}), 501
     try:
-        # Run upgrade.sh --auto in background — it will restart services itself
-        result = subprocess.run(
-            ['sudo', f'{os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool")}/upgrade.sh', '--auto'],
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 min max
-        )
-        if result.returncode == 0:
-            app.logger.info(f"Spiral Pool upgrade triggered by {client_ip}")
-            record_activity("pool_upgrade", "Spiral Pool upgraded from GitHub")
-            return jsonify({
-                "success": True,
-                "message": "Upgrade complete. Services are restarting.",
-                "output": _tail(result.stdout)
-            })
-        else:
-            app.logger.warning(f"Pool upgrade failed for {client_ip}: {result.stderr[:200]}")
-            return jsonify({
-                "success": False,
-                "error": "Upgrade failed",
-                "output": _tail(result.stderr) if result.stderr else _tail(result.stdout)
-            })
+        result = subprocess.run(["sudo", "-n", launcher], capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "error": "Upgrade timed out (5 min limit)"})
-    except FileNotFoundError:
-        return jsonify({"success": False, "error": "upgrade.sh not found"})
+        return jsonify({"success": False, "error": "Timed out starting the upgrade"}), 504
     except Exception as e:
-        app.logger.error(f"Upgrade error: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "Internal error during upgrade"})
+        app.logger.error(f"Upgrade launch error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Internal error starting the upgrade"}), 500
+
+    if result.returncode != 0:
+        detail = _ANSI_RE.sub('', (result.stderr or result.stdout or '').strip())[-300:]
+        app.logger.warning(f"Pool upgrade launch failed for {client_ip}: {detail}")
+        return jsonify({"success": False, "error": detail or "Could not start the upgrade"}), 500
+
+    _pool_upgrade_check_cache.update(at=0.0, data=None)
+    app.logger.info(f"Spiral Pool upgrade started by {client_ip}")
+    record_activity("pool_upgrade", "Spiral Pool upgrade started from the dashboard")
+    return jsonify({"success": True, "started": True,
+                    "from_version": _installed_version(),
+                    "message": "Upgrade started. The dashboard will restart part-way through."}), 202
+
+
+@app.route('/api/system/pool-upgrade/status', methods=['GET'])
+@admin_required
+def pool_upgrade_status():
+    """State of the spiralpool-upgrade unit and the tail of its log."""
+    try:
+        lines = int(request.args.get("lines", 120))
+    except ValueError:
+        lines = 120
+    lines = max(10, min(lines, 500))
+    log_tail = ""
+    try:
+        with open(POOL_UPGRADE_LOG, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 64 * 1024))
+            text = f.read().decode("utf-8", "replace")
+        log_tail = "\n".join(_ANSI_RE.sub("", text).splitlines()[-lines:])
+    except OSError:
+        pass
+    unit = _pool_upgrade_unit_state()
+    running = unit["state"] in ("active", "activating", "deactivating")
+    # The launcher's wrapper writes "=== Spiral Pool upgrade finished (exit N) ..."
+    # when upgrade.sh ends (the transient unit itself is collected).
+    finished = None
+    m = re.search(r"=== Spiral Pool upgrade finished \(exit (\d+)\)", log_tail)
+    if m and not running:
+        finished = {"exit_code": int(m.group(1)), "ok": m.group(1) == "0"}
+    return jsonify({"success": True, **unit,
+                    "running": running,
+                    "finished": finished,
+                    "version": _installed_version(),
+                    "log": log_tail})
 
 
 @app.route('/api/system/https/status', methods=['GET'])
@@ -16375,7 +16633,7 @@ def test_discord_webhook(url: str, test_message: str = None) -> dict:
         "title": "🧪 Spiral Pool Test Notification",
         "description": test_message or "This is a test message from Spiral Dashboard. If you see this, your webhook is configured correctly!",
         "color": 0x00d4ff,  # Cyan color
-        "footer": {"text": f"Spiral Pool v3.0.3"},
+        "footer": {"text": f"Spiral Pool v3.1.0"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -18816,6 +19074,115 @@ def batch_restart_miners():
     })
 
 
+# ── Bulk miner actions (v3.1.0) ───────────────────────────────────────────────
+# Restart / sleep / wake / power for many miners at once, through the same
+# control drivers Sentinel's automation uses (miner_control.py). Only miners
+# configured on this dashboard are accepted. Hand-slept miners are recorded in
+# manual_sleep.json so Sentinel neither alerts on them nor auto-restarts them.
+BULK_ACTIONS = ("restart", "sleep", "wake", "power")
+BULK_MAX_TARGETS = 100   # 16 workers x ~10 s per device stays inside gunicorn's 120 s
+
+
+@app.route('/api/fleet/batch/control', methods=['POST'])
+@admin_required
+def fleet_batch_control():
+    client_ip = request.remote_addr or "unknown"
+    if not check_rate_limit(client_ip, "fleet_batch_control"):
+        return jsonify({"success": False, "error": "Rate limit exceeded"}), 429
+    if miner_control is None:
+        return jsonify({"success": False, "error": "miner_control.py is not installed next to the dashboard — "
+                                                   "re-run 'sudo spiralctl upgrade'"}), 501
+
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    if action not in BULK_ACTIONS:
+        return jsonify({"success": False, "error": f"action must be one of {', '.join(BULK_ACTIONS)}"}), 400
+
+    ips = body.get("ips")
+    if not isinstance(ips, list) or not ips or not all(isinstance(ip, str) for ip in ips):
+        return jsonify({"success": False, "error": "ips must be a non-empty list of miner IPs"}), 400
+    ips = list(dict.fromkeys(ip.strip() for ip in ips))
+    if len(ips) > BULK_MAX_TARGETS:
+        return jsonify({"success": False, "error": f"at most {BULK_MAX_TARGETS} miners per request"}), 400
+
+    level = watts = None
+    if action == "power":
+        level, watts = body.get("level"), body.get("watts")
+        if watts is not None:
+            if type(watts) is not int or not 1 <= watts <= 20000:
+                return jsonify({"success": False, "error": "watts must be a whole number between 1 and 20000"}), 400
+            level = None
+        elif level not in miner_automation.LEVELS:
+            return jsonify({"success": False, "error": "power needs level (low, normal, high) or watts"}), 400
+
+    known = _automation_device_types()
+    unknown = [ip for ip in ips if ip not in known]
+    if unknown:
+        return jsonify({"success": False, "error": "not a configured miner: " + ", ".join(unknown[:10])}), 400
+
+    data_dir = str(_automation_data_dir())
+
+    def _run(ip):
+        try:
+            device = miner_control.device_from_files(ip, data_dir, miner_type=known[ip])
+            if action == "restart":
+                # miner_control restarts the families automation needs (Avalon, Antminer,
+                # Braiins, ...); Bitaxe/AxeOS, Goldshell and friends restart through the
+                # same per-miner API the single Restart button uses.
+                family = getattr(miner_control, "family_for", lambda t: None)(known[ip])
+                if family in getattr(miner_control, "RESTART_FAMILIES", ()):
+                    miner_control.restart(device)
+                else:
+                    if not validate_miner_ip(ip):
+                        raise ValueError("not a private-network miner IP")
+                    ok, message = _restart_device_direct(ip, known[ip])
+                    if not ok:
+                        raise ValueError(message)
+            elif action == "sleep":
+                miner_control.sleep(device)
+            elif action == "wake":
+                miner_control.wake(device)
+            else:
+                miner_control.set_power(device, level=level, watts=watts)
+            what = f"power {watts} W" if watts else (f"power {level}" if level else action)
+            return {"ip": ip, "success": True, "message": f"{what} accepted"}
+        except (miner_control.ControlError, ValueError) as e:
+            return {"ip": ip, "success": False, "message": str(e)[:200]}
+        except Exception as e:
+            app.logger.warning(f"Bulk {action} on {ip} failed: {e}")
+            return {"ip": ip, "success": False, "message": "unexpected error talking to the miner"}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(ips))) as executor:
+        results = list(executor.map(_run, ips))
+
+    ok_ips = [r["ip"] for r in results if r["success"]]
+    if action in ("sleep", "wake") and ok_ips:
+        try:
+            miner_automation.set_manual_sleep(data_dir, ok_ips, asleep=(action == "sleep"),
+                                              by=f"dashboard {client_ip}")
+        except OSError as e:
+            app.logger.error(f"Could not record manual sleep state: {e}")
+
+    success_count = len(ok_ips)
+    record_activity("fleet_batch", f"Bulk {action}: {success_count}/{len(ips)} miners accepted")
+    return jsonify({
+        "success": success_count > 0,
+        "action": action,
+        "total": len(results),
+        "successful": success_count,
+        "failed": len(results) - success_count,
+        "results": results,
+    })
+
+
+@app.route('/api/fleet/manual-sleep', methods=['GET'])
+@api_key_or_login_required
+def fleet_manual_sleep():
+    """Miners put to sleep by hand (so the UI can offer to wake them)."""
+    return jsonify({"success": True,
+                    "asleep": miner_automation.read_manual_sleep(str(_automation_data_dir()))})
+
+
 @app.route('/api/fleet/batch/pool', methods=['POST'])
 @admin_required
 def batch_update_pool():
@@ -19281,6 +19648,10 @@ def save_historical_data():
         _atomic_json_save(os.path.join(str(CONFIG_DIR), "historical_data.json"), serializable)
     except Exception as e:
         print(f"[HISTORY] Error saving historical data: {e}")
+    try:
+        update_energy_history()
+    except Exception as e:
+        print(f"[ENERGY] Error updating energy history: {e}")
 
 
 @app.route('/api/analytics/hashrate', methods=['GET'])
@@ -20400,6 +20771,88 @@ def update_power_cost_tracking():
     power_cost_tracker["last_update"] = time.time()
 
 
+# ── Energy report (v3.1.0) ────────────────────────────────────────────────────
+# Measured energy, not a projection: the per-minute fleet-watts series
+# (historical_data["power_watts"], 7 days) is integrated into per-day kWh, and
+# the daily totals are kept in energy_history.json (400 days) so the report
+# reaches back further than the raw series.
+ENERGY_HISTORY_DAYS = 400
+ENERGY_MAX_GAP_SECONDS = 180   # a longer gap between samples is "not measured", not "same watts"
+_energy_rollup_state = {"last": 0.0}
+
+
+def _energy_history_path():
+    return os.path.join(str(CONFIG_DIR), "energy_history.json")
+
+
+def energy_daily_from_series(points, max_gap=ENERGY_MAX_GAP_SECONDS):
+    """{ 'YYYY-MM-DD': {kwh, avg_watts, peak_watts, hours_measured} } from [{time, value}].
+
+    Each interval between consecutive samples contributes value*dt to the day of its
+    start (local time); intervals longer than max_gap are skipped, so downtime is
+    reported as fewer measured hours rather than invented energy.
+    """
+    pts = sorted(((float(p.get("time", 0)), float(p.get("value") or 0)) for p in points
+                  if isinstance(p, dict) and p.get("time")), key=lambda t: t[0])
+    days = {}
+    for (t0, w0), (t1, _w1) in zip(pts, pts[1:]):
+        dt = t1 - t0
+        if dt <= 0 or dt > max_gap:
+            continue
+        day = time.strftime("%Y-%m-%d", time.localtime(t0))
+        d = days.setdefault(day, {"wh": 0.0, "seconds": 0.0, "peak": 0.0})
+        w = max(w0, 0.0)
+        d["wh"] += w * dt / 3600.0
+        d["seconds"] += dt
+        d["peak"] = max(d["peak"], w)
+    out = {}
+    for day, d in days.items():
+        hours = d["seconds"] / 3600.0
+        out[day] = {
+            "kwh": round(d["wh"] / 1000.0, 4),
+            "avg_watts": round(d["wh"] / hours, 1) if hours else 0.0,
+            "peak_watts": round(d["peak"], 1),
+            "hours_measured": round(hours, 2),
+        }
+    return out
+
+
+def _load_energy_history():
+    try:
+        with open(_energy_history_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        days = data.get("days") if isinstance(data, dict) else None
+        return days if isinstance(days, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _merged_energy_days():
+    """Stored daily totals overlaid with what the live series measures (more coverage wins)."""
+    days = _load_energy_history()
+    for day, live in energy_daily_from_series(list(historical_data.get("power_watts", []))).items():
+        stored = days.get(day)
+        if not stored or live["hours_measured"] >= stored.get("hours_measured", 0):
+            days[day] = live
+    return days
+
+
+def update_energy_history(force=False):
+    """Persist per-day energy totals (at most every 10 minutes)."""
+    now = time.time()
+    if not force and now - _energy_rollup_state["last"] < 600:
+        return
+    _energy_rollup_state["last"] = now
+    days = _merged_energy_days()
+    keep = sorted(days)[-ENERGY_HISTORY_DAYS:]
+    days = {d: days[d] for d in keep}
+    _atomic_json_save(_energy_history_path(), {"version": 1, "days": days})
+    rate = (load_config().get("power_cost") or {}).get("rate_per_kwh", 0.12) or 0
+    power_cost_tracker["history"] = [
+        {"date": d, "kwh": v["kwh"], "cost": round(v["kwh"] * rate, 4)} for d, v in sorted(days.items())[-31:]
+    ]
+
+
 @app.route('/api/currency', methods=['GET'])
 @api_key_or_login_required
 def currency_info_endpoint():
@@ -21198,6 +21651,58 @@ def export_hashrate():
         mimetype='text/csv'
     )
     response.headers["Content-Disposition"] = f"attachment; filename=spiralpool_hashrate_{period}_{int(time.time())}.csv"
+    return response
+
+
+@app.route('/api/export/energy', methods=['GET'])
+@api_key_or_login_required
+def export_energy():
+    """Daily energy report (measured kWh, average/peak watts, cost) as CSV or JSON."""
+    import io
+
+    period = request.args.get("period", "30d")
+    span_days = {"7d": 7, "30d": 30, "90d": 90, "365d": 365, "all": None}.get(period, 30)
+
+    power_config = load_config().get("power_cost", {}) or {}
+    free = bool(power_config.get("is_free_power"))
+    rate = 0.0 if free else float(power_config.get("rate_per_kwh", 0.12) or 0)
+    currency = str(power_config.get("currency", "USD"))[:8]
+
+    days = _merged_energy_days()
+    dates = sorted(days)
+    if span_days is not None:
+        cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - (span_days - 1) * 86400))
+        dates = [d for d in dates if d >= cutoff]
+
+    rows = []
+    for d in dates:
+        v = days[d]
+        rows.append({
+            "date": d,
+            "kwh": round(v.get("kwh", 0), 3),
+            "avg_watts": v.get("avg_watts", 0),
+            "peak_watts": v.get("peak_watts", 0),
+            "hours_measured": v.get("hours_measured", 0),
+            "rate_per_kwh": rate,
+            "cost": round(v.get("kwh", 0) * rate, 2),
+        })
+    total_kwh = round(sum(r["kwh"] for r in rows), 3)
+    total_cost = round(sum(r["cost"] for r in rows), 2)
+
+    if request.args.get("format", "csv").lower() == "json":
+        return jsonify({"success": True, "period": period, "currency": currency, "free_power": free,
+                        "days": rows, "total_kwh": total_kwh, "total_cost": total_cost})
+
+    output = io.StringIO()
+    cur = csv_safe(currency)
+    output.write(f"date,kwh,avg_watts,peak_watts,hours_measured,rate_per_kwh,cost_{cur},currency\n")
+    for r in rows:
+        output.write(f"{r['date']},{r['kwh']},{r['avg_watts']},{r['peak_watts']},{r['hours_measured']},"
+                     f"{r['rate_per_kwh']},{r['cost']},{cur}\n")
+    output.write(f"TOTAL,{total_kwh},,,{round(sum(r['hours_measured'] for r in rows), 2)},{rate},{total_cost},{cur}\n")
+
+    response = app.response_class(response=output.getvalue(), status=200, mimetype='text/csv')
+    response.headers["Content-Disposition"] = f"attachment; filename=spiralpool_energy_{period}_{int(time.time())}.csv"
     return response
 
 

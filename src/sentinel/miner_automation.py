@@ -34,6 +34,9 @@ import tempfile
 
 AUTOMATION_FILE = "automation.json"
 CREDENTIALS_FILE = "device_credentials.json"
+# Miners an operator put to sleep by hand (dashboard bulk actions). Sentinel treats
+# them like schedule-slept miners: no offline alerts, no auto-restart, until woken.
+MANUAL_SLEEP_FILE = "manual_sleep.json"
 
 LEVELS = ("low", "normal", "high")
 MAX_RULES = 200
@@ -450,3 +453,39 @@ def write_json_atomic(path, data, mode=0o600):
         except OSError:
             pass
         raise
+
+
+_IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+
+def read_manual_sleep(data_dir):
+    """{ip: {"since": epoch, "by": str}} for miners put to sleep by hand.
+
+    Never raises: a missing or unreadable file means "none", because the cost of
+    getting this wrong is only an offline alert, not a missed wake.
+    """
+    try:
+        raw = read_json(os.path.join(data_dir, MANUAL_SLEEP_FILE))
+    except ValueError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    asleep = raw.get("asleep") if isinstance(raw.get("asleep"), dict) else {}
+    return {ip: info if isinstance(info, dict) else {}
+            for ip, info in asleep.items() if isinstance(ip, str) and _IPV4_RE.match(ip)}
+
+
+def set_manual_sleep(data_dir, ips, asleep, by="dashboard", now=None):
+    """Mark ips as hand-slept (asleep=True) or clear them (asleep=False)."""
+    import time as _time
+    current = read_manual_sleep(data_dir)
+    stamp = int(now if now is not None else _time.time())
+    for ip in ips:
+        if not (isinstance(ip, str) and _IPV4_RE.match(ip)):
+            continue
+        if asleep:
+            current[ip] = {"since": stamp, "by": str(by)[:40]}
+        else:
+            current.pop(ip, None)
+    write_json_atomic(os.path.join(data_dir, MANUAL_SLEEP_FILE), {"version": 1, "asleep": current})
+    return current

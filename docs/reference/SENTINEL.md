@@ -99,7 +99,7 @@ Permissions are set to `0600` on every load. Environment variables override conf
 | `update_check_enabled` | bool | `true` | Periodically check for Spiral Pool updates |
 | `update_check_interval` | int | `21600` | Seconds between update checks (6 hours) |
 | `led_idle_state` | string | `"off"` | What a miner's LED shows between celebrations. `off` = dark; `restore` = put back what it showed before. Read by `block-celebrate.sh`, not by Sentinel itself. |
-| `auto_update_mode` | string | `"notify"` | `"notify"` (alert only), `"auto"` (run upgrade.sh), or `"disabled"` |
+| `auto_update_mode` | string | `"notify"` | `"notify"` (notice + reminders at 48 h, 72 h and 1 week after release while not updated; progress kept in `update_notify_state.json`), `"auto"` (start the upgrade through `scripts/pool-upgrade-launch.sh`; falls back to notify when the service forbids privilege escalation, as the shipped unit does — use `spiralctl update configure` for unattended upgrades), or `"disabled"` |
 | `sentinel_health_enabled` | bool | `true` | Expose `/health` and `/cooldowns` endpoints on loopback |
 | `sentinel_health_port` | int | `9191` | Port for the health endpoint (loopback only) |
 
@@ -578,7 +578,7 @@ Rules set on the dashboard's Automation page run in Sentinel, on the master node
 - **Schedules:** weekdays plus a start and end time in `display_timezone`; a window whose end is earlier than its start runs past midnight and belongs to the day it starts. A sleep rule sleeps its miners for the window and wakes them at the end. A power rule sets a power mode or power target when the window starts; outside all power windows a miner keeps its last mode. The first matching rule of each kind wins.
 - **Re-apply:** a miner that goes offline and comes back gets its power mode sent again, because a reboot resets it.
 - **Failures:** a failed action is retried after 5 minutes and raises `automation_failed`.
-- **Suppression:** a miner asleep on a schedule gets no offline, zombie or degradation alerts and is never auto-restarted.
+- **Suppression:** a miner asleep on a schedule — or put to sleep by hand from the dashboard's bulk actions or `spiralctl miners control … sleep` (recorded in `/spiralpool/data/manual_sleep.json` until it is woken) — gets no offline, zombie or degradation alerts and is never auto-restarted.
 - Modules: `miner_automation.py` (rules, shared with the dashboard) and `miner_control.py` (device commands), installed next to `SpiralSentinel.py`. If they are missing, Sentinel runs without automation.
 
 ### Device Discovery Integration
@@ -847,7 +847,7 @@ Default port: `9191` (configurable via `sentinel_health_port` in `config.json`).
 ### `GET /health`
 
 ```json
-{"alive": true, "uptime_s": 3600, "version": "3.0.3"}
+{"alive": true, "uptime_s": 3600, "version": "3.1.0"}
 ```
 
 ### `GET /cooldowns`
@@ -865,4 +865,4 @@ The endpoint is loopback-only and restarts automatically after errors with a 30-
 
 ---
 
-*Spiral Sentinel &mdash; Spiral Covenant 3.0.3*
+*Spiral Sentinel &mdash; Spiral Covenant 3.1.0*

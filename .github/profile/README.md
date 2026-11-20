@@ -32,7 +32,7 @@ Free, open-source Stratum server software for proof-of-work (PoW) cryptocurrency
 - 🔄 **Spiral Router** — 47 verified user-agent patterns (Antminer, Whatsminer, BitAxe, NerdMiner, NM Miner, ESP32 lottery miners), auto-classification at connect time
 - ⚡ **Lock-free vardiff** — Per-session atomic difficulty, zero contention
 - 🔐 **Stratum V1/V2 + TLS** — Multi-port per coin, Noise Protocol encryption
-- 🔗 **Merge mining** — 6 AuxPoW pairs across BTC and LTC parent chains
+- 🔗 **Merge mining** — 12 AuxPoW pairs across BTC, DGB, LTC and DGB-SCRYPT parent chains
 - 🏥 **High availability** — VIP failover, Patroni database replication, advisory lock fencing
 - 📊 **Prometheus metrics** — Per-session, per-worker observability
 - 🤖 **Spiral Sentinel** — Device discovery, health monitoring, Discord/Telegram/XMPP/ntfy/email alerts

@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	Version   = "3.0.3"
+	Version   = "3.1.0"
 	BuildTime = "unknown"
 	GitCommit = "unknown"
 )
@@ -74,6 +74,9 @@ func main() {
 			log.Infow("Loaded V2 configuration",
 				"coins", len(cfgV2.Coins),
 			)
+			for _, w := range cfgV2.MergeMiningWarnings {
+				log.Errorw("Merge-mining configuration problem — fix config.yaml", "detail", w)
+			}
 			runV2(cfgV2, logger, log)
 			return
 		}

@@ -1,0 +1,54 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors */
+/* Pool topology page (v3.1.0). Colours follow cyberpunk.css variables. */
+
+.topology-container { max-width: 1180px; }
+
+.topology-status { min-height: 1.2em; color: var(--text-muted, #6b7280); font-family: var(--font-mono, 'Share Tech Mono', monospace); }
+.topology-status.error { color: var(--neon-red, #f87171); }
+
+.topology-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.topology-summary { font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem; color: var(--text-secondary, #9ca3af); }
+.topology-button {
+    background: rgba(0, 212, 255, 0.1); border: 1px solid rgba(0, 212, 255, 0.3); color: var(--neon-cyan, #00d4ff);
+    padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+}
+.topology-button:disabled { opacity: 0.5; cursor: default; }
+
+.topology-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.topology-svg { display: block; width: 100%; min-width: 760px; height: auto; font-family: var(--font-mono, 'Share Tech Mono', monospace); }
+
+/* Boxes */
+.topo-box { fill: rgba(255, 255, 255, 0.03); stroke: rgba(255, 255, 255, 0.12); stroke-width: 1; }
+.topo-box.pool { fill: rgba(0, 212, 255, 0.07); stroke: rgba(0, 212, 255, 0.55); stroke-width: 1.5; }
+.topo-box.coin { fill: rgba(168, 85, 247, 0.07); stroke: rgba(168, 85, 247, 0.5); }
+.topo-box.ha { fill: rgba(74, 222, 128, 0.05); stroke: rgba(74, 222, 128, 0.35); stroke-dasharray: 4 3; }
+.topo-box.node.ok { stroke: rgba(74, 222, 128, 0.6); }
+.topo-box.node.warn { stroke: rgba(251, 146, 60, 0.7); }
+.topo-box.node.bad { stroke: rgba(248, 113, 113, 0.8); fill: rgba(248, 113, 113, 0.06); }
+
+/* Text */
+.topo-title { fill: var(--text-primary, #e2e8f0); font-size: 13px; font-weight: 600; }
+.topo-sub { fill: var(--text-muted, #9ca3af); font-size: 11px; }
+.topo-small { fill: var(--text-muted, #9ca3af); font-size: 10px; }
+.topo-badge { fill: var(--neon-orange, #fb923c); font-size: 10px; }
+.topo-coin-symbol { fill: var(--neon-purple, #c084fc); font-size: 15px; font-weight: 700; }
+
+/* Status dots */
+.topo-dot.ok, .topology-dot.ok { fill: var(--neon-green, #4ade80); background: var(--neon-green, #4ade80); }
+.topo-dot.warn, .topology-dot.warn { fill: var(--neon-orange, #fb923c); background: var(--neon-orange, #fb923c); }
+.topo-dot.bad, .topology-dot.bad { fill: var(--neon-red, #f87171); background: var(--neon-red, #f87171); }
+.topo-dot.muted { fill: #6b7280; }
+
+/* Links */
+.topo-link { stroke: rgba(0, 212, 255, 0.35); stroke-width: 1.5; fill: none; }
+.topo-link.backup { stroke-dasharray: 5 4; stroke: rgba(156, 163, 175, 0.45); }
+.topo-link.bad { stroke: rgba(248, 113, 113, 0.6); }
+.topo-link.ha { stroke: rgba(74, 222, 128, 0.4); stroke-dasharray: 3 3; }
+
+/* Legend */
+.topology-legend { display: flex; flex-wrap: wrap; gap: 14px; list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.8rem; color: var(--text-muted, #9ca3af); }
+.topology-legend li { display: flex; align-items: center; gap: 6px; }
+.topology-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.topology-line-sample { display: inline-block; width: 26px; border-top: 2px solid rgba(0, 212, 255, 0.45); }
+.topology-line-sample.dashed { border-top: 2px dashed rgba(156, 163, 175, 0.6); }

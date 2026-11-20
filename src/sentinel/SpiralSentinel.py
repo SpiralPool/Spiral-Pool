@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Spiral Pool Contributors
 """
 ╔═════════════════════════════════════════════════════════════════════════════╗
-║  Spiral Sentinel v3.0.3 - SPIRAL COVENANT EDITION                           ║
+║  Spiral Sentinel v3.1.0 - SPIRAL COVENANT EDITION                           ║
 ║  Autonomous Solo Mining Monitor (16 coins: SHA-256d + Scrypt)               ║
 ║  Self-Healing + Share Monitoring (No Pool Software Dependency)              ║
 ╠═════════════════════════════════════════════════════════════════════════════╣
@@ -28,7 +28,7 @@
 ║  • Whatsminer API: whatsminer.com                                           ║
 ╚═════════════════════════════════════════════════════════════════════════════╝
 """
-__version__ = "3.0.3"
+__version__ = "3.1.0"
 __codename__ = "SPIRAL_COVENANT"
 
 import copy, json, socket, sys, time, os, urllib.request, urllib.error, ssl, random, ipaddress, re, threading, http.server
@@ -2218,14 +2218,14 @@ def is_sha256d_coin(symbol):
 
 MERGE_MINING_PAIRS = {
     # SHA-256d parent chains and their auxiliary chains
-    # NOTE: Must match coins.manifest.yaml - BTC/LTC are the only parent chains
+    # NOTE: Must match coins.manifest.yaml (parents: BTC, DGB, LTC, DGB-SCRYPT since v3.1.0)
     "BTC": ["NMC", "SYS", "XMY", "FBTC"],  # Bitcoin merge-mines: Namecoin, Syscoin, Myriad, Fractal
-    "DGB": [],                                     # DigiByte SHA-256d - standalone (not a parent)
+    "DGB": ["NMC", "SYS", "XMY", "FBTC"],  # DigiByte SHA-256d merge-mines the same aux chains as BTC (v3.1.0)
     "BCH": [],                                     # Bitcoin Cash - standalone (not a parent in manifest)
     "BC2": [],                                     # Bitcoin II - standalone
     # Scrypt parent chains and their auxiliary chains
     "LTC": ["DOGE", "PEP"],                       # Litecoin merge-mines: Dogecoin, PepeCoin
-    "DGB-SCRYPT": [],                              # DigiByte Scrypt - standalone
+    "DGB-SCRYPT": ["DOGE", "PEP"],                # DigiByte Scrypt merge-mines Dogecoin, PepeCoin (v3.1.0)
 }
 
 # Reverse lookup: auxiliary chain -> parent chain(s)
@@ -7146,7 +7146,7 @@ def reload_miners():
                 "old_count": old_count,
                 "new_count": new_count,
                 "success": True,
-                "sentinel_version": "V3.0.3-SPIRAL_COVENANT"
+                "sentinel_version": "V3.1.0-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
             logger.debug(f"Wrote reload ACK: {MINER_RELOAD_ACK}")
@@ -7165,7 +7165,7 @@ def reload_miners():
                 "timestamp_iso": datetime.now(timezone.utc).isoformat(),
                 "success": False,
                 "error": "Failed to reload miner configuration",
-                "sentinel_version": "V3.0.3-SPIRAL_COVENANT"
+                "sentinel_version": "V3.1.0-SPIRAL_COVENANT"
             }
             _atomic_json_save(MINER_RELOAD_ACK, ack_data)
         except (PermissionError, OSError):
@@ -7553,7 +7553,8 @@ def get_alert_cooldowns():
         "startup_summary": 0,
         "maintenance_reminder": 0,     # Monthly maintenance reminder (1st of month at 8am)
         "special_date": 0,             # No cooldown - yearly events
-        "update_available": 86400,     # 24 hours - once per day max
+        "update_available": 43200,     # 12 hours — the 48h/72h/1-week reminder schedule is the real gate;
+                                       # a 24h cooldown could hold back the 72h reminder sent 24h after the 48h one
         # Thermal protection and new monitoring alerts
         "thermal_shutdown": 0,             # No cooldown - always alert on thermal emergency
         "fan_failure": 1800,               # 30 minutes
@@ -7800,6 +7801,29 @@ def get_zmq_stale_threshold(coin=None):
 UPDATE_CHECK_ENABLED = CONFIG.get("update_check_enabled", True)
 UPDATE_CHECK_INTERVAL = CONFIG.get("update_check_interval", 21600)  # 6 hours in seconds
 AUTO_UPDATE_MODE = CONFIG.get("auto_update_mode", "notify")  # "auto", "notify", or "disabled"
+
+
+def _no_new_privs():
+    """True when this process can never gain privileges (systemd NoNewPrivileges=yes)."""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("NoNewPrivs:"):
+                    return line.split()[1] == "1"
+    except (OSError, IndexError):
+        pass
+    return False
+
+
+# The shipped spiralsentinel unit sets NoNewPrivileges=yes, under which sudo can
+# never work — "auto" mode used to fail silently on every release. Fall back to
+# notify mode (first notice + 48h/72h/1-week reminders) and say why; unattended
+# upgrades are the update checker's job (`spiralctl update enable`, cron, outside systemd).
+if AUTO_UPDATE_MODE == "auto" and _no_new_privs():
+    logger.warning("auto_update_mode=auto cannot apply upgrades from Sentinel (NoNewPrivileges is set "
+                   "on its service); using notify mode. For unattended upgrades configure the update "
+                   "checker: spiralctl update configure")
+    AUTO_UPDATE_MODE = "notify"
 
 # Alert batching/aggregation settings
 ALERT_BATCHING_ENABLED = CONFIG.get("alert_batching_enabled", True)
@@ -8366,12 +8390,30 @@ def _get_automation_runner():
     return _automation_runner
 
 
+_manual_sleep_cache = {"mtime": None, "ips": {}}
+
+
+def manually_asleep_ips():
+    """IPs an operator put to sleep from the dashboard (re-read when the file changes)."""
+    if not _AUTOMATION_AVAILABLE:
+        return {}
+    path = SHARED_DATA_DIR / miner_automation.MANUAL_SLEEP_FILE
+    mtime = _file_mtime(path)
+    if mtime != _manual_sleep_cache["mtime"]:
+        _manual_sleep_cache["ips"] = miner_automation.read_manual_sleep(str(SHARED_DATA_DIR))
+        _manual_sleep_cache["mtime"] = mtime
+    return _manual_sleep_cache["ips"]
+
+
 def automation_asleep(name):
-    """Whether a miner (by display name) is asleep because a schedule put it to sleep."""
+    """Whether a miner (by display name) is asleep on purpose: put to sleep by a
+    schedule, or by hand from the dashboard. Either way it is not "offline"."""
     if not _AUTOMATION_AVAILABLE:
         return False
     ip = _miner_ip_lookup.get(name)
-    return bool(ip) and _get_automation_runner().is_asleep(ip)
+    if not ip:
+        return False
+    return ip in manually_asleep_ips() or _get_automation_runner().is_asleep(ip)
 
 
 def auto_restart_settings():
@@ -12771,7 +12813,7 @@ def perform_auto_update(update_info):
     """Run upgrade.sh --auto when auto_update_mode is 'auto'. Returns True if launched."""
     latest_ver = update_info.get("latest_version", "?")
     current_ver = update_info.get("current_version", "?")
-    upgrade_script = str(INSTALL_DIR / "upgrade.sh")
+    upgrade_script = str(INSTALL_DIR / "scripts" / "pool-upgrade-launch.sh")
 
     logger.info(f"AUTO-UPDATE: Launching upgrade from v{current_ver} to v{latest_ver}")
 
@@ -12792,44 +12834,51 @@ def perform_auto_update(update_info):
 
     try:
         import subprocess
-        # upgrade.sh is installed at INSTALL_DIR/upgrade.sh and sudoers grants
-        # POOL_USER NOPASSWD for this exact path — no password prompt needed.
+        # Start the upgrade through the root-owned launcher, which runs upgrade.sh as
+        # its own transient systemd unit. Running upgrade.sh as a child of Sentinel
+        # cannot work: upgrade.sh stops spiralsentinel part-way through, and systemd
+        # kills the whole cgroup — the upgrade included.
         result = subprocess.run(
-            ["sudo", upgrade_script, "--auto"],
-            timeout=600,  # 10 min ceiling — should be well within any reasonable upgrade
+            ["sudo", "-n", upgrade_script],
+            timeout=60,
             capture_output=True,
             text=True,
         )
         if result.returncode == 0:
-            logger.info(f"AUTO-UPDATE: Upgrade to v{latest_ver} completed successfully")
+            logger.info(f"AUTO-UPDATE: Upgrade to v{latest_ver} started (unit spiralpool-upgrade, "
+                        f"log /var/log/spiralpool/upgrade.log)")
             return True
         else:
-            logger.error(f"AUTO-UPDATE: upgrade.sh exited {result.returncode}: {result.stderr[:500]}")
+            logger.error(f"AUTO-UPDATE: launcher exited {result.returncode}: {result.stderr[:500]}")
             # Send failure alert
             fail_embed = _embed(
                 "❌ Auto-Update Failed",
-                f"Upgrade to `v{latest_ver}` failed (exit {result.returncode}). "
-                f"Run manually: `sudo {upgrade_script}`",
+                f"Upgrade to `v{latest_ver}` could not be started (exit {result.returncode}). "
+                f"Run manually: `sudo spiralctl upgrade`",
                 COLORS["red"],
                 [{"name": "Error", "value": f"```{result.stderr[:800]}```", "inline": False}],
             )
             send_discord(fail_embed)
             send_telegram(
                 f"❌ *Auto-Update Failed*\n"
-                f"Upgrade to `v{latest_ver}` exited with code {result.returncode}.\n"
-                f"Run manually: `sudo {upgrade_script}`"
+                f"Upgrade to `v{latest_ver}` could not be started (exit {result.returncode}).\n"
+                f"Run manually: `sudo spiralctl upgrade`"
             )
             return False
     except Exception as e:
-        logger.error(f"AUTO-UPDATE: Exception running upgrade.sh: {e}")
+        logger.error(f"AUTO-UPDATE: Exception starting upgrade: {e}")
         return False
 
 
-def create_update_embed(update_info):
-    """Create Discord embed for update notification"""
+def create_update_embed(update_info, reminder=None):
+    """Create Discord embed for update notification.
+
+    reminder: None for the first notice, or a human label ("48 hours", "72 hours",
+    "1 week") for a follow-up sent because the pool is still not updated.
+    """
     current = update_info.get("current_version", "?")
     latest = update_info.get("latest_version", "?")
-    upgrade_cmd = update_info.get("upgrade_command", "cd /spiralpool && sudo ./upgrade.sh")
+    upgrade_cmd = update_info.get("upgrade_command", "sudo spiralctl upgrade")
     release_url = update_info.get("release_url", "https://github.com/SpiralPool/Spiral-Pool/releases")
 
     fields = [
@@ -12839,13 +12888,138 @@ def create_update_embed(update_info):
         {"name": "⬆️ Upgrade Command", "value": f"```bash\n{upgrade_cmd}\n```", "inline": False},
     ]
 
-    return _embed(
-        theme("update.title"),
-        f"{theme('update.body')}\n\n**Run the upgrade when you're ready** - this is a notification only, no automatic updates will be performed.",
-        COLORS["cyan"],
-        fields,
-        footer=theme("update.footer")
-    )
+    if reminder:
+        title = f"⏰ Reminder: Spiral Pool v{latest} still not installed"
+        body = (f"Spiral Pool `v{latest}` was released {reminder} ago and this pool is still "
+                f"running `v{current}`.\n\n**Run the upgrade when you're ready** - this is a "
+                f"notification only, no automatic updates will be performed.")
+    else:
+        title = theme("update.title")
+        body = (f"{theme('update.body')}\n\n**Run the upgrade when you're ready** - this is a "
+                f"notification only, no automatic updates will be performed.\n"
+                f"_Reminders follow at 48 hours, 72 hours and 1 week after release "
+                f"until the pool is updated._")
+
+    return _embed(title, body, COLORS["cyan"], fields, footer=theme("update.footer"))
+
+
+# ── Update notification schedule ──────────────────────────────────────────────
+# First notice the first time a scan finds a newer release, then reminders at
+# 48h, 72h and 1 week after the release (GitHub published_at; first-detection
+# time when that is unknown) for as long as the pool is still not updated.
+# State lives on disk so a Sentinel restart neither repeats nor forgets a notice.
+UPDATE_REMINDER_SCHEDULE = [
+    (48 * 3600,    "48h", "48 hours"),
+    (72 * 3600,    "72h", "72 hours"),
+    (7 * 86400,    "7d",  "1 week"),
+]
+UPDATE_NOTIFY_STATE_FILE = DATA_DIR / "update_notify_state.json"
+
+
+def _version_tuple(v):
+    parts = re.findall(r"\d+", str(v or ""))[:4]
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+
+def _parse_iso_ts(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _load_update_notify_state():
+    try:
+        with open(UPDATE_NOTIFY_STATE_FILE, "r") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_update_notify_state(data):
+    try:
+        if not data:
+            UPDATE_NOTIFY_STATE_FILE.unlink(missing_ok=True)
+            return
+        tmp = UPDATE_NOTIFY_STATE_FILE.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, UPDATE_NOTIFY_STATE_FILE)
+    except OSError as e:
+        logger.warning(f"Could not save update notification state: {e}")
+
+
+def process_update_notifications(update_info, state, now=None):
+    """Send the first update notice and any due "still not updated" reminders.
+
+    Safe to call every loop: it only sends when a notice is actually due, and
+    marks a notice done only once send_alert() reports it went out (quiet hours,
+    maintenance and cooldowns just defer it to a later loop).
+    """
+    now = time.time() if now is None else now
+    st = _load_update_notify_state()
+
+    current = update_info.get("current_version") if update_info else None
+    running = max(_version_tuple(current), _version_tuple(__version__))
+
+    if not update_info or not update_info.get("update_available"):
+        # Clear only once the pool is actually on (or past) the version we were
+        # reminding about. A failed GitHub check also reports "no update", and
+        # clearing on that would replay the first notice after the next good check.
+        if st and running >= _version_tuple(st.get("version")):
+            logger.info(f"Update to v{st.get('version')} installed — reminders stopped")
+            _save_update_notify_state({})
+        return
+
+    latest = update_info.get("latest_version")
+    if not latest:
+        return
+    if running >= _version_tuple(latest):
+        if st:
+            _save_update_notify_state({})
+        return
+
+    if st.get("version") != latest:
+        # New release (or first ever) — start a fresh schedule.
+        st = {
+            "version": latest,
+            "first_seen": now,
+            "release_ts": _parse_iso_ts(update_info.get("release_published_at")),
+            "sent": [],
+        }
+        _save_update_notify_state(st)
+
+    anchor = st.get("release_ts") or st.get("first_seen") or now
+    if anchor > now:  # clock skew — never schedule from the future
+        anchor = st.get("first_seen") or now
+    sent = set(st.get("sent", []))
+
+    if "initial" not in sent:
+        if send_alert("update_available", create_update_embed(update_info), state):
+            sent.add("initial")
+            # Milestones already behind us when the first notice goes out are not
+            # replayed as a burst; the next future one still fires.
+            for secs, key, _label in UPDATE_REMINDER_SCHEDULE:
+                if now >= anchor + secs:
+                    sent.add(key)
+            st["sent"] = sorted(sent)
+            _save_update_notify_state(st)
+            logger.info(f"Update notice sent for v{latest}")
+        return
+
+    due = [(key, label) for secs, key, label in UPDATE_REMINDER_SCHEDULE
+           if now >= anchor + secs and key not in sent]
+    if not due:
+        return
+    key, label = due[-1]  # several due at once (Sentinel was down): send only the latest
+    if send_alert("update_available", create_update_embed(update_info, reminder=label), state):
+        sent.update(k for k, _ in due)
+        st["sent"] = sorted(sent)
+        _save_update_notify_state(st)
+        logger.info(f"Update reminder ({label}) sent for v{latest}")
 
 def send_discord(embed):
     """Send Discord webhook with automatic retry on network failures."""
@@ -21090,7 +21264,8 @@ def monitor_loop(state):
 
     # Track last update check time
     last_update_check = 0
-    last_notified_version = None
+    last_notified_version = None   # auto mode only — notify mode uses the on-disk schedule
+    cached_update_info = None      # last successful update check, re-evaluated every loop
 
     # Track last stale state cleanup (hourly)
     last_stale_cleanup = 0
@@ -23698,20 +23873,25 @@ def monitor_loop(state):
                     (time.time() - last_update_check) > UPDATE_CHECK_INTERVAL:
                 last_update_check = time.time()
                 update_info = check_for_updates()
-                if update_info and update_info.get("update_available"):
+                if update_info is not None:
+                    cached_update_info = update_info
+                if AUTO_UPDATE_MODE == "auto" and update_info and update_info.get("update_available"):
                     latest_ver = update_info.get("latest_version", "")
                     if latest_ver and latest_ver != last_notified_version:
-                        logger.info(f"Update available: v{latest_ver} (mode={AUTO_UPDATE_MODE})")
-                        if AUTO_UPDATE_MODE == "auto":
-                            # Apply update immediately — notify before + after
-                            success = perform_auto_update(update_info)
-                            if success:
-                                last_notified_version = latest_ver
-                        else:
-                            # notify mode — send alert, let operator decide
-                            sent = send_alert("update_available", create_update_embed(update_info), state)
-                            if sent:
-                                last_notified_version = latest_ver
+                        logger.info(f"Update available: v{latest_ver} (mode=auto)")
+                        # Apply update immediately — notify before + after
+                        success = perform_auto_update(update_info)
+                        if success:
+                            last_notified_version = latest_ver
+
+            # notify mode — first notice, then 48h / 72h / 1-week reminders while not updated.
+            # Evaluated every loop against the cached check so reminders land on time
+            # rather than up to UPDATE_CHECK_INTERVAL late.
+            if UPDATE_CHECK_ENABLED and AUTO_UPDATE_MODE == "notify" and cached_update_info is not None:
+                try:
+                    process_update_notifications(cached_update_info, state)
+                except Exception as e:
+                    logger.debug(f"Update notification error: {e}")
 
             # ═══════════════════════════════════════════════════════════════════════════════
             # ALERT BATCH FLUSH - Send any batched alerts if window has expired

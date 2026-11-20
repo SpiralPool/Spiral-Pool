@@ -13,7 +13,7 @@ Docker supports **V1 + V2 Stratum** in both single-coin and multi-coin mode:
 - **Stratum V1** (plain + TLS encrypted connections)
 - **Stratum V2** (SV2 binary protocol with Noise NX encryption) — opt-in via `STRATUM_V2_ENABLED=true`
 - All 16 coins: DGB, BTC, BCH, BCH2, BC2, BTCS, NMC, SYS, XMY, FBTC, XEC, LTC, DOGE, DGB-SCRYPT, PEP, CAT
-- Merge mining in multi-coin mode: SHA-256d (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, or DGB as parent) and Scrypt (LTC+DOGE, LTC+PEP)
+- Merge mining in multi-coin mode: SHA-256d (BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, or DGB as parent) and Scrypt (LTC+DOGE, LTC+PEP, or DGB-SCRYPT as parent when LTC is not enabled)
 - Dashboard, Sentinel monitoring, Prometheus, and Grafana included
 - Self-signed TLS certificates auto-generated (V1 TLS); V2 authority and static keys created on first V2 start in `config/stratum-v2/`
 

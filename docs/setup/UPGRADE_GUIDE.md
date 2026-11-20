@@ -1,8 +1,8 @@
-# Upgrading to Spiral Pool v3.0.3 (Spiral Covenant)
+# Upgrading to Spiral Pool v3.1.0 (Spiral Covenant)
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1, v3.0.2) and v3.0.3 for the pool stack.** (Coin **node** upgrades — BTC, DGB, SYS, XEC below — are separate steps run with `coin-upgrade.sh`.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1, v3.0.2, v3.1.0) and v3.1.0 for the pool stack.** (Coin **node** upgrades — BTC, DGB, SYS, XEC below — are separate steps run with `coin-upgrade.sh`.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
@@ -102,6 +102,24 @@ v9.26.3 required a full, txindexed node; v9.26.4 lifts that. While a DGB node is
 New installs: `install.sh` configures DGB from the pool-wide pruning choice (pruned → `prune=5000`, no `txindex`; full → `txindex=1`, `prune=0`), and `spiralctl coin prune DGB` can enable pruning at any time.
 
 > **DigiDollar mining** is now included: the pool requests the `digidollar-oracle` GBT rule and copies `default_oracle_commitment` into the coinbase when the node provides one. It is **self-gating** — before DigiDollar activates (BIP9) the node returns no commitment, so the pool mines normal DGB blocks and there is **no operator action** required for DigiDollar. (Pending end-to-end validation on testnet26 ahead of mainnet activation.)
+
+---
+
+## What's new in v3.1.0
+
+Feature and security release. **No database migrations; existing `config.yaml` files keep working.** See [CHANGELOG.md](../../CHANGELOG.md) for details.
+
+- **Security fix — upgrade promptly.** Scripts the pool user may run as root through sudo now live only in the root-owned `/spiralpool/scripts/`. Before, a compromise of the dashboard, Sentinel or stratum process could edit `/spiralpool/upgrade.sh` and run it as root. `upgrade.sh` moves the existing sudoers entries over automatically.
+- **Upgrade from the dashboard.** Management → Spiral Pool Upgrade now really upgrades (it runs as its own systemd job and the page follows it live, across the dashboard restart). **The first upgrade to 3.1.0 must be run from a shell with `upgrade.sh` itself** — `cd <release folder> && sudo ./upgrade.sh --local --full` from a copy of the release, or `cd /spiralpool && sudo ./upgrade.sh` to fetch it from GitHub — because the button relies on the launcher this release installs, and `spiralctl upgrade` is new in 3.1.0 too.
+- **Dry-run the upgrade first.** `upgrade.sh` offers it before changing anything — press Enter at "Run the read-only dry run first?"; if everything passes it continues into the upgrade, a FAIL stops it. Or run it on its own from the release folder: `sudo bash scripts/linux/upgrade-preflight.sh`. It changes nothing; it reports what the upgrade would do (sudoers rewrite checked with `visudo`, ownership changes, HA key-exchange move), builds the 3.1.0 stratum in `/tmp` and loads your real `config.yaml` with it. From 3.1.0 on: `spiralctl upgrade --from <dir> --dry-run`.
+- **`spiralctl upgrade`** (`check`, `--from <dir>`). `spiralctl update` still manages the update checker.
+- **Bulk miner actions** (restart / sleep / wake / power for many miners at once, in the dashboard or `spiralctl miners control all …`), an **energy report** export, and a live **pool topology** page.
+- **DigiByte-Scrypt can merge-mine Dogecoin and PepeCoin**, and the **DGB + NMC/SYS/XMY/FBTC** merge-mining mode — which never actually mined before — now works.
+- **`spiralctl` commands are grouped** (`coin …`, `miners …`, `logs errors`, `alerts …`, `ha sync-addresses`); every old command name still works.
+- **Update reminders.** Sentinel sends a notice when a new release is found, then reminders at 48 hours, 72 hours and 1 week after release while the pool is still not updated.
+- **Fixed false results when `spiralctl` is run from the admin login:** `webhook status` ("Not configured"), `test` (`get_blockchain_dir: command not found`, "PostgreSQL not accepting connections"), `security` (arithmetic errors) and `logs` (journal permission error).
+
+After upgrading, refresh the login banner with `run-parts /etc/update-motd.d` or simply log in again.
 
 ---
 
@@ -581,13 +599,13 @@ Miners connect to the appropriate stratum port for their hardware algorithm. The
 spiralctl status
 ```
 
-The version line should show `3.0.3`. If Sentinel is running:
+The version line should show `3.1.0`. If Sentinel is running:
 
 ```bash
 sudo journalctl -u spiralsentinel -n 20
 ```
 
-Look for `Spiral Pool v3.0.3` followed by `Spiral Covenant` in the startup log.
+Look for `Spiral Pool v3.1.0` followed by `Spiral Covenant` in the startup log.
 
 ---
 
@@ -667,4 +685,4 @@ sudo ./upgrade.sh --check   # Check GitHub for latest version
 
 ---
 
-*Spiral Pool — Spiral Covenant 3.0.3 — Built on what came before. Growing toward phi.*
+*Spiral Pool — Spiral Covenant 3.1.0 — Built on what came before. Growing toward phi.*

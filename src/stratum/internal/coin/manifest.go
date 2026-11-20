@@ -77,8 +77,8 @@ type ChainConfig struct {
 // MergeMiningConfig contains AuxPoW / merge-mining configuration
 type MergeMiningConfig struct {
 	// For parent chains
-	CanBeParent              bool     `yaml:"can_be_parent,omitempty"`
-	SupportedAuxAlgorithms   []string `yaml:"supported_aux_algorithms,omitempty"`
+	CanBeParent            bool     `yaml:"can_be_parent,omitempty"`
+	SupportedAuxAlgorithms []string `yaml:"supported_aux_algorithms,omitempty"`
 
 	// For auxiliary chains
 	SupportsAuxPow    bool   `yaml:"supports_auxpow,omitempty"`
@@ -86,6 +86,9 @@ type MergeMiningConfig struct {
 	ChainID           int32  `yaml:"chain_id,omitempty"`     // CONSENSUS-CRITICAL
 	VersionBit        uint32 `yaml:"version_bit,omitempty"`  // CONSENSUS-CRITICAL
 	ParentChain       string `yaml:"parent_chain,omitempty"` // e.g., "LTC" for DOGE
+	// ParentChains lists every parent the pool can merge-mine this chain under
+	// (v3.1.0: DGB-SCRYPT for DOGE/PEP, DGB for the SHA-256d aux chains).
+	ParentChains []string `yaml:"parent_chains,omitempty"`
 }
 
 // DisplayConfig contains UI/display metadata

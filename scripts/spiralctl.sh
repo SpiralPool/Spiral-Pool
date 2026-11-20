@@ -35,7 +35,7 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-/spiralpool}"
 VERSION="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
-VERSION="${VERSION:-3.0.3}"
+VERSION="${VERSION:-3.1.0}"
 CONFIG_FILE="$INSTALL_DIR/config/config.yaml"
 POOL_USER="${POOL_USER:-spiraluser}"
 
@@ -194,6 +194,23 @@ as_pool_user() {
         exec sudo -u "$POOL_USER" "$target" "$@"
     fi
     exec "$target" "$@"
+}
+
+# Journal access. The pool user is deliberately NOT in adm/systemd-journal (the
+# dashboard runs as it and is network-facing), so anything that reads the journal
+# must run as the invoking admin — who usually is in adm — or fall back to sudo.
+# Reading as the pool user returned "No journal files were opened", and the
+# 2>/dev/null callers silently reported zero events instead.
+_can_read_journal() {
+    [[ $EUID -eq 0 ]] && return 0
+    id -nG 2>/dev/null | tr ' ' '\n' | grep -qxE 'adm|systemd-journal'
+}
+_journalctl() {
+    if _can_read_journal; then
+        journalctl "$@"
+    else
+        sudo journalctl "$@"
+    fi
 }
 
 get_enabled_coins() {
@@ -1193,6 +1210,11 @@ vip_disable() {
 #===============================================================================
 
 cmd_ha() {
+    # "sync-addresses" remains available as a top-level alias.
+    if [[ "${1:-}" == "sync-addresses" ]]; then
+        shift; cmd_sync_addresses "$@"; return
+    fi
+
     local action="${1:-status}"
 
     case "$action" in
@@ -4288,6 +4310,15 @@ ha_disable() {
 #===============================================================================
 
 cmd_coin() {
+    # Consolidated coin/node management. The old top-level forms
+    # (add-coin, remove-coin, coin-upgrade, node) remain as aliases.
+    case "${1:-}" in
+        add)                shift; cmd_add_coin "$@"; return ;;
+        remove)             shift; cmd_remove_coin "$@"; return ;;
+        upgrade)            shift; cmd_coin_upgrade "$@"; return ;;
+        start|stop|restart) cmd_node "$@"; return ;;
+    esac
+
     local action="${1:-status}"
     local coin="${2:-}"
 
@@ -4349,7 +4380,7 @@ cmd_coin() {
                 log_error "Unknown coin: ${coin}"
                 echo ""
                 echo -e "  ${DIM}Supported: BC2, BCH, BCH2, BTC, BTCS, CAT, DGB, DGB-SCRYPT, DOGE, FBTC, LTC, NMC, PEP, XEC, SYS, XMY${NC}"
-                echo -e "  ${DIM}For unsupported/custom coins, use: spiralctl add-coin <SYMBOL> --github <URL>${NC}"
+                echo -e "  ${DIM}For unsupported/custom coins, use: spiralctl coin add <SYMBOL> --github <URL>${NC}"
                 exit 1
             fi
 
@@ -4722,13 +4753,20 @@ cmd_coin() {
             echo ""
             ;;
         *)
-            echo "Usage: spiralctl coin [status|list|enable|disable|prune|storage] <coin>"
+            echo "Usage: spiralctl coin <command> [coin]"
             echo ""
             echo "  spiralctl coin status               Show all coins and their state"
             echo "  spiralctl coin enable <SYMBOL>      Add a supported coin to the pool"
             echo "  spiralctl coin disable <SYMBOL>     Stop and disable a coin daemon"
+            echo "  spiralctl coin start|stop|restart [SYMBOL|all]"
+            echo "                                      Control coin node daemons"
+            echo "  spiralctl coin upgrade [--check] [--coin <TICKER>] [--reindex]"
+            echo "                                      Upgrade coin daemon binaries"
             echo "  spiralctl coin prune <SYMBOL>       Enable blockchain pruning (~95% disk savings)"
             echo "  spiralctl coin storage              Measure each chain on disk vs its published figure"
+            echo "  spiralctl coin add <SYMBOL> --github <URL>"
+            echo "                                      Add a CUSTOM coin from its GitHub repo (advanced)"
+            echo "  spiralctl coin remove <SYMBOL>      Remove a custom coin's generated files"
             echo ""
             echo "For mining mode changes, use 'spiralctl mining':"
             echo "  spiralctl mining solo <coin>        Switch to solo mining"
@@ -4801,7 +4839,18 @@ cmd_sync() {
 # The underlying scripts remain unchanged — spiralctl is a unified entry point.
 #===============================================================================
 
-cmd_logs()        { as_pool_user /usr/local/bin/spiralpool-logs "$@"; }
+# logs: plain journal tail, or "logs errors [service] [window]" for the error filter.
+# Runs as the invoking admin (or sudo), NOT as the pool user — see _can_read_journal.
+cmd_logs() {
+    if [[ "${1:-}" == "errors" ]]; then
+        cmd_log_errors "$@"
+        return
+    fi
+    if _can_read_journal; then
+        exec /usr/local/bin/spiralpool-logs "$@"
+    fi
+    exec sudo /usr/local/bin/spiralpool-logs "$@"
+}
 cmd_restart_all() { check_root; exec /usr/local/bin/spiralpool-restart "$@"; }
 cmd_wallet()      { as_pool_user /usr/local/bin/spiralpool-wallet "$@"; }
 cmd_backup()      { check_root; exec /usr/local/bin/spiralpool-backup "$@"; }
@@ -4836,6 +4885,159 @@ cmd_watch()       { as_pool_user /usr/local/bin/spiralpool-watch "$@"; }
 cmd_export()      { as_pool_user /usr/local/bin/spiralpool-export "$@"; }
 cmd_update()      { as_pool_user /usr/local/bin/spiralpool-update "$@"; }
 cmd_maintenance() { as_pool_user /usr/local/bin/spiralpool-maintenance "$@"; }
+
+#===============================================================================
+# UPGRADE COMMAND (runs upgrade.sh)
+#===============================================================================
+# "update" manages the update *checker* (check/status/auto-update settings);
+# "upgrade" actually performs the upgrade by running upgrade.sh.
+
+_upgrade_usage() {
+    echo "Usage: spiralctl upgrade [check] [--from <dir>] [upgrade.sh options]"
+    echo ""
+    echo "  spiralctl upgrade                   Download the latest release from GitHub and upgrade"
+    echo "  spiralctl upgrade check             Show installed vs latest version (no changes, no sudo)"
+    echo "  spiralctl upgrade --from <dir>      Upgrade from a release copied to this machine"
+    echo "                                      (runs <dir>/upgrade.sh --local)"
+    echo "  spiralctl upgrade --from <dir> --dry-run"
+    echo "                                      Read-only preflight: what the upgrade would change, sudoers"
+    echo "                                      checked with visudo, your config.yaml loaded by the new"
+    echo "                                      stratum. Changes nothing. Add --no-build to skip the build."
+    echo ""
+    echo "Any other options are passed straight to upgrade.sh, e.g.:"
+    echo "  --dashboard-only | --sentinel-only | --stratum-only    Update one component"
+    echo "  --no-dashboard | --no-sentinel | --no-stratum         Skip a component"
+    echo "  --update-services   Also refresh systemd service files"
+    echo "  --fix-config        Fix common config issues"
+    echo "  --full              Service files + config fixes"
+    echo "  --no-backup         Skip the pre-upgrade backup (not recommended)"
+    echo "  --auto              Unattended (no prompts)"
+    echo ""
+    echo "Examples:"
+    echo "  spiralctl upgrade check"
+    echo "  spiralctl upgrade"
+    echo "  spiralctl upgrade --sentinel-only"
+    echo "  spiralctl upgrade --from ~/Spiral-Pool-3.1.0"
+}
+
+cmd_upgrade() {
+    # Prefer the root-owned copy in scripts/: ${INSTALL_DIR} is owned by the pool
+    # user, so the top-level upgrade.sh could have been swapped out — and this
+    # runs it as root.
+    local script="${INSTALL_DIR}/scripts/upgrade.sh"
+    [[ -f "$script" ]] || script="${INSTALL_DIR}/upgrade.sh"
+    local from=""
+    local dry_run=false
+    local args=()
+
+    case "${1:-}" in
+        help|-h|--help) _upgrade_usage; return 0 ;;
+        check)          shift; set -- --check "$@" ;;
+    esac
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from)
+                from="${2:-}"
+                if [[ -z "$from" ]]; then
+                    log_error "--from needs a directory (the extracted release, containing upgrade.sh)"
+                    exit 1
+                fi
+                shift 2 ;;
+            --from=*) from="${1#--from=}"; shift ;;
+            --dry-run|--preflight) dry_run=true; shift ;;
+            *)        args+=("$1"); shift ;;
+        esac
+    done
+
+    # Upgrading from a copied release tree: that tree's own upgrade.sh must run,
+    # because upgrade.sh finds its source files relative to its own location.
+    if [[ -n "$from" ]]; then
+        local from_abs
+        if ! from_abs=$(cd "$from" 2>/dev/null && pwd); then
+            log_error "Not a directory: $from"
+            exit 1
+        fi
+        from="$from_abs"
+        script="$from/upgrade.sh"
+
+        # Dry run: the release's read-only preflight instead of the upgrade.
+        if $dry_run; then
+            local preflight="$from/scripts/linux/upgrade-preflight.sh"
+            if [[ ! -f "$preflight" ]]; then
+                log_error "$from has no scripts/linux/upgrade-preflight.sh (releases before 3.1.0 do not ship it)"
+                exit 1
+            fi
+            local pf_args=("$from")
+            [[ " ${args[*]} " == *" --no-build "* ]] && pf_args+=(--no-build)
+            if [[ $EUID -ne 0 ]]; then
+                exec sudo bash "$preflight" "${pf_args[@]}"
+            fi
+            exec bash "$preflight" "${pf_args[@]}"
+        fi
+        [[ " ${args[*]} " == *" --local "* ]] || args=(--local "${args[@]}")
+    fi
+
+    # A dry run needs the release on disk to inspect; never fall through to a real upgrade.
+    if $dry_run; then
+        log_error "--dry-run needs the release folder: spiralctl upgrade --from <dir> --dry-run"
+        exit 1
+    fi
+
+    if [[ ! -f "$script" ]]; then
+        log_error "upgrade.sh not found at $script"
+        [[ -z "$from" ]] && echo "Use 'spiralctl upgrade --from <dir>' with an extracted Spiral Pool release."
+        exit 1
+    fi
+
+    # Check only: no root needed. Present upgrade.sh's JSON readably.
+    if [[ " ${args[*]} " == *" --check "* ]]; then
+        local json
+        json=$(bash "$script" "${args[@]}" 2>/dev/null) || true
+        if [[ -z "$json" ]]; then
+            log_error "Update check failed (no response from upgrade.sh --check)"
+            exit 1
+        fi
+        local cur lat avail url
+        if command -v jq &>/dev/null && echo "$json" | jq -e . &>/dev/null; then
+            cur=$(echo "$json"   | jq -r '.current_version // "?"')
+            lat=$(echo "$json"   | jq -r '.latest_version // "?"')
+            avail=$(echo "$json" | jq -r '.update_available // false')
+            url=$(echo "$json"   | jq -r '.release_url // ""')
+        else
+            _json_field() { echo "$json" | tr -d '\n' | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\).*/\1/p"; }
+            cur=$(_json_field current_version); lat=$(_json_field latest_version)
+            avail=$(_json_field update_available); url=$(_json_field release_url)
+        fi
+        if [[ -n "$cur" && -n "$lat" ]]; then
+            echo ""
+            echo -e "  Installed:  ${WHITE}v${cur}${NC}"
+            echo -e "  Latest:     ${WHITE}v${lat}${NC}"
+            if [[ "$avail" == "true" ]]; then
+                echo -e "  Status:     ${YELLOW}Update available${NC}"
+                [[ -n "$url" ]] && echo -e "  Release:    ${DIM}${url}${NC}"
+                echo ""
+                echo -e "  Run ${CYAN}spiralctl upgrade${NC} to install it."
+            else
+                echo -e "  Status:     ${GREEN}Up to date${NC}"
+            fi
+            echo ""
+        else
+            echo "$json"
+        fi
+        return 0
+    fi
+
+    # Real upgrade: needs root. Run the script directly when it is executable so
+    # the sudoers rule for the pool user (which names this exact path) matches;
+    # otherwise (e.g. a tree copied from Windows without +x) go through bash.
+    local runner=()
+    [[ -x "$script" ]] || runner=(bash)
+    if [[ $EUID -ne 0 ]]; then
+        exec sudo "${runner[@]}" "$script" "${args[@]}"
+    fi
+    exec "${runner[@]}" "$script" "${args[@]}"
+}
 
 #===============================================================================
 # SHUTDOWN COMMAND
@@ -5053,7 +5255,7 @@ cmd_node() {
             check_root
             if [[ "${coin^^}" == "DGB-SCRYPT" ]]; then
                 log_error "DGB-SCRYPT shares the DigiByte daemon with DGB. Stopping it would also stop DGB mining."
-                log_info "Use 'spiralctl node stop dgb' to stop both, or update config.yaml to disable DGB-SCRYPT stratum."
+                log_info "Use 'spiralctl coin stop dgb' to stop both, or update config.yaml to disable DGB-SCRYPT stratum."
                 exit 1
             fi
             for daemon in $(get_daemons "$coin"); do
@@ -5068,7 +5270,7 @@ cmd_node() {
             check_root
             if [[ "${coin^^}" == "DGB-SCRYPT" ]]; then
                 log_error "DGB-SCRYPT shares the DigiByte daemon with DGB. Restarting it would also restart DGB mining."
-                log_info "Use 'spiralctl node restart dgb' to restart both."
+                log_info "Use 'spiralctl coin restart dgb' to restart both."
                 exit 1
             fi
             for daemon in $(get_daemons "$coin"); do
@@ -5471,7 +5673,7 @@ with open(sys.argv[1], 'w') as f:
                     echo -e "  SimpleSwap link:   ${GREEN}On${NC} ${DIM}(in sats surge alerts)${NC}"
                 fi
                 echo ""
-                echo -e "  ${DIM}For detailed webhook config: spiralctl webhook status${NC}"
+                echo -e "  ${DIM}For detailed webhook config: spiralctl alerts webhook status${NC}"
             else
                 echo -e "  ${YELLOW}Config file not found${NC}"
                 echo "  Run the installer to create configuration."
@@ -5592,6 +5794,16 @@ _alerts_as_owner() {
 }
 
 cmd_alerts() {
+    # Consolidated notifications: webhook channels, pausing, test sends and
+    # cooldowns all live here. "webhook", "pause" and the config notify-test /
+    # list-cooldowns forms remain as aliases.
+    case "${1:-}" in
+        webhook)   shift; cmd_webhook "$@"; return ;;
+        pause)     shift; cmd_pause "$@"; return ;;
+        test)      shift; cmd_config notify-test "$@"; return ;;
+        cooldowns) shift; cmd_config list-cooldowns "$@"; return ;;
+    esac
+
     local action="${1:-}"
     local target="${2:-}"
     local SENTINEL_CONFIG
@@ -5860,9 +6072,16 @@ PYEOF
             echo "  disable <alert_type>      Stop sending a specific alert or report"
             echo "  enable  <alert_type>      Resume sending it"
             echo "  reset                     Re-enable everything (clear all mutes)"
+            echo "  pause [minutes] [reason]  Pause all alerts temporarily"
+            echo "  test                      Send a test notification to every channel"
+            echo "  cooldowns                 Show active alert cooldowns"
+            echo "  webhook [status|set|clear|test]"
+            echo "                            Manage Discord & Telegram channels"
             echo ""
             echo "Examples:"
             echo "  spiralctl alerts"
+            echo "  spiralctl alerts webhook status"
+            echo "  spiralctl alerts pause 30"
             echo "  spiralctl alerts list"
             echo "  spiralctl alerts disable difficulty_change"
             echo "  spiralctl alerts disable weekly_report"
@@ -5967,14 +6186,14 @@ cmd_security() {
     echo -e "    ${DIM}──────────────────────────────────────────────────────${NC}"
 
     local stratum_journal
-    stratum_journal=$(journalctl -u spiralstratum --since "$period ago" --no-pager 2>/dev/null)
+    stratum_journal=$(_journalctl -u spiralstratum --since "$period ago" --no-pager 2>/dev/null)
 
     local ip_bans violations preauth_floods msg_too_large conn_refused
-    ip_bans=$(echo "$stratum_journal" | grep -c '"IP banned"\|"IP auto-banned due to violations"' 2>/dev/null || echo 0)
-    violations=$(echo "$stratum_journal" | grep -c '"Rate limit violation"' 2>/dev/null || echo 0)
-    preauth_floods=$(echo "$stratum_journal" | grep -c '"Pre-auth message limit exceeded"' 2>/dev/null || echo 0)
-    msg_too_large=$(echo "$stratum_journal" | grep -c '"Message too large"' 2>/dev/null || echo 0)
-    conn_refused=$(echo "$stratum_journal" | grep -c '"Connection rate limited"\|"Global partial buffer limit exceeded"' 2>/dev/null || echo 0)
+    ip_bans=$(echo "$stratum_journal" | grep -c '"IP banned"\|"IP auto-banned due to violations"' 2>/dev/null) || ip_bans=0
+    violations=$(echo "$stratum_journal" | grep -c '"Rate limit violation"' 2>/dev/null) || violations=0
+    preauth_floods=$(echo "$stratum_journal" | grep -c '"Pre-auth message limit exceeded"' 2>/dev/null) || preauth_floods=0
+    msg_too_large=$(echo "$stratum_journal" | grep -c '"Message too large"' 2>/dev/null) || msg_too_large=0
+    conn_refused=$(echo "$stratum_journal" | grep -c '"Connection rate limited"\|"Global partial buffer limit exceeded"' 2>/dev/null) || conn_refused=0
 
     _sec_row() { printf "    %-32s %s\n" "$1" "$2"; }
 
@@ -6001,10 +6220,10 @@ cmd_security() {
     classified_lines=$(echo "$stratum_journal" | grep '"Connection classified"')
 
     local n_asic n_proxy n_market n_unknown
-    n_asic=$(echo "$classified_lines" | grep -c '"type":"ASIC"' 2>/dev/null || echo 0)
-    n_proxy=$(echo "$classified_lines" | grep -c '"type":"PROXY"' 2>/dev/null || echo 0)
-    n_market=$(echo "$classified_lines" | grep -c '"type":"MARKETPLACE"' 2>/dev/null || echo 0)
-    n_unknown=$(echo "$classified_lines" | grep -c '"type":"UNKNOWN"' 2>/dev/null || echo 0)
+    n_asic=$(echo "$classified_lines" | grep -c '"type":"ASIC"' 2>/dev/null) || n_asic=0
+    n_proxy=$(echo "$classified_lines" | grep -c '"type":"PROXY"' 2>/dev/null) || n_proxy=0
+    n_market=$(echo "$classified_lines" | grep -c '"type":"MARKETPLACE"' 2>/dev/null) || n_market=0
+    n_unknown=$(echo "$classified_lines" | grep -c '"type":"UNKNOWN"' 2>/dev/null) || n_unknown=0
     local total_classified=$(( n_asic + n_proxy + n_market + n_unknown ))
 
     if [[ "$total_classified" -eq 0 ]]; then
@@ -6030,7 +6249,7 @@ cmd_security() {
         | awk '{ts=$1; $1=""; printf "    [stratum]   %-12s %s\n", ts, $0}')
 
     # Dashboard: failed logins
-    dash_events=$(journalctl -u spiraldash --since "$period ago" --no-pager 2>/dev/null \
+    dash_events=$(_journalctl -u spiraldash --since "$period ago" --no-pager 2>/dev/null \
         | grep "SECURITY:" \
         | tail -5 \
         | sed 's/^[A-Za-z]* [0-9]* //' \
@@ -6207,6 +6426,20 @@ cmd_fail2ban() {
 # WEBHOOK COMMAND
 #===============================================================================
 
+# After a webhook change: Sentinel re-reads config.json on its own while it runs, but a
+# Sentinel that is not running sends nothing — and notifications added after install
+# never enabled it (v3.1.0: say so instead of promising "no restart needed").
+_sentinel_reload_note() {
+    if systemctl is-active --quiet spiralsentinel 2>/dev/null; then
+        echo "Sentinel hot-reloads config — no restart needed."
+        if ! systemctl is-enabled --quiet spiralsentinel 2>/dev/null; then
+            echo -e "${YELLOW}Sentinel is running now but is not set to start at boot (it was started by hand), so it would stay off after a reboot. Fix:${NC} sudo systemctl enable spiralsentinel"
+        fi
+    else
+        echo -e "${YELLOW}Sentinel is not running, so nothing will be sent yet. Start it now and at every boot:${NC} sudo systemctl enable --now spiralsentinel"
+    fi
+}
+
 cmd_webhook() {
     local action="${1:-}"
     shift || true
@@ -6217,6 +6450,14 @@ cmd_webhook() {
     # and is reading the install-directory copy instead. Ask the service.
     local SENTINEL_CONFIG
     SENTINEL_CONFIG=$(_sentinel_config_path)
+
+    # config.json is 0600 and owned by the pool user. Run as any other login, every
+    # grep below failed with "permission denied" into 2>/dev/null and status said
+    # "Not configured" for a webhook that was working. Re-run as the owner instead.
+    if [[ -f "$SENTINEL_CONFIG" ]] && { [[ ! -r "$SENTINEL_CONFIG" ]] || [[ ! -w "$SENTINEL_CONFIG" ]]; } \
+       && [[ $EUID -ne 0 ]] && [[ "$(id -un)" != "$POOL_USER" ]]; then
+        exec sudo -u "$POOL_USER" "$0" webhook "$action" "$@"
+    fi
 
     case "$action" in
         status)
@@ -6280,7 +6521,7 @@ except:
                 discord)
                     local url="${1:-}"
                     if [[ -z "$url" ]]; then
-                        echo "Usage: spiralctl webhook set discord <webhook_url>"
+                        echo "Usage: spiralctl alerts webhook set discord <webhook_url>"
                         exit 1
                     fi
 
@@ -6308,14 +6549,14 @@ with open(sys.argv[1], 'w') as f:
     json.dump(cfg, f, indent=2)
 " "$SENTINEL_CONFIG" "$url"
                     log_success "Discord webhook URL configured"
-                    echo "Sentinel hot-reloads config — no restart needed."
+                    _sentinel_reload_note
                     ;;
 
                 telegram)
                     local token="${1:-}"
                     local chat_id="${2:-}"
                     if [[ -z "$token" ]] || [[ -z "$chat_id" ]]; then
-                        echo "Usage: spiralctl webhook set telegram <bot_token> <chat_id>"
+                        echo "Usage: spiralctl alerts webhook set telegram <bot_token> <chat_id>"
                         exit 1
                     fi
 
@@ -6345,14 +6586,14 @@ with open(sys.argv[1], 'w') as f:
     json.dump(cfg, f, indent=2)
 " "$SENTINEL_CONFIG" "$token" "$chat_id"
                     log_success "Telegram configured and enabled"
-                    echo "Sentinel hot-reloads config — no restart needed."
+                    _sentinel_reload_note
                     ;;
 
                 *)
-                    echo "Usage: spiralctl webhook set <discord|telegram> ..."
+                    echo "Usage: spiralctl alerts webhook set <discord|telegram> ..."
                     echo ""
-                    echo "  spiralctl webhook set discord <webhook_url>"
-                    echo "  spiralctl webhook set telegram <bot_token> <chat_id>"
+                    echo "  spiralctl alerts webhook set discord <webhook_url>"
+                    echo "  spiralctl alerts webhook set telegram <bot_token> <chat_id>"
                     exit 1
                     ;;
             esac
@@ -6397,7 +6638,7 @@ with open(sys.argv[1], 'w') as f:
                     ;;
 
                 *)
-                    echo "Usage: spiralctl webhook clear <discord|telegram>"
+                    echo "Usage: spiralctl alerts webhook clear <discord|telegram>"
                     exit 1
                     ;;
             esac
@@ -6450,7 +6691,7 @@ with open(sys.argv[1], 'w') as f:
             ;;
 
         *)
-            echo "Usage: spiralctl webhook <command> [options]"
+            echo "Usage: spiralctl alerts webhook <command> [options]"
             echo ""
             echo "Commands:"
             echo "  status                              Show webhook configuration"
@@ -6461,10 +6702,10 @@ with open(sys.argv[1], 'w') as f:
             echo "  test                                Send test message to all configured endpoints"
             echo ""
             echo "Examples:"
-            echo "  spiralctl webhook status"
-            echo "  spiralctl webhook set discord https://discord.com/api/webhooks/123/abc"
-            echo "  spiralctl webhook set telegram 123456:ABCdef -12345678"
-            echo "  spiralctl webhook test"
+            echo "  spiralctl alerts webhook status"
+            echo "  spiralctl alerts webhook set discord https://discord.com/api/webhooks/123/abc"
+            echo "  spiralctl alerts webhook set telegram 123456:ABCdef -12345678"
+            echo "  spiralctl alerts webhook test"
             exit 1
             ;;
     esac
@@ -6482,14 +6723,14 @@ cmd_add_coin() {
     if [[ $# -eq 0 ]]; then
         echo ""
         echo -e "${WHITE}USAGE${NC}"
-        echo "    spiralctl add-coin <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
-        echo "    spiralctl add-coin <SYMBOL> --interactive"
-        echo "    spiralctl add-coin <SYMBOL> --from-json <file>"
+        echo "    spiralctl coin add <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
+        echo "    spiralctl coin add <SYMBOL> --interactive"
+        echo "    spiralctl coin add <SYMBOL> --from-json <file>"
         echo ""
         echo -e "${WHITE}EXAMPLES${NC}"
-        echo "    spiralctl add-coin FOO  --github https://github.com/foocoin/foocoin"
-        echo "    spiralctl add-coin BAR  --github https://github.com/barcoin/bar --algorithm scrypt"
-        echo "    spiralctl add-coin FOO  --interactive"
+        echo "    spiralctl coin add FOO  --github https://github.com/foocoin/foocoin"
+        echo "    spiralctl coin add BAR  --github https://github.com/barcoin/bar --algorithm scrypt"
+        echo "    spiralctl coin add FOO  --interactive"
         echo ""
         echo -e "${DIM}For adding net-new coins that are NOT natively supported by Spiral Pool.${NC}"
         echo -e "${DIM}Fetches chain parameters from GitHub, queries CoinGecko for metadata,${NC}"
@@ -6507,7 +6748,7 @@ cmd_add_coin() {
     # First positional arg is the symbol (must not start with -)
     if [[ "$1" == -* ]]; then
         log_error "Expected coin symbol as first argument, got option: $1"
-        echo "Usage: spiralctl add-coin <SYMBOL> --github <URL>"
+        echo "Usage: spiralctl coin add <SYMBOL> --github <URL>"
         exit 1
     fi
     symbol="${1^^}"
@@ -6543,7 +6784,7 @@ cmd_add_coin() {
         echo -e "${WHITE}  ${coin_name} (${symbol}) is natively supported by Spiral Pool${NC}"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo -e "  ${DIM}spiralctl add-coin is for net-new coins that are NOT natively supported${NC}"
+        echo -e "  ${DIM}spiralctl coin add is for net-new coins that are NOT natively supported${NC}"
         echo -e "  ${DIM}by Spiral Pool. ${coin_name} already has a full, tested implementation${NC}"
         echo -e "  ${DIM}built in — no onboarding script is needed.${NC}"
         echo ""
@@ -6587,7 +6828,7 @@ cmd_add_coin() {
             --from-json)    extra_args+=("--from-json" "$2"); shift 2 ;;
             *)
                 log_error "Unknown option: $1"
-                echo "Run 'spiralctl add-coin' with no arguments for usage."
+                echo "Run 'spiralctl coin add' with no arguments for usage."
                 exit 1
                 ;;
         esac
@@ -6745,11 +6986,11 @@ cmd_remove_coin() {
     if [[ $# -eq 0 ]]; then
         echo ""
         echo -e "${WHITE}USAGE${NC}"
-        echo "    spiralctl remove-coin <SYMBOL> [--yes]"
+        echo "    spiralctl coin remove <SYMBOL> [--yes]"
         echo ""
         echo -e "${WHITE}EXAMPLES${NC}"
-        echo "    spiralctl remove-coin DOGE"
-        echo "    spiralctl remove-coin DOGE --yes   (skip confirmation)"
+        echo "    spiralctl coin remove DOGE"
+        echo "    spiralctl coin remove DOGE --yes   (skip confirmation)"
         echo ""
         echo -e "${DIM}Removes the Go implementation, Dockerfile, node config template,${NC}"
         echo -e "${DIM}native installer, params JSON, and manifest entry for the coin.${NC}"
@@ -6768,7 +7009,7 @@ cmd_remove_coin() {
             --yes|-y) confirm=true; shift ;;
             *)
                 log_error "Unknown option: $1"
-                echo "Usage: spiralctl remove-coin <SYMBOL> [--yes]"
+                echo "Usage: spiralctl coin remove <SYMBOL> [--yes]"
                 exit 1
                 ;;
         esac
@@ -6966,59 +7207,85 @@ show_help() {
     echo ""
     echo -e "${WHITE}USAGE${NC}"
     echo "    spiralctl <command> [subcommand] [options]"
+    echo "    Run 'spiralctl <group> help' (e.g. 'spiralctl miners help') for a group's own options."
     echo ""
     echo -e "${WHITE}OPERATIONS${NC}"
     echo "    status              Show full service & node status overview"
-    echo "    restart             Restart all Spiral Pool services"
-    echo "    logs                View stratum log output"
-    echo "    watch               Live monitoring dashboard"
-    echo "    test                Run diagnostic / connectivity tests"
-    echo "    update              Check for Spiral Pool updates"
-    echo "    maintenance         Enter or leave maintenance mode"
-    echo "    pause [minutes]     Pause Sentinel alerts temporarily"
-    echo "    shutdown [--reboot] Gracefully stop all services, then power off (or reboot)"
-    echo ""
-    echo -e "${WHITE}BLOCKCHAIN${NC}"
     echo "    sync [--watch|-w] [--coin <coin>]"
     echo "                        Blockchain sync progress"
-    echo "    chain export        Push blockchain data to a remote machine"
-    echo "    chain restore       Pull blockchain data from a remote machine"
-    echo "    node [status|start|stop|restart] [coin|all]"
-    echo "                        Manage blockchain node daemons"
-    echo "    coin [status|list|enable|disable] <coin>"
-    echo "                        Manage cryptocurrency support"
-    echo "    coin enable <SYMBOL>"
-    echo "                        Add a supported coin (installs daemon, generates wallet)"
-    echo "    add-coin <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
-    echo "                        Add a CUSTOM coin from its GitHub repository (advanced)"
-    echo "    remove-coin <SYMBOL> [--yes]"
-    echo "                        Remove a coin and all its generated files"
-    echo "    coin-upgrade [--check] [--coin <TICKER>] [--reindex]"
+    echo "    logs [service]      Tail service logs (default: spiralstratum)"
+    echo "    logs errors [service] [window]"
+    echo "                        Errors/warnings only (default: 1h)"
+    echo "                        Services: stratum, sentinel, dash, patroni, ha"
+    echo "    watch               Live monitoring dashboard"
+    echo "    test                Run diagnostic / connectivity tests"
+    echo "    restart             Restart all Spiral Pool services"
+    echo "    upgrade             Upgrade Spiral Pool to the latest release (runs upgrade.sh)"
+    echo "    upgrade check       Show installed vs latest version"
+    echo "    upgrade --from <dir>"
+    echo "                        Upgrade from a release copied to this machine"
+    echo "    upgrade --from <dir> --dry-run"
+    echo "                        Read-only preflight of that upgrade (changes nothing)"
+    echo "    update [check|status|configure|enable|disable]"
+    echo "                        Update checker & automatic-update settings"
+    echo "    maintenance         Enter or leave maintenance mode"
+    echo "    shutdown [--reboot] Gracefully stop all services, then power off (or reboot)"
+    echo ""
+    echo -e "${WHITE}COINS & NODES${NC}"
+    echo "    coin [status]       Show every coin and its daemon state"
+    echo "    coin enable|disable <SYMBOL>"
+    echo "                        Add a supported coin / stop and disable one"
+    echo "    coin start|stop|restart [SYMBOL|all]"
+    echo "                        Control coin node daemons"
+    echo "    coin upgrade [--check] [--coin <TICKER>] [--reindex]"
     echo "                        Upgrade coin daemon binaries (run after upgrade.sh if prompted)"
+    echo "    coin prune <SYMBOL> | coin storage"
+    echo "                        Enable pruning / measure chain disk usage"
+    echo "    coin add <SYMBOL> --github <URL> [--algorithm sha256d|scrypt]"
+    echo "                        Add a CUSTOM coin from its GitHub repository (advanced)"
+    echo "    coin remove <SYMBOL> [--yes]"
+    echo "                        Remove a custom coin's generated files"
+    echo "    chain export|restore"
+    echo "                        Push / pull blockchain data to or from another machine"
+    echo "    wallet              Show or generate wallet addresses"
     echo ""
     echo -e "${WHITE}MINING${NC}"
-    echo "    mining [status|solo|multi|merge|multiport] [options]"
+    echo "    mining [status|solo|multi|merge|multiport|payout] [options]"
     echo "                        Mining mode management"
     echo "    mining multiport [status|enable|disable|weights|mode]"
     echo "                        Multi coin smart port (port 16180)"
     echo "                        mode TIME (24h schedule) | DIFFICULTY (lowest network diff)"
-    echo "    pool stats          Pool hashrate and worker statistics"
     echo "    stats [blocks [N]]  Quick pool stats; 'stats blocks' shows last N blocks"
-    echo "    miners [list]       Show connected miners with hashrate and shares"
-    echo "    miners kick <IP>    Disconnect all sessions from a miner IP"
-    echo "    workers             Per-worker breakdown (miner → rig → hashrate + acceptance)"
-    echo "    miner nick [list | <IP> <name> | clear <IP>]"
-    echo "                        View or set miner nicknames in Sentinel"
-    echo "    miner control <IP> info|sleep|wake|restart|power <level|watts>"
-    echo "                        Send one command to a miner, as automation would"
-    echo "    scan                Scan network for miners"
-    echo "    wallet              Show or generate wallet addresses"
+    echo "    pool stats          Pool hashrate and worker statistics"
+    echo "    v2 ...              Stratum V2 authority keys"
     echo "    external [setup|enable|disable|status|test]"
     echo "                        External access / hashrate rental"
     echo ""
+    echo -e "${WHITE}MINERS${NC}"
+    echo "    miners [list]       Connected miners with hashrate and shares"
+    echo "    miners workers      Per-worker breakdown (miner → rig → hashrate + acceptance)"
+    echo "    miners scan         Scan the network for miners"
+    echo "    miners kick <IP>    Disconnect all sessions from a miner IP"
+    echo "    miners nick|group|tag [list | <IP> <value> | clear <IP>]"
+    echo "                        Label miners in Sentinel"
+    echo "    miners control <IP|IP,IP,...|all> info|sleep|wake|restart|power <level|watts>"
+    echo "                        Send a command to one, several or all miners, as automation would"
+    echo ""
+    echo -e "${WHITE}ALERTS & NOTIFICATIONS${NC}"
+    echo "    alerts              Interactive menu to turn alerts & reports on or off"
+    echo "    alerts [list|enable|disable|reset] [alert_type]"
+    echo "                        Manage individual alerts non-interactively"
+    echo "    alerts pause [minutes] [reason]"
+    echo "                        Pause Sentinel alerts temporarily"
+    echo "    alerts test         Send a test notification to every configured channel"
+    echo "    alerts cooldowns    Show active alert cooldowns with time remaining"
+    echo "    alerts webhook [status|set|clear|test]"
+    echo "                        Manage Discord & Telegram channels"
+    echo "    config [show|list|get|set|validate] [key] [value]"
+    echo "                        View, update or dry-run check the Sentinel configuration"
+    echo ""
     echo -e "${WHITE}DATA${NC}"
-    echo "    data backup         Backup pool data and configuration"
-    echo "    data restore        Restore pool data from backup"
+    echo "    data backup|restore Backup or restore pool data and configuration"
     echo "    data export         Export mining history to CSV"
     echo "    gdpr-delete         Delete miner data (GDPR/CCPA)"
     echo ""
@@ -7027,24 +7294,8 @@ show_help() {
     echo "                        High Availability cluster management"
     echo "    ha vip [status|enable|disable|failover]"
     echo "                        Virtual IP for miner failover"
-    echo "    sync-addresses [--apply] [--force] [--dry-run]"
+    echo "    ha sync-addresses [--apply] [--force] [--dry-run]"
     echo "                        Sync pool addresses from HA master"
-    echo ""
-    echo -e "${WHITE}CONFIGURATION${NC}"
-    echo "    config [show|list|get|set] [key] [value]"
-    echo "                        View or update Sentinel configuration"
-    echo "    config validate     Dry-run config check (no restart required)"
-    echo "    config notify-test  Send a test notification to every configured channel"
-    echo "    config list-cooldowns"
-    echo "                        Show active alert cooldowns with time remaining"
-    echo "    alerts [menu|list|disable|enable|reset] [alert_type]"
-    echo "                        Turn individual alerts & reports on or off"
-    echo "                        (run 'spiralctl alerts' for an interactive menu)"
-    echo "    log [errors] [service] [window]"
-    echo "                        Filter service logs for errors/warnings (default: 1h)"
-    echo "                        Services: stratum, sentinel, dash, patroni, ha"
-    echo "    webhook [status|set|clear|test]"
-    echo "                        Manage Discord & Telegram notifications"
     echo ""
     echo -e "${WHITE}SECURITY${NC}"
     echo "    security [period]   Security status overview (default: 24h)"
@@ -7057,39 +7308,31 @@ show_help() {
     echo "    spiralctl status                           Overview of all services"
     echo "    spiralctl sync --watch                     Live blockchain sync progress"
     echo "    spiralctl logs                             Tail stratum logs"
-    echo "    spiralctl restart                          Restart all pool services"
-    echo "    spiralctl wallet --coin btc                Show BTC wallet address"
-    echo "    spiralctl scan                             Discover miners on the network"
-    echo "    spiralctl data backup                      Backup pool data"
-    echo "    spiralctl stats blocks                     Show recent blocks"
-    echo "    spiralctl chain export --host 10.0.0.2     Push blockchain to remote"
+    echo "    spiralctl logs errors sentinel 24h         Sentinel errors, last 24h"
+    echo "    spiralctl coin enable LTC                  Add Litecoin to the pool"
+    echo "    spiralctl coin restart dgb                 Restart the DigiByte node"
+    echo "    spiralctl coin upgrade --check             Check for coin daemon updates"
     echo "    spiralctl mining solo dgb                  Switch to solo DGB mining"
-    echo "    spiralctl mining multiport enable dgb:19.2h,btc:4.8h"
-    echo "                                              Enable smart port (hours, sum=24)"
     echo "    spiralctl mining multiport enable dgb:80,btc:20"
     echo "                                              Enable smart port (weights, sum=100)"
-    echo "    spiralctl mining multiport mode DIFFICULTY"
-    echo "                                              Switch routing to lowest-difficulty mode"
-    echo "    spiralctl ha enable --vip 192.168.1.100    Enable HA on this node"
-    echo "    spiralctl ha vip status                    Check VIP / keepalived state"
-    echo "    spiralctl security                         Security overview (last 24h)"
-    echo "    spiralctl security fail2ban unban 1.2.3.4  Remove a ban"
-    echo "    spiralctl config set expected_hashrate 50  Update expected TH/s"
-    echo "    spiralctl config validate                  Check config for issues (no restart)"
-    echo "    spiralctl config notify-test               Send test notification to all channels"
-    echo "    spiralctl config list-cooldowns            Show which alerts are on cooldown"
-    echo "    spiralctl log errors                       Errors in the last 1h across all services"
-    echo "    spiralctl log errors sentinel              Sentinel errors only, last 1h"
-    echo "    spiralctl log errors stratum 24h           Stratum errors, last 24h"
     echo "    spiralctl miners                           List connected miners + hashrate"
-    echo "    spiralctl miners kick 192.168.1.50         Disconnect a miner"
-    echo "    spiralctl workers                          Per-worker hashrate breakdown"
-    echo "    spiralctl miner nick 192.168.1.50 \"Rig 1\"  Set miner nickname"
-    echo "    spiralctl coin enable LTC                   Add Litecoin to the pool"
-    echo "    spiralctl coin disable DOGE                Disable Dogecoin daemon"
-    echo "    spiralctl remove-coin DOGE                 Remove DOGE generated files (keeps wallet)"
-    echo "    spiralctl shutdown                         Gracefully stop all services and power off"
+    echo "    spiralctl miners workers                   Per-worker hashrate breakdown"
+    echo "    spiralctl miners nick 192.168.1.50 \"Rig 1\" Set miner nickname"
+    echo "    spiralctl alerts webhook status            Show Discord/Telegram setup"
+    echo "    spiralctl alerts pause 30                  Silence alerts for 30 minutes"
+    echo "    spiralctl alerts test                      Send a test notification"
+    echo "    spiralctl config set expected_hashrate 50  Update expected TH/s"
+    echo "    spiralctl data backup                      Backup pool data"
+    echo "    spiralctl stats blocks                     Show recent blocks"
+    echo "    spiralctl ha vip status                    Check VIP / keepalived state"
+    echo "    spiralctl security fail2ban unban 1.2.3.4  Remove a ban"
+    echo "    spiralctl upgrade check                    Is a newer release out?"
+    echo "    spiralctl upgrade                          Upgrade to the latest release"
     echo "    spiralctl shutdown --reboot                Gracefully stop all services and reboot"
+    echo ""
+    echo -e "${DIM}Older command names (node, add-coin, remove-coin, coin-upgrade, miner, workers,${NC}"
+    echo -e "${DIM}scan, log, webhook, pause, backup, restore, export, blocks, sync-addresses, vip,${NC}"
+    echo -e "${DIM}tor, fail2ban) still work as aliases.${NC}"
     echo ""
     echo -e "${WHITE}SUPPORTED COINS${NC}"
     echo "    SHA-256d: bc2, bch, bch2, btcs, btc, dgb, fbtc, nmc, sys, xmy"
@@ -7176,7 +7419,7 @@ cmd_sync_addresses() {
             --dry-run) dry_run=true; shift ;;
             *)
                 log_error "Unknown option: $1"
-                echo "Usage: spiralctl sync-addresses [--apply] [--force] [--dry-run]"
+                echo "Usage: spiralctl ha sync-addresses [--apply] [--force] [--dry-run]"
                 exit 1
                 ;;
         esac
@@ -7463,17 +7706,17 @@ cmd_workers() {
 
 cmd_log_errors() {
     # Consume optional "errors" subcommand so both forms work:
-    #   spiralctl log errors          (window defaults to 1h)
-    #   spiralctl log errors 24h      (window = 24h)
-    #   spiralctl log 24h             (window = 24h, "errors" omitted)
+    #   spiralctl logs errors          (window defaults to 1h)
+    #   spiralctl logs errors 24h      (window = 24h)
+    #   spiralctl logs errors 24h             (window = 24h, "errors" omitted)
     if [[ "${1:-}" == "errors" ]]; then
         shift
     fi
 
     # Optional service filter — accepts short aliases or full names.
     # If the next arg doesn't look like a time window, treat it as a service name.
-    #   spiralctl log errors stratum 24h
-    #   spiralctl log errors sentinel
+    #   spiralctl logs errors stratum 24h
+    #   spiralctl logs errors sentinel
     local service_filter=""
     local service_label="all services"
     if [[ -n "${1:-}" && ! "${1:-}" =~ ^[0-9]+[smhd]$ ]]; then
@@ -7497,7 +7740,7 @@ cmd_log_errors() {
 
     # Validate window format (e.g. 30m, 2h, 24h, 7d)
     if ! [[ "$window" =~ ^[0-9]+[smhd]$ ]]; then
-        log_error "Usage: spiralctl log errors [service] [window]  (e.g. 1h, 30m, 24h, 7d)"
+        log_error "Usage: spiralctl logs errors [service] [window]  (e.g. 1h, 30m, 24h, 7d)"
         log_error "  Services: stratum, sentinel, dash, patroni, ha"
         exit 1
     fi
@@ -7534,7 +7777,7 @@ cmd_log_errors() {
         fi
 
         local lines
-        lines=$(journalctl -u "${svc}.service" --since "$since_arg" --no-pager -q 2>/dev/null \
+        lines=$(_journalctl -u "${svc}.service" --since "$since_arg" --no-pager -q 2>/dev/null \
             | grep -iE '\b(error|warn(ing)?|crit(ical)?|fatal|panic|emerg)\b' \
             | tail -100)
 
@@ -7579,6 +7822,13 @@ _get_admin_api_key() {
 }
 
 cmd_miners() {
+    # Consolidated miner management. "miner", "workers" and "scan" remain as aliases.
+    case "${1:-}" in
+        nick|group|tag|control) cmd_miner "$@"; return ;;
+        workers)                shift; cmd_workers "$@"; return ;;
+        scan)                   shift; cmd_scan "$@"; return ;;
+    esac
+
     local subcommand="${1:-list}"
     shift || true
 
@@ -7676,13 +7926,18 @@ cmd_miners() {
             ;;
 
         *)
-            echo "Usage: spiralctl miners [list|kick <IP>]"
+            echo "Usage: spiralctl miners <command>"
             echo ""
             echo "  list              Show all connected miners with hashrate and shares"
+            echo "  workers           Per-worker breakdown (miner -> rig -> hashrate + acceptance)"
+            echo "  scan              Scan the local network for miners"
             echo "  kick <IP>         Disconnect all sessions from the given IP"
+            echo "  nick|group|tag    Label miners in Sentinel (e.g. 'spiralctl miners nick list')"
+            echo "  control <IP> ...  Send one command to a miner (info|sleep|wake|restart|power)"
             echo ""
             echo "Examples:"
             echo "  spiralctl miners"
+            echo "  spiralctl miners workers"
             echo "  spiralctl miners kick 192.168.1.50"
             exit 1
             ;;
@@ -7731,7 +7986,7 @@ cmd_miner() {
                 clear)
                     local ip="${1:-}"
                     if [[ -z "$ip" ]]; then
-                        log_error "Usage: spiralctl miner nick clear <IP>"
+                        log_error "Usage: spiralctl miners nick clear <IP>"
                         exit 1
                     fi
                     check_root
@@ -7776,7 +8031,7 @@ PYEOF
                     local ip="$action_or_ip"
                     local name="${1:-}"
                     if [[ -z "$name" ]]; then
-                        log_error "Usage: spiralctl miner nick <IP> <name>"
+                        log_error "Usage: spiralctl miners nick <IP> <name>"
                         exit 1
                     fi
                     check_root
@@ -7835,7 +8090,7 @@ PYEOF
                 clear)
                     local ip="${1:-}"
                     if [[ -z "$ip" ]]; then
-                        log_error "Usage: spiralctl miner group clear <IP>"
+                        log_error "Usage: spiralctl miners group clear <IP>"
                         exit 1
                     fi
                     check_root
@@ -7867,11 +8122,11 @@ PYEOF
                     ;;
 
                 *)
-                    # spiralctl miner group <IP> <group-name>
+                    # spiralctl miners group <IP> <group-name>
                     local ip="$action_or_ip"
                     local group_name="${1:-}"
                     if [[ -z "$group_name" ]]; then
-                        log_error "Usage: spiralctl miner group <IP> <group-name>"
+                        log_error "Usage: spiralctl miners group <IP> <group-name>"
                         exit 1
                     fi
                     check_root
@@ -7944,7 +8199,7 @@ PYEOF
                 clear)
                     local ip="${1:-}"
                     if [[ -z "$ip" ]]; then
-                        log_error "Usage: spiralctl miner tag clear <IP>"
+                        log_error "Usage: spiralctl miners tag clear <IP>"
                         exit 1
                     fi
                     check_root
@@ -7969,11 +8224,11 @@ PYEOF
                     ;;
 
                 *)
-                    # spiralctl miner tag <IP> <tag1,tag2,...>
+                    # spiralctl miners tag <IP> <tag1,tag2,...>
                     local ip="$action_or_ip"
                     local tag_csv="${1:-}"
                     if [[ -z "$tag_csv" ]]; then
-                        log_error "Usage: spiralctl miner tag <IP> <tag1,tag2,...>"
+                        log_error "Usage: spiralctl miners tag <IP> <tag1,tag2,...>"
                         exit 1
                     fi
                     check_root
@@ -8012,7 +8267,7 @@ PYEOF
             exit $?
             ;;
         *)
-            echo "Usage: spiralctl miner <command>"
+            echo "Usage: spiralctl miners <command>"
             echo ""
             echo "  nick  [list | <IP> <name> | clear <IP>]       Manage miner nicknames"
             echo "  group [list | <IP> <name> | clear <IP>]       Manage miner groups"
@@ -8021,12 +8276,12 @@ PYEOF
             echo "                                                Send one command to a miner, as automation would"
             echo ""
             echo "Examples:"
-            echo "  spiralctl miner nick 192.168.1.50 \"Living Room Miner\""
-            echo "  spiralctl miner nick list"
-            echo "  spiralctl miner group 192.168.1.50 \"Garage\""
-            echo "  spiralctl miner group list"
-            echo "  spiralctl miner tag 192.168.1.50 \"asic,garage,s21\""
-            echo "  spiralctl miner tag list"
+            echo "  spiralctl miners nick 192.168.1.50 \"Living Room Miner\""
+            echo "  spiralctl miners nick list"
+            echo "  spiralctl miners group 192.168.1.50 \"Garage\""
+            echo "  spiralctl miners group list"
+            echo "  spiralctl miners tag 192.168.1.50 \"asic,garage,s21\""
+            echo "  spiralctl miners tag list"
             exit 1
             ;;
     esac
@@ -8507,65 +8762,59 @@ main() {
     shift || true
 
     case "$command" in
-        # Core status & sync
+        # ── Canonical commands ────────────────────────────────────────────────
+        # Operations
         status)     cmd_status "$@" ;;
         sync)       cmd_sync "$@" ;;
-
-        # Delegated operations
-        logs)       cmd_logs "$@" ;;
-        restart)    cmd_restart_all "$@" ;;
-        wallet)     cmd_wallet "$@" ;;
-        pause)      cmd_pause "$@" ;;
-        v2)         cmd_v2 "$@" ;;
-        stats)      cmd_stats "$@" ;;      # also: stats blocks [N]
-        test)       cmd_test "$@" ;;
-        scan)       cmd_scan "$@" ;;
+        logs)       cmd_logs "$@" ;;          # also: logs errors [service] [window]
         watch)      cmd_watch "$@" ;;
-        update)     cmd_update "$@" ;;
+        test)       cmd_test "$@" ;;
+        restart)    cmd_restart_all "$@" ;;
+        update)     cmd_update "$@" ;;        # update checker: check/status/configure/enable/disable
+        upgrade)    cmd_upgrade "$@" ;;       # run upgrade.sh (also: upgrade check, upgrade --from <dir>)
         maintenance) cmd_maintenance "$@" ;;
-        shutdown)    cmd_shutdown "$@" ;;
+        shutdown)   cmd_shutdown "$@" ;;
 
-        # Data management (canonical)
-        data)       cmd_data "$@" ;;
-        # Backward-compat aliases for data subcommands
-        backup)     cmd_backup "$@" ;;
-        restore)    cmd_restore_pool "$@" ;;
-        export)     cmd_export "$@" ;;
-        # Backward-compat alias for stats subcommand
-        blocks)     cmd_blocks "$@" ;;
-
-        # Blockchain data transfer
-        chain)      cmd_chain "$@" ;;
-
-        # Miner management
-        miners)     cmd_miners "$@" ;;
-        miner)      cmd_miner "$@" ;;
-        workers)    cmd_workers "$@" ;;
-        log)        cmd_log_errors "$@" ;;
-
-        # Node & coin management
+        # Coins & nodes: coin [status|enable|disable|start|stop|restart|upgrade|prune|storage|add|remove]
         coin)       cmd_coin "$@" ;;
-        node)       cmd_node "$@" ;;
-        add-coin)    cmd_add_coin "$@" ;;
-        remove-coin) cmd_remove_coin "$@" ;;
-        coin-upgrade) cmd_coin_upgrade "$@" ;;
+        chain)      cmd_chain "$@" ;;
+        wallet)     cmd_wallet "$@" ;;
 
-        # Infrastructure
-        ha)         cmd_ha "$@" ;;        # also: ha vip [action]
-        sync-addresses) cmd_sync_addresses "$@" ;;
-        # Backward-compat aliases for ha subcommands
-        vip)        cmd_vip "$@" ;;
-        tor)        cmd_tor "$@" ;;
+        # Miners: miners [list|workers|scan|kick|nick|group|tag|control]
+        miners)     cmd_miners "$@" ;;
+        stats)      cmd_stats "$@" ;;         # also: stats blocks [N]
+        v2)         cmd_v2 "$@" ;;
 
-        # Configuration & notifications
-        config)     cmd_config "$@" ;;
-        webhook)    cmd_webhook "$@" ;;
+        # Data: data [backup|restore|export]
+        data)       cmd_data "$@" ;;
+
+        # Notifications: alerts [menu|list|enable|disable|reset|pause|test|cooldowns|webhook]
         alerts)     cmd_alerts "$@" ;;
+        config)     cmd_config "$@" ;;
 
-        # Security (also: security fail2ban [...], security tor [...])
+        # Infrastructure: ha [... | vip | sync-addresses], security [period | fail2ban | tor]
+        ha)         cmd_ha "$@" ;;
         security)   cmd_security "$@" ;;
-        # Backward-compat aliases for security subcommands
-        fail2ban)   cmd_fail2ban "$@" ;;
+
+        # ── Backward-compat aliases (not shown in help; scripts and docs still use them) ──
+        miner)          cmd_miners "$@" ;;
+        workers)        cmd_workers "$@" ;;
+        scan)           cmd_scan "$@" ;;
+        log)            cmd_log_errors "$@" ;;
+        node)           cmd_node "$@" ;;
+        add-coin)       cmd_add_coin "$@" ;;
+        remove-coin)    cmd_remove_coin "$@" ;;
+        coin-upgrade)   cmd_coin_upgrade "$@" ;;
+        webhook)        cmd_webhook "$@" ;;
+        pause)          cmd_pause "$@" ;;
+        backup)         cmd_backup "$@" ;;
+        restore)        cmd_restore_pool "$@" ;;
+        export)         cmd_export "$@" ;;
+        blocks)         cmd_blocks "$@" ;;
+        sync-addresses) cmd_sync_addresses "$@" ;;
+        vip)            cmd_vip "$@" ;;
+        tor)            cmd_tor "$@" ;;
+        fail2ban)       cmd_fail2ban "$@" ;;
 
         # Go binary commands (pool-level)
         mining|pool|external|gdpr-delete)

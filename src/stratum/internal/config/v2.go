@@ -42,6 +42,10 @@ type ConfigV2 struct {
 	MultiPort MultiPortConfig  `yaml:"multi_port,omitempty"` // Multi coin smart port (v2.1)
 	VIP       VIPConfig        `yaml:"vip,omitempty"`        // VIP (Virtual IP) for miner failover
 	HA        HAConfig         `yaml:"ha,omitempty"`         // High Availability coordination
+
+	// MergeMiningWarnings lists merge-mining entries Validate disabled because they
+	// could never mine (v3.1.0). Not read from YAML; stratum logs them at startup.
+	MergeMiningWarnings []string `yaml:"-"`
 }
 
 // MultiPortConfig configures the multi coin smart port.
@@ -628,6 +632,95 @@ func (c *ConfigV2) Validate() error {
 				return fmt.Errorf("coins[%d] (%s) auxChains[%d].daemon.host is required for %s",
 					i, coin.Symbol, j, aux.Symbol)
 			}
+		}
+	}
+
+	// v3.1.0: merge-mining pairs are checked, and an impossible one is DISABLED —
+	// with an error the stratum logs at startup — rather than failing the whole
+	// config. A failed V2 load makes stratum fall back to V1 parsing (fatal for a
+	// V2 file), so rejecting would turn one bad aux entry into a pool that does not
+	// start at all; disabling it keeps the parent coin mining. Before v3.1.0 these
+	// pairs passed validation and the parent's pool retried forever without mining.
+	disableAux := func(i, j int, why string) {
+		c.Coins[i].MergeMining.AuxChains[j].Enabled = false
+		c.MergeMiningWarnings = append(c.MergeMiningWarnings, fmt.Sprintf(
+			"coins[%d] (%s): merge mining of %s DISABLED — %s",
+			i, c.Coins[i].Symbol, c.Coins[i].MergeMining.AuxChains[j].Symbol, why))
+	}
+	for i := range c.Coins {
+		cc := &c.Coins[i]
+		if !cc.Enabled || !cc.MergeMining.Enabled {
+			continue
+		}
+		parentImpl, err := coin.Create(cc.Symbol)
+		if err != nil {
+			continue // unknown symbols are reported by the coin checks above
+		}
+		parent, isParent := parentImpl.(coin.ParentChainCoin)
+		for j := range cc.MergeMining.AuxChains {
+			aux := cc.MergeMining.AuxChains[j]
+			if !aux.Enabled {
+				continue
+			}
+			if !isParent {
+				disableAux(i, j, fmt.Sprintf("%s cannot be a merge-mining parent", cc.Symbol))
+				continue
+			}
+			auxImpl, err := coin.Create(aux.Symbol)
+			if err != nil {
+				disableAux(i, j, fmt.Sprintf("unknown aux chain %q", aux.Symbol))
+				continue
+			}
+			auxCoin, ok := auxImpl.(coin.AuxPowCoin)
+			if !ok || !auxCoin.SupportsAuxPow() {
+				disableAux(i, j, fmt.Sprintf("%s does not support AuxPoW merge mining", aux.Symbol))
+				continue
+			}
+			if !parent.CanBeParentFor(auxImpl.Algorithm()) {
+				disableAux(i, j, fmt.Sprintf("%s (%s) cannot merge-mine %s (%s): the algorithms differ",
+					cc.Symbol, parentImpl.Algorithm(), aux.Symbol, auxImpl.Algorithm()))
+			}
+		}
+	}
+
+	// One aux chain, one parent. LTC and DGB-SCRYPT can both parent DOGE, but two
+	// parents sharing an aux chain would share its cached aux template (duplicate or
+	// stale submissions) and collide in Sentinel's per-symbol tracking. The first
+	// parent in the file keeps it.
+	auxOwner := map[string]string{}
+	for i := range c.Coins {
+		cc := &c.Coins[i]
+		if !cc.Enabled || !cc.MergeMining.Enabled {
+			continue
+		}
+		for j := range cc.MergeMining.AuxChains {
+			aux := cc.MergeMining.AuxChains[j]
+			if !aux.Enabled {
+				continue
+			}
+			key := strings.ToUpper(aux.Symbol)
+			if prev, dup := auxOwner[key]; dup && prev != cc.Symbol {
+				disableAux(i, j, fmt.Sprintf("%s is already merge-mined under %s; each aux chain can have one parent", key, prev))
+				continue
+			}
+			auxOwner[key] = cc.Symbol
+		}
+	}
+
+	// A parent left with no enabled aux chain mines solo.
+	for i := range c.Coins {
+		cc := &c.Coins[i]
+		if !cc.Enabled || !cc.MergeMining.Enabled {
+			continue
+		}
+		anyEnabled := false
+		for _, aux := range cc.MergeMining.AuxChains {
+			anyEnabled = anyEnabled || aux.Enabled
+		}
+		if !anyEnabled {
+			cc.MergeMining.Enabled = false
+			c.MergeMiningWarnings = append(c.MergeMiningWarnings, fmt.Sprintf(
+				"coins[%d] (%s): no valid aux chain left — merge mining off, %s mines solo", i, cc.Symbol, cc.Symbol))
 		}
 	}
 

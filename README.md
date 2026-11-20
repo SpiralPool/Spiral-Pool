@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Self-Hosted Bitcoin &amp; Altcoin Mining Pool Software &mdash; Stratum V1/V2/TLS, SHA-256d &amp; Scrypt</strong><br>
-  <em>Spiral Covenant V3.0.3</em>
+  <em>Spiral Covenant V3.1.0</em>
 </p>
 
 <p align="center">
@@ -63,11 +63,11 @@ This is pure free and open-source software. Fork it, audit it, modify it, redist
 | **Spiral Router** | Classifies miners at connect via 52 user-agent patterns across 25 difficulty profiles (17 SHA-256d, 8 Scrypt) |
 | **Lock-free vardiff** | Per-session atomic state, asymmetric retarget (4&times; up / 0.75&times; down), 50% variance floor |
 | **Multi-algorithm** | SHA-256d and Scrypt with dedicated difficulty profiles |
-| **Merge mining** | 6 AuxPoW pairs across BTC and LTC parent chains |
+| **Merge mining** | 12 AuxPoW pairs across BTC, DGB, LTC and DGB-SCRYPT parent chains |
 | **Non-custodial solo payout** | Block reward embedded in coinbase tx directly to miner's wallet &mdash; no pool custody |
 | **Share pipeline** | Lock-free ring buffer (1M, MPSC) &rarr; WAL &rarr; PostgreSQL COPY batch insert |
 | **Pruned node support** | Optional per-coin pruning (5 GB cap) &mdash; BTC 600 GB&rarr;5 GB, LTC 100 GB&rarr;5 GB, DGB 80 GB&rarr;5 GB (DGB pruning requires DigiByte Core v9.26.4+, which runs DigiDollar pruned) |
-| **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, service control, log viewer, 26 themes (port 1618) |
+| **Spiral Dash** | Hashrate/analytics charts (15M&ndash;30D), fleet power &amp; efficiency, earnings calculator, block history, CSV/JSON export. Per-firmware miner controls (AxeOS, Avalon, Vnish, ePIC, LuxOS). Worker groups, Avalon power schedules, bulk miner actions (restart / sleep / wake / power), energy report, live pool topology, one-click pool upgrade, service control, log viewer, 26 themes (port 1618) |
 | **Spiral Sentinel** | Device discovery, auto-scan (BraiinsOS/Vnish), stratum &amp; wallet mismatch detection, health/temp/hashrate alerts, block notifications, dry streak &amp; difficulty detection, mempool congestion. Discord, Telegram, XMPP, ntfy, SMTP, webhooks |
 | **Multi coin smart port** | Single port (16180) rotating SHA-256d coins by either a 24h weighted schedule (TIME mode) or live lowest-network-difficulty selection (DIFFICULTY mode), with failover |
 | **SimpleSwap alerts** | Optional sat-surge alerts with pre-filled [SimpleSwap.io](https://simpleswap.io) link (operator-initiated, no auto-swaps). See [TERMS.md 5C](TERMS.md) |
@@ -100,13 +100,13 @@ Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spir
 | Bitcoin | BTC | 10 min | Parent chain |
 | Bitcoin Cash | BCH | 10 min | &mdash; |
 | Bitcoin Cash II | BCH2 | 10 min | &mdash; |
-| DigiByte | DGB | 15 sec | &mdash; |
+| DigiByte | DGB | 15 sec | Parent chain (SHA-256d aux chains) |
 | Bitcoin II | BC2 | 10 min | &mdash; |
 | Bitcoin Silver | BTCS | 5 min | &mdash; |
-| Namecoin | NMC | 10 min | BTC (AuxPoW, chain ID 1) |
-| Syscoin | SYS | 2.5 min | BTC (AuxPoW, chain ID 16) &mdash; merge-mining only |
-| Myriad | XMY | 1 min | BTC (AuxPoW, chain ID 90) |
-| Fractal Bitcoin | FBTC | 30 sec | BTC (AuxPoW, chain ID 8228) |
+| Namecoin | NMC | 10 min | BTC or DGB (AuxPoW, chain ID 1) |
+| Syscoin | SYS | 2.5 min | BTC or DGB (AuxPoW, chain ID 16) &mdash; merge-mining only |
+| Myriad | XMY | 1 min | BTC or DGB (AuxPoW, chain ID 90) |
+| Fractal Bitcoin | FBTC | 30 sec | BTC or DGB (AuxPoW, chain ID 8228) |
 | eCash | XEC | 10 min | &mdash; |
 
 ### Scrypt
@@ -114,22 +114,22 @@ Spiral Pool is designed to work with Stratum V1-compatible ASIC miners. The Spir
 | Coin | Symbol | Block Time | Merge-Mined With |
 |------|--------|------------|------------------|
 | Litecoin | LTC | 2.5 min | Parent chain |
-| Dogecoin | DOGE | 1 min | LTC (AuxPoW, chain ID 98) |
-| DigiByte-Scrypt | DGB-SCRYPT | 15 sec | &mdash; |
-| PepeCoin | PEP | 1 min | LTC (AuxPoW, chain ID 63) |
+| Dogecoin | DOGE | 1 min | LTC or DGB-SCRYPT (AuxPoW, chain ID 98) |
+| DigiByte-Scrypt | DGB-SCRYPT | 15 sec | Parent chain (Scrypt aux chains) |
+| PepeCoin | PEP | 1 min | LTC or DGB-SCRYPT (AuxPoW, chain ID 63) |
 | Catcoin | CAT | 10 min | &mdash; |
 
-> Syscoin (SYS) is merge-mining only &mdash; requires a BTC parent chain.
+> Syscoin (SYS) is merge-mining only &mdash; requires a BTC or DGB parent chain. Each aux chain is merge-mined under one parent at a time.
 
 ### Merge Mining Topology
 
 ```
-BTC ──┬── NMC  (Namecoin)         LTC ──┬── DOGE (Dogecoin)
-      ├── SYS  (Syscoin)                └── PEP  (PepeCoin)
-      ├── XMY  (Myriad)
-      └── FBTC (Fractal Bitcoin)
+BTC or DGB ──┬── NMC  (Namecoin)         LTC or DGB-SCRYPT ──┬── DOGE (Dogecoin)
+             ├── SYS  (Syscoin)                              └── PEP  (PepeCoin)
+             ├── XMY  (Myriad)
+             └── FBTC (Fractal Bitcoin)
 
-Standalone (no merge mining) — SHA-256d: BCH, BCH2, DGB, BC2, BTCS, XEC   Scrypt: DGB-SCRYPT, CAT
+Standalone (no merge mining) — SHA-256d: BCH, BCH2, BC2, BTCS, XEC   Scrypt: CAT
 ```
 
 ---
@@ -246,7 +246,7 @@ Spiral Sentinel supports real-time alerts via **Discord**, **Telegram**, **XMPP/
 | Document | Description |
 |----------|-------------|
 | [OPERATIONS.md](docs/setup/OPERATIONS.md) | Installation, configuration, monitoring, HA, upgrading, troubleshooting |
-| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v3.0.3 upgrade guide |
+| [UPGRADE_GUIDE.md](docs/setup/UPGRADE_GUIDE.md) | v1.0 &rarr; v3.1.0 upgrade guide |
 | [CLOUD_OPERATIONS.md](docs/setup/CLOUD_OPERATIONS.md) | Cloud/VPS deployment hardening and security |
 | [DOCKER_GUIDE.md](docs/setup/DOCKER_GUIDE.md) | Docker &amp; WSL2 deployment |
 | [WINDOWS_GUIDE.md](docs/setup/WINDOWS_GUIDE.md) | Windows installation &mdash; Docker Desktop vs WSL2 Native |
@@ -319,4 +319,4 @@ All product names, logos, and brands are property of their respective owners. Se
 
 ---
 
-*Spiral Pool &mdash; Spiral Covenant 3.0.3 &mdash; Convergent difficulty. Minimal oscillation.*
+*Spiral Pool &mdash; Spiral Covenant 3.1.0 &mdash; Convergent difficulty. Minimal oscillation.*

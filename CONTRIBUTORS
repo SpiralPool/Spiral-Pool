@@ -105,6 +105,15 @@ W3dgraf — https://github.com/W3dgraf
 
 ## Provenance Notes by Release
 
+v3.1.0 (Spiral Covenant) — feature and security release
+  - All code in this release is original to this repository; nothing was
+    ported from other projects. That covers the dashboard upgrade launcher and
+    the move of sudo-allowed scripts to the root-owned /spiralpool/scripts, bulk
+    miner actions and the manual-sleep record, the energy report, the pool
+    topology page, DigiByte(-Scrypt) as merge-mining parents, the spiralctl
+    command consolidation and fixes, Sentinel's update reminders, and the tests
+    added with them.
+
 v3.0.3 (Spiral Covenant) — bug-fix and daemon-update release
   - Ported: commit 60edb09 by Beniram Khuraijam (bkhuraijam), credited above.
     Its two changes were applied as written: libatomic1 in the Bitcoin Cash

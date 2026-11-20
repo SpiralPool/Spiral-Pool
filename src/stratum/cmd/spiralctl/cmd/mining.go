@@ -53,7 +53,7 @@ var coinRegistry = map[string]coinMetadata{
 
 // mergeMiningConfig defines valid parent/aux combinations per algorithm
 // SHA-256d: BTC or DGB can merge-mine NMC, SYS, XMY, FBTC
-// Scrypt:   LTC can merge-mine DOGE, PEP
+// Scrypt:   LTC or DGB-Scrypt can merge-mine DOGE, PEP (DGB-Scrypt since v3.1.0)
 type mergeMiningDef struct {
 	parents   []string // Valid parent coins for this algorithm
 	auxChains []string // All supported aux chains for this algorithm
@@ -65,7 +65,7 @@ var mergeMiningPairs = map[string]mergeMiningDef{
 		auxChains: []string{"nmc", "sys", "xmy", "fbtc"},
 	},
 	"scrypt": {
-		parents:   []string{"ltc"},
+		parents:   []string{"ltc", "dgb-scrypt"},
 		auxChains: []string{"doge", "pep"},
 	},
 }
@@ -406,8 +406,8 @@ func printMiningUsage() {
 	fmt.Println("  ltc, doge, dgb-scrypt, pep, cat")
 	fmt.Println()
 	fmt.Printf("%sMerge Mining (AuxPoW):%s\n", ColorBold, ColorReset)
-	fmt.Println("  SHA-256d: Bitcoin (BTC) can merge-mine: NMC, SYS, XMY, FBTC")
-	fmt.Println("  Scrypt:   Litecoin (LTC) can merge-mine: DOGE, PEP")
+	fmt.Println("  SHA-256d: Bitcoin (BTC) or DigiByte (DGB) can merge-mine: NMC, SYS, XMY, FBTC")
+	fmt.Println("  Scrypt:   Litecoin (LTC) or DigiByte-Scrypt (DGB-SCRYPT) can merge-mine: DOGE, PEP")
 	fmt.Println()
 	fmt.Printf("%sExamples:%s\n", ColorBold, ColorReset)
 	fmt.Println("  spiralctl mining status")
@@ -969,11 +969,22 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 	// Determine parent coin
 	parentCoin := cfg.Pool.Coin
 	if parentCoin == "" {
-		// Check multi-coin config for merge-capable parent
+		// Multi-coin config: pick the configured parent whose algorithm matches the
+		// requested aux chains. A pool running both DGB (SHA-256d) and DGB-SCRYPT, or
+		// LTC and DGB-SCRYPT, used to get whichever came first — the wrong one half
+		// the time, refused with an algorithm mismatch.
+		wantAlgo := ""
+		for _, aux := range auxCoins {
+			if meta, ok := coinRegistry[strings.ToLower(strings.TrimSpace(aux))]; ok {
+				wantAlgo = meta.algorithm
+				break
+			}
+		}
 		for _, coin := range cfg.coinSymbols() {
-			for _, pair := range mergeMiningPairs {
-				if pair.isValidParent(coin) {
-					parentCoin = coin
+			c := strings.ToLower(coin)
+			for algo, pair := range mergeMiningPairs {
+				if (wantAlgo == "" || algo == wantAlgo) && pair.isValidParent(c) {
+					parentCoin = c
 					break
 				}
 			}
@@ -984,7 +995,7 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 	}
 
 	if parentCoin == "" {
-		return fmt.Errorf("no merge mining parent configured. First configure BTC, DGB, or LTC as parent chain")
+		return fmt.Errorf("no merge mining parent configured. First configure BTC, DGB, LTC or DGB-SCRYPT as parent chain")
 	}
 
 	parentCoin = strings.ToLower(parentCoin)
@@ -1053,7 +1064,7 @@ func enableMergeMining(auxCoins []string, autoYes bool) error {
 
 		// CRITICAL: Algorithm boundary enforcement - prevent cross-algorithm contamination
 		// SHA-256d parent (BTC) can ONLY merge-mine SHA-256d aux chains (NMC, SYS, XMY, FBTC)
-		// Scrypt parent (LTC) can ONLY merge-mine Scrypt aux chains (DOGE, PEP)
+		// Scrypt parent (LTC, DGB-SCRYPT) can ONLY merge-mine Scrypt aux chains (DOGE, PEP)
 		if auxMeta.algorithm != parentMeta.algorithm {
 			return fmt.Errorf("ALGORITHM MISMATCH: cannot merge-mine %s (%s) with %s (%s) parent. "+
 				"Merge mining requires matching algorithms",

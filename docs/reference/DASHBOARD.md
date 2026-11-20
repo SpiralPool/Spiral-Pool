@@ -51,6 +51,7 @@ curl http://localhost:1618/api/health/ready     # Readiness (checks pool API)
 | `/settings` | Settings &mdash; theme, devices, wallet, alerts, auto-discovery, webhooks |
 | `/explorer` | Block explorer &mdash; your coin nodes' chain state, blocks, transactions and address balances; works on pruned nodes (login session only) |
 | `/automation` | Miner automation &mdash; sleep windows, power schedules, auto-restart settings and miner credentials, run by Sentinel (login session only) |
+| `/topology` | Pool topology &mdash; live diagram of miners &rarr; this pool server &rarr; coin pools (ports, merge-mined chains) &rarr; coin nodes in failover order with reachability, plus the HA cluster and VIP; refreshes every 30 s (login session only) |
 | `/login` | Login page &mdash; also handles first-time password creation |
 
 ---
@@ -277,6 +278,10 @@ Progressive Web App manifest (`static/manifest.json`) enables "Add to Home Scree
 | Hostname | AxeOS |
 | Overclock profiles | AxeOS |
 
+### Bulk Actions
+
+Management &rarr; Miner Management has a checkbox per miner, **All**, and **Restart / Sleep / Wake / Set power** (low / normal / high, or watts) for the selection. Commands go through the same drivers Sentinel's automation uses (`miner_control.py`); miners those drivers cannot restart (Bitaxe/AxeOS, Goldshell, …) use the single-miner restart API. At most 100 miners per request. A miner put to sleep here is recorded in `/spiralpool/data/manual_sleep.json` and shown as **Asleep**; Sentinel sends no offline alerts for it and never auto-restarts it until it is woken. Shell equivalent: `spiralctl miners control <IP|IP,IP|all> <action>`.
+
 ### Fleet Groups
 
 - Create named groups of miners
@@ -403,6 +408,8 @@ Operator only: session login, API keys not accepted. Settings go to `automation.
 | GET/POST | `/api/fleet/groups` | Varies | List/create miner groups |
 | PUT/DELETE | `/api/fleet/groups/<name>` | Admin | Update/delete group |
 | POST | `/api/fleet/batch/restart` | Admin | Batch restart group |
+| POST | `/api/fleet/batch/control` | Admin | Bulk `restart` / `sleep` / `wake` / `power` (`level` or `watts`) for `ips` (configured miners only, max 100); returns per-miner results |
+| GET | `/api/fleet/manual-sleep` | User | Miners put to sleep by hand |
 | POST | `/api/fleet/batch/pool` | Admin | Batch pool URL change |
 | GET/POST | `/api/fleet/maintenance` | Varies | Maintenance mode |
 
@@ -472,6 +479,10 @@ The fields are always present. Non-BTC coins carry `chain_verdict: "n/a"` with e
 | GET | `/api/system/updates` | Admin | Check available apt packages |
 | POST | `/api/system/updates/refresh` | Admin | Run apt-get update |
 | POST | `/api/system/updates/apply` | Admin | Apply available upgrades (apt-get upgrade) |
+| GET | `/api/system/pool-upgrade/check` | User | Installed vs latest Spiral Pool release (cached 15 min; `?refresh=1` to re-check) |
+| POST | `/api/system/pool-upgrade/apply` | Admin | Start an upgrade via the root-owned `scripts/pool-upgrade-launch.sh` (transient unit `spiralpool-upgrade`); 409 on an HA backup or while one is running |
+| GET | `/api/system/pool-upgrade/status` | Admin | Upgrade unit state, outcome and the tail of `/var/log/spiralpool/upgrade.log` |
+| GET | `/api/topology` | Admin | Data behind `/topology` (no HA token or pool addresses) |
 
 ### Data Export
 
@@ -480,6 +491,7 @@ The fields are always present. Non-BTC coins carry `chain_verdict: "n/a"` with e
 | GET | `/api/export/blocks?format=csv\|json` | User | Block history with fiat values in user's currency |
 | GET | `/api/export/earnings?format=csv\|json` | User | Daily earnings summary with wallet balance |
 | GET | `/api/export/hashrate?format=csv\|json&period=24h` | User | Hashrate history (1h/6h/24h/7d/30d) |
+| GET | `/api/export/energy?format=csv\|json&period=30d` | User | Energy report: measured daily kWh, average/peak watts, hours measured and cost (7d/30d/90d/365d/all; daily totals kept 400 days) |
 
 ### Financial
 
@@ -581,4 +593,4 @@ Dashboard runs on ALL HA nodes but is started/stopped by `ha-service-control.sh`
 
 ---
 
-*Spiral Dash &mdash; Spiral Covenant 3.0.3*
+*Spiral Dash &mdash; Spiral Covenant 3.1.0*

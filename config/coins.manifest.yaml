@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPIRAL POOL v3.0.3 - SINGLE COIN MANIFEST
+# SPIRAL POOL v3.1.0 - SINGLE COIN MANIFEST
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # This file is the CANONICAL source for coin definitions.
@@ -154,7 +154,7 @@ coins:
       chain_gb: 40  # full (unpruned) node; prune=5000 caps this at ~5 GB
       measured: "2026-09-21"
       source: "wiki.digibyte.org run-full-node"
-    role: standalone
+    role: parent  # Can provide PoW for aux chains (v3.1.0)
 
     network:
       rpc_port: 14022
@@ -177,6 +177,11 @@ coins:
       coinbase_maturity: 100
       supports_segwit: true
       min_coinbase_script_len: 2
+
+    merge_mining:
+      can_be_parent: true
+      supported_aux_algorithms:
+        - sha256d
 
     display:
       full_name: "DigiByte"
@@ -312,6 +317,7 @@ coins:
       chain_id: 1                 # CONSENSUS-CRITICAL
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: BTC
+      parent_chains: [BTC, DGB]   # every parent the pool can merge-mine this under (v3.1.0)
 
     display:
       full_name: "Namecoin"
@@ -359,6 +365,7 @@ coins:
       chain_id: 16                # CONSENSUS-CRITICAL (0x10); old was 4096 (0x1000)
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: BTC
+      parent_chains: [BTC, DGB]   # every parent the pool can merge-mine this under (v3.1.0)
 
     display:
       full_name: "Syscoin"
@@ -406,6 +413,7 @@ coins:
       chain_id: 90                # CONSENSUS-CRITICAL (0x005A)
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: BTC
+      parent_chains: [BTC, DGB]   # every parent the pool can merge-mine this under (v3.1.0)
 
     display:
       full_name: "Myriad"
@@ -465,6 +473,7 @@ coins:
       chain_id: 8228              # CONSENSUS-CRITICAL (0x2024)
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: BTC
+      parent_chains: [BTC, DGB]   # every parent the pool can merge-mine this under (v3.1.0)
       # NOTE: Fractal uses "Cadence Mining" - 2 permissionless + 1 merged per 3 blocks
 
     display:
@@ -604,6 +613,7 @@ coins:
       chain_id: 98                # CONSENSUS-CRITICAL (0x0062)
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: LTC
+      parent_chains: [LTC, DGB-SCRYPT]   # every parent the pool can merge-mine this under (v3.1.0)
 
     display:
       full_name: "Dogecoin"
@@ -621,7 +631,7 @@ coins:
       chain_gb: 40  # full (unpruned) node; prune=5000 caps this at ~5 GB
       measured: "2026-09-21"
       source: "shares the DGB chain"
-    role: standalone
+    role: parent  # Can provide PoW for aux chains (v3.1.0)
 
     # Uses same node as DGB SHA256d
     network:
@@ -646,6 +656,11 @@ coins:
       coinbase_maturity: 100
       supports_segwit: true
       min_coinbase_script_len: 2
+
+    merge_mining:
+      can_be_parent: true
+      supported_aux_algorithms:
+        - scrypt
 
     display:
       full_name: "DigiByte (Scrypt)"
@@ -693,6 +708,7 @@ coins:
       chain_id: 63                # CONSENSUS-CRITICAL (0x003F)
       version_bit: 0x00000100     # CONSENSUS-CRITICAL
       parent_chain: LTC
+      parent_chains: [LTC, DGB-SCRYPT]   # every parent the pool can merge-mine this under (v3.1.0)
 
     display:
       full_name: "PepeCoin"

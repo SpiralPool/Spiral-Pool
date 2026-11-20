@@ -495,13 +495,13 @@ wait_for_etcd() {
         # Use two greps to avoid field-order dependency in JSON output
         ETCD_HEALTHY=$($DOCKER_SUDO docker compose -f docker-compose.yml -f docker-compose.ha.yml \
             --profile ha ps --format json 2>/dev/null | \
-            grep 'etcd' | grep -c '"Health":"healthy"' || echo "0")
+            grep 'etcd' | grep -c '"Health":"healthy"') || ETCD_HEALTHY=0
 
         if [[ "$ETCD_HEALTHY" -ge 3 ]]; then
             log_ok "etcd cluster healthy (3/3 nodes)"
 
             # Check etcd leader
-            ETCD_LEADER=$($DOCKER_SUDO docker exec spiralpool-etcd1 etcdctl endpoint status --cluster -w table 2>/dev/null | grep -c "true" || echo "0")
+            ETCD_LEADER=$($DOCKER_SUDO docker exec spiralpool-etcd1 etcdctl endpoint status --cluster -w table 2>/dev/null | grep -c "true") || ETCD_LEADER=0
             if [[ "$ETCD_LEADER" -ge 1 ]]; then
                 log_ok "etcd leader elected"
                 return 0

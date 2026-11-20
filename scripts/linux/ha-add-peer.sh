@@ -123,7 +123,7 @@ else
     # We insert our two lines before EACH such 127.0.0.1 occurrence.
 
     # Count how many 127.0.0.1/32 replication lines exist (should be 2: bootstrap + postgresql sections)
-    local_lines=$(grep -c "host replication.*127\.0\.0\.1/32" "$tmp_file" 2>/dev/null || echo "0")
+    local_lines=$(grep -c "host replication.*127\.0\.0\.1/32" "$tmp_file" 2>/dev/null) || local_lines=0
 
     if [[ "$local_lines" -ge 1 ]]; then
         # Insert before each 127.0.0.1 replication line (two separate sed calls for reliability)

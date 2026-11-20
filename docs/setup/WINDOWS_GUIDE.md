@@ -13,7 +13,7 @@ Two installation paths exist for running Spiral Pool on Windows 11. Both are **e
 | **Windows editions** | Home, Pro, Enterprise, Education | Home, Pro, Enterprise, Education |
 | **Coins** | Single coin only (16 choices, see note) | All 16 coins, multi-coin, merge mining |
 | **Stratum** | V1 + TLS | V1 + V2 + TLS |
-| **Merge mining** | Not supported | Supported (BTC+NMC+SYS+XMY+FBTC, LTC+DOGE+PEP) |
+| **Merge mining** | Not supported | Supported (BTC or DGB + NMC/SYS/XMY/FBTC, LTC or DGB-SCRYPT + DOGE/PEP) |
 | **High availability** | Not supported | Not supported (requires bare metal Linux) |
 | **Blockchain sync speed** | Slow (Docker + WSL2 I/O overhead) | Slow (WSL2 I/O overhead) |
 | **Miner connectivity** | Automatic (Docker publishes ports) | Requires [port forwarding script](../../scripts/windows/start-wsl2-proxy.bat) |

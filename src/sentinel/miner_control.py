@@ -452,6 +452,30 @@ def device_from_files(ip, data_dir, miner_type=None, model=None, port=None):
     return device
 
 
+def _all_miner_ips(data_dir):
+    """Every miner IP in miners.json, in file order."""
+    miners = read_json(os.path.join(data_dir, "miners.json")) or {}
+    ips = []
+    for items in (miners.get("by_type") or {}).values():
+        for item in items if isinstance(items, list) else ():
+            ip = item.get("ip") if isinstance(item, dict) else item
+            if isinstance(ip, str) and ip not in ips:
+                ips.append(ip)
+    for ip in (miners.get("miners") or {}):
+        if isinstance(ip, str) and ip not in ips:
+            ips.append(ip)
+    return ips
+
+
+def _record_manual_sleep(data_dir, ips, asleep):
+    """Tell Sentinel these miners sleep on purpose (or woke), as the dashboard does."""
+    try:
+        from miner_automation import set_manual_sleep
+        set_manual_sleep(data_dir, ips, asleep, by="spiralctl")
+    except (ImportError, OSError, ValueError) as exc:
+        print(f"warning: could not record manual sleep state: {exc}")
+
+
 def main(argv=None):
     import argparse
 
@@ -460,7 +484,7 @@ def main(argv=None):
         description="Send one command to one miner, as Sentinel's automation would.",
         epilog="power takes low, normal or high, or a number of watts (Braiins OS, LuxOS, Vnish). "
                "OK means the miner accepted the command; check the miner to confirm it took effect.")
-    parser.add_argument("ip")
+    parser.add_argument("ip", help="miner IP, several IPs separated by commas, or 'all' (every miner in miners.json)")
     parser.add_argument("action", choices=("info", "sleep", "wake", "restart", "power"))
     parser.add_argument("value", nargs="?")
     parser.add_argument("--data-dir", default=os.path.join(os.environ.get("SPIRALPOOL_INSTALL_DIR", "/spiralpool"), "data"))
@@ -472,6 +496,26 @@ def main(argv=None):
         parser.error("power needs low, normal, high or a number of watts")
     if args.action != "power" and args.value is not None:
         parser.error(f"{args.action} takes no value")
+
+    # Bulk form (v3.1.0): several IPs or "all" — same per-miner command, one summary.
+    if args.ip == "all" or "," in args.ip:
+        if args.ip == "all":
+            ips = _all_miner_ips(args.data_dir)
+            if not ips:
+                print("FAILED: no miners in miners.json")
+                return 1
+        else:
+            ips = list(dict.fromkeys(p.strip() for p in args.ip.split(",") if p.strip()))
+        failures = 0
+        for ip in ips:
+            rc = main([ip, args.action] + ([args.value] if args.value is not None else [])
+                      + ["--data-dir", args.data_dir]
+                      + (["--type", args.miner_type] if args.miner_type else [])
+                      + (["--model", args.model] if args.model else [])
+                      + (["--port", str(args.port)] if args.port else []))
+            failures += 1 if rc else 0
+        print(f"{len(ips) - failures}/{len(ips)} miners accepted {args.action}")
+        return 1 if failures else 0
 
     try:
         device = device_from_files(args.ip, args.data_dir, args.miner_type, args.model, args.port)
@@ -504,6 +548,8 @@ def main(argv=None):
         print(f"FAILED: {name}: {exc}")
         return 1
     print(f"OK: {name} accepted {args.action}{' ' + args.value if args.value else ''}")
+    if args.action in ("sleep", "wake"):
+        _record_manual_sleep(args.data_dir, [args.ip], args.action == "sleep")
     return 0
 
 

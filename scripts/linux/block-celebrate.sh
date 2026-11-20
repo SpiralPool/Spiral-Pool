@@ -171,7 +171,7 @@ stop_celebration() {
         grep -vxF "$hash" "$BLOCKS_FILE" > "${BLOCKS_FILE}.tmp" 2>/dev/null || true
         mv -f "${BLOCKS_FILE}.tmp" "$BLOCKS_FILE" 2>/dev/null || true
         if [[ -s "$BLOCKS_FILE" ]]; then
-            remaining=$(grep -c . "$BLOCKS_FILE" 2>/dev/null || echo 0)
+            remaining=$(grep -c . "$BLOCKS_FILE" 2>/dev/null) || remaining=0
             log "Block $hash withdrawn — $remaining other block(s) still celebrating"
             return 0
         fi

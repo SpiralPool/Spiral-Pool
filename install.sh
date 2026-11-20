@@ -14,7 +14,7 @@ head -c50 "$0"|od -c|grep -q '\\r'&&{ find "$(dirname "$0")" -type f \( -name "*
 # ║                                                                            ║
 # ║   Spiral Pool Contributors                                                 ║
 # ║                                                                            ║
-# ║   Version: 3.0.3                                                         ║
+# ║   Version: 3.1.0                                                         ║
 # ║   License: BSD-3-Clause (see LICENSE file)                                 ║
 # ║                                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
@@ -36,7 +36,7 @@ SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR_EARLY/VERSION" ]]; then
     VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR_EARLY/VERSION")
 else
-    VERSION="3.0.3"
+    VERSION="3.1.0"
 fi
 INSTALL_DIR="/spiralpool"
 # Record whether the install directory already existed before this run started.
@@ -228,7 +228,7 @@ MULTIPORT_MODE="TIME"           # Routing strategy: TIME (weighted 24h schedule)
 MERGE_MINING_ENABLED="false"
 MERGE_MINING_REQUESTED="false" # Set during install flow
 MERGE_MINING_ALGO=""           # "sha256d", "scrypt", or "both" (for dual-algo)
-MERGE_MINING_PARENT=""         # "BTC", "LTC", or "BTC,LTC" (for dual-algo)
+MERGE_MINING_PARENT=""         # one parent ("BTC", "DGB", "LTC", "DGB-SCRYPT") or "<sha256d>,<scrypt>" for dual-algo
 MERGE_MINING_AUX_CHAINS=""     # Comma-separated list: "NMC,SYS,XMY" (SHA-256d) or "DOGE,PEP" (Scrypt)
 MERGE_MINING_AUX_CHAINS_SHA256D=""  # For dual-algo mode: SHA-256d aux chains
 MERGE_MINING_AUX_CHAINS_SCRYPT=""   # For dual-algo mode: Scrypt aux chains
@@ -8811,10 +8811,22 @@ select_merge_mining_parent() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
+    echo -e "  ${GREEN}5)${NC} ${WHITE}DigiByte-Scrypt (DGB-SCRYPT) + Scrypt Aux Chains${NC}  ${CYAN}(new in v3.1.0)${NC}"
+    echo ""
+    echo -e "     Mine DigiByte's Scrypt algorithm as parent with auxiliary chains:"
+    echo -e "     ${CYAN}•${NC} Dogecoin (DOGE) - Largest Scrypt AuxPoW, ~80 GB"
+    echo -e "     ${CYAN}•${NC} PepeCoin (PEP)  - Meme coin, ~15 GB"
+    echo ""
+    echo -e "     ${WHITE}Requirements:${NC} ~80 GB (DGB) + aux chains, 4+ GB RAM"
+    echo -e "     ${DIM}Scrypt ASICs (L7, L9, ...) earn DGB + DOGE without a Litecoin node${NC}"
+    echo ""
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
     echo ""
 
     while true; do
-        prompt_input "Enter choice (1-4, or b=back): "; read parent_choice
+        prompt_input "Enter choice (1-5, or b=back): "; read parent_choice
 
         # Reset all coins to false before enabling selected ones
         # This fixes bug where DGB (default=true) stayed enabled in merge mining mode
@@ -8920,8 +8932,30 @@ select_merge_mining_parent() {
                 select_aux_chains_dual "LTC" "scrypt"
                 break
                 ;;
+            5)
+                # DigiByte-Scrypt merge mining — DGB-SCRYPT as Scrypt parent (v3.1.0).
+                # DGB-SCRYPT runs on the DigiByte node, so DGB is installed too, as the
+                # solo DGB-SCRYPT path does.
+                COIN_MODE="multi"
+                ENABLE_DGB="true"
+                ENABLE_DGB_SCRYPT="true"
+                MERGE_MINING_ENABLED="true"
+                MERGE_MINING_ALGO="scrypt"
+                MERGE_MINING_PARENT="DGB-SCRYPT"
+                SOLO_COIN="DGB-SCRYPT"
+                STRATUM_PORT=3336
+                STRATUM_V2_PORT=3337
+                log "Selected: Merge Mining - DigiByte-Scrypt (DGB-SCRYPT) as parent (Scrypt)"
+                echo ""
+                echo -e "  ${GREEN}✓${NC} DigiByte-Scrypt selected as merge mining parent"
+                echo ""
+                if ! select_aux_chains "DGB-SCRYPT" "scrypt"; then
+                    if select_merge_mining_parent; then return 0; else return 1; fi
+                fi
+                break
+                ;;
             *)
-                echo -e "  ${RED}Please enter 1-4 or b${NC}"
+                echo -e "  ${RED}Please enter 1-5 or b${NC}"
                 ;;
         esac
     done
@@ -9396,7 +9430,7 @@ select_aux_chains() {
         echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
         log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (SHA-256d)"
 
-    elif [[ "$parent_coin" == "LTC" ]]; then
+    elif [[ "$parent_coin" == "LTC" || "$parent_coin" == "DGB-SCRYPT" ]]; then  # Scrypt parents (DGB-SCRYPT since v3.1.0)
         # Scrypt aux chains: DOGE, PEP
         local sel_doge="true"   # Default: enable DOGE (most popular)
         local sel_pep="false"
@@ -9442,7 +9476,7 @@ select_aux_chains() {
         # Apply selections
         MERGE_MINING_ENABLED="true"
         MERGE_MINING_ALGO="scrypt"
-        MERGE_MINING_PARENT="LTC"
+        MERGE_MINING_PARENT="$parent_coin"
         MERGE_MINING_AUX_CHAINS=""
 
         [[ "$sel_doge" == "true" ]] && { ENABLE_DOGE="true"; MERGE_MINING_AUX_CHAINS="${MERGE_MINING_AUX_CHAINS}DOGE,"; }
@@ -9452,8 +9486,8 @@ select_aux_chains() {
         MERGE_MINING_AUX_CHAINS="${MERGE_MINING_AUX_CHAINS%,}"
 
         echo ""
-        echo -e "  ${GREEN}✓${NC} Merge mining enabled: Litecoin + ${MERGE_MINING_AUX_CHAINS} (Scrypt)"
-        log "Merge mining enabled: LTC + ${MERGE_MINING_AUX_CHAINS} (Scrypt)"
+        echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (Scrypt)"
+        log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS} (Scrypt)"
     fi
 
     # Switch to multi-coin mode since we now have multiple blockchains
@@ -9924,14 +9958,21 @@ select_merge_mining_multicoin() {
         fi
     fi
 
-    # Check if LTC is selected - offer Scrypt merge mining with all aux chains
+    # Scrypt merge mining: LTC parents DOGE/PEP; when LTC is not selected,
+    # DigiByte-Scrypt can parent them instead (v3.1.0). One parent per aux chain.
+    local scrypt_parent="" scrypt_parent_name=""
     if [[ "$ENABLE_LTC" == "true" ]]; then
+        scrypt_parent="LTC"; scrypt_parent_name="Litecoin"
+    elif [[ "$ENABLE_DGB_SCRYPT" == "true" ]]; then
+        scrypt_parent="DGB-SCRYPT"; scrypt_parent_name="DigiByte-Scrypt"
+    fi
+    if [[ -n "$scrypt_parent" ]]; then
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "  ${YELLOW}SCRYPT MERGE MINING AVAILABLE${NC}"
         echo ""
-        echo -e "  You selected Litecoin. Would you like to enable merge mining?"
+        echo -e "  You selected ${scrypt_parent_name}. Would you like to enable merge mining?"
         echo -e "  This submits work to auxiliary chains using the same mining computation."
         echo ""
         echo -e "  ${WHITE}AVAILABLE AUX CHAINS:${NC}"
@@ -9948,7 +9989,7 @@ select_merge_mining_multicoin() {
 
         if [[ "${mm_choice,,}" == "y" ]] || [[ "${mm_choice,,}" == "yes" ]]; then
             # Use the aux chain selection UI
-            select_aux_chains_multicoin "LTC" "scrypt"
+            select_aux_chains_multicoin "$scrypt_parent" "scrypt"
         fi
     fi
 
@@ -10040,7 +10081,7 @@ select_aux_chains_multicoin() {
         echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
         log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SHA256D} (SHA-256d)"
 
-    elif [[ "$parent_coin" == "LTC" ]]; then
+    elif [[ "$parent_coin" == "LTC" || "$parent_coin" == "DGB-SCRYPT" ]]; then
         # Scrypt aux chains: DOGE, PEP
         # Pre-select any that user already enabled
         local sel_doge="false"
@@ -10094,22 +10135,25 @@ select_aux_chains_multicoin() {
         # Remove trailing comma
         MERGE_MINING_AUX_CHAINS_SCRYPT="${MERGE_MINING_AUX_CHAINS_SCRYPT%,}"
 
-        # Check if SHA-256d merge mining was already enabled (BTC+LTC dual mode)
+        # Check if SHA-256d merge mining was already enabled (dual-algo mode).
+        # Record the parents actually chosen: this was hard-coded "BTC,LTC", so a
+        # DGB (SHA-256d) + LTC pool lost its DGB merge-mining block.
         if [[ "$MERGE_MINING_ALGO" == "sha256d" ]]; then
             # Upgrade to dual-algo mode — preserve SHA-256d settings already stored
+            local sha_parent="${MERGE_MINING_PARENT%%,*}"
             MERGE_MINING_ALGO="both"
-            MERGE_MINING_PARENT="BTC,LTC"
-            log "Upgraded to dual merge mining: BTC (SHA-256d) + LTC (Scrypt)"
+            MERGE_MINING_PARENT="${sha_parent:-BTC},${parent_coin}"
+            log "Upgraded to dual merge mining: ${sha_parent:-BTC} (SHA-256d) + ${parent_coin} (Scrypt)"
         else
             MERGE_MINING_ALGO="scrypt"
-            MERGE_MINING_PARENT="LTC"
+            MERGE_MINING_PARENT="$parent_coin"
             # Set legacy variable for single-algo compatibility
             MERGE_MINING_AUX_CHAINS="$MERGE_MINING_AUX_CHAINS_SCRYPT"
         fi
 
         echo ""
-        echo -e "  ${GREEN}✓${NC} Merge mining enabled: Litecoin + ${MERGE_MINING_AUX_CHAINS_SCRYPT} (Scrypt)"
-        log "Merge mining enabled: LTC + ${MERGE_MINING_AUX_CHAINS_SCRYPT} (Scrypt)"
+        echo -e "  ${GREEN}✓${NC} Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SCRYPT} (Scrypt)"
+        log "Merge mining enabled: ${parent_coin} + ${MERGE_MINING_AUX_CHAINS_SCRYPT} (Scrypt)"
     fi
 }
 
@@ -16857,7 +16901,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.3 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.1.0 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -16865,24 +16909,27 @@ echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}
 echo ""
 echo -e "${CYAN}━━━ STATUS & MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 'spiralctl watch')${NC}  Live monitor"
-echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
-echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl scan')${NC}  Find miners"
-echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miner control')${NC}  Control hardware"
+echo -e "  ${YELLOW}$(C 'spiralctl logs')${NC}  $(D 'Stratum logs')  ${YELLOW}$(C 'spiralctl logs errors')${NC}  Errors only"
+echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl test')${NC}  Diagnostics"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  $(D 'Smart port')"
-echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl v2')${NC}  $(D 'Stratum V2')"
-echo -e "  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  $(D 'Add coin')  ${YELLOW}$(C 'spiralctl coin disable <SYM>')${NC}  Remove coin"
-echo -e "  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  $(D 'Upgrade nodes')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart services"
+echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')"
+echo -e "  ${YELLOW}$(C 'spiralctl coin')${NC}  $(D 'Coins & nodes')  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  Add coin"
+echo -e "  ${YELLOW}$(C 'spiralctl coin restart')${NC}  $(D 'Restart nodes')  ${YELLOW}$(C 'spiralctl coin upgrade')${NC}  Upgrade nodes"
+echo -e "${CYAN}━━━ MINERS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miners workers')${NC}  Per-worker"
+echo -e "  ${YELLOW}$(C 'spiralctl miners scan')${NC}  $(D 'Find miners')  ${YELLOW}$(C 'spiralctl miners control')${NC}  Control hardware"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${YELLOW}$(C 'spiralctl alerts')${NC}  $(D 'Alerts on/off')  ${YELLOW}$(C 'spiralctl alerts webhook')${NC}  Notifications"
 echo -e "  ${YELLOW}$(C 'spiralctl config')${NC}  $(D 'Configuration')  ${YELLOW}$(C 'spiralctl security')${NC}  Security audit"
-echo -e "  ${YELLOW}$(C 'spiralctl alerts')${NC}  $(D 'Alerts on/off')  ${YELLOW}$(C 'spiralctl webhook')${NC}  Notifications"
 echo -e "  ${YELLOW}$(C 'spiralctl data backup')${NC}  $(D 'Backup')  ${YELLOW}$(C 'spiralctl data restore')${NC}  Restore"
-echo -e "  ${YELLOW}$(C 'spiralctl test')${NC}  $(D 'Connectivity')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
+echo -e "  ${YELLOW}$(C 'spiralctl restart')${NC}  $(D 'Restart pool')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
+echo -e "  ${YELLOW}$(C 'spiralctl upgrade')${NC}  $(D 'Upgrade pool')  ${YELLOW}$(C 'spiralctl upgrade check')${NC}  New version?"
 echo ""
 echo -e "  ${CYAN}▶  spiralctl help${NC}   —  Full command reference"
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BCH2  BC2  BTCS  DGB  XEC    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
-echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
+echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP  DGB-S+DOGE  DGB-S+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 # Cloud facts the installer recorded. This script runs as whoever logs in and is
 # written from a quoted heredoc, so these cannot be inherited or substituted —
@@ -22930,7 +22977,8 @@ append_merge_mining_to_config() {
         BTC)     parents="BTC" ;;
         DGB)     parents="DGB" ;;
         LTC)     parents="LTC" ;;
-        BTC,LTC) parents="BTC LTC" ;;
+        DGB-SCRYPT) parents="DGB-SCRYPT" ;;   # v3.1.0: DGB-Scrypt parents DOGE/PEP
+        BTC,LTC|BTC,DGB-SCRYPT|DGB,LTC|DGB,DGB-SCRYPT) parents="${MERGE_MINING_PARENT//,/ }" ;;
         *)       log_warn "Unknown merge mining parent: $MERGE_MINING_PARENT"; return 0 ;;
     esac
 
@@ -22940,7 +22988,7 @@ append_merge_mining_to_config() {
 
         if [[ "$parent" == "BTC" ]] || [[ "$parent" == "DGB" ]]; then
             # Determine which aux chains for SHA-256d
-            if [[ "$MERGE_MINING_PARENT" == "BTC,LTC" ]]; then
+            if [[ "$MERGE_MINING_PARENT" == *,* ]]; then
                 aux_chains="$MERGE_MINING_AUX_CHAINS_SHA256D"
             else
                 aux_chains="$MERGE_MINING_AUX_CHAINS"
@@ -23023,9 +23071,9 @@ append_merge_mining_to_config() {
             password: \"$fbtc_pass\""
             fi
 
-        elif [[ "$parent" == "LTC" ]]; then
+        elif [[ "$parent" == "LTC" || "$parent" == "DGB-SCRYPT" ]]; then
             # Determine which aux chains for Scrypt
-            if [[ "$MERGE_MINING_PARENT" == "BTC,LTC" ]]; then
+            if [[ "$MERGE_MINING_PARENT" == *,* ]]; then
                 aux_chains="$MERGE_MINING_AUX_CHAINS_SCRYPT"
             else
                 aux_chains="$MERGE_MINING_AUX_CHAINS"
@@ -23158,7 +23206,7 @@ append_merge_mining_v1_to_config() {
     local parent_algo=""
     case "$SOLO_COIN" in
         BTC|DGB) parent_algo="sha256d" ;;
-        LTC)     parent_algo="scrypt" ;;
+        LTC|DGB-SCRYPT) parent_algo="scrypt" ;;
         *)       log_warn "Single-coin $SOLO_COIN does not support merge mining"; return 0 ;;
     esac
 
@@ -23659,7 +23707,7 @@ build_stratum() {
     }
 
     # Read version for ldflags injection (matches upgrade.sh behavior)
-    local BUILD_VERSION="3.0.3"
+    local BUILD_VERSION="3.1.0"
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
         BUILD_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")
     fi
@@ -26097,6 +26145,8 @@ install_dashboard() {
     sudo cp -r "$SCRIPT_DIR/src/dashboard/"* "$DASH_DIR/"
     # Automation rules module, shared with Sentinel
     [[ -f "$SCRIPT_DIR/src/sentinel/miner_automation.py" ]] && sudo cp "$SCRIPT_DIR/src/sentinel/miner_automation.py" "$DASH_DIR/"
+    # Bulk miner actions (v3.1.0) drive the same control drivers Sentinel uses
+    [[ -f "$SCRIPT_DIR/src/sentinel/miner_control.py" ]] && sudo cp "$SCRIPT_DIR/src/sentinel/miner_control.py" "$DASH_DIR/"
     sudo chown -R "$POOL_USER:$POOL_USER" "$DASH_DIR"
 
     log "Creating Python virtual environment..."
@@ -26291,7 +26341,7 @@ EOF
 # These are the ONLY commands the pool user can run with sudo
 
 # One-shot reindex of a corrupt coin block database (root-owned script)
-$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/bin/daemon-reindex.sh
+$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/scripts/daemon-reindex.sh
 
 # Clear StartLimitBurst failures (reinstall / crash-loop recovery)
 $POOL_USER ALL=(ALL) NOPASSWD: /bin/systemctl reset-failed spiralstratum
@@ -26416,7 +26466,10 @@ $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/ha-add-peer.sh *
 
 # Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade
 # Trailing * allows --force --auto arguments
-$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
+$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh *
+
+# Dashboard "Upgrade" button: starts upgrade.sh as a transient systemd unit (no arguments)
+$POOL_USER ALL=(root) NOPASSWD: ${INSTALL_DIR}/scripts/pool-upgrade-launch.sh
 
 # Log viewer - restrict journalctl to pool-related services only
 $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u spiralstratum *
@@ -28035,8 +28088,8 @@ report_fatal_daemon_error() {
     grep -qiE "Error opening block database|Corruption: checksum mismatch|Aborted block database rebuild" <<< "$tail_text" || return 0
     fatal_db_warned[$daemon]=1
     log "ERROR: $name block database is corrupt — restarting cannot fix it. Details in $datadir/debug.log"
-    if [[ -x "$INSTALL_DIR/bin/daemon-reindex.sh" ]]; then
-        sudo -n "$INSTALL_DIR/bin/daemon-reindex.sh" "$daemon" >/dev/null 2>&1 || true
+    if [[ -x "$INSTALL_DIR/scripts/daemon-reindex.sh" ]]; then
+        sudo -n "$INSTALL_DIR/scripts/daemon-reindex.sh" "$daemon" >/dev/null 2>&1 || true
     else
         log "ERROR: $name needs a one-time reindex: add -reindex to $daemon's ExecStart through a systemd drop-in, start it, and remove the drop-in once it is past 'Loading block index'"
     fi
@@ -28208,7 +28261,12 @@ HEALTHEOF
     # cannot open its block database. Root-owned and not writable by the pool user:
     # the pool user may run it through sudo, so writable would mean root for anyone
     # who can write it.
-    sudo tee "$INSTALL_DIR/bin/daemon-reindex.sh" > /dev/null << 'REINDEXEOF'
+    # Lives in the root-owned scripts/ directory: bin/ is owned by the pool user, so a
+    # root-owned file there could still be renamed away and replaced.
+    sudo mkdir -p "$INSTALL_DIR/scripts"
+    sudo chown root:root "$INSTALL_DIR/scripts"
+    sudo chmod 755 "$INSTALL_DIR/scripts"
+    sudo tee "$INSTALL_DIR/scripts/daemon-reindex.sh" > /dev/null << 'REINDEXEOF'
 #!/bin/bash
 # Recover a coin daemon whose block database is corrupt, once.
 #
@@ -28292,9 +28350,9 @@ else
 fi
 REINDEXEOF
 
-    sudo sed -i "s|__INSTALL_DIR__|$INSTALL_DIR|" "$INSTALL_DIR/bin/daemon-reindex.sh"
-    sudo chmod 755 "$INSTALL_DIR/bin/daemon-reindex.sh"
-    sudo chown root:root "$INSTALL_DIR/bin/daemon-reindex.sh"
+    sudo sed -i "s|__INSTALL_DIR__|$INSTALL_DIR|" "$INSTALL_DIR/scripts/daemon-reindex.sh"
+    sudo chmod 755 "$INSTALL_DIR/scripts/daemon-reindex.sh"
+    sudo chown root:root "$INSTALL_DIR/scripts/daemon-reindex.sh"
 
     # Determine correct PostgreSQL dependency for health monitor
     local health_pg_dep="postgresql.service"
@@ -32986,11 +33044,11 @@ echo -e "    Worker:  ${WHITE}$NEW_ADDRESS.worker_name${NC}"
 echo ""
 WALLETEOF
 
-    # V3.0.3-SPIRAL_COVENANT: Create backup command
+    # V3.1.0-SPIRAL_COVENANT: Create backup command
     sudo tee /usr/local/bin/spiralpool-backup > /dev/null << 'BACKUPEOF'
 #!/bin/bash
 #
-# Spiral Pool Backup Utility - V3.0.3-SPIRAL_COVENANT
+# Spiral Pool Backup Utility - V3.1.0-SPIRAL_COVENANT
 # Creates encrypted, compressed backups of wallet, database, and config
 #
 
@@ -33035,7 +33093,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}       SPIRAL POOL BACKUP UTILITY - V3.1.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-backup [OPTIONS]"
@@ -33414,7 +33472,7 @@ create_manifest() {
 
     cat > "${TEMP_DIR}/manifest.json" << MANIFEST
 {
-    "version": "3.0.3",
+    "version": "3.1.0",
     "created": "$(date -Iseconds)",
     "hostname": "$(hostname)",
     "components": {
@@ -33695,7 +33753,7 @@ mkdir -p "$TEMP_DIR"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}              SPIRAL POOL BACKUP - V3.1.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -33748,11 +33806,11 @@ echo "  To restore: spiralpool-restore ${OUTPUT_FILE}"
 echo ""
 BACKUPEOF
 
-    # V3.0.3-SPIRAL_COVENANT: Create restore command
+    # V3.1.0-SPIRAL_COVENANT: Create restore command
     sudo tee /usr/local/bin/spiralpool-restore > /dev/null << 'RESTOREEOF'
 #!/bin/bash
 #
-# Spiral Pool Restore Utility - V3.0.3-SPIRAL_COVENANT
+# Spiral Pool Restore Utility - V3.1.0-SPIRAL_COVENANT
 # Restores backups created by spiralpool-backup
 #
 
@@ -33799,7 +33857,7 @@ log_success() { echo -e "${GREEN}[$(date '+%H:%M:%S')] ✓${NC} $1"; }
 show_help() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}${WHITE}         SPIRAL POOL RESTORE UTILITY - V3.1.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Usage: spiralpool-restore BACKUP_FILE [OPTIONS]"
@@ -34142,7 +34200,7 @@ fi
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.0.3-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}${WHITE}           SPIRAL POOL RESTORE - V3.1.0-SPIRAL_COVENANT${NC}${CYAN}║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -34756,6 +34814,18 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
+INSTALL_DIR="/spiralpool"
+# Multi-disk support: load CHAIN_MOUNT_POINT so get_blockchain_dir returns the right path.
+# This script is a standalone file — the installer's own get_blockchain_dir is not
+# visible here, and without this every RPC check died with "command not found".
+MULTI_DISK_CONFIGURED="false"; CHAIN_MOUNT_POINT=""
+_env="$INSTALL_DIR/config/coins.env"
+if [[ -f "$_env" ]] && [[ ! -L "$_env" ]]; then
+    MULTI_DISK_CONFIGURED=$(grep -oP '^MULTI_DISK_CONFIGURED=\K(true|false)$' "$_env" 2>/dev/null || echo "false")
+    CHAIN_MOUNT_POINT=$(grep -oP '^CHAIN_MOUNT_POINT="\K[^"]*' "$_env" 2>/dev/null || echo "")
+fi
+get_blockchain_dir() { local c="$1"; if [[ "$MULTI_DISK_CONFIGURED" == "true" && -n "$CHAIN_MOUNT_POINT" && -d "$CHAIN_MOUNT_POINT" ]]; then echo "$CHAIN_MOUNT_POINT/$c"; else echo "$INSTALL_DIR/$c"; fi; }
+
 PASS=0
 FAIL=0
 WARN=0
@@ -34913,31 +34983,57 @@ check_blockchain_rpc "Fractal Bitcoin" "fractal-cli" "$(get_blockchain_dir fbtc)
 # === DATABASE ===
 echo -e "${WHITE}PostgreSQL Database:${NC}"
 
-# Load credentials from config if available
-DB_USER="spiralstratum"
-DB_NAME="spiralstratum"
-if [[ -f /spiralpool/config/config.yaml ]]; then
-    DB_USER=$(grep -A5 'postgres:' /spiralpool/config/config.yaml 2>/dev/null | grep 'user:' | awk '{print $2}' | tr -d '"' || echo "spiralstratum")
+# Connect with the pool's own credentials from config.yaml (the same ones stratum
+# uses). This script runs as the pool user via `spiralctl test`, which has no
+# sudo right to become postgres — the old `sudo -u postgres psql` check was
+# refused, its error hidden, and a healthy database reported as down.
+_db_field() {
+    awk -v k="$1" '
+        /^database:/ { f=1; next }
+        f && /^[^[:space:]#]/ { exit }
+        f {
+            line=$0
+            if (sub("^[[:space:]]+" k ":[[:space:]]*", "", line)) {
+                if (line ~ /^"/) { sub(/^"/, "", line); sub(/".*$/, "", line) }
+                else { sub(/[[:space:]]+#.*$/, "", line); sub(/[[:space:]]+$/, "", line) }
+                print line; exit
+            }
+        }' /spiralpool/config/config.yaml 2>/dev/null
+}
+DB_HOST=$(_db_field host);     DB_HOST="${DB_HOST:-localhost}"
+DB_PORT=$(_db_field port);     DB_PORT="${DB_PORT:-5432}"
+DB_USER=$(_db_field user);     DB_USER="${DB_USER:-spiralstratum}"
+DB_NAME=$(_db_field database); DB_NAME="${DB_NAME:-spiralstratum}"
+DB_PASS=$(_db_field password)
+
+db_query() {
+    PGPASSWORD="$DB_PASS" PGCONNECT_TIMEOUT=5 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "$1" 2>/dev/null
+}
+
+db_up=false
+if command -v pg_isready &>/dev/null; then
+    pg_isready -q -h "$DB_HOST" -p "$DB_PORT" -t 5 2>/dev/null && db_up=true
+else
+    timeout 3 bash -c "echo > /dev/tcp/$DB_HOST/$DB_PORT" 2>/dev/null && db_up=true
 fi
 
-if sudo -u postgres psql -c "SELECT 1" &>/dev/null; then
-    test_pass "PostgreSQL accepting connections"
+if $db_up; then
+    test_pass "PostgreSQL accepting connections ($DB_HOST:$DB_PORT)"
 
-    if sudo -u postgres psql -d "$DB_NAME" -c "SELECT 1" &>/dev/null; then
-        test_pass "Database '$DB_NAME' exists"
+    if [[ "$(db_query 'SELECT 1')" == "1" ]]; then
+        test_pass "Database '$DB_NAME' reachable as '$DB_USER'"
 
-        # Check tables
-        TABLES=$(sudo -u postgres psql -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ')
-        if [[ "$TABLES" -gt 0 ]]; then
+        TABLES=$(db_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'")
+        if [[ "${TABLES:-0}" -gt 0 ]]; then
             test_pass "Database has $TABLES tables"
         else
             test_warn "Database has no tables (first run?)"
         fi
     else
-        test_fail "Database '$DB_NAME' not found"
+        test_fail "Cannot log in to '$DB_NAME' as '$DB_USER' (check database credentials in config.yaml)"
     fi
 else
-    test_fail "PostgreSQL not accepting connections"
+    test_fail "PostgreSQL not accepting connections on $DB_HOST:$DB_PORT"
 fi
 echo ""
 
@@ -36938,7 +37034,7 @@ except:
         return
     fi
 
-    POOL_COUNT=$(echo "$POOL_LINES" | grep -c . || echo 0)
+    POOL_COUNT=$(echo "$POOL_LINES" | grep -c .) || POOL_COUNT=0
 
     # Read first pool for primary/single display
     IFS=$'\t' read -r COIN_SYM HASHRATE MINERS BLOCKS EFFORT NETWORK_HASH NETWORK_DIFF BLOCK_HEIGHT REWARD POOL_ID <<< "$(echo "$POOL_LINES" | head -1)"
@@ -37465,7 +37561,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/update-checker.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/update-checker.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/update-checker.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/update-checker.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/update-checker.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/update-checker.sh" /usr/local/bin/spiralpool-update
     fi
 
@@ -37488,7 +37584,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/maintenance-mode.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/maintenance-mode.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/maintenance-mode.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/maintenance-mode.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/maintenance-mode.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/maintenance-mode.sh" /usr/local/bin/spiralpool-maintenance
     fi
 
@@ -37496,7 +37592,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-service-control.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-service-control.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-service-control.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-service-control.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-service-control.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/ha-service-control.sh" /usr/local/bin/spiralpool-ha-service
     fi
 
@@ -37504,7 +37600,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-role-watcher.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-role-watcher.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-role-watcher.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-role-watcher.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-role-watcher.sh"
     fi
 
     # SECURITY: Sudoers-whitelisted scripts MUST be root-owned.
@@ -37552,7 +37648,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-validate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-validate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-validate.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-validate.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-validate.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/ha-validate.sh" /usr/local/bin/spiralpool-ha-validate
     fi
 
@@ -37584,7 +37680,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/block-celebrate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/block-celebrate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/block-celebrate.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/block-celebrate.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/block-celebrate.sh"
         log_success "Installed block-celebrate.sh (Avalon LED celebration)"
     fi
 
@@ -37593,7 +37689,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-replicate.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-replicate.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-replicate.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-replicate.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-replicate.sh"
         log_success "Installed ha-replicate.sh (HA cold-standby replication)"
     fi
 
@@ -37601,7 +37697,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/blockchain-export.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/blockchain-export.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/blockchain-export.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/blockchain-export.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/blockchain-export.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/blockchain-export.sh" /usr/local/bin/spiralpool-chain-export
         log_success "Installed blockchain-export.sh"
     fi
@@ -37609,7 +37705,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/blockchain-restore.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/blockchain-restore.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/blockchain-restore.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/blockchain-restore.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/blockchain-restore.sh"
         sudo ln -sf "${INSTALL_DIR}/scripts/blockchain-restore.sh" /usr/local/bin/spiralpool-chain-restore
         log_success "Installed blockchain-restore.sh"
     fi
@@ -37617,7 +37713,7 @@ EXPORTEOF
     if [[ -f "${SCRIPTS_SRC}/ha-setup-ssh.sh" ]]; then
         sudo cp "${SCRIPTS_SRC}/ha-setup-ssh.sh" "${INSTALL_DIR}/scripts/"
         sudo chmod +x "${INSTALL_DIR}/scripts/ha-setup-ssh.sh"
-        sudo chown "$POOL_USER:$POOL_USER" "${INSTALL_DIR}/scripts/ha-setup-ssh.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/ha-setup-ssh.sh"
     fi
 
     if [[ -f "${SCRIPTS_SRC}/install-patroni.sh" ]]; then
@@ -37625,18 +37721,32 @@ EXPORTEOF
         sudo chmod +x "${INSTALL_DIR}/scripts/install-patroni.sh"
     fi
 
-    # Copy upgrade script
+    # Copy upgrade script. The top-level copy is for "cd /spiralpool && sudo ./upgrade.sh";
+    # the one sudoers lets the pool user run (auto-update, dashboard) is the copy in the
+    # root-owned scripts/ directory — /spiralpool itself is owned by the pool user, so a
+    # file there could be swapped out from under root.
     if [[ -f "${SCRIPT_DIR}/upgrade.sh" ]]; then
         sudo cp "${SCRIPT_DIR}/upgrade.sh" "${INSTALL_DIR}/"
-        sudo chmod +x "${INSTALL_DIR}/upgrade.sh"
+        sudo chmod 755 "${INSTALL_DIR}/upgrade.sh"
+        sudo chown root:root "${INSTALL_DIR}/upgrade.sh"
+        sudo cp "${SCRIPT_DIR}/upgrade.sh" "${INSTALL_DIR}/scripts/upgrade.sh"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/upgrade.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/upgrade.sh"
         log_success "Installed upgrade.sh"
+    fi
+
+    # Dashboard "Upgrade" button launcher — root-owned, no arguments, allowed via sudoers
+    if [[ -f "${SCRIPTS_SRC}/pool-upgrade-launch.sh" ]]; then
+        sudo cp "${SCRIPTS_SRC}/pool-upgrade-launch.sh" "${INSTALL_DIR}/scripts/"
+        sudo chmod 755 "${INSTALL_DIR}/scripts/pool-upgrade-launch.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/pool-upgrade-launch.sh"
     fi
 
     # Copy coin daemon upgrade script
     if [[ -f "${SCRIPT_DIR}/coin-upgrade.sh" ]]; then
         sudo cp "${SCRIPT_DIR}/coin-upgrade.sh" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
         sudo chmod +x "${INSTALL_DIR}/scripts/coin-upgrade.sh"
-        sudo chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
+        sudo chown root:root "${INSTALL_DIR}/scripts/coin-upgrade.sh"
         log_success "Installed coin-upgrade.sh"
     fi
 
@@ -39190,13 +39300,13 @@ if [[ -f "$_EARLY_CONFIG_YAML" ]] && grep -q "PENDING_GENERATION" "$_EARLY_CONFI
         esac
 
         log "Generating ${_early_coin} wallet (daemon responsive, no sync required)..."
-        _early_pending_before=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null || echo 0)
+        _early_pending_before=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null) || _early_pending_before=0
         if [[ -n "$_EARLY_POOL_USER" ]]; then
             sudo -u "$_EARLY_POOL_USER" spiralpool-wallet --coin "$_early_coin_lower" --auto --nowait 2>&1 | tee -a "$LOG_FILE" || true
         else
             spiralpool-wallet --coin "$_early_coin_lower" --auto --nowait 2>&1 | tee -a "$LOG_FILE" || true
         fi
-        _early_pending_after=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null || echo 0)
+        _early_pending_after=$(grep -c "PENDING_GENERATION" "$_EARLY_CONFIG_YAML" 2>/dev/null) || _early_pending_after=0
         if [[ "$_early_pending_after" -ge "$_early_pending_before" ]]; then
             log "WARNING: ${_early_coin} early wallet generation failed - will retry after sync completes"
         else
@@ -39446,7 +39556,7 @@ if [[ -f "$CONFIG_YAML" ]] && sudo grep -q "PENDING_GENERATION" "$CONFIG_YAML" 2
         esac
 
         log "Generating ${wallet_coin} wallet..."
-        pending_before=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null || echo 0)
+        pending_before=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null) || pending_before=0
         # Run as pool user if detected, otherwise as current user
         if [[ -n "$POOL_USER" ]]; then
             sudo -u "$POOL_USER" spiralpool-wallet --coin "$coin_lower" --auto 2>&1 | tee -a "$LOG_FILE" || true
@@ -39455,7 +39565,7 @@ if [[ -f "$CONFIG_YAML" ]] && sudo grep -q "PENDING_GENERATION" "$CONFIG_YAML" 2
         fi
 
         # Verify this specific coin's wallet was generated (count decreased)
-        pending_after=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null || echo 0)
+        pending_after=$(grep -c "PENDING_GENERATION" "$CONFIG_YAML" 2>/dev/null) || pending_after=0
         if [[ "$pending_after" -ge "$pending_before" ]]; then
             log "WARNING: ${wallet_coin} wallet generation failed."
             log ""
@@ -40553,7 +40663,7 @@ print_completion() {
     echo -e "${CYAN}            ░░░░░${NC}"
     echo ""
     echo -e "                                     ${GREEN}✓ Installation Completed${NC}"
-    echo -e "                                     ${DIM}V3.0.3 - SPIRAL COVENANT${NC}"
+    echo -e "                                     ${DIM}V3.1.0 - SPIRAL COVENANT${NC}"
     echo ""
 }
 

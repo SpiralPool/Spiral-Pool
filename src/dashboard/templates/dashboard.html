@@ -2701,6 +2701,7 @@
             <button class="appearance-btn" onclick="toggleAppearancePanel()" title="Appearance">🎨</button>
             <a href="/explorer" class="settings-btn" title="Block explorer">⛓</a>
             <a href="/automation" class="settings-btn" title="Miner automation">⏰</a>
+            <a href="/topology" class="settings-btn" title="Pool topology">🕸</a>
             <a href="/settings" class="settings-btn" title="Settings">⚙</a>
         </div>
     </header>
@@ -2938,6 +2939,9 @@
     <main class="dashboard-content">
         <!-- System Warnings Banner Area (always visible) -->
         <div id="system-warnings-container" class="system-warnings-container"></div>
+
+        <!-- Spiral Pool update available (populated by checkPoolUpgrade) -->
+        <div id="pool-upgrade-banner" style="display:none; margin: 0 0 1rem; padding: 0.6rem 1rem; border-radius: 6px; border: 1px solid rgba(251,146,60,0.35); background: rgba(251,146,60,0.08); color: var(--neon-orange, #fb923c); font-size: 0.85rem;"></div>
 
         <!-- Wallet Mismatch Warning (populated by fetchHealthData) -->
         <div id="wallet-mismatch-banner"></div>
@@ -3658,12 +3662,13 @@
                         <div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #6b7280);">Spiral Pool Upgrade</div>
                         <div style="display: flex; gap: 4px;">
                             <button onclick="applyPoolUpgrade()" id="btn-pool-upgrade" style="background: rgba(251,146,60,0.1); border: 1px solid rgba(251,146,60,0.3); color: var(--neon-orange, #fb923c); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Upgrade</button>
-                            <button onclick="checkPoolUpgrade()" id="btn-pool-check" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Check</button>
+                            <button onclick="checkPoolUpgrade(true)" id="btn-pool-check" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3); color: var(--neon-cyan, #00d4ff); padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Check</button>
                         </div>
                     </div>
                     <div id="mgmt-pool-upgrade" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem;">
                         <div style="color: var(--text-muted);">Click Check to look for updates</div>
                     </div>
+                    <pre id="mgmt-pool-upgrade-log" style="display:none; margin-top:8px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:0.7rem; line-height:1.35; color:var(--text-secondary, #9ca3af); background:rgba(0,0,0,0.25); border-radius:4px; padding:6px;"></pre>
                 </div>
 
                 <!-- HTTPS / TLS Security -->
@@ -3760,6 +3765,16 @@
                         <span style="color:var(--text-primary, #e2e8f0);">Hashrate History</span>
                         <span style="display:flex;gap:6px;flex-shrink:0;"><a href="/api/export/hashrate" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a><a href="/api/export/hashrate?format=json" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a></span>
                     </div>
+                    <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:4px;font-family:var(--font-mono, 'Share Tech Mono', monospace);font-size:0.8rem;">
+                        <span style="color:var(--text-primary, #e2e8f0);" title="Measured daily kWh, average/peak watts and cost at your power rate">Energy Report</span>
+                        <span style="display:flex;gap:6px;flex-shrink:0;align-items:center;">
+                            <select id="energy-export-period" style="background:transparent;color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:3px;font-size:0.65rem;padding:0 2px;">
+                                <option value="7d">7d</option><option value="30d" selected>30d</option><option value="90d">90d</option><option value="365d">1y</option><option value="all">all</option>
+                            </select>
+                            <a href="/api/export/energy?period=30d" onclick="this.href='/api/export/energy?period='+document.getElementById('energy-export-period').value" style="color:var(--neon-cyan, #00d4ff);text-decoration:none;font-size:0.7rem;">CSV &#x2B73;</a>
+                            <a href="/api/export/energy?period=30d&format=json" onclick="this.href='/api/export/energy?format=json&period='+document.getElementById('energy-export-period').value" style="color:var(--neon-orange, #fb923c);text-decoration:none;font-size:0.7rem;">JSON &#x2B73;</a>
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -3772,7 +3787,22 @@
                 <div style="color: var(--neon-orange, #fb923c); font-size: 0.65rem; margin-bottom: 0.5rem; padding: 4px 8px; background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.15); border-radius: 4px;">
                     Changing frequency, voltage, or fan settings beyond manufacturer specs may cause hardware damage and void warranty.
                 </div>
-                <div id="mgmt-miners" style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem; overflow-x: auto;">
+                <!-- Bulk actions (v3.1.0) -->
+                <div id="bulk-miner-toolbar" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:0.5rem;font-size:0.75rem;">
+                    <label style="display:flex;align-items:center;gap:4px;color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="bulk-select-all" onchange="bulkSelectAll(this.checked)"> All</label>
+                    <span id="bulk-selected-count" style="color:var(--text-muted);min-width:70px;">0 selected</span>
+                    <button class="bulk-btn" onclick="bulkMinerAction('restart')" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);color:var(--neon-orange,#fb923c);padding:2px 8px;border-radius:4px;cursor:pointer;">Restart</button>
+                    <button class="bulk-btn" onclick="bulkMinerAction('sleep')" style="background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.3);color:var(--neon-purple,#a855f7);padding:2px 8px;border-radius:4px;cursor:pointer;">Sleep</button>
+                    <button class="bulk-btn" onclick="bulkMinerAction('wake')" style="background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);color:var(--neon-green,#4ade80);padding:2px 8px;border-radius:4px;cursor:pointer;">Wake</button>
+                    <span style="display:flex;align-items:center;gap:3px;">
+                        <select id="bulk-power-level" style="background:transparent;color:var(--text-primary);border:1px solid rgba(255,255,255,0.1);border-radius:3px;font-size:0.7rem;padding:1px 2px;">
+                            <option value="low">Low</option><option value="normal" selected>Normal</option><option value="high">High</option><option value="watts">Watts…</option>
+                        </select>
+                        <button class="bulk-btn" onclick="bulkMinerAction('power')" style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);color:var(--neon-cyan,#00d4ff);padding:2px 8px;border-radius:4px;cursor:pointer;">Set power</button>
+                    </span>
+                </div>
+                <div id="bulk-miner-result" style="display:none;margin-bottom:0.5rem;padding:6px 8px;border-radius:4px;font-size:0.72rem;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;"></div>
+                <div id="mgmt-miners"style="font-family: var(--font-mono, 'Share Tech Mono', monospace); font-size: 0.85rem; overflow-x: auto;">
                     <div style="color: var(--text-muted);">Loading miners...</div>
                 </div>
             </div>
@@ -3817,7 +3847,7 @@
     <footer class="dashboard-footer" style="background: var(--bg-primary) !important;">
         <div class="footer-slogan">Not your pool, not your code. Run your own.</div>
         <div class="footer-info">
-            <span>Spiral Pool Dashboard v3.0.3</span>
+            <span>Spiral Pool Dashboard v3.1.0</span>
             <span> | </span>
             <span>Auto-refresh: <span id="refresh-countdown">30</span>s</span>
         </div>
@@ -5888,25 +5918,51 @@
         // SPIRAL POOL UPGRADE — Check and apply updates from GitHub
         // ═══════════════════════════════════════════════════════════════════════════
 
-        async function checkPoolUpgrade() {
+        let lastPoolUpgradeCheck = null;   // last successful /check result
+        let poolUpgradePolling = false;
+
+        function _upgradeRow(label, value, color) {
+            return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">${label}</span><span style="color:${color || 'var(--text-primary)'}">${value}</span></div>`;
+        }
+
+        function renderPoolUpgradeBanner(result) {
+            const banner = document.getElementById('pool-upgrade-banner');
+            if (!banner) return;
+            if (result && result.success && result.update_available) {
+                banner.innerHTML = `⬆️ <strong>Spiral Pool v${escapeHtml(result.latest_version)}</strong> is available (this pool runs v${escapeHtml(result.current_version)}). ` +
+                    `<a href="#" onclick="switchTab('management'); return false;" style="color:inherit;text-decoration:underline;">Upgrade from the Management tab</a>` +
+                    (result.release_url ? ` · <a href="${escapeHtml(result.release_url)}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">Release notes</a>` : '');
+                banner.style.display = '';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        async function checkPoolUpgrade(force) {
             const btn = document.getElementById('btn-pool-check');
             const el = document.getElementById('mgmt-pool-upgrade');
+            if (poolUpgradePolling) return;   // don't overwrite live progress
             if (btn) { btn.disabled = true; btn.textContent = '...'; }
             try {
-                const response = await fetch('/api/system/pool-upgrade/check');
+                const response = await fetch('/api/system/pool-upgrade/check' + (force ? '?refresh=1' : ''));
                 const result = await response.json();
                 if (result.success) {
+                    lastPoolUpgradeCheck = result;
+                    let html;
                     if (result.update_available) {
-                        let html = `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-orange, #fb923c);">Update available</span></div>`;
-                        if (result.current_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Current</span><span style="color:var(--text-primary)">${escapeHtml(result.current_version)}</span></div>`;
-                        if (result.latest_version) html += `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Latest</span><span style="color:var(--neon-green, #4ade80)">${escapeHtml(result.latest_version)}</span></div>`;
-                        el.innerHTML = html;
+                        html = _upgradeRow('Status', 'Update available', 'var(--neon-orange, #fb923c)');
+                        html += _upgradeRow('Installed', 'v' + escapeHtml(result.current_version));
+                        html += _upgradeRow('Latest', 'v' + escapeHtml(result.latest_version), 'var(--neon-green, #4ade80)');
+                        if (result.release_url) html += `<div style="margin-top:4px;text-align:right;"><a href="${escapeHtml(result.release_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--neon-cyan,#00d4ff);font-size:0.75rem;">Release notes ↗</a></div>`;
                     } else {
-                        el.innerHTML = `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-muted)">Status</span><span style="color:var(--neon-green, #4ade80);">Up to date</span></div>`;
+                        html = _upgradeRow('Status', 'Up to date', 'var(--neon-green, #4ade80)');
+                        html += _upgradeRow('Installed', 'v' + escapeHtml(result.current_version));
                     }
-                } else {
+                    if (el) el.innerHTML = html;
+                } else if (el) {
                     el.innerHTML = `<div style="color:var(--text-muted);">${escapeHtml(result.error || 'Check failed')}</div>`;
                 }
+                renderPoolUpgradeBanner(result);
             } catch (e) {
                 if (el) el.innerHTML = '<div style="color:var(--text-muted);">Version check unavailable</div>';
             } finally {
@@ -5915,27 +5971,99 @@
         }
 
         async function applyPoolUpgrade() {
-            if (!confirm('Upgrade Spiral Pool from GitHub? This will download the latest release and restart all pool services.')) return;
+            const target = lastPoolUpgradeCheck && lastPoolUpgradeCheck.update_available
+                ? `v${lastPoolUpgradeCheck.latest_version}` : 'the latest release';
+            if (!confirm(`Upgrade Spiral Pool to ${target}?\n\nA backup is taken first. Stratum, the dashboard and Sentinel restart part-way through — miners reconnect automatically. This page will follow the upgrade and reload when it is done.`)) return;
             const btn = document.getElementById('btn-pool-upgrade');
             const el = document.getElementById('mgmt-pool-upgrade');
-            if (btn) { btn.disabled = true; btn.textContent = 'Upgrading...'; }
-            if (el) el.innerHTML = '<div style="color:var(--neon-cyan, #00d4ff);">Upgrading... This may take a few minutes. Services will restart.</div>';
+            if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
             try {
                 const response = await fetch('/api/system/pool-upgrade/apply', { method: 'POST' });
                 const result = await response.json();
-                if (result.success) {
-                    el.innerHTML = '<div style="color:var(--neon-green, #4ade80);">Upgrade complete! Services are restarting. Page will reload shortly.</div>';
-                    setTimeout(() => location.reload(), 10000);
-                } else {
-                    el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">${escapeHtml(result.error || 'Upgrade failed')}</div>`;
-                    if (result.output) el.innerHTML += `<div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted);max-height:80px;overflow-y:auto;white-space:pre-wrap;">${escapeHtml(result.output)}</div>`;
+                if (!result.success) {
+                    if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">${escapeHtml(result.error || 'Could not start the upgrade')}</div>`;
+                    if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
+                    return;
                 }
+                followPoolUpgrade(result.from_version || '');
             } catch (e) {
-                if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Upgrade failed: ${escapeHtml(e.message)}</div>`;
-            } finally {
+                if (el) el.innerHTML = `<div style="color:var(--neon-orange, #fb923c);">Could not start the upgrade: ${escapeHtml(e.message)}</div>`;
                 if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
             }
         }
+
+        // Poll the upgrade's status and log. The dashboard itself goes down part-way
+        // through (upgrade.sh restarts it), so network errors are expected: keep
+        // polling until it answers again and the upgrade has finished.
+        async function followPoolUpgrade(fromVersion) {
+            if (poolUpgradePolling) return;
+            poolUpgradePolling = true;
+            const btn = document.getElementById('btn-pool-upgrade');
+            const el = document.getElementById('mgmt-pool-upgrade');
+            const logEl = document.getElementById('mgmt-pool-upgrade-log');
+            if (btn) { btn.disabled = true; btn.textContent = 'Upgrading...'; }
+            if (logEl) logEl.style.display = '';
+            const started = Date.now();
+            let offlineSince = null;
+            const setStatus = (msg, color) => { if (el) el.innerHTML = `<div style="color:${color || 'var(--neon-cyan, #00d4ff)'};">${msg}</div>`; };
+            setStatus('Upgrade running…');
+            while (poolUpgradePolling) {
+                await new Promise(r => setTimeout(r, 3000));
+                let s = null;
+                try {
+                    const resp = await fetch('/api/system/pool-upgrade/status?lines=150', { cache: 'no-store' });
+                    if (resp.status === 401 || resp.status === 403) { location.reload(); return; }
+                    s = await resp.json();
+                } catch (e) { s = null; }
+                const mins = Math.floor((Date.now() - started) / 60000);
+                if (!s || !s.success) {
+                    offlineSince = offlineSince || Date.now();
+                    setStatus(`Dashboard restarting as part of the upgrade… (${mins} min elapsed)`);
+                    if (Date.now() - offlineSince > 15 * 60000) {
+                        setStatus('The dashboard has not come back after 15 minutes. Check the server: <code>sudo systemctl status spiraldash</code> and <code>/var/log/spiralpool/upgrade.log</code>', 'var(--neon-orange, #fb923c)');
+                        poolUpgradePolling = false;
+                    }
+                    continue;
+                }
+                offlineSince = null;
+                if (logEl && s.log) { logEl.textContent = s.log; logEl.scrollTop = logEl.scrollHeight; }
+                if (s.running) { setStatus(`Upgrade running… (${mins} min elapsed)`); continue; }
+                if (s.finished) {
+                    poolUpgradePolling = false;
+                    if (s.finished.ok) {
+                        setStatus(`✓ Upgrade complete${s.version ? ' — now running v' + escapeHtml(s.version) : ''}. Reloading…`, 'var(--neon-green, #4ade80)');
+                        setTimeout(() => location.reload(), 4000);
+                    } else {
+                        setStatus(`✗ Upgrade failed (exit ${s.finished.exit_code}). See the log below for what went wrong.`, 'var(--neon-red, #f87171)');
+                        if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
+                    }
+                    return;
+                }
+                // Not running and no "finished" marker: it ended before writing one
+                // (or a version older than 3.1.0 ran it). Give it a moment, then stop.
+                if (Date.now() - started > 30000) {
+                    poolUpgradePolling = false;
+                    setStatus(`Upgrade is no longer running${s.version && s.version !== fromVersion ? ' — now v' + escapeHtml(s.version) : ''}. Check the log below.`, 'var(--neon-orange, #fb923c)');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
+                    return;
+                }
+            }
+        }
+
+        // After a reload mid-upgrade (or opening the dashboard while one runs),
+        // pick the progress view back up.
+        async function resumePoolUpgradeIfRunning() {
+            try {
+                const resp = await fetch('/api/system/pool-upgrade/status?lines=150', { cache: 'no-store' });
+                if (!resp.ok) return;
+                const s = await resp.json();
+                if (s.success && s.running) followPoolUpgrade('');
+            } catch (e) { /* not admin, or dashboard unreachable — nothing to resume */ }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            resumePoolUpgradeIfRunning();
+            checkPoolUpgrade(false);   // server caches for 15 min; drives the banner
+        });
 
         // ═══════════════════════════════════════════════════════════════════════════
         // HTTPS / TLS SECURITY
@@ -6074,15 +6202,93 @@
             return `<button onclick="minerRestart('${eIp}', '${eName}', '${type}')" style="${restartBtnStyle}" title="Restart miner">Restart</button>`;
         }
 
+        // ── Bulk miner actions (v3.1.0) ──────────────────────────────────────
+        // Selection lives here, not in the DOM: the list re-renders every 10 s.
+        const bulkSelectedIps = new Set();
+        let bulkKnownIps = [];
+        let bulkManualSleep = {};
+
+        function updateBulkSelectionUi() {
+            for (const ip of [...bulkSelectedIps]) if (!bulkKnownIps.includes(ip)) bulkSelectedIps.delete(ip);
+            const n = bulkSelectedIps.size;
+            const countEl = document.getElementById('bulk-selected-count');
+            if (countEl) countEl.textContent = `${n} selected`;
+            const all = document.getElementById('bulk-select-all');
+            if (all) { all.checked = n > 0 && n === bulkKnownIps.length; all.indeterminate = n > 0 && n < bulkKnownIps.length; }
+            document.querySelectorAll('#bulk-miner-toolbar .bulk-btn').forEach(b => { b.disabled = n === 0; b.style.opacity = n === 0 ? '0.45' : '1'; });
+        }
+
+        function bulkToggleMiner(ip, checked) {
+            if (checked) bulkSelectedIps.add(ip); else bulkSelectedIps.delete(ip);
+            updateBulkSelectionUi();
+        }
+
+        function bulkSelectAll(checked) {
+            bulkSelectedIps.clear();
+            if (checked) bulkKnownIps.forEach(ip => bulkSelectedIps.add(ip));
+            document.querySelectorAll('#mgmt-miners input.bulk-miner-cb').forEach(cb => { cb.checked = checked; });
+            updateBulkSelectionUi();
+        }
+
+        async function bulkMinerAction(action) {
+            const ips = [...bulkSelectedIps];
+            if (ips.length === 0) return;
+            const body = { action, ips };
+            let what = action;
+            if (action === 'power') {
+                const level = document.getElementById('bulk-power-level').value;
+                if (level === 'watts') {
+                    const w = parseInt(prompt('Power target in watts (Braiins OS, LuxOS, Vnish):', '3000'), 10);
+                    if (!Number.isInteger(w) || w < 1 || w > 20000) return;
+                    body.watts = w; what = `power ${w} W`;
+                } else {
+                    body.level = level; what = `power ${level}`;
+                }
+            }
+            const warn = action === 'sleep'
+                ? '\n\nSleeping miners stop hashing. Sentinel will not alert on them or auto-restart them until you wake them.'
+                : action === 'restart' ? '\n\nThe miners drop off for a minute or two while they reboot.' : '';
+            if (!confirm(`${what.charAt(0).toUpperCase() + what.slice(1)} ${ips.length} miner${ips.length === 1 ? '' : 's'}?${warn}`)) return;
+
+            const out = document.getElementById('bulk-miner-result');
+            const buttons = document.querySelectorAll('#bulk-miner-toolbar .bulk-btn');
+            buttons.forEach(b => b.disabled = true);
+            if (out) { out.style.display = ''; out.style.color = 'var(--neon-cyan,#00d4ff)'; out.textContent = `Sending ${what} to ${ips.length} miner(s)…`; }
+            try {
+                const resp = await fetch('/api/fleet/batch/control', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                });
+                const r = await resp.json();
+                if (!resp.ok && !r.results) {
+                    if (out) { out.style.color = 'var(--neon-orange,#fb923c)'; out.textContent = r.error || `Request failed (${resp.status})`; }
+                    return;
+                }
+                const failed = (r.results || []).filter(x => !x.success);
+                let text = `${what}: ${r.successful}/${r.total} accepted.`;
+                if (failed.length) text += '\n' + failed.map(x => `  ✗ ${x.ip}: ${x.message}`).join('\n');
+                if (out) { out.style.color = failed.length ? 'var(--neon-orange,#fb923c)' : 'var(--neon-green,#4ade80)'; out.textContent = text; }
+                refreshMinerManagement();
+            } catch (e) {
+                if (out) { out.style.color = 'var(--neon-red,#f87171)'; out.textContent = `Error: ${e.message}`; }
+            } finally {
+                updateBulkSelectionUi();
+            }
+        }
+
         async function refreshMinerManagement() {
             const el = document.getElementById('mgmt-miners');
             if (!el) return;
             try {
-                const resp = await fetch('/api/miners');
+                const [resp, sleepResp] = await Promise.all([
+                    fetch('/api/miners'),
+                    fetch('/api/fleet/manual-sleep').catch(() => null)
+                ]);
                 if (!resp.ok) { el.innerHTML = '<span style="color:var(--neon-red)">Failed to load miners</span>'; return; }
                 const data = await resp.json();
+                try { bulkManualSleep = (sleepResp && sleepResp.ok) ? ((await sleepResp.json()).asleep || {}) : {}; } catch (e) { bulkManualSleep = {}; }
                 const miners = data.miners || {};
                 const entries = Object.entries(miners);
+                bulkKnownIps = entries.map(([, m]) => m.ip).filter(Boolean);
 
                 if (entries.length === 0) {
                     el.innerHTML = '<span style="color:var(--text-muted)">No miners configured. <a href="/settings" style="color:var(--neon-cyan,#00d4ff)">Add devices in settings</a></span>';
@@ -6110,7 +6316,10 @@
                     const isOnline = m.online === true;
                     let controlParts = [];
 
-                    if (!isOnline) {
+                    const handSlept = m.ip && bulkManualSleep[m.ip];
+                    if (!isOnline && handSlept) {
+                        controlParts.push('<span style="color:var(--neon-purple,#a855f7);font-size:0.75rem;" title="Put to sleep from the dashboard — select it and press Wake">💤 Asleep</span>');
+                    } else if (!isOnline) {
                         controlParts.push('<span style="color:var(--neon-red,#ff5555);font-size:0.75rem;">Offline</span>');
                     } else if (controlType === 'axeos') {
                         controlParts.push(buildFanSlider(eIp, fanPct, 'setAxeosFan'));
@@ -6144,7 +6353,11 @@
 
                     const controls = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">${controlParts.join('')}</div>`;
 
+                    const cb = m.ip
+                        ? `<input type="checkbox" class="bulk-miner-cb" data-ip="${ip}" ${bulkSelectedIps.has(m.ip) ? 'checked' : ''} onchange="bulkToggleMiner(this.dataset.ip, this.checked)" title="Select for bulk actions" style="cursor:pointer;">`
+                        : '';
                     return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;padding:8px 10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;">
+                        ${cb}
                         <div style="min-width:140px;">
                             <div style="color:var(--text-primary);font-size:0.8rem;font-weight:600;">${eName}</div>
                             <div style="color:var(--text-muted);font-size:0.7rem;">${ip} · <span style="color:var(--neon-cyan,#00d4ff)">${typeBadge}</span></div>
@@ -6156,6 +6369,7 @@
                         <div style="flex:1;min-width:200px;">${controls}</div>
                     </div>`;
                 }).join('');
+                updateBulkSelectionUi();
             } catch (e) {
                 el.innerHTML = `<span style="color:var(--neon-red)">Error: ${escapeHtml(e.message)}</span>`;
             }

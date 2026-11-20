@@ -21,29 +21,46 @@ All documentation and MOTD references use `spiralctl` exclusively.
 
 ## COMMANDS
 
+Since v3.1.0 related commands are grouped under a single parent command
+(`coin`, `miners`, `alerts`, `logs`, `ha`, `data`, `security`). Every older
+top-level name still works as an alias — see [Aliases](#aliases) below — so
+existing scripts and muscle memory keep working.
+
 ### Operations
 
 | Command | Description |
 |---|---|
 | `spiralctl status` | Show full service and blockchain node status |
-| `spiralctl restart` | Restart all Spiral Pool services (requires root) |
-| `spiralctl shutdown [--reboot]` | Gracefully stop all services and power off (or reboot) |
-| `spiralctl logs` | View stratum log output |
+| `spiralctl sync [options]` | Show blockchain sync progress |
+| `spiralctl logs [service]` | Tail a service's journal (default: spiralstratum) |
+| `spiralctl logs errors [service] [window]` | Errors/warnings only across services (default window: 1h) |
 | `spiralctl watch` | Live monitoring dashboard (like htop for the pool) |
 | `spiralctl test` | Run diagnostic and connectivity tests |
-| `spiralctl update` | Check for Spiral Pool updates |
+| `spiralctl restart` | Restart all Spiral Pool services (requires root) |
+| `spiralctl upgrade` | Upgrade to the latest release (runs `upgrade.sh`; other options are passed through) |
+| `spiralctl upgrade check` | Show installed vs latest version (no sudo, no changes) |
+| `spiralctl upgrade --from <dir>` | Upgrade from a release copied to this machine (`<dir>/upgrade.sh --local`) |
+| `spiralctl upgrade --from <dir> --dry-run` | Read-only preflight of that upgrade (`<dir>/scripts/linux/upgrade-preflight.sh`): sudoers rewrite checked with `visudo`, ownership changes, your `config.yaml` loaded by the new stratum. Changes nothing; `--no-build` skips the build |
+| `spiralctl update [check\|status\|configure\|enable\|disable]` | Update checker and automatic-update settings |
 | `spiralctl maintenance` | Enter or leave maintenance mode |
-| `spiralctl pause [minutes]` | Pause Sentinel alerts temporarily |
+| `spiralctl shutdown [--reboot]` | Gracefully stop all services and power off (or reboot) |
 
-### Blockchain
+### Coins & Nodes
 
 | Command | Description |
 |---|---|
-| `spiralctl sync [options]` | Show blockchain sync progress |
+| `spiralctl coin status` | Show all coins and their enabled/disabled state (`coin list` is an alias) |
+| `spiralctl coin enable <TICKER>` | Add a supported coin (installs daemon, generates wallet, updates config) |
+| `spiralctl coin disable <TICKER>` | Stop and disable a coin daemon |
+| `spiralctl coin start\|stop\|restart [TICKER\|all]` | Control coin node daemons |
+| `spiralctl coin upgrade [--check] [--coin <TICKER>] [--reindex]` | In-place coin daemon binary upgrade (config and data preserved) |
+| `spiralctl coin prune <TICKER>` | Enable blockchain pruning for a coin to reclaim disk (requires a full resync) |
+| `spiralctl coin storage` | Measure each enabled chain on disk against its published size figure |
+| `spiralctl coin add <TICKER>` | Add a custom/unsupported coin from GitHub (advanced) |
+| `spiralctl coin remove <TICKER>` | Remove a custom coin's generated files (wallet and blockchain data preserved) |
 | `spiralctl chain export` | Push blockchain data to a remote machine (requires root) |
 | `spiralctl chain restore` | Pull blockchain data from a remote machine (requires root) |
-| `spiralctl node <action> [coin]` | Manage blockchain node daemons |
-| `spiralctl coin <action> [coin]` | Show, list, or disable cryptocurrency support |
+| `spiralctl wallet [options]` | Show or generate wallet addresses |
 
 ### Mining
 
@@ -54,23 +71,33 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl v2 keygen [--rotate]` | Create or replace the Stratum V2 keys (Go binary) |
 | `spiralctl pool stats` | Pool hashrate and worker statistics (Go binary) |
 | `spiralctl stats [blocks [N]]` | Quick pool stats; `stats blocks` shows last N blocks |
-| `spiralctl scan` | Scan network for miners |
-| `spiralctl wallet [options]` | Show or generate wallet addresses |
 | `spiralctl external [action]` | External access / hashrate rental (Go binary) |
 
-### Miner Management
+### Miners
 
 | Command | Description |
 |---|---|
 | `spiralctl miners` | List connected miners with hashrate and shares |
+| `spiralctl miners workers` | Per-worker breakdown (miner → rig → hashrate + acceptance rate) |
+| `spiralctl miners scan` | Scan the network for miners |
 | `spiralctl miners kick <IP>` | Disconnect all stratum sessions from an IP |
-| `spiralctl workers` | Per-worker breakdown (miner → rig → hashrate + acceptance rate) |
-| `spiralctl miner nick <IP> <name>` | Set a display name for a miner in Sentinel |
-| `spiralctl miner nick list` | List all configured miner nicknames |
-| `spiralctl miner nick clear <IP>` | Remove a miner nickname |
-| `spiralctl miner group [list \| <IP> <name> \| clear <IP>]` | Manage fleet groups (same store as the dashboard; drives the group offline/online alerts) |
-| `spiralctl miner tag [list \| <IP> <t1,t2> \| clear <IP>]` | Manage fleet tags (same store as the dashboard) |
-| `spiralctl miner control <IP> <action>` | Send one command (`info`, `sleep`, `wake`, `restart`, `power`) to a miner, as automation would |
+| `spiralctl miners nick [list \| <IP> <name> \| clear <IP>]` | Miner display names in Sentinel |
+| `spiralctl miners group [list \| <IP> <name> \| clear <IP>]` | Manage fleet groups (same store as the dashboard; drives the group offline/online alerts) |
+| `spiralctl miners tag [list \| <IP> <t1,t2> \| clear <IP>]` | Manage fleet tags (same store as the dashboard) |
+| `spiralctl miners control <IP\|IP,IP\|all> <action>` | Send a command (`info`, `sleep`, `wake`, `restart`, `power`) to one, several or all miners, as automation would. Sleep/wake are recorded so Sentinel does not alert on, or auto-restart, a miner slept on purpose |
+
+### Alerts & Notifications
+
+| Command | Description |
+|---|---|
+| `spiralctl alerts` | Interactive menu to turn alerts & reports on or off |
+| `spiralctl alerts [list\|enable\|disable\|reset] [alert_type]` | Manage individual alerts non-interactively |
+| `spiralctl alerts pause [minutes] [reason]` | Pause Sentinel alerts temporarily |
+| `spiralctl alerts test` | Send a test notification to every configured channel |
+| `spiralctl alerts cooldowns` | Show active alert cooldowns with time remaining |
+| `spiralctl alerts webhook [status\|set\|clear\|test]` | Manage Discord & Telegram channels |
+| `spiralctl config [action] [key] [value]` | View or update Sentinel configuration |
+| `spiralctl config validate` | Dry-run config check — YAML/JSON syntax, placeholder detection, key cross-checks |
 
 ### Data
 
@@ -81,38 +108,13 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl data export` | Export mining history to CSV |
 | `spiralctl gdpr-delete` | Delete miner data for GDPR/CCPA compliance (Go binary) |
 
-### Coin Management
-
-| Command | Description |
-|---|---|
-| `spiralctl coin enable <TICKER>` | Add a supported coin (installs daemon, generates wallet, updates config) |
-| `spiralctl coin disable <TICKER>` | Stop and disable a coin daemon |
-| `spiralctl coin status` | Show all coins and their enabled/disabled state (`coin list` is an alias) |
-| `spiralctl coin prune <TICKER>` | Enable blockchain pruning for a coin to reclaim disk (requires a full resync) |
-| `spiralctl coin storage` | Measure each enabled chain on disk against its published size figure |
-| `spiralctl coin-upgrade` | In-place coin daemon binary upgrade (config and data preserved) |
-| `spiralctl add-coin <TICKER>` | Add a custom/unsupported coin from GitHub (advanced) |
-| `spiralctl remove-coin <TICKER>` | Remove a custom coin's generated files (wallet and blockchain data preserved) |
-
 ### High Availability / Failover
 
 | Command | Description |
 |---|---|
 | `spiralctl ha [action]` | High Availability cluster management |
 | `spiralctl ha vip [action]` | Virtual IP for miner failover |
-| `spiralctl sync-addresses` | Sync wallet addresses across HA nodes |
-
-### Configuration
-
-| Command | Description |
-|---|---|
-| `spiralctl config [action] [key] [value]` | View or update Sentinel configuration |
-| `spiralctl config validate` | Dry-run config check — YAML/JSON syntax, placeholder detection, key cross-checks |
-| `spiralctl config notify-test` | Send a test notification to every configured channel |
-| `spiralctl config list-cooldowns` | Show active alert cooldowns with time remaining |
-| `spiralctl alerts [action] [alert_type]` | Turn individual alerts & reports on or off |
-| `spiralctl log [errors] [service] [window]` | Filter service logs for errors/warnings |
-| `spiralctl webhook [action]` | Manage Discord & Telegram notifications |
+| `spiralctl ha sync-addresses` | Sync wallet addresses across HA nodes |
 
 ### Security
 
@@ -121,6 +123,24 @@ All documentation and MOTD references use `spiralctl` exclusively.
 | `spiralctl security [period]` | Security status overview (default: 24h) |
 | `spiralctl security fail2ban [action]` | Manage fail2ban jails |
 | `spiralctl security tor [action]` | Manage Tor privacy settings |
+
+### Aliases
+
+These older names are kept for compatibility and behave exactly like their
+grouped form. They are not listed in `spiralctl help`.
+
+| Alias | Same as |
+|---|---|
+| `node <action> [coin]` | `coin start\|stop\|restart [coin]` (`node status` = `status`) |
+| `add-coin`, `remove-coin`, `coin-upgrade` | `coin add`, `coin remove`, `coin upgrade` |
+| `miner <sub>`, `workers`, `scan` | `miners <sub>`, `miners workers`, `miners scan` |
+| `log [errors] ...` | `logs errors ...` |
+| `webhook ...`, `pause ...` | `alerts webhook ...`, `alerts pause ...` |
+| `config notify-test`, `config list-cooldowns` | `alerts test`, `alerts cooldowns` |
+| `backup`, `restore`, `export` | `data backup`, `data restore`, `data export` |
+| `blocks [N]` | `stats blocks [N]` |
+| `sync-addresses`, `vip` | `ha sync-addresses`, `ha vip` |
+| `fail2ban`, `tor` | `security fail2ban`, `security tor` |
 
 ---
 
@@ -1081,9 +1101,9 @@ Displays: spiralctl script version, stratum binary version (`spiralstratum --ver
 
 **Scrypt:** CAT, DGB-SCRYPT, DOGE, LTC, PEP
 
-**AuxPoW merge-mining pairs (6):** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, LTC+DOGE, LTC+PEP
+**AuxPoW merge-mining pairs (12):** BTC+NMC, BTC+FBTC, BTC+SYS, BTC+XMY, DGB+NMC, DGB+FBTC, DGB+SYS, DGB+XMY, LTC+DOGE, LTC+PEP, DGB-SCRYPT+DOGE, DGB-SCRYPT+PEP (DGB and DGB-SCRYPT parents since v3.1.0; each aux chain under one parent at a time)
 
-**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, DGB, XEC
+**Standalone SHA-256d (not merge-mineable):** BC2, BCH, BCH2, BTCS, XEC
 
 ## SEE ALSO
 

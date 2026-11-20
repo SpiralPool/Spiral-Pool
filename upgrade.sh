@@ -273,6 +273,7 @@ FETCH_LATEST=true   # Default: download from GitHub
 USE_LOCAL=false     # --local flag: use local source instead
 FORCE_UPGRADE=true   # Default: always apply (hotfixes reuse version tags)
 SKIP_BACKUP=false
+PREFLIGHT_MODE="ask"        # ask (interactive) | force (--preflight) | skip (--no-preflight)
 CHECK_ONLY=false
 AUTO_MODE=false
 UPDATE_STRATUM=true
@@ -678,6 +679,9 @@ check_for_updates() {
 
     local RELEASE_URL=""
     local RELEASE_INFO=""
+    # Release publication time (ISO 8601, from GitHub). Sentinel anchors its
+    # 48h / 72h / 7-day "still not updated" reminders to it.
+    local RELEASE_PUBLISHED=""
     if [[ "$USE_LOCAL" == "true" ]]; then
         # "--local --check" asks what upgrading from THIS tree would give, which is
         # a different question from "what is the newest published release?". The
@@ -706,6 +710,7 @@ check_for_updates() {
         if [[ "$http_code" == "200" ]]; then
             TARGET_VERSION=$(echo "$RELEASE_INFO" | grep -oP '"tag_name": "\K[^"]+' | sed 's/^v//' || echo "")
             RELEASE_URL=$(echo "$RELEASE_INFO" | grep -oP '"html_url": "\K[^"]+' | head -1 || echo "")
+            RELEASE_PUBLISHED=$(echo "$RELEASE_INFO" | grep -oP '"published_at": "\K[0-9TZ:.+-]+' | head -1 || echo "")
         fi
     fi
 
@@ -730,8 +735,9 @@ check_for_updates() {
             --arg lv "$TARGET_CLEAN" \
             --argjson ua "$UPDATE_AVAILABLE" \
             --arg url "$RELEASE_URL" \
-            --arg cmd "cd /spiralpool && chmod +x upgrade.sh && sudo ./upgrade.sh" \
-            '{current_version: $cv, latest_version: $lv, update_available: $ua, release_url: $url, upgrade_command: $cmd}'
+            --arg pub "$RELEASE_PUBLISHED" \
+            --arg cmd "sudo spiralctl upgrade" \
+            '{current_version: $cv, latest_version: $lv, update_available: $ua, release_url: $url, release_published_at: $pub, upgrade_command: $cmd}'
     else
         # Escape special JSON characters in URL (quotes, backslashes)
         local SAFE_URL="${RELEASE_URL//\\/\\\\}"
@@ -742,7 +748,8 @@ check_for_updates() {
     "latest_version": "${TARGET_CLEAN}",
     "update_available": ${UPDATE_AVAILABLE},
     "release_url": "${SAFE_URL}",
-    "upgrade_command": "cd /spiralpool && chmod +x upgrade.sh && sudo ./upgrade.sh"
+    "release_published_at": "${RELEASE_PUBLISHED}",
+    "upgrade_command": "sudo spiralctl upgrade"
 }
 EOF
     fi
@@ -2183,6 +2190,73 @@ stop_services() {
     log_success "Services stopped (${#SERVICES_WERE_RUNNING[@]} services were running)"
 }
 
+# True when Sentinel has at least one notification channel set up, looking where
+# Sentinel itself looks: config.json (either location), then the DISCORD_WEBHOOK=
+# fallback in update-settings.conf — where the installer saves the webhook, and
+# often the only place it is. Placeholders ("YOUR_...") don't count, as in Sentinel.
+sentinel_notifications_configured() {
+    # Candidates in the order spiralctl resolves them: the path Sentinel publishes
+    # for the config it actually loaded, the pool user's real home (getent — it is
+    # not always /home/<user>), the install-dir fallback, then /home/<user>.
+    local cfg published="" pool_home dir
+    [[ -r "${INSTALL_DIR}/data/sentinel-config-path" ]] && \
+        published=$(head -n1 "${INSTALL_DIR}/data/sentinel-config-path" 2>/dev/null | tr -d '[:space:]')
+    pool_home=$(getent passwd "$POOL_USER" 2>/dev/null | cut -d: -f6)
+    local -a cfgs=()
+    [[ -n "$published" ]] && cfgs+=("$published")
+    [[ -n "$pool_home" ]] && cfgs+=("${pool_home}/.spiralsentinel/config.json")
+    cfgs+=("${INSTALL_DIR}/config/sentinel/config.json" "/home/${POOL_USER}/.spiralsentinel/config.json")
+    for cfg in "${cfgs[@]}"; do
+        [[ -f "$cfg" ]] || continue
+        python3 - "$cfg" <<'PYEOF' 2>/dev/null && return 0
+import json, sys
+c = json.load(open(sys.argv[1]))
+def s(k):
+    v = str(c.get(k) or "").strip()
+    return "" if "YOUR" in v.upper() else v
+ok = (s("discord_webhook_url")
+      or (s("telegram_bot_token") and s("telegram_chat_id"))
+      or s("xmpp_jid") or s("ntfy_url") or s("smtp_host") or s("webhook_url"))
+sys.exit(0 if ok else 1)
+PYEOF
+    done
+    local conf hook
+    local -a confs=("${INSTALL_DIR}/config/update-settings.conf")
+    for cfg in "${cfgs[@]}"; do
+        dir=$(dirname "$cfg")
+        confs+=("${dir}/update-settings.conf")
+    done
+    for conf in "${confs[@]}"; do
+        [[ -f "$conf" ]] || continue
+        hook=$(grep -m1 '^[[:space:]]*DISCORD_WEBHOOK=' "$conf" 2>/dev/null | cut -d= -f2- | tr -d "\"' \r")
+        [[ -n "$hook" && "${hook^^}" != *YOUR* ]] && return 0
+    done
+    return 1
+}
+
+# Enable Sentinel when notifications are configured (installer rule), unless this is
+# an HA backup (ha-role-watcher owns Sentinel there). Never disables it.
+enable_sentinel_if_configured() {
+    [[ -n "$SENTINEL_SERVICE" && -f "/etc/systemd/system/${SENTINEL_SERVICE}.service" ]] || return 0
+    systemctl is-enabled --quiet "$SENTINEL_SERVICE" 2>/dev/null && return 0
+    if [[ -f /etc/keepalived/keepalived.conf ]] && grep -q "SPIRALPOOL" /etc/keepalived/keepalived.conf 2>/dev/null; then
+        local vip
+        vip=$(grep -oP '^\s+\K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(?=/)' /etc/keepalived/keepalived.conf 2>/dev/null | head -1)
+        if [[ -n "$vip" ]] && ! ip addr show 2>/dev/null | grep -qF " ${vip}/"; then
+            return 0
+        fi
+    fi
+    if sentinel_notifications_configured; then
+        if systemctl enable "$SENTINEL_SERVICE" >/dev/null 2>&1; then
+            log_info "  - ${SENTINEL_SERVICE} enabled (notifications are configured)"
+        else
+            log_warn "  - could not enable ${SENTINEL_SERVICE}"
+        fi
+    else
+        log_info "  - ${SENTINEL_SERVICE} left disabled (no notification channel found in Sentinel's config.json or update-settings.conf)"
+    fi
+}
+
 start_services() {
     log_info "Starting Spiral Pool services..."
     systemctl daemon-reload || true
@@ -2226,13 +2300,27 @@ start_services() {
             fi
         fi
 
+        # Sentinel follows the installer's rule: enabled when a notification channel is
+        # configured. Notifications added after install (dashboard, `spiralctl alerts
+        # webhook set`) never enabled it, so it ran only if started by hand — and was
+        # then left stopped by every upgrade.
+        if [[ "$service" == "$SENTINEL_SERVICE" ]]; then
+            enable_sentinel_if_configured
+        fi
+
         # Start any enabled service — not just ones that were running before upgrade.
         # If a service was already down (prior crash, reboot, manual stop), the upgrade
         # should bring it back to the correct state rather than preserving the broken state.
+        # Also restart anything that WAS running before the upgrade, enabled or not:
+        # stop_services stopped it, so leaving it down would be the upgrade's doing.
         local should_start=false
         if [[ -f "/etc/systemd/system/${service}.service" ]]; then
             if systemctl is-enabled --quiet "$service" 2>/dev/null; then
                 should_start=true
+            elif [[ " ${SERVICES_WERE_RUNNING[*]} " == *" ${service} "* ]]; then
+                should_start=true
+                log_warn "  - ${service} was running before the upgrade but is not set to start at boot — starting it again"
+                log_warn "    (it was started by hand; to have it come back after a reboot: sudo systemctl enable ${service})"
             fi
         fi
 
@@ -4141,6 +4229,8 @@ update_dashboard() {
     cp "$DASHBOARD_SOURCE"/*.py "$DASHBOARD_INSTALL/" 2>/dev/null || true
     # Automation rules module, shared with Sentinel
     cp "$DASHBOARD_SOURCE/../sentinel/miner_automation.py" "$DASHBOARD_INSTALL/" 2>/dev/null || true
+    # Bulk miner actions (v3.1.0) drive the same control drivers Sentinel uses
+    cp "$DASHBOARD_SOURCE/../sentinel/miner_control.py" "$DASHBOARD_INSTALL/" 2>/dev/null || true
     cp "$DASHBOARD_SOURCE/requirements.txt" "$DASHBOARD_INSTALL/" 2>/dev/null || true
 
     # Copy templates (overwrite) - atomic swap prevents data loss if cp fails
@@ -4251,7 +4341,7 @@ $POOL_USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
 $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/apt-noninteractive.sh *
 
 # Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade
-$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
+$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh *
 
 # Enable HTTPS - dashboard UI can activate TLS via enable-https.sh
 $POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/enable-https.sh
@@ -4294,7 +4384,7 @@ SUDOERS_APPEND
             cat >> "$DASH_SUDOERS" << SUDOERS_APPEND
 
 # Auto-update: update-checker.sh runs as spiraluser via cron, needs sudo for upgrade (v2.0)
-$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *
+$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh *
 SUDOERS_APPEND
             sudoers_changed=true
         fi
@@ -4708,7 +4798,7 @@ update_utility_scripts() {
     if [[ -f "$SCRIPTS_SRC/linux/block-celebrate.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/block-celebrate.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/block-celebrate.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/block-celebrate.sh"
+        chown root:root "$SCRIPTS_DST/block-celebrate.sh"
         ((++updated))
     fi
 
@@ -4716,7 +4806,7 @@ update_utility_scripts() {
     if [[ -f "$SCRIPTS_SRC/linux/maintenance-mode.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/maintenance-mode.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/maintenance-mode.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/maintenance-mode.sh"
+        chown root:root "$SCRIPTS_DST/maintenance-mode.sh"
         ((++updated))
     fi
 
@@ -4724,7 +4814,7 @@ update_utility_scripts() {
     if [[ -f "$SCRIPTS_SRC/linux/update-checker.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/update-checker.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/update-checker.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/update-checker.sh"
+        chown root:root "$SCRIPTS_DST/update-checker.sh"
         ((++updated))
     fi
 
@@ -4733,7 +4823,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/blockchain-export.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/blockchain-export.sh"
         ln -sf "$SCRIPTS_DST/blockchain-export.sh" /usr/local/bin/spiralpool-chain-export
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/blockchain-export.sh"
+        chown root:root "$SCRIPTS_DST/blockchain-export.sh"
         ((++updated))
     fi
 
@@ -4742,7 +4832,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/blockchain-restore.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/blockchain-restore.sh"
         ln -sf "$SCRIPTS_DST/blockchain-restore.sh" /usr/local/bin/spiralpool-chain-restore
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/blockchain-restore.sh"
+        chown root:root "$SCRIPTS_DST/blockchain-restore.sh"
         ((++updated))
     fi
 
@@ -4751,7 +4841,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/ha-service-control.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/ha-service-control.sh"
         ln -sf "$SCRIPTS_DST/ha-service-control.sh" /usr/local/bin/spiralpool-ha-service
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-service-control.sh"
+        chown root:root "$SCRIPTS_DST/ha-service-control.sh"
         ((++updated))
     fi
 
@@ -4759,7 +4849,7 @@ update_utility_scripts() {
     if [[ -f "$SCRIPTS_SRC/linux/ha-role-watcher.sh" ]]; then
         cp "$SCRIPTS_SRC/linux/ha-role-watcher.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/ha-role-watcher.sh"
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-role-watcher.sh"
+        chown root:root "$SCRIPTS_DST/ha-role-watcher.sh"
         ((++updated))
     fi
 
@@ -4814,7 +4904,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/ha-replicate.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/ha-replicate.sh"
         ln -sf "$SCRIPTS_DST/ha-replicate.sh" /usr/local/bin/spiralpool-ha-replicate
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-replicate.sh"
+        chown root:root "$SCRIPTS_DST/ha-replicate.sh"
         ((++updated))
     fi
 
@@ -4823,7 +4913,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/ha-validate.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/ha-validate.sh"
         ln -sf "$SCRIPTS_DST/ha-validate.sh" /usr/local/bin/spiralpool-ha-validate
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-validate.sh"
+        chown root:root "$SCRIPTS_DST/ha-validate.sh"
         ((++updated))
     fi
 
@@ -4832,7 +4922,7 @@ update_utility_scripts() {
         cp "$SCRIPTS_SRC/linux/ha-setup-ssh.sh" "$SCRIPTS_DST/"
         chmod +x "$SCRIPTS_DST/ha-setup-ssh.sh"
         ln -sf "$SCRIPTS_DST/ha-setup-ssh.sh" /usr/local/bin/spiralpool-ha-setup-ssh
-        chown "${POOL_USER}:${POOL_USER}" "$SCRIPTS_DST/ha-setup-ssh.sh"
+        chown root:root "$SCRIPTS_DST/ha-setup-ssh.sh"
         ((++updated))
     fi
 
@@ -4936,7 +5026,7 @@ APTEOF
     # daemon-reindex.sh is new in v3.0 and the monitor calls it by path, so an
     # upgraded install needs it too. Root-owned: the pool user runs it through
     # sudo, so a copy it could write would be a way to become root.
-    local DR_DST="$INSTALL_DIR/bin/daemon-reindex.sh"
+    local DR_DST="$INSTALL_DIR/scripts/daemon-reindex.sh"  # root-owned dir (was bin/, pool-user-owned)
     if [[ -f "$PROJECT_ROOT/install.sh" ]]; then
         local dr_new
         dr_new=$(mktemp)
@@ -4958,10 +5048,10 @@ APTEOF
 
     # And the one sudoers line that lets the monitor call it.
     local DASH_SUDOERS="/etc/sudoers.d/spiralpool-dashboard"
-    if [[ -f "$DASH_SUDOERS" ]] && ! grep -q "bin/daemon-reindex.sh" "$DASH_SUDOERS"; then
+    if [[ -f "$DASH_SUDOERS" ]] && ! grep -q "daemon-reindex.sh" "$DASH_SUDOERS"; then
         local sudo_tmp
         sudo_tmp=$(mktemp)
-        { cat "$DASH_SUDOERS"; echo "$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/bin/daemon-reindex.sh"; } > "$sudo_tmp"
+        { cat "$DASH_SUDOERS"; echo "$POOL_USER ALL=(ALL) NOPASSWD: $INSTALL_DIR/scripts/daemon-reindex.sh"; } > "$sudo_tmp"
         if visudo -cf "$sudo_tmp" >/dev/null 2>&1; then
             cat "$sudo_tmp" > "$DASH_SUDOERS"
             chmod 440 "$DASH_SUDOERS"
@@ -5070,7 +5160,7 @@ echo -e "${CYAN}             ░███${NC}"
 echo -e "${CYAN}             █████${NC}"
 echo -e "${CYAN}            ░░░░░${NC}"
 echo -e "                                 ${MAGENTA}Multi-Algorithm Solo Mining Pool${NC}"
-echo -e "                                     ${DIM}V3.0.3 — SPIRAL COVENANT${NC}"
+echo -e "                                     ${DIM}V3.1.0 — SPIRAL COVENANT${NC}"
 echo ""
 echo -e "  ${POOL_C}${POOL_I}${NC} Stratum    ${POOL_C}${POOL_P}${NC}   ${DASH_C}${DASH_I}${NC} Dashboard   ${DASH_C}${DASH_P}${NC}   ${SENT_C}${SENT_I}${NC} Sentinel   ${SENT_C}${SENT_P}${NC}"
 [ -n "$COIN_LINE" ] && echo -e " ${COIN_LINE}"
@@ -5078,24 +5168,27 @@ echo -e "  ${DIM}Uptime:${NC} ${GREEN}${UPTIME}${NC}   ${DIM}Load:${NC} ${GREEN}
 echo ""
 echo -e "${CYAN}━━━ STATUS & MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl status')${NC}  $(D 'Overview')  ${YELLOW}$(C 'spiralctl watch')${NC}  Live monitor"
-echo -e "  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')  ${YELLOW}$(C 'spiralctl logs')${NC}  Stratum logs"
-echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl scan')${NC}  Find miners"
-echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miner control')${NC}  Control hardware"
+echo -e "  ${YELLOW}$(C 'spiralctl logs')${NC}  $(D 'Stratum logs')  ${YELLOW}$(C 'spiralctl logs errors')${NC}  Errors only"
+echo -e "  ${YELLOW}$(C 'spiralctl sync')${NC}  $(D 'Sync status')  ${YELLOW}$(C 'spiralctl test')${NC}  Diagnostics"
 echo -e "${CYAN}━━━ MINING & COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${YELLOW}$(C 'spiralctl mining')${NC}  $(D 'Mining mode')  ${YELLOW}$(C 'spiralctl mining multiport')${NC}  $(D 'Smart port')"
-echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl v2')${NC}  $(D 'Stratum V2')"
-echo -e "  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  $(D 'Add coin')  ${YELLOW}$(C 'spiralctl coin disable <SYM>')${NC}  Remove coin"
-echo -e "  ${YELLOW}$(C 'spiralctl coin-upgrade')${NC}  $(D 'Upgrade nodes')  ${YELLOW}$(C 'spiralctl restart')${NC}  Restart services"
+echo -e "  ${YELLOW}$(C 'spiralctl mining payout')${NC}  $(D 'Reward routing')  ${YELLOW}$(C 'spiralctl stats')${NC}  $(D 'Pool stats')"
+echo -e "  ${YELLOW}$(C 'spiralctl coin')${NC}  $(D 'Coins & nodes')  ${YELLOW}$(C 'spiralctl coin enable <SYM>')${NC}  Add coin"
+echo -e "  ${YELLOW}$(C 'spiralctl coin restart')${NC}  $(D 'Restart nodes')  ${YELLOW}$(C 'spiralctl coin upgrade')${NC}  Upgrade nodes"
+echo -e "${CYAN}━━━ MINERS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${YELLOW}$(C 'spiralctl miners')${NC}  $(D 'Connected rigs')  ${YELLOW}$(C 'spiralctl miners workers')${NC}  Per-worker"
+echo -e "  ${YELLOW}$(C 'spiralctl miners scan')${NC}  $(D 'Find miners')  ${YELLOW}$(C 'spiralctl miners control')${NC}  Control hardware"
 echo -e "${CYAN}━━━ MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${YELLOW}$(C 'spiralctl alerts')${NC}  $(D 'Alerts on/off')  ${YELLOW}$(C 'spiralctl alerts webhook')${NC}  Notifications"
 echo -e "  ${YELLOW}$(C 'spiralctl config')${NC}  $(D 'Configuration')  ${YELLOW}$(C 'spiralctl security')${NC}  Security audit"
-echo -e "  ${YELLOW}$(C 'spiralctl alerts')${NC}  $(D 'Alerts on/off')  ${YELLOW}$(C 'spiralctl webhook')${NC}  Notifications"
 echo -e "  ${YELLOW}$(C 'spiralctl data backup')${NC}  $(D 'Backup')  ${YELLOW}$(C 'spiralctl data restore')${NC}  Restore"
-echo -e "  ${YELLOW}$(C 'spiralctl test')${NC}  $(D 'Connectivity')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
+echo -e "  ${YELLOW}$(C 'spiralctl restart')${NC}  $(D 'Restart pool')  ${YELLOW}$(C 'spiralctl ha')${NC}  HA cluster"
+echo -e "  ${YELLOW}$(C 'spiralctl upgrade')${NC}  $(D 'Upgrade pool')  ${YELLOW}$(C 'spiralctl upgrade check')${NC}  New version?"
 echo ""
 echo -e "  ${CYAN}▶  spiralctl help${NC}   —  Full command reference"
 echo -e "${CYAN}━━━ SUPPORTED COINS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${GREEN}SHA-256d:${NC}  BTC  BCH  BCH2  BC2  BTCS  DGB  XEC    ${GREEN}Scrypt:${NC}  LTC  DOGE  DGB-S  PEP  CAT"
-echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP"
+echo -e "  ${GREEN}AuxPoW:${NC}   BTC+NMC  BTC+FBTC  BTC+SYS  BTC+XMY  DGB+NMC  LTC+DOGE  LTC+PEP  DGB-S+DOGE  DGB-S+PEP"
 echo -e "${CYAN}━━━ WEB INTERFACES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 # Cloud facts the installer recorded. This script runs as whoever logs in and is
 # written from a quoted heredoc, so these cannot be inherited or substituted —
@@ -5368,7 +5461,7 @@ migrate_ha_sudoers() {
         echo "" >> "$DASH_SUDOERS"
         echo "# Auto-update: Sentinel runs upgrade.sh --auto as spiraluser via sudo" >> "$DASH_SUDOERS"
         echo "# Trailing * allows --auto and other flags" >> "$DASH_SUDOERS"
-        echo "$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/upgrade.sh *" >> "$DASH_SUDOERS"
+        echo "$POOL_USER ALL=(ALL) NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh *" >> "$DASH_SUDOERS"
         changed=1
     fi
 
@@ -5722,10 +5815,14 @@ TIMEREOF
 update_upgrade_script() {
     # Copy this script itself for future upgrades
     # Use atomic write (cp to temp + mv) to avoid corrupting the running script
+    # Root-owned: it was chowned to the pool user, and sudoers let that user run it
+    # as root — so any compromise of a pool service could edit it and become root.
+    # (The privileged copy sudo actually runs now lives in the root-owned scripts/
+    # directory — see secure_privileged_entrypoints.)
     if [[ -f "${PROJECT_ROOT}/upgrade.sh" ]]; then
         cp "${PROJECT_ROOT}/upgrade.sh" "${INSTALL_DIR}/upgrade.sh.new"
-        chmod +x "${INSTALL_DIR}/upgrade.sh.new"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/upgrade.sh.new"
+        chmod 755 "${INSTALL_DIR}/upgrade.sh.new"
+        chown root:root "${INSTALL_DIR}/upgrade.sh.new"
         mv -f "${INSTALL_DIR}/upgrade.sh.new" "${INSTALL_DIR}/upgrade.sh"
         log_info "  - upgrade.sh updated"
     fi
@@ -5734,9 +5831,126 @@ update_upgrade_script() {
     if [[ -f "${PROJECT_ROOT}/coin-upgrade.sh" ]]; then
         cp "${PROJECT_ROOT}/coin-upgrade.sh" "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
         chmod +x "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
-        chown "${POOL_USER}:${POOL_USER}" "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
+        chown root:root "${INSTALL_DIR}/scripts/coin-upgrade.sh.new"
         mv -f "${INSTALL_DIR}/scripts/coin-upgrade.sh.new" "${INSTALL_DIR}/scripts/coin-upgrade.sh"
         log_info "  - coin-upgrade.sh updated"
+    fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v3.1.0: every script the pool user may run through sudo must live in the
+# root-owned ${INSTALL_DIR}/scripts directory. ${INSTALL_DIR} itself and
+# ${INSTALL_DIR}/bin are owned by the pool user, so a root-owned file there can
+# still be renamed away and replaced — sudoers entries for ${INSTALL_DIR}/upgrade.sh
+# and ${INSTALL_DIR}/bin/daemon-reindex.sh were each a route from any compromised
+# pool service (dashboard, Sentinel, stratum) to root.
+secure_privileged_entrypoints() {
+    log_info "Securing privileged entry points..."
+    local scripts_dir="${INSTALL_DIR}/scripts"
+    mkdir -p "$scripts_dir"
+    chown root:root "$scripts_dir"
+    chmod 755 "$scripts_dir"
+
+    _install_root_script() {  # <source> <dest>
+        local tmp="${2}.new.$$"
+        cp "$1" "$tmp" && sed -i 's/\r$//' "$tmp" && chown root:root "$tmp" && chmod 755 "$tmp" \
+            && mv -f "$tmp" "$2"
+    }
+
+    # The copy sudo runs. Atomic replace: this function may be running from it.
+    if [[ -f "${PROJECT_ROOT}/upgrade.sh" ]]; then
+        _install_root_script "${PROJECT_ROOT}/upgrade.sh" "${scripts_dir}/upgrade.sh" \
+            && log_info "  - ${scripts_dir}/upgrade.sh (root-owned)"
+    fi
+    # Dashboard "Upgrade" button launcher (takes no arguments).
+    if [[ -f "${PROJECT_ROOT}/scripts/linux/pool-upgrade-launch.sh" ]]; then
+        _install_root_script "${PROJECT_ROOT}/scripts/linux/pool-upgrade-launch.sh" "${scripts_dir}/pool-upgrade-launch.sh" \
+            && log_info "  - ${scripts_dir}/pool-upgrade-launch.sh (root-owned)"
+    fi
+    # daemon-reindex.sh now deploys to scripts/ (update_utility_scripts); drop the
+    # old copy from the pool-user-owned bin/ so nothing can be pointed back at it.
+    if [[ -f "${scripts_dir}/daemon-reindex.sh" ]]; then
+        rm -f "${INSTALL_DIR}/bin/daemon-reindex.sh"
+    fi
+    # The top-level convenience copy stays for "cd /spiralpool && sudo ./upgrade.sh",
+    # root-owned, but sudoers no longer points at it.
+    if [[ -f "${INSTALL_DIR}/upgrade.sh" ]]; then
+        chown root:root "${INSTALL_DIR}/upgrade.sh"
+        chmod 755 "${INSTALL_DIR}/upgrade.sh"
+    fi
+
+    # Everything in scripts/ is root-owned and not group/world-writable. Several were
+    # handed to the pool user (coin-upgrade.sh, blockchain-export/restore.sh, ha-*.sh,
+    # ...) although admins run them as root (`sudo spiralctl coin upgrade`, `chain
+    # export`), so a compromised pool service could edit one and wait. The pool user
+    # still runs the ones it needs — that takes execute permission, not ownership.
+    find "$scripts_dir" -maxdepth 1 -type f -exec chown root:root {} + 2>/dev/null || true
+    find "$scripts_dir" -maxdepth 1 -type f -perm /022 -exec chmod go-w {} + 2>/dev/null || true
+
+    # HA key-exchange handler (HA primaries only): the HA SSH user runs it as root
+    # via sudo, but it lived in the pool-user-owned bin/. Regenerate it from the
+    # release source — never copy the bin/ one, which the pool user could have
+    # rewritten — into scripts/, and repoint its sudoers entry.
+    local kx_sudoers
+    for kx_sudoers in /etc/sudoers.d/*-exchange; do
+        [[ -f "$kx_sudoers" ]] || continue
+        grep -q "/bin/ha-key-exchange\.sh" "$kx_sudoers" 2>/dev/null || continue
+        local kx_new kx_tmp
+        kx_new=$(mktemp)
+        awk '/<< .HANDLER_EOF.$/{f=1; next} /^HANDLER_EOF$/{f=0} f' \
+            "${PROJECT_ROOT}/scripts/linux/pool-mode.sh" 2>/dev/null > "$kx_new"
+        if head -1 "$kx_new" | grep -q '^#!/bin/bash' && grep -q 'HA Key Exchange Handler' "$kx_new" \
+           && bash -n "$kx_new" 2>/dev/null; then
+            install -o root -g root -m 755 "$kx_new" "${scripts_dir}/ha-key-exchange.sh"
+            kx_tmp=$(mktemp)
+            sed "s|/spiralpool/bin/ha-key-exchange\.sh|${scripts_dir}/ha-key-exchange.sh|g" "$kx_sudoers" > "$kx_tmp"
+            if visudo -cf "$kx_tmp" >/dev/null 2>&1; then
+                chown root:root "$kx_tmp"
+                chmod 440 "$kx_tmp"
+                mv -f "$kx_tmp" "$kx_sudoers"
+                rm -f "${INSTALL_DIR}/bin/ha-key-exchange.sh"
+                log_info "  - HA key-exchange handler moved to ${scripts_dir}/ (root-owned)"
+            else
+                rm -f "$kx_tmp"
+                log_warn "  - visudo rejected the updated $(basename "$kx_sudoers") — left unchanged"
+            fi
+        else
+            log_warn "  - Could not extract the HA key-exchange handler from pool-mode.sh — $(basename "$kx_sudoers") left unchanged"
+        fi
+        rm -f "$kx_new"
+    done
+
+    local DASH_SUDOERS="/etc/sudoers.d/spiralpool-dashboard"
+    [[ -f "$DASH_SUDOERS" ]] || return 0
+    local tmp
+    tmp=$(mktemp)
+    sed -e "s|NOPASSWD: ${INSTALL_DIR}/upgrade\.sh |NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh |" \
+        -e "s|NOPASSWD: ${INSTALL_DIR}/upgrade\.sh\$|NOPASSWD: ${INSTALL_DIR}/scripts/upgrade.sh *|" \
+        -e "s|NOPASSWD: ${INSTALL_DIR}/bin/daemon-reindex\.sh|NOPASSWD: ${INSTALL_DIR}/scripts/daemon-reindex.sh|" \
+        "$DASH_SUDOERS" \
+        | awk '/NOPASSWD:/ { if (seen[$0]++) next } { print }' > "$tmp"
+    # (awk drops exact duplicate rules — e.g. a daemon-reindex line added at the new
+    # path by an earlier step and the old-path line rewritten to the same text.)
+    if ! grep -q "scripts/upgrade\.sh" "$tmp"; then
+        printf '\n# Auto-update: update-checker.sh (cron, pool user) runs the root-owned upgrade.sh\n%s ALL=(ALL) NOPASSWD: %s/scripts/upgrade.sh *\n' \
+            "$POOL_USER" "$INSTALL_DIR" >> "$tmp"
+    fi
+    if ! grep -q "scripts/pool-upgrade-launch\.sh" "$tmp"; then
+        printf '\n# Dashboard "Upgrade" button: starts upgrade.sh as a transient systemd unit (v3.1.0)\n%s ALL=(root) NOPASSWD: %s/scripts/pool-upgrade-launch.sh\n' \
+            "$POOL_USER" "$INSTALL_DIR" >> "$tmp"
+    fi
+    if cmp -s "$tmp" "$DASH_SUDOERS"; then
+        rm -f "$tmp"
+        return 0
+    fi
+    if visudo -cf "$tmp" >/dev/null 2>&1; then
+        chown root:root "$tmp"
+        chmod 440 "$tmp"
+        mv -f "$tmp" "$DASH_SUDOERS"
+        log_info "  - sudoers now points only at root-owned scripts"
+    else
+        rm -f "$tmp"
+        log_warn "  - visudo rejected the updated sudoers file — left unchanged"
     fi
 }
 
@@ -6222,7 +6436,7 @@ embed = {
         "```\nsudo /spiralpool/scripts/coin-upgrade.sh\n```"
     ),
     "color": 0xFF6B35,
-    "footer": {"text": "Spiral Pool v3.0.3 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
+    "footer": {"text": "Spiral Pool v3.1.0 — Spiral Covenant  •  coin-upgrade.sh handles the chain resync risk"}
 }
 print(json.dumps(embed))
 PYEOF
@@ -6243,6 +6457,60 @@ PYEOF
 # Main
 # =============================================================================
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Upgrade dry run (v3.1.0). The release's scripts/linux/upgrade-preflight.sh is
+# read-only: it simulates the sudoers migration with visudo, lists ownership
+# changes, builds the new stratum in /tmp and loads the live config.yaml with it.
+# Interactive runs are offered it (default yes); --auto runs (dashboard button,
+# update checker) skip it unless --preflight is given. A FAIL stops the upgrade
+# before anything is changed; warnings-only asks (interactive) or carries on.
+run_preflight_gate() {
+    local pf="${PROJECT_ROOT}/scripts/linux/upgrade-preflight.sh"
+    [[ -f "$pf" ]] || return 0                       # releases before 3.1.0 have none
+    [[ "$PREFLIGHT_MODE" == "skip" ]] && return 0
+    local interactive=false
+    [[ "$AUTO_MODE" != "true" && -t 0 ]] && interactive=true
+
+    if [[ "$PREFLIGHT_MODE" == "ask" ]]; then
+        $interactive || return 0
+        local ans=""
+        echo ""
+        printf "  Run the read-only dry run first? Nothing is changed by it. (recommended) [Y/n]: "
+        read -r ans
+        if [[ "${ans,,}" == n* ]]; then
+            log_info "Dry run skipped"
+            return 0
+        fi
+    fi
+
+    log_info "Running the upgrade dry run (read-only)..."
+    local rc=0
+    SPIRAL_PREFLIGHT_FROM_UPGRADE=1 bash "$pf" "$PROJECT_ROOT" || rc=$?
+    case "$rc" in
+        0)
+            log_success "Dry run passed — continuing with the upgrade"
+            ;;
+        2)
+            if $interactive; then
+                local go_on=""
+                printf "\n  The dry run reported warnings (above). Continue with the upgrade? [y/N]: "
+                read -r go_on
+                if [[ "${go_on,,}" != y* ]]; then
+                    log_info "Upgrade cancelled after the dry run — nothing was changed."
+                    exit 0
+                fi
+            else
+                log_warn "Dry run reported warnings — continuing (unattended)"
+            fi
+            ;;
+        *)
+            log_error "Dry run reported FAIL items — upgrade stopped, nothing was changed."
+            log_error "Fix them and run upgrade.sh again (or use --no-preflight to upgrade anyway)."
+            exit 1
+            ;;
+    esac
+}
+
 main() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -6252,6 +6520,8 @@ main() {
             --fetch-latest)    FETCH_LATEST=true; USE_LOCAL=false; shift ;;  # Legacy alias (no-op now)
             --force)           FORCE_UPGRADE=true; shift ;;
             --no-backup)       SKIP_BACKUP=true; shift ;;
+            --preflight)       PREFLIGHT_MODE=force; shift ;;
+            --no-preflight)    PREFLIGHT_MODE=skip; shift ;;
             --auto)            AUTO_MODE=true; FORCE_UPGRADE=true; shift ;;
             --stratum-only)    UPDATE_DASHBOARD=false; UPDATE_SENTINEL=false; shift ;;
             --dashboard-only)  UPDATE_STRATUM=false; UPDATE_SENTINEL=false; shift ;;
@@ -6295,6 +6565,8 @@ main() {
                 echo "Options:"
                 echo "  --force             Force upgrade even if on latest version"
                 echo "  --no-backup         Skip backup before upgrading"
+                echo "  --preflight         Always run the read-only dry run first (also with --auto)"
+                echo "  --no-preflight      Do not offer the dry run"
                 echo "  --update-services   Also update systemd service files"
                 echo "  --fix-config        Fix common config issues (coin names, durations)"
                 echo "  --skip-start        Don't start services after update"
@@ -6560,6 +6832,9 @@ SSHDEOF
 
     echo
 
+    # Optional read-only dry run (v3.1.0) — before the backup and any change.
+    run_preflight_gate
+
     # Pre-flight: check disk space (need ~500MB for backup + build artifacts)
     local avail_mb
     avail_mb=$(df -m "${INSTALL_DIR}" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -6702,6 +6977,7 @@ SSHDEOF
     update_motd
     update_version_file
     update_upgrade_script
+    secure_privileged_entrypoints
     deploy_pg_maintenance_timer || log_warn "PostgreSQL maintenance timer deploy failed (non-critical)"
 
     # Strip CRLF from all deployed shell scripts and Python files.

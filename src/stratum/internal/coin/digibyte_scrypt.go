@@ -125,3 +125,11 @@ func init() {
 	Register("DIGIBYTE-SCRYPT", NewDigiByteScryptCoin)
 	Register("DGB_SCRYPT", NewDigiByteScryptCoin) // Alternative format
 }
+
+// CanBeParentFor returns true for Scrypt aux chains (Dogecoin, PepeCoin).
+//
+// MUST override the embedded DigiByteCoin method: without it DGB-SCRYPT would
+// inherit "sha256d" and claim to parent Namecoin with a scrypt header.
+func (c *DigiByteScryptCoin) CanBeParentFor(auxAlgorithm string) bool {
+	return auxAlgorithm == "scrypt"
+}
