@@ -95,22 +95,24 @@ func (p *portal) handleFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := strings.TrimPrefix(r.URL.Path, "/portal")
-	name = strings.TrimPrefix(name, "/")
-	var contentType string
-	switch name {
+	// The request path only selects a file; the embed path is always one of the
+	// constants below, so nothing from the request reaches the response body.
+	requested := strings.TrimPrefix(r.URL.Path, "/portal")
+	requested = strings.TrimPrefix(requested, "/")
+	var file, contentType string
+	switch requested {
 	case "", "index.html":
-		name, contentType = "index.html", "text/html; charset=utf-8"
+		file, contentType = "portal/index.html", "text/html; charset=utf-8"
 	case "portal.js":
-		contentType = "text/javascript; charset=utf-8"
+		file, contentType = "portal/portal.js", "text/javascript; charset=utf-8"
 	case "portal.css":
-		contentType = "text/css; charset=utf-8"
+		file, contentType = "portal/portal.css", "text/css; charset=utf-8"
 	default:
 		http.NotFound(w, r)
 		return
 	}
 
-	data, err := fs.ReadFile(portalFiles, "portal/"+name)
+	data, err := fs.ReadFile(portalFiles, file)
 	if err != nil {
 		http.NotFound(w, r)
 		return

@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net"
 	"regexp"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1314,8 +1315,9 @@ func headerPrevHash(stratumHex string) ([32]byte, error) {
 	if len(b) != 32 {
 		return out, fmt.Errorf("want 32 bytes, got %d", len(b))
 	}
-	for i := 0; i < 32; i += 4 {
-		out[i], out[i+1], out[i+2], out[i+3] = b[i+3], b[i+2], b[i+1], b[i]
+	copy(out[:], b)
+	for group := range slices.Chunk(out[:], 4) {
+		slices.Reverse(group) // chunks alias out, so this swaps in place
 	}
 	return out, nil
 }
