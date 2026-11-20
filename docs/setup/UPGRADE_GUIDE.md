@@ -2,7 +2,7 @@
 
 ## Is a full reinstall required?
 
-**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1, v3.0.2, v3.1.0) and v3.1.0 for the pool stack.** (Coin **node** upgrades — BTC, DGB, SYS, XEC below — are separate steps run with `coin-upgrade.sh`.)
+**No. There are zero incompatibilities between any prior version (v1.0.0, v1.1.x, v1.2.x, v2.4.x, v2.5.x, v2.6.x, v2.7.x, v3.0.0, v3.0.1, v3.0.2, v3.0.3) and v3.1.0 for the pool stack.** (Coin **node** upgrades — BTC, DGB, SYS, XEC below — are separate steps run with `coin-upgrade.sh`.)
 
 `upgrade.sh` handles the entire upgrade in-place. Your blockchain data, database records, wallet files, `config.yaml`, Sentinel state (achievements, miner nicknames, stats history), SSL certificates, and HA/VIP configuration are **all preserved**. The upgrade takes 2–5 minutes with automatic rollback if anything fails.
 
