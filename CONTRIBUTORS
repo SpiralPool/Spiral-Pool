@@ -49,9 +49,10 @@ Kamakhu — https://github.com/bkhuraijam/Spiral-Pool
     - config/coins.manifest.yaml: XEC entry (sha256d, ports, CashAddr flag)
 
 Beniram Khuraijam (bkhuraijam) — https://github.com/bkhuraijam/Spiral-Pool
-  - Credited by the author name and login recorded in the commit itself. The
-    entry above lists earlier work ported from the same fork under the name it
-    was credited with at the time.
+  - Credited by name here, in CHANGELOG.md, and in the commit message of the
+    ported change ("Patch by Beniram Khuraijam."). The entry above lists
+    earlier work ported from the same fork under the name it was credited with
+    at the time.
   - v3.0.3: commit 60edb09 ("fix(dockerfile): add libatomic1 to bitcoin and
     bitcoincash to prevent startup crash"), 2026-11-12
     https://github.com/bkhuraijam/Spiral-Pool/commit/60edb09609402973379542b4a1f72aef0b34bb1e
